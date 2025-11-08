@@ -1,0 +1,300 @@
+'use client';
+
+import React, { useState } from 'react';
+import {
+  Box,
+  TextField,
+  Button,
+  Typography,
+  Alert,
+  InputAdornment,
+  IconButton,
+  CircularProgress,
+  Stack,
+  Checkbox,
+  FormControlLabel,
+} from '@mui/material';
+import { Visibility, VisibilityOff, LockOutlined } from '@mui/icons-material';
+import { signIn } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const result = await signIn('credentials', {
+        email: username,
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setError('Invalid username or password');
+      } else {
+        router.push('/dashboard');
+      }
+    } catch (err) {
+      setError('An error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        bgcolor: '#FAFAFA',
+        flexDirection: { xs: 'column', md: 'row' },
+      }}
+    >
+      {/* Left side - Illustration */}
+      <Box
+        sx={{
+          flex: { xs: 'none', md: '1 1 58%' },
+          position: 'relative',
+          bgcolor: '#FFFFFF',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          p: 4,
+          overflow: 'hidden',
+          minHeight: { xs: '300px', md: '100vh' },
+        }}
+      >
+          {/* Logo at top left */}
+          <Box sx={{ position: 'absolute', top: 32, left: 32 }}>
+            <Image
+              src="/logo.png"
+              alt="iMAPS Logo"
+              width={180}
+              height={60}
+              priority
+              style={{ objectFit: 'contain' }}
+            />
+          </Box>
+
+          {/* Illustration area */}
+          <Box
+            sx={{
+              width: '100%',
+              maxWidth: 600,
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              position: 'relative',
+            }}
+          >
+            {/* Manufacturing/Business icons scattered around */}
+            <Box
+              sx={{
+                position: 'relative',
+                width: '100%',
+                height: '500px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {/* Placeholder for illustration - you can replace with actual SVG or image */}
+              <Box
+                sx={{
+                  width: '500px',
+                  height: '300px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 2,
+                }}
+              >
+                {/* Three people working illustration placeholder */}
+                <Box
+                  sx={{
+                    width: '150px',
+                    height: '200px',
+                    bgcolor: '#FF8B7B',
+                    borderRadius: '50% 50% 0 0',
+                    opacity: 0.3,
+                  }}
+                />
+                <Box
+                  sx={{
+                    width: '150px',
+                    height: '200px',
+                    bgcolor: '#FF8B7B',
+                    borderRadius: '50% 50% 0 0',
+                    opacity: 0.3,
+                  }}
+                />
+                <Box
+                  sx={{
+                    width: '150px',
+                    height: '200px',
+                    bgcolor: '#FF8B7B',
+                    borderRadius: '50% 50% 0 0',
+                    opacity: 0.3,
+                  }}
+                />
+              </Box>
+
+              {/* Scattered icon placeholders */}
+              {[...Array(12)].map((_, i) => (
+                <Box
+                  key={i}
+                  sx={{
+                    position: 'absolute',
+                    width: '50px',
+                    height: '50px',
+                    border: '2px solid #E0E0E0',
+                    borderRadius: '8px',
+                    opacity: 0.5,
+                    top: `${Math.random() * 80}%`,
+                    left: `${Math.random() * 80}%`,
+                  }}
+                />
+              ))}
+            </Box>
+          </Box>
+      </Box>
+
+      {/* Right side - Login form */}
+      <Box
+        sx={{
+          flex: { xs: 'none', md: '1 1 42%' },
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          p: { xs: 3, md: 6 },
+          bgcolor: '#FAFAFA',
+        }}
+      >
+          <Box sx={{ width: '100%', maxWidth: 450, px: 2 }}>
+            <Typography
+              variant="h4"
+              component="h1"
+              sx={{
+                fontWeight: 600,
+                color: '#2C3E50',
+                mb: 1,
+              }}
+            >
+              Welcome to iMAPS for Ventora
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                color: '#7F8C8D',
+                mb: 4,
+              }}
+            >
+              Please sign-in to your account and start the using of this program
+            </Typography>
+
+            {error && (
+              <Alert severity="error" sx={{ mb: 3 }}>
+                {error}
+              </Alert>
+            )}
+
+            <form onSubmit={handleSubmit}>
+              <Stack spacing={2.5}>
+                <TextField
+                  fullWidth
+                  label="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  error={!username && error !== ''}
+                  helperText={!username && error !== '' ? 'username is a required field' : ''}
+                  autoComplete="username"
+                  autoFocus
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      bgcolor: 'white',
+                    },
+                  }}
+                />
+                <TextField
+                  fullWidth
+                  label="Password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      bgcolor: 'white',
+                    },
+                  }}
+                  slotProps={{
+                    input: {
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton
+                            onClick={() => setShowPassword(!showPassword)}
+                            edge="end"
+                          >
+                            {showPassword ? <VisibilityOff /> : <Visibility />}
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                />
+
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      sx={{ color: '#7F8C8D' }}
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" color="text.secondary">
+                      Remember Me
+                    </Typography>
+                  }
+                />
+
+                <Button
+                  fullWidth
+                  type="submit"
+                  variant="contained"
+                  size="large"
+                  disabled={loading}
+                  startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <LockOutlined />}
+                  sx={{
+                    py: 1.5,
+                    bgcolor: '#5865F2',
+                    textTransform: 'uppercase',
+                    fontWeight: 600,
+                    '&:hover': {
+                      bgcolor: '#4752C4',
+                    },
+                  }}
+                >
+                  {loading ? 'Signing in...' : 'Login'}
+                </Button>
+              </Stack>
+            </form>
+          </Box>
+      </Box>
+    </Box>
+  );
+}

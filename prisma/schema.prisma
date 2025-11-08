@@ -1,0 +1,297 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  accessMenus UserAccessMenu[]
+}
+
+// Access Menu Management
+model Menu {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  route       String?
+  icon        String?
+  parentId    String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  parent      Menu?            @relation("MenuHierarchy", fields: [parentId], references: [id])
+  children    Menu[]           @relation("MenuHierarchy")
+  userAccess  UserAccessMenu[]
+}
+
+model UserAccessMenu {
+  id        String   @id @default(cuid())
+  userId    String
+  menuId    String
+  canView   Boolean  @default(true)
+  canCreate Boolean  @default(false)
+  canEdit   Boolean  @default(false)
+  canDelete Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, menuId])
+}
+
+// Master Data Models
+model UOM {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  items                  Item[]
+  incomingDocuments      IncomingDocument[]
+  outgoingDocuments      OutgoingDocument[]
+  rawMaterialMutations   RawMaterialMutation[]
+  productionMutations    ProductionMutation[]
+  scrapMutations         ScrapMutation[]
+  capitalGoodsMutations  CapitalGoodsMutation[]
+  wipRecords             WIPRecord[]
+}
+
+model Currency {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  incomingDocuments IncomingDocument[]
+  outgoingDocuments OutgoingDocument[]
+}
+
+enum ItemType {
+  RM          // Raw Material
+  FG          // Finished Goods
+  SFG         // Semi-Finished Goods
+  CAPITAL     // Capital Goods
+  SCRAP       // Scrap
+}
+
+model Item {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  type      ItemType
+  uomId     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  uom                    UOM                      @relation(fields: [uomId], references: [id])
+  incomingDocuments      IncomingDocument[]
+  outgoingDocuments      OutgoingDocument[]
+  rawMaterialMutations   RawMaterialMutation[]
+  productionMutations    ProductionMutation[]
+  scrapMutations         ScrapMutation[]
+  capitalGoodsMutations  CapitalGoodsMutation[]
+  wipRecords             WIPRecord[]
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  outgoingDocuments OutgoingDocument[]
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  incomingDocuments IncomingDocument[]
+}
+
+// Customs Documents
+model IncomingDocument {
+  id             String   @id @default(cuid())
+  docCode        String
+  registerNumber String
+  registerDate   DateTime
+  docNumber      String
+  docDate        DateTime
+  shipperId      String
+  itemId         String
+  uomId          String
+  quantity       Float
+  currencyId     String
+  amount         Float
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  shipper  Supplier @relation(fields: [shipperId], references: [id])
+  item     Item     @relation(fields: [itemId], references: [id])
+  uom      UOM      @relation(fields: [uomId], references: [id])
+  currency Currency @relation(fields: [currencyId], references: [id])
+}
+
+model OutgoingDocument {
+  id             String   @id @default(cuid())
+  docCode        String
+  registerNumber String
+  registerDate   DateTime
+  docNumber      String
+  docDate        DateTime
+  recipientId    String
+  itemId         String
+  uomId          String
+  quantity       Float
+  currencyId     String
+  amount         Float
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  recipient Customer @relation(fields: [recipientId], references: [id])
+  item      Item     @relation(fields: [itemId], references: [id])
+  uom       UOM      @relation(fields: [uomId], references: [id])
+  currency  Currency @relation(fields: [currencyId], references: [id])
+}
+
+// Mutation Records (LPJ)
+model RawMaterialMutation {
+  id            String   @id @default(cuid())
+  date          DateTime
+  itemId        String
+  uomId         String
+  beginning     Float    @default(0)
+  incoming      Float    @default(0)
+  outgoing      Float    @default(0)
+  adjustment    Float    @default(0)
+  ending        Float    @default(0)
+  stockOpname   Float    @default(0)
+  variant       Float    @default(0)
+  remarks       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  item Item @relation(fields: [itemId], references: [id])
+  uom  UOM  @relation(fields: [uomId], references: [id])
+
+  @@unique([date, itemId])
+}
+
+model WIPRecord {
+  id        String   @id @default(cuid())
+  date      DateTime @unique
+  itemId    String
+  uomId     String
+  quantity  Float
+  remarks   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  item Item @relation(fields: [itemId], references: [id])
+  uom  UOM  @relation(fields: [uomId], references: [id])
+}
+
+model ProductionMutation {
+  id            String   @id @default(cuid())
+  date          DateTime
+  itemId        String
+  uomId         String
+  beginning     Float    @default(0)
+  incoming      Float    @default(0)
+  outgoing      Float    @default(0)
+  adjustment    Float    @default(0)
+  ending        Float    @default(0)
+  stockOpname   Float    @default(0)
+  variant       Float    @default(0)
+  remarks       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  item Item @relation(fields: [itemId], references: [id])
+  uom  UOM  @relation(fields: [uomId], references: [id])
+
+  @@unique([date, itemId])
+}
+
+model ScrapMutation {
+  id            String   @id @default(cuid())
+  date          DateTime
+  itemId        String
+  uomId         String
+  beginning     Float    @default(0)
+  incoming      Float    @default(0)
+  outgoing      Float    @default(0)
+  adjustment    Float    @default(0)
+  ending        Float    @default(0)
+  stockOpname   Float    @default(0)
+  variant       Float    @default(0)
+  remarks       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  item Item @relation(fields: [itemId], references: [id])
+  uom  UOM  @relation(fields: [uomId], references: [id])
+
+  @@unique([date, itemId])
+}
+
+model CapitalGoodsMutation {
+  id            String   @id @default(cuid())
+  date          DateTime
+  itemId        String
+  uomId         String
+  beginning     Float    @default(0)
+  incoming      Float    @default(0)
+  outgoing      Float    @default(0)
+  adjustment    Float    @default(0)
+  ending        Float    @default(0)
+  stockOpname   Float    @default(0)
+  variant       Float    @default(0)
+  remarks       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  item Item @relation(fields: [itemId], references: [id])
+  uom  UOM  @relation(fields: [uomId], references: [id])
+
+  @@unique([date, itemId])
+}
