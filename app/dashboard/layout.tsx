@@ -22,23 +22,12 @@ export default function DashboardLayout({
 
   React.useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.replace('/login');
     }
   }, [status, router]);
 
   if (status === 'loading') {
-    return (
-      <Box
-        sx={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: '100vh',
-        }}
-      >
-        Loading...
-      </Box>
-    );
+    return null;
   }
 
   if (!session) {

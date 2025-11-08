@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { ThemeProvider as MuiThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { getTheme } from '../theme/theme';
+import EmotionRegistry from './EmotionRegistry';
 
 type ThemeMode = 'light' | 'dark';
 
@@ -25,15 +26,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // Load theme preference from localStorage on mount
   useEffect(() => {
+    setMounted(true);
     const savedMode = localStorage.getItem('themeMode') as ThemeMode;
-    if (savedMode && savedMode !== mode) {
+    if (savedMode) {
       setMode(savedMode);
-    } else if (!savedMode) {
+    } else {
       // Check system preference
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       if (prefersDark) setMode('dark');
     }
-    setMounted(true);
   }, []);
 
   const toggleTheme = () => {
@@ -46,24 +47,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const theme = React.useMemo(() => getTheme(mode), [mode]);
 
-  // Prevent hydration mismatch by not rendering until mounted
-  if (!mounted) {
-    return (
+  return (
+    <EmotionRegistry options={{ key: 'mui' }}>
       <ThemeContext.Provider value={{ mode, toggleTheme }}>
         <MuiThemeProvider theme={theme}>
           <CssBaseline />
-          {children}
+          {mounted ? children : null}
         </MuiThemeProvider>
       </ThemeContext.Provider>
-    );
-  }
-
-  return (
-    <ThemeContext.Provider value={{ mode, toggleTheme }}>
-      <MuiThemeProvider theme={theme}>
-        <CssBaseline />
-        {children}
-      </MuiThemeProvider>
-    </ThemeContext.Provider>
+    </EmotionRegistry>
   );
 }

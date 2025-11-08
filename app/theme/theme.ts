@@ -7,38 +7,38 @@ export const getTheme = (mode: 'light' | 'dark') =>
       mode,
       ...(mode === 'light'
         ? {
-            // Light mode - Professional blue-based palette
+            // Light mode - Vibrant modern palette
             primary: {
-              main: '#1e3a8a', // Deep blue
-              light: '#3b82f6',
-              dark: '#1e40af',
+              main: '#6366f1', // Vibrant indigo
+              light: '#818cf8',
+              dark: '#4f46e5',
               contrastText: '#ffffff',
             },
             secondary: {
-              main: '#7c3aed', // Purple accent
-              light: '#a78bfa',
-              dark: '#6d28d9',
+              main: '#ec4899', // Vibrant pink
+              light: '#f472b6',
+              dark: '#db2777',
               contrastText: '#ffffff',
             },
             success: {
-              main: '#059669',
-              light: '#10b981',
-              dark: '#047857',
+              main: '#10b981', // Vibrant emerald
+              light: '#34d399',
+              dark: '#059669',
             },
             warning: {
-              main: '#f59e0b',
+              main: '#f59e0b', // Vibrant amber
               light: '#fbbf24',
               dark: '#d97706',
             },
             error: {
-              main: '#dc2626',
-              light: '#ef4444',
-              dark: '#b91c1c',
+              main: '#ef4444', // Vibrant red
+              light: '#f87171',
+              dark: '#dc2626',
             },
             info: {
-              main: '#0891b2',
-              light: '#06b6d4',
-              dark: '#0e7490',
+              main: '#06b6d4', // Vibrant cyan
+              light: '#22d3ee',
+              dark: '#0891b2',
             },
             background: {
               default: '#f8fafc',
@@ -51,38 +51,38 @@ export const getTheme = (mode: 'light' | 'dark') =>
             divider: 'rgba(0, 0, 0, 0.08)',
           }
         : {
-            // Dark mode - Modern dark palette
+            // Dark mode - Vibrant modern dark palette
             primary: {
-              main: '#60a5fa', // Bright blue
-              light: '#93c5fd',
-              dark: '#3b82f6',
+              main: '#818cf8', // Vibrant light indigo
+              light: '#a5b4fc',
+              dark: '#6366f1',
               contrastText: '#ffffff',
             },
             secondary: {
-              main: '#a78bfa', // Light purple
-              light: '#c4b5fd',
-              dark: '#8b5cf6',
+              main: '#f472b6', // Vibrant light pink
+              light: '#f9a8d4',
+              dark: '#ec4899',
               contrastText: '#ffffff',
             },
             success: {
-              main: '#10b981',
-              light: '#34d399',
-              dark: '#059669',
+              main: '#34d399', // Vibrant light emerald
+              light: '#6ee7b7',
+              dark: '#10b981',
             },
             warning: {
-              main: '#fbbf24',
+              main: '#fbbf24', // Vibrant light amber
               light: '#fcd34d',
               dark: '#f59e0b',
             },
             error: {
-              main: '#ef4444',
-              light: '#f87171',
-              dark: '#dc2626',
+              main: '#f87171', // Vibrant light red
+              light: '#fca5a5',
+              dark: '#ef4444',
             },
             info: {
-              main: '#06b6d4',
-              light: '#22d3ee',
-              dark: '#0891b2',
+              main: '#22d3ee', // Vibrant light cyan
+              light: '#67e8f9',
+              dark: '#06b6d4',
             },
             background: {
               default: '#0f172a',

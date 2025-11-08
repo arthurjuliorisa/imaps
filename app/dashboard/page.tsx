@@ -132,7 +132,7 @@ const recentActivities: ActivityItem[] = [
     title: 'New Item Added',
     description: 'Raw material "Steel Sheet" has been added to inventory',
     time: '2 hours ago',
-    color: '#1e3a8a',
+    color: '#6366f1',
   },
   {
     id: '2',
@@ -140,7 +140,7 @@ const recentActivities: ActivityItem[] = [
     title: 'Customer Updated',
     description: 'PT Maju Jaya information has been updated',
     time: '5 hours ago',
-    color: '#059669',
+    color: '#10b981',
   },
   {
     id: '3',
@@ -148,7 +148,7 @@ const recentActivities: ActivityItem[] = [
     title: 'Report Generated',
     description: 'Monthly inventory report has been generated',
     time: '1 day ago',
-    color: '#0891b2',
+    color: '#06b6d4',
   },
   {
     id: '4',
@@ -161,8 +161,8 @@ const recentActivities: ActivityItem[] = [
 ];
 
 const inventoryProgress = [
-  { name: 'Raw Materials', value: 65, color: '#1e3a8a' },
-  { name: 'Finished Goods', value: 45, color: '#059669' },
+  { name: 'Raw Materials', value: 65, color: '#6366f1' },
+  { name: 'Finished Goods', value: 45, color: '#10b981' },
   { name: 'Work In Progress', value: 30, color: '#f59e0b' },
 ];
 
@@ -187,7 +187,7 @@ export default function DashboardPage() {
             title="Total Items"
             value="1,248"
             icon={<Inventory sx={{ fontSize: 28 }} />}
-            gradient="linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)"
+            gradient="linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
             trend={{ value: '+12%', isPositive: true }}
           />
         </Grid>
@@ -196,7 +196,7 @@ export default function DashboardPage() {
             title="Customers"
             value="348"
             icon={<People sx={{ fontSize: 28 }} />}
-            gradient="linear-gradient(135deg, #059669 0%, #10b981 100%)"
+            gradient="linear-gradient(135deg, #10b981 0%, #14b8a6 100%)"
             trend={{ value: '+8%', isPositive: true }}
           />
         </Grid>
@@ -205,7 +205,7 @@ export default function DashboardPage() {
             title="Suppliers"
             value="127"
             icon={<LocalShipping sx={{ fontSize: 28 }} />}
-            gradient="linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)"
+            gradient="linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)"
             trend={{ value: '+5%', isPositive: true }}
           />
         </Grid>
@@ -214,7 +214,7 @@ export default function DashboardPage() {
             title="Reports"
             value="89"
             icon={<Assessment sx={{ fontSize: 28 }} />}
-            gradient="linear-gradient(135deg, #0891b2 0%, #06b6d4 100%)"
+            gradient="linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)"
             trend={{ value: '+15%', isPositive: true }}
           />
         </Grid>
