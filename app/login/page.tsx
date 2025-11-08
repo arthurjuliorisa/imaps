@@ -21,7 +21,7 @@ import Image from 'next/image';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -35,19 +35,33 @@ export default function LoginPage() {
 
     try {
       const result = await signIn('credentials', {
-        email: username,
+        email,
         password,
         redirect: false,
       });
 
       if (result?.error) {
-        setError('Invalid username or password');
+        setError('Invalid email or password');
+        setLoading(false);
+      } else if (result?.ok) {
+        // Keep loading true during redirect
+        router.replace('/dashboard');
       } else {
-        router.push('/dashboard');
+        setError('Authentication failed. Please try again.');
+        setLoading(false);
       }
     } catch (err) {
-      setError('An error occurred. Please try again.');
-    } finally {
+      console.error('Login error:', err);
+
+      if (err instanceof Error) {
+        if (err.message.includes('fetch')) {
+          setError('Network error. Please check your connection.');
+        } else {
+          setError('An error occurred. Please try again.');
+        }
+      } else {
+        setError('An unexpected error occurred.');
+      }
       setLoading(false);
     }
   };
@@ -227,13 +241,14 @@ export default function LoginPage() {
               <Stack spacing={2.5}>
                 <TextField
                   fullWidth
-                  label="username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  label="Email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
-                  error={!username && error !== ''}
-                  helperText={!username && error !== '' ? 'username is a required field' : ''}
-                  autoComplete="username"
+                  error={!!error && !email}
+                  helperText={!!error && !email ? 'Email is required' : ''}
+                  autoComplete="email"
                   autoFocus
                   sx={{
                     '& .MuiOutlinedInput-root': {
@@ -261,6 +276,8 @@ export default function LoginPage() {
                           <IconButton
                             onClick={() => setShowPassword(!showPassword)}
                             edge="end"
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                            tabIndex={0}
                           >
                             {showPassword ? <VisibilityOff /> : <Visibility />}
                           </IconButton>
