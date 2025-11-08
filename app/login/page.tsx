@@ -152,7 +152,20 @@ export default function LoginPage() {
               </Box>
 
               {/* Scattered icon placeholders */}
-              {[...Array(12)].map((_, i) => (
+              {[
+                { top: '10%', left: '15%' },
+                { top: '20%', left: '75%' },
+                { top: '35%', left: '10%' },
+                { top: '45%', left: '80%' },
+                { top: '60%', left: '20%' },
+                { top: '70%', left: '70%' },
+                { top: '15%', left: '50%' },
+                { top: '50%', left: '45%' },
+                { top: '80%', left: '30%' },
+                { top: '25%', left: '85%' },
+                { top: '75%', left: '55%' },
+                { top: '40%', left: '65%' },
+              ].map((position, i) => (
                 <Box
                   key={i}
                   sx={{
@@ -162,8 +175,8 @@ export default function LoginPage() {
                     border: '2px solid #E0E0E0',
                     borderRadius: '8px',
                     opacity: 0.5,
-                    top: `${Math.random() * 80}%`,
-                    left: `${Math.random() * 80}%`,
+                    top: position.top,
+                    left: position.left,
                   }}
                 />
               ))}
