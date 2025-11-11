@@ -139,13 +139,10 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
   const renderMenuItem = (item: MenuItem, depth: number = 0) => {
     const isExpanded = expandedItems.includes(item.title);
     const isActive = item.path === pathname;
+    // Check if any child is active to highlight parent
+    const hasActiveChild = item.children?.some(child => child.path === pathname);
 
     if (item.children) {
-      // In collapsed mode, don't show parent items with children
-      if (collapsed && depth === 0) {
-        return null;
-      }
-
       return (
         <React.Fragment key={item.title}>
           <Tooltip title={collapsed ? item.title : ''} placement="right">
@@ -162,7 +159,13 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
                 },
               }}
             >
-              <ListItemIcon sx={{ minWidth: collapsed ? 'unset' : 40, color: isExpanded ? theme.palette.primary.main : 'inherit', justifyContent: 'center' }}>
+              <ListItemIcon
+                sx={{
+                  minWidth: collapsed ? 'unset' : 40,
+                  color: (isExpanded || hasActiveChild) ? theme.palette.primary.main : 'inherit',
+                  justifyContent: 'center'
+                }}
+              >
                 {item.icon}
               </ListItemIcon>
               {!collapsed && (
@@ -170,8 +173,9 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
                   <ListItemText
                     primary={item.title}
                     primaryTypographyProps={{
-                      fontWeight: isExpanded ? 600 : 500,
+                      fontWeight: (isExpanded || hasActiveChild) ? 600 : 500,
                       fontSize: '0.875rem',
+                      color: hasActiveChild ? theme.palette.primary.main : 'inherit',
                     }}
                   />
                   {isExpanded ? <ExpandLess /> : <ExpandMore />}

@@ -19,8 +19,6 @@ import {
 } from '@mui/material';
 import {
   Logout,
-  Person,
-  Settings,
   NavigateNext,
   Menu as MenuIcon,
 } from '@mui/icons-material';
@@ -158,19 +156,6 @@ export function Header({ onMenuClick, sidebarCollapsed }: HeaderProps) {
                 {session?.user?.email || ''}
               </Typography>
             </Box>
-            <Divider />
-            <MenuItem onClick={handleClose}>
-              <ListItemIcon>
-                <Person fontSize="small" />
-              </ListItemIcon>
-              Profile
-            </MenuItem>
-            <MenuItem onClick={handleClose}>
-              <ListItemIcon>
-                <Settings fontSize="small" />
-              </ListItemIcon>
-              Settings
-            </MenuItem>
             <Divider />
             <MenuItem onClick={handleLogout}>
               <ListItemIcon>
