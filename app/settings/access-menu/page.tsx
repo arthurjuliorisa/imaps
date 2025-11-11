@@ -84,7 +84,10 @@ export default function AccessMenuPage() {
       const response = await fetch('/api/settings/users');
       if (!response.ok) throw new Error('Failed to fetch users');
       const data = await response.json();
-      const userOptions = (data.users || data).map((user: any) => ({
+
+      // Handle multiple API response formats: direct array, { data: [] }, { users: [] }
+      const usersArray = Array.isArray(data) ? data : (data.data || data.users || []);
+      const userOptions = usersArray.map((user: any) => ({
         id: user.id,
         label: user.username,
       }));
@@ -105,7 +108,9 @@ export default function AccessMenuPage() {
 
       // Convert array of permissions to a map
       const permissionsMap: Record<string, boolean> = {};
-      data.forEach((perm: Permission) => {
+      // Handle multiple API response formats: direct array, { data: [] }, { permissions: [] }
+      const permissionsArray = Array.isArray(data) ? data : (data.data || data.permissions || []);
+      permissionsArray.forEach((perm: Permission) => {
         permissionsMap[perm.menuId] = perm.canView;
       });
       setPermissions(permissionsMap);
