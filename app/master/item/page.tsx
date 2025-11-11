@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -24,6 +24,8 @@ import {
 } from '@mui/material';
 import { Add, Save, Close } from '@mui/icons-material';
 import { DataTable, Column } from '@/app/components/DataTable';
+import { useToast } from '@/app/components/ToastProvider';
+import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 
 interface Item {
   id: string;
@@ -59,6 +61,7 @@ const columns: Column[] = [
 
 export default function ItemPage() {
   const theme = useTheme();
+  const toast = useToast();
   const [items, setItems] = useState<Item[]>([]);
   const [uoms, setUoms] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
@@ -67,6 +70,33 @@ export default function ItemPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const fetchItems = useCallback(async () => {
+    try {
+      const response = await fetch('/api/master/item');
+      if (response.ok) {
+        const data = await response.json();
+        setItems(data);
+      }
+    } catch (err) {
+      console.error('Error fetching items:', err);
+    }
+  }, []);
+
+  const fetchUOMs = useCallback(async () => {
+    try {
+      const response = await fetch('/api/master/uom');
+      if (response.ok) {
+        const data = await response.json();
+        setUoms(data);
+      }
+    } catch (err) {
+      console.error('Error fetching UOMs:', err);
+    }
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -78,31 +108,7 @@ export default function ItemPage() {
       }
     };
     loadData();
-  }, []);
-
-  const fetchItems = async () => {
-    try {
-      const response = await fetch('/api/master/item');
-      if (response.ok) {
-        const data = await response.json();
-        setItems(data);
-      }
-    } catch (err) {
-      console.error('Error fetching items:', err);
-    }
-  };
-
-  const fetchUOMs = async () => {
-    try {
-      const response = await fetch('/api/master/uom');
-      if (response.ok) {
-        const data = await response.json();
-        setUoms(data);
-      }
-    } catch (err) {
-      console.error('Error fetching UOMs:', err);
-    }
-  };
+  }, [fetchItems, fetchUOMs]);
 
   const handleOpen = () => {
     setEditMode(false);
@@ -146,33 +152,63 @@ export default function ItemPage() {
       if (response.ok) {
         await fetchItems();
         handleClose();
+        toast.success(editMode ? 'Item updated successfully!' : 'Item created successfully!');
       } else {
         const data = await response.json();
-        setError(data.message || 'Failed to save item');
+        const errorMessage = data.message || 'Failed to save item';
+        setError(errorMessage);
+        toast.error(errorMessage);
       }
     } catch (err) {
-      setError('An error occurred while saving');
+      const errorMessage = 'An error occurred while saving';
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (item: Item) => {
-    if (confirm(`Are you sure you want to delete "${item.name}"?`)) {
-      try {
-        const response = await fetch(`/api/master/item/${item.id}`, {
-          method: 'DELETE',
-        });
+  const handleDelete = (item: Item) => {
+    setItemToDelete(item);
+    setConfirmDialogOpen(true);
+  };
 
-        if (response.ok) {
-          fetchItems();
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
+
+    setDeleteLoading(true);
+    try {
+      const response = await fetch(`/api/master/item/${itemToDelete.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        await fetchItems();
+        toast.success(`Item "${itemToDelete.name}" deleted successfully!`);
+        setConfirmDialogOpen(false);
+        setItemToDelete(null);
+      } else {
+        const data = await response.json();
+        const errorMessage = data.message || 'Failed to delete item';
+        if (errorMessage.toLowerCase().includes('related') ||
+            errorMessage.toLowerCase().includes('cannot delete') ||
+            errorMessage.toLowerCase().includes('foreign key') ||
+            errorMessage.toLowerCase().includes('constraint')) {
+          toast.error('Cannot delete: This item is referenced in other records');
         } else {
-          alert('Failed to delete item');
+          toast.error(errorMessage);
         }
-      } catch (err) {
-        alert('An error occurred while deleting');
       }
+    } catch (err) {
+      toast.error('An error occurred while deleting');
+    } finally {
+      setDeleteLoading(false);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setConfirmDialogOpen(false);
+    setItemToDelete(null);
   };
 
   const getTypeLabel = (type: string) => {
@@ -240,12 +276,12 @@ export default function ItemPage() {
             borderBottom: `1px solid ${theme.palette.divider}`,
           }}
         >
-          <Typography variant="h5" fontWeight="bold">
+          <Box component="span" sx={{ fontSize: '1.5rem', fontWeight: 'bold', display: 'block' }}>
             {editMode ? 'Edit Item' : 'Add New Item'}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          </Box>
+          <Box component="span" sx={{ fontSize: '0.875rem', color: 'text.secondary', display: 'block', mt: 0.5 }}>
             {editMode ? 'Update the item details below' : 'Fill in the details to create a new item'}
-          </Typography>
+          </Box>
         </DialogTitle>
         <DialogContent sx={{ mt: 3 }}>
           <Fade in={!!error}>
@@ -300,7 +336,7 @@ export default function ItemPage() {
                         variant="outlined"
                         sx={{ fontWeight: 600 }}
                       />
-                      <Typography variant="body2">{getTypeLabel(type)}</Typography>
+                      <Box component="span" sx={{ fontSize: '0.875rem' }}>{getTypeLabel(type)}</Box>
                     </Box>
                   </MenuItem>
                 ))}
@@ -319,12 +355,12 @@ export default function ItemPage() {
                   uoms.map((uom) => (
                     <MenuItem key={uom.id} value={uom.id}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="body2" fontWeight={600}>
+                        <Box component="span" sx={{ fontSize: '0.875rem', fontWeight: 600 }}>
                           {uom.code}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
+                        </Box>
+                        <Box component="span" sx={{ fontSize: '0.875rem', color: 'text.secondary' }}>
                           - {uom.name}
-                        </Typography>
+                        </Box>
                       </Box>
                     </MenuItem>
                   ))
@@ -361,6 +397,18 @@ export default function ItemPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDialogOpen}
+        title="Delete Item"
+        message={`Are you sure you want to delete "${itemToDelete?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+        severity="error"
+        loading={deleteLoading}
+      />
     </Box>
   );
 }

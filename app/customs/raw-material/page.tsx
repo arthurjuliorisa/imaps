@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/app/components/ToastProvider';
 import { Box, Stack } from '@mui/material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
@@ -8,59 +9,39 @@ import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { MutationReportTable, MutationData } from '@/app/components/customs/MutationReportTable';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 
-// Sample data - Replace with actual API call
-const sampleData: MutationData[] = [
-  {
-    id: 1,
-    itemCode: 'RM-001',
-    itemName: 'Steel Plate',
-    unit: 'KG',
-    beginning: 5000,
-    in: 1000,
-    out: 800,
-    adjustment: 0,
-    ending: 5200,
-    stockOpname: 5200,
-    variant: 0,
-    remarks: 'Normal flow',
-  },
-  {
-    id: 2,
-    itemCode: 'RM-002',
-    itemName: 'Aluminum Sheet',
-    unit: 'PCS',
-    beginning: 2000,
-    in: 500,
-    out: 600,
-    adjustment: -50,
-    ending: 1850,
-    stockOpname: 1900,
-    variant: 50,
-    remarks: 'Stock variance detected',
-  },
-  {
-    id: 3,
-    itemCode: 'RM-003',
-    itemName: 'Copper Wire',
-    unit: 'M',
-    beginning: 10000,
-    in: 2000,
-    out: 1500,
-    adjustment: 0,
-    ending: 10500,
-    stockOpname: 10500,
-    variant: 0,
-    remarks: '',
-  },
-];
-
 export default function RawMaterialMutationPage() {
+  const toast = useToast();
   const [startDate, setStartDate] = useState('2024-01-01');
   const [endDate, setEndDate] = useState('2024-12-31');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [data, setData] = useState<MutationData[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const data = sampleData; // Replace with filtered data from API
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
+      });
+
+      const response = await fetch(`/api/customs/raw-material?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch data');
+      const result = await response.json();
+      setData(result);
+    } catch (error) {
+      console.error('Error fetching raw material mutation data:', error);
+      toast.error('Failed to load raw material mutation data');
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [startDate, endDate, toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -160,7 +141,7 @@ export default function RawMaterialMutationPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={data.length === 0}
+              disabled={data.length === 0 || loading}
             />
           </Box>
         </Stack>
@@ -174,6 +155,7 @@ export default function RawMaterialMutationPage() {
         onRowsPerPageChange={handleChangeRowsPerPage}
         onEdit={handleEdit}
         onView={handleView}
+        loading={loading}
       />
     </ReportLayout>
   );

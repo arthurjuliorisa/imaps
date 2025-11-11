@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -17,6 +17,8 @@ import {
 } from '@mui/material';
 import { Add, Save, Close } from '@mui/icons-material';
 import { DataTable, Column } from '@/app/components/DataTable';
+import { useToast } from '@/app/components/ToastProvider';
+import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 
 interface Supplier {
   id: string;
@@ -33,11 +35,10 @@ const columns: Column[] = [
 
 export default function SupplierPage() {
   const theme = useTheme();
-  const [suppliers, setSuppliers] = useState<Supplier[]>([
-    { id: '1', code: 'SUP001', name: 'PT. Supplier Indonesia', address: 'Bandung, Indonesia' },
-    { id: '2', code: 'SUP002', name: 'CV. Material Supply', address: 'Semarang, Indonesia' },
-  ]);
+  const toast = useToast();
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -46,6 +47,41 @@ export default function SupplierPage() {
     name: '',
     address: '',
   });
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(10);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [totalCount, setTotalCount] = useState(0);
+
+  const fetchSuppliers = useCallback(async () => {
+    setDataLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        pageSize: pageSize.toString(),
+        ...(searchQuery && { search: searchQuery }),
+      });
+
+      const response = await fetch(`/api/master/supplier?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch suppliers');
+      const data = await response.json();
+      setSuppliers(data.suppliers || data.data || data);
+      setTotalCount(data.totalCount || 0);
+    } catch (err) {
+      console.error('Error fetching suppliers:', err);
+      toast.error('Failed to load suppliers');
+      setSuppliers([]);
+      setTotalCount(0);
+    } finally {
+      setDataLoading(false);
+    }
+  }, [page, pageSize, searchQuery, toast]);
+
+  useEffect(() => {
+    fetchSuppliers();
+  }, [fetchSuppliers]);
 
   const handleAdd = () => {
     setEditingSupplier(null);
@@ -59,26 +95,77 @@ export default function SupplierPage() {
     setDialogOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this supplier?')) return;
-    setSuppliers(suppliers.filter((s) => s.id !== id));
+  const handleDelete = (supplier: Supplier) => {
+    setSupplierToDelete(supplier);
+    setConfirmDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!supplierToDelete) return;
+
+    setDeleteLoading(true);
+    try {
+      const response = await fetch(`/api/master/supplier/${supplierToDelete.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to delete supplier');
+      }
+
+      await fetchSuppliers();
+      toast.success(`Supplier "${supplierToDelete.name}" deleted successfully!`);
+      setConfirmDialogOpen(false);
+      setSupplierToDelete(null);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete supplier';
+      toast.error(errorMessage);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setConfirmDialogOpen(false);
+    setSupplierToDelete(null);
   };
 
   const handleSave = async () => {
-    if (editingSupplier) {
-      setSuppliers(
-        suppliers.map((s) =>
-          s.id === editingSupplier.id ? { ...s, ...formData } : s
-        )
-      );
-    } else {
-      const newSupplier = {
-        id: Date.now().toString(),
-        ...formData,
-      };
-      setSuppliers([...suppliers, newSupplier]);
+    if (!formData.code || !formData.name || !formData.address) {
+      toast.error('Please fill in all required fields');
+      return;
     }
-    setDialogOpen(false);
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const url = editingSupplier
+        ? `/api/master/supplier/${editingSupplier.id}`
+        : '/api/master/supplier';
+
+      const response = await fetch(url, {
+        method: editingSupplier ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to save supplier');
+      }
+
+      await fetchSuppliers();
+      setDialogOpen(false);
+      toast.success(editingSupplier ? 'Supplier updated successfully!' : 'Supplier created successfully!');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save supplier';
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -120,16 +207,21 @@ export default function SupplierPage() {
       <DataTable
         columns={columns}
         data={suppliers}
-        loading={loading}
+        loading={dataLoading}
         onEdit={handleEdit}
         onDelete={handleDelete}
       />
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={dialogOpen} onClose={() => !loading && setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
           {editingSupplier ? 'Edit Supplier' : 'Add New Supplier'}
         </DialogTitle>
         <DialogContent>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
           <Stack spacing={2} sx={{ mt: 2 }}>
             <TextField
               label="Code"
@@ -137,6 +229,7 @@ export default function SupplierPage() {
               onChange={(e) => setFormData({ ...formData, code: e.target.value })}
               required
               fullWidth
+              disabled={loading}
             />
             <TextField
               label="Name"
@@ -144,6 +237,7 @@ export default function SupplierPage() {
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               required
               fullWidth
+              disabled={loading}
             />
             <TextField
               label="Address"
@@ -153,18 +247,31 @@ export default function SupplierPage() {
               fullWidth
               multiline
               rows={3}
+              disabled={loading}
             />
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)} startIcon={<Close />}>
+          <Button onClick={() => setDialogOpen(false)} startIcon={<Close />} disabled={loading}>
             Cancel
           </Button>
-          <Button onClick={handleSave} variant="contained" startIcon={<Save />}>
-            Save
+          <Button onClick={handleSave} variant="contained" startIcon={<Save />} disabled={loading}>
+            {loading ? 'Saving...' : 'Save'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDialogOpen}
+        title="Delete Supplier"
+        message={`Are you sure you want to delete "${supplierToDelete?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+        severity="error"
+        loading={deleteLoading}
+      />
     </Box>
   );
 }

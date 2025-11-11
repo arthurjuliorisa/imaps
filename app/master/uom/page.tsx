@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -17,6 +17,8 @@ import {
 } from '@mui/material';
 import { Add, Save, Close } from '@mui/icons-material';
 import { DataTable, Column } from '@/app/components/DataTable';
+import { useToast } from '@/app/components/ToastProvider';
+import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 
 interface Uom {
   id: string;
@@ -31,6 +33,7 @@ const columns: Column[] = [
 
 export default function UomPage() {
   const theme = useTheme();
+  const toast = useToast();
   const [uoms, setUoms] = useState<Uom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,12 +43,11 @@ export default function UomPage() {
     code: '',
     name: '',
   });
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [uomToDelete, setUomToDelete] = useState<Uom | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
-  useEffect(() => {
-    fetchUoms();
-  }, []);
-
-  const fetchUoms = async () => {
+  const fetchUoms = useCallback(async () => {
     try {
       const response = await fetch('/api/master/uom');
       if (!response.ok) throw new Error('Failed to fetch UOMs');
@@ -56,7 +58,11 @@ export default function UomPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchUoms();
+  }, [fetchUoms]);
 
   const handleAdd = () => {
     setEditingUom(null);
@@ -70,18 +76,47 @@ export default function UomPage() {
     setDialogOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this UOM?')) return;
+  const handleDelete = (uom: Uom) => {
+    setUomToDelete(uom);
+    setConfirmDialogOpen(true);
+  };
 
+  const handleConfirmDelete = async () => {
+    if (!uomToDelete) return;
+
+    setDeleteLoading(true);
     try {
-      const response = await fetch(`/api/master/uom/${id}`, {
+      const response = await fetch(`/api/master/uom/${uomToDelete.id}`, {
         method: 'DELETE',
       });
-      if (!response.ok) throw new Error('Failed to delete UOM');
-      fetchUoms();
+      if (!response.ok) {
+        const data = await response.json();
+        const errorMessage = data.message || 'Failed to delete UOM';
+        if (errorMessage.toLowerCase().includes('related') ||
+            errorMessage.toLowerCase().includes('cannot delete') ||
+            errorMessage.toLowerCase().includes('foreign key') ||
+            errorMessage.toLowerCase().includes('constraint')) {
+          toast.error('Cannot delete: This UOM is referenced in other records');
+        } else {
+          toast.error(errorMessage);
+        }
+        return;
+      }
+      await fetchUoms();
+      toast.success(`UOM "${uomToDelete.name}" deleted successfully!`);
+      setConfirmDialogOpen(false);
+      setUomToDelete(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete UOM');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete UOM';
+      toast.error(errorMessage);
+    } finally {
+      setDeleteLoading(false);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setConfirmDialogOpen(false);
+    setUomToDelete(null);
   };
 
   const handleSave = async () => {
@@ -96,12 +131,18 @@ export default function UomPage() {
         body: JSON.stringify(formData),
       });
 
-      if (!response.ok) throw new Error('Failed to save UOM');
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to save UOM');
+      }
 
       setDialogOpen(false);
-      fetchUoms();
+      await fetchUoms();
+      toast.success(editingUom ? 'UOM updated successfully!' : 'UOM created successfully!');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save UOM');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save UOM';
+      setError(errorMessage);
+      toast.error(errorMessage);
     }
   };
 
@@ -180,6 +221,18 @@ export default function UomPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDialogOpen}
+        title="Delete UOM"
+        message={`Are you sure you want to delete "${uomToDelete?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+        severity="error"
+        loading={deleteLoading}
+      />
     </Box>
   );
 }

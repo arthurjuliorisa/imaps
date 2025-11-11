@@ -15,6 +15,8 @@ import {
   Chip,
   IconButton,
   Tooltip,
+  Box,
+  CircularProgress,
 } from '@mui/material';
 import { Edit as EditIcon, Visibility as ViewIcon } from '@mui/icons-material';
 
@@ -41,6 +43,7 @@ interface MutationReportTableProps {
   onRowsPerPageChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onEdit?: (item: MutationData) => void;
   onView?: (item: MutationData) => void;
+  loading?: boolean;
 }
 
 export function MutationReportTable({
@@ -51,6 +54,7 @@ export function MutationReportTable({
   onRowsPerPageChange,
   onEdit,
   onView,
+  loading = false,
 }: MutationReportTableProps) {
   const theme = useTheme();
   const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
@@ -60,6 +64,14 @@ export function MutationReportTable({
     if (variant < 0) return 'error';
     return 'default';
   };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', p: 8 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <>
@@ -91,7 +103,7 @@ export function MutationReportTable({
               <TableRow>
                 <TableCell colSpan={13} align="center" sx={{ py: 8 }}>
                   <Typography variant="body1" color="text.secondary">
-                    No data available for the selected date range
+                    No records found for the selected date range
                   </Typography>
                 </TableCell>
               </TableRow>

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/app/components/ToastProvider';
 import {
   Box,
   Table,
@@ -15,6 +16,7 @@ import {
   alpha,
   useTheme,
   Chip,
+  CircularProgress,
 } from '@mui/material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateSelector } from '@/app/components/customs/DateSelector';
@@ -30,41 +32,40 @@ interface WIPData {
   remarks: string;
 }
 
-// Sample data - Replace with actual API call
-const sampleData: WIPData[] = [
-  {
-    id: 1,
-    itemCode: 'SFG-001',
-    itemName: 'Semi-Finished Product A',
-    unit: 'PCS',
-    qty: 150,
-    remarks: 'In assembly line 1',
-  },
-  {
-    id: 2,
-    itemCode: 'SFG-002',
-    itemName: 'Semi-Finished Product B',
-    unit: 'PCS',
-    qty: 200,
-    remarks: 'In assembly line 2',
-  },
-  {
-    id: 3,
-    itemCode: 'SFG-003',
-    itemName: 'Semi-Finished Product C',
-    unit: 'PCS',
-    qty: 75,
-    remarks: 'In quality control',
-  },
-];
-
 export default function WIPReportPage() {
   const theme = useTheme();
+  const toast = useToast();
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [data, setData] = useState<WIPData[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const data = sampleData; // Replace with filtered data from API
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        startDate: selectedDate,
+        endDate: selectedDate,
+      });
+
+      const response = await fetch(`/api/customs/wip?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch data');
+      const result = await response.json();
+      // API returns { data: [...], pagination: {...} }
+      setData(Array.isArray(result.data) ? result.data : []);
+    } catch (error) {
+      console.error('Error fetching WIP data:', error);
+      toast.error('Failed to load WIP data');
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedDate, toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -139,38 +140,43 @@ export default function WIPReportPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={data.length === 0}
+              disabled={data.length === 0 || loading}
             />
           </Box>
         </Stack>
       }
     >
-      <TableContainer>
-        <Table sx={{ minWidth: 650 }} aria-label="wip report table">
-          <TableHead>
-            <TableRow
-              sx={{
-                bgcolor: alpha(theme.palette.primary.main, 0.08),
-              }}
-            >
-              <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Unit</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right">Qty</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {paginatedData.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
-                  <Typography variant="body1" color="text.secondary">
-                    No data available for the selected date
-                  </Typography>
-                </TableCell>
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 8 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer>
+          <Table sx={{ minWidth: 650 }} aria-label="wip report table">
+            <TableHead>
+              <TableRow
+                sx={{
+                  bgcolor: alpha(theme.palette.primary.main, 0.08),
+                }}
+              >
+                <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Unit</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Qty</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>
               </TableRow>
-            ) : (
+            </TableHead>
+            <TableBody>
+              {paginatedData.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                    <Typography variant="body1" color="text.secondary">
+                      No records found for the selected date
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
               <>
                 {paginatedData.map((row, index) => (
                   <TableRow
@@ -221,20 +227,23 @@ export default function WIPReportPage() {
                   </TableCell>
                   <TableCell />
                 </TableRow>
-              </>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-      <TablePagination
-        rowsPerPageOptions={[5, 10, 25, 50]}
-        component="div"
-        count={data.length}
-        rowsPerPage={rowsPerPage}
-        page={page}
-        onPageChange={handleChangePage}
-        onRowsPerPageChange={handleChangeRowsPerPage}
-      />
+                </>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+      {!loading && (
+        <TablePagination
+          rowsPerPageOptions={[5, 10, 25, 50]}
+          component="div"
+          count={data.length}
+          rowsPerPage={rowsPerPage}
+          page={page}
+          onPageChange={handleChangePage}
+          onRowsPerPageChange={handleChangeRowsPerPage}
+        />
+      )}
     </ReportLayout>
   );
 }

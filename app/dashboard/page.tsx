@@ -1,13 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Box,
   Paper,
   Typography,
   Card,
   CardContent,
-  CardActionArea,
   LinearProgress,
   Chip,
   List,
@@ -20,6 +19,8 @@ import {
   Stack,
   alpha,
   useTheme,
+  CircularProgress,
+  Skeleton,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import {
@@ -28,12 +29,15 @@ import {
   Assessment,
   ArrowUpward,
   ArrowDownward,
-  Add,
   LocalShipping,
-  Description,
   Circle,
 } from '@mui/icons-material';
 import Link from 'next/link';
+import { useToast } from '@/app/components/ToastProvider';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+
+dayjs.extend(relativeTime);
 
 interface StatCardProps {
   title: string;
@@ -44,9 +48,10 @@ interface StatCardProps {
     value: string;
     isPositive: boolean;
   };
+  loading?: boolean;
 }
 
-function StatCard({ title, value, icon, gradient, trend }: StatCardProps) {
+function StatCard({ title, value, icon, gradient, trend, loading }: StatCardProps) {
   return (
     <Card
       elevation={1}
@@ -61,7 +66,7 @@ function StatCard({ title, value, icon, gradient, trend }: StatCardProps) {
           <Box sx={{ bgcolor: 'rgba(255, 255, 255, 0.2)', borderRadius: 1, p: 1 }}>
             {icon}
           </Box>
-          {trend && (
+          {trend && !loading && (
             <Chip
               icon={trend.isPositive ? <ArrowUpward sx={{ fontSize: 16 }} /> : <ArrowDownward sx={{ fontSize: 16 }} />}
               label={trend.value}
@@ -74,44 +79,17 @@ function StatCard({ title, value, icon, gradient, trend }: StatCardProps) {
             />
           )}
         </Box>
-        <Typography variant="h3" fontWeight="bold" gutterBottom>
-          {value}
-        </Typography>
+        {loading ? (
+          <Skeleton variant="text" width="60%" height={48} sx={{ bgcolor: 'rgba(255, 255, 255, 0.2)' }} />
+        ) : (
+          <Typography variant="h3" fontWeight="bold" gutterBottom>
+            {value}
+          </Typography>
+        )}
         <Typography variant="body2" sx={{ opacity: 0.9 }}>
           {title}
         </Typography>
       </CardContent>
-    </Card>
-  );
-}
-
-interface QuickActionProps {
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  href: string;
-  color: string;
-}
-
-function QuickActionCard({ title, description, icon, href, color }: QuickActionProps) {
-  const theme = useTheme();
-  return (
-    <Card elevation={1} sx={{ height: '100%' }}>
-      <CardActionArea component={Link} href={href} sx={{ height: '100%', p: 2.5 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Box sx={{ bgcolor: alpha(color, 0.1), borderRadius: 1, p: 1, color: color }}>
-            {icon}
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-              {title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {description}
-            </Typography>
-          </Box>
-        </Box>
-      </CardActionArea>
     </Card>
   );
 }
@@ -122,52 +100,119 @@ interface ActivityItem {
   title: string;
   description: string;
   time: string;
+  timestamp: string;
   color: string;
 }
 
-const recentActivities: ActivityItem[] = [
-  {
-    id: '1',
-    type: 'item',
-    title: 'New Item Added',
-    description: 'Raw material "Steel Sheet" has been added to inventory',
-    time: '2 hours ago',
-    color: '#6366f1',
-  },
-  {
-    id: '2',
-    type: 'customer',
-    title: 'Customer Updated',
-    description: 'PT Maju Jaya information has been updated',
-    time: '5 hours ago',
-    color: '#10b981',
-  },
-  {
-    id: '3',
-    type: 'report',
-    title: 'Report Generated',
-    description: 'Monthly inventory report has been generated',
-    time: '1 day ago',
-    color: '#06b6d4',
-  },
-  {
-    id: '4',
-    type: 'supplier',
-    title: 'Supplier Added',
-    description: 'New supplier "Global Parts Inc" has been registered',
-    time: '2 days ago',
-    color: '#f59e0b',
-  },
-];
+interface Metrics {
+  totalItems: number;
+  totalCustomers: number;
+  totalSuppliers: number;
+  totalReports: number;
+  itemsTrend?: string;
+  customersTrend?: string;
+  suppliersTrend?: string;
+  reportsTrend?: string;
+  totalScrap?: number;
+  totalRawMaterials?: number;
+  totalProduction?: number;
+  totalCapitalGoods?: number;
+  totalUsers?: number;
+  incomingDocuments?: number;
+  outgoingDocuments?: number;
+}
 
-const inventoryProgress = [
-  { name: 'Raw Materials', value: 65, color: '#6366f1' },
-  { name: 'Finished Goods', value: 45, color: '#10b981' },
-  { name: 'Work In Progress', value: 30, color: '#f59e0b' },
-];
+interface InventoryStatus {
+  rawMaterials: number;
+  finishedGoods: number;
+  workInProgress: number;
+  inStock: number;
+  lowStock: number;
+  outOfStock: number;
+}
 
 export default function DashboardPage() {
   const theme = useTheme();
+  const toast = useToast();
+
+  const [metrics, setMetrics] = useState<Metrics>({
+    totalItems: 0,
+    totalScrap: 0,
+    totalRawMaterials: 0,
+    totalProduction: 0,
+    totalCapitalGoods: 0,
+    totalCustomers: 0,
+    totalSuppliers: 0,
+    totalUsers: 0,
+    incomingDocuments: 0,
+    outgoingDocuments: 0,
+    totalReports: 0,
+  });
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [inventory, setInventory] = useState<InventoryStatus | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const [activitiesLoading, setActivitiesLoading] = useState(true);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
+
+  const fetchAllData = useCallback(async () => {
+    setMetricsLoading(true);
+    setActivitiesLoading(true);
+    setInventoryLoading(true);
+
+    try {
+      const [metricsRes, activitiesRes, inventoryRes] = await Promise.all([
+        fetch('/api/dashboard/metrics'),
+        fetch('/api/dashboard/activities'),
+        fetch('/api/dashboard/inventory-status')
+      ]);
+
+      if (metricsRes.ok) {
+        const metricsData = await metricsRes.json();
+        setMetrics({
+          totalItems: metricsData.totalItems || 0,
+          totalScrap: metricsData.totalScrap || 0,
+          totalRawMaterials: metricsData.totalRawMaterials || 0,
+          totalProduction: metricsData.totalProduction || 0,
+          totalCapitalGoods: metricsData.totalCapitalGoods || 0,
+          totalCustomers: metricsData.totalCustomers || 0,
+          totalSuppliers: metricsData.totalSuppliers || 0,
+          totalUsers: metricsData.totalUsers || 0,
+          incomingDocuments: metricsData.incomingDocuments || 0,
+          outgoingDocuments: metricsData.outgoingDocuments || 0,
+          totalReports: metricsData.totalReports || 0,
+          itemsTrend: metricsData.itemsTrend,
+          customersTrend: metricsData.customersTrend,
+          suppliersTrend: metricsData.suppliersTrend,
+          reportsTrend: metricsData.reportsTrend,
+        });
+      }
+      if (activitiesRes.ok) {
+        const activitiesData = await activitiesRes.json();
+        setActivities(activitiesData.activities || activitiesData || []);
+      }
+      if (inventoryRes.ok) {
+        const inventoryData = await inventoryRes.json();
+        setInventory(inventoryData.inventoryStatus || inventoryData);
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setMetricsLoading(false);
+      setActivitiesLoading(false);
+      setInventoryLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    fetchAllData();
+  }, [fetchAllData]);
+
+  const inventoryProgress = inventory ? [
+    { name: 'Raw Materials', value: inventory.rawMaterials, color: '#6366f1' },
+    { name: 'Finished Goods', value: inventory.finishedGoods, color: '#10b981' },
+    { name: 'Work In Progress', value: inventory.workInProgress, color: '#f59e0b' },
+  ] : [];
 
   return (
     <Box>
@@ -185,37 +230,41 @@ export default function DashboardPage() {
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <StatCard
             title="Total Items"
-            value="1,248"
+            value={metrics.totalItems.toLocaleString()}
             icon={<Inventory sx={{ fontSize: 28 }} />}
             gradient="linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
-            trend={{ value: '+12%', isPositive: true }}
+            trend={metrics.itemsTrend ? { value: metrics.itemsTrend, isPositive: metrics.itemsTrend.startsWith('+') } : undefined}
+            loading={metricsLoading}
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <StatCard
             title="Customers"
-            value="348"
+            value={metrics.totalCustomers.toLocaleString()}
             icon={<People sx={{ fontSize: 28 }} />}
             gradient="linear-gradient(135deg, #10b981 0%, #14b8a6 100%)"
-            trend={{ value: '+8%', isPositive: true }}
+            trend={metrics.customersTrend ? { value: metrics.customersTrend, isPositive: metrics.customersTrend.startsWith('+') } : undefined}
+            loading={metricsLoading}
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <StatCard
             title="Suppliers"
-            value="127"
+            value={metrics.totalSuppliers.toLocaleString()}
             icon={<LocalShipping sx={{ fontSize: 28 }} />}
             gradient="linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)"
-            trend={{ value: '+5%', isPositive: true }}
+            trend={metrics.suppliersTrend ? { value: metrics.suppliersTrend, isPositive: metrics.suppliersTrend.startsWith('+') } : undefined}
+            loading={metricsLoading}
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <StatCard
             title="Reports"
-            value="89"
+            value={metrics.totalReports.toLocaleString()}
             icon={<Assessment sx={{ fontSize: 28 }} />}
             gradient="linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)"
-            trend={{ value: '+15%', isPositive: true }}
+            trend={metrics.reportsTrend ? { value: metrics.reportsTrend, isPositive: metrics.reportsTrend.startsWith('+') } : undefined}
+            loading={metricsLoading}
           />
         </Grid>
 
@@ -236,68 +285,99 @@ export default function DashboardPage() {
               </Button>
             </Box>
 
-            <Stack spacing={3}>
-              {inventoryProgress.map((item) => (
-                <Box key={item.name}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2" fontWeight={500}>
-                      {item.name}
-                    </Typography>
-                    <Typography variant="body2" fontWeight={600} sx={{ color: item.color }}>
-                      {item.value}%
-                    </Typography>
-                  </Box>
-                  <LinearProgress
-                    variant="determinate"
-                    value={item.value}
-                    sx={{
-                      height: 8,
-                      borderRadius: 4,
-                      bgcolor: alpha(item.color, 0.1),
-                      '& .MuiLinearProgress-bar': {
-                        bgcolor: item.color,
+            {inventoryLoading ? (
+              <Stack spacing={3}>
+                <Skeleton variant="rectangular" height={40} />
+                <Skeleton variant="rectangular" height={40} />
+                <Skeleton variant="rectangular" height={40} />
+              </Stack>
+            ) : (
+              <Stack spacing={3}>
+                {inventoryProgress.map((item) => (
+                  <Box key={item.name}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="body2" fontWeight={500}>
+                        {item.name}
+                      </Typography>
+                      <Typography variant="body2" fontWeight={600} sx={{ color: item.color }}>
+                        {item.value}%
+                      </Typography>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={item.value}
+                      sx={{
+                        height: 8,
                         borderRadius: 4,
-                      },
-                    }}
-                  />
-                </Box>
-              ))}
-            </Stack>
+                        bgcolor: alpha(item.color, 0.1),
+                        '& .MuiLinearProgress-bar': {
+                          bgcolor: item.color,
+                          borderRadius: 4,
+                        },
+                      }}
+                    />
+                  </Box>
+                ))}
+              </Stack>
+            )}
 
             <Divider sx={{ my: 3 }} />
 
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 4 }}>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" fontWeight="bold" color="primary.main">
-                    856
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    In Stock
-                  </Typography>
-                </Box>
+            {inventoryLoading ? (
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 4 }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Skeleton variant="text" height={40} />
+                    <Skeleton variant="text" height={20} />
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 4 }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Skeleton variant="text" height={40} />
+                    <Skeleton variant="text" height={20} />
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 4 }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Skeleton variant="text" height={40} />
+                    <Skeleton variant="text" height={20} />
+                  </Box>
+                </Grid>
               </Grid>
-              <Grid size={{ xs: 4 }}>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" fontWeight="bold" color="warning.main">
-                    234
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Low Stock
-                  </Typography>
-                </Box>
+            ) : (
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 4 }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography variant="h5" fontWeight="bold" color="primary.main">
+                      {inventory?.inStock.toLocaleString() || '0'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      In Stock
+                    </Typography>
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 4 }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography variant="h5" fontWeight="bold" color="warning.main">
+                      {inventory?.lowStock.toLocaleString() || '0'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Low Stock
+                    </Typography>
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 4 }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography variant="h5" fontWeight="bold" color="error.main">
+                      {inventory?.outOfStock.toLocaleString() || '0'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Out of Stock
+                    </Typography>
+                  </Box>
+                </Grid>
               </Grid>
-              <Grid size={{ xs: 4 }}>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" fontWeight="bold" color="error.main">
-                    158
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Out of Stock
-                  </Typography>
-                </Box>
-              </Grid>
-            </Grid>
+            )}
           </Paper>
         </Grid>
 
@@ -307,98 +387,73 @@ export default function DashboardPage() {
             <Typography variant="h6" fontWeight="bold" gutterBottom>
               Recent Activity
             </Typography>
-            <List>
-              {recentActivities.map((activity, index) => (
-                <React.Fragment key={activity.id}>
-                  <ListItem alignItems="flex-start" sx={{ px: 0 }}>
-                    <ListItemAvatar>
-                      <Avatar
-                        sx={{
-                          bgcolor: alpha(activity.color, 0.1),
-                          color: activity.color,
-                          width: 36,
-                          height: 36,
+            {activitiesLoading ? (
+              <Stack spacing={2}>
+                {[1, 2, 3, 4].map((i) => (
+                  <Box key={i} sx={{ display: 'flex', gap: 2 }}>
+                    <Skeleton variant="circular" width={36} height={36} />
+                    <Box sx={{ flex: 1 }}>
+                      <Skeleton variant="text" height={20} width="60%" />
+                      <Skeleton variant="text" height={16} width="100%" />
+                      <Skeleton variant="text" height={14} width="40%" />
+                    </Box>
+                  </Box>
+                ))}
+              </Stack>
+            ) : activities.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <Typography variant="body2" color="text.secondary">
+                  No recent activities
+                </Typography>
+              </Box>
+            ) : (
+              <List>
+                {activities.map((activity, index) => (
+                  <React.Fragment key={activity.id}>
+                    <ListItem alignItems="flex-start" sx={{ px: 0 }}>
+                      <ListItemAvatar>
+                        <Avatar
+                          sx={{
+                            bgcolor: alpha(activity.color, 0.1),
+                            color: activity.color,
+                            width: 36,
+                            height: 36,
+                          }}
+                        >
+                          <Circle sx={{ fontSize: 10 }} />
+                        </Avatar>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={activity.title}
+                        secondary={
+                          <Box component="span" sx={{ display: 'block' }}>
+                            <Box component="span" sx={{ display: 'block', mb: 0.5 }}>
+                              {activity.description}
+                            </Box>
+                            <Box component="span" sx={{ display: 'block', fontSize: '0.75rem', opacity: 0.7 }}>
+                              {activity.timestamp ? dayjs(activity.timestamp).fromNow() : activity.time}
+                            </Box>
+                          </Box>
+                        }
+                        primaryTypographyProps={{
+                          variant: 'body2',
+                          fontWeight: 600,
                         }}
-                      >
-                        <Circle sx={{ fontSize: 10 }} />
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={activity.title}
-                      secondary={
-                        <Box component="span" sx={{ display: 'block' }}>
-                          <Box component="span" sx={{ display: 'block', mb: 0.5 }}>
-                            {activity.description}
-                          </Box>
-                          <Box component="span" sx={{ display: 'block', fontSize: '0.75rem', opacity: 0.7 }}>
-                            {activity.time}
-                          </Box>
-                        </Box>
-                      }
-                      primaryTypographyProps={{
-                        variant: 'body2',
-                        fontWeight: 600,
-                      }}
-                      secondaryTypographyProps={{
-                        component: 'span',
-                        variant: 'body2',
-                        color: 'text.secondary',
-                      }}
-                    />
-                  </ListItem>
-                  {index < recentActivities.length - 1 && <Divider component="li" />}
-                </React.Fragment>
-              ))}
-            </List>
+                        secondaryTypographyProps={{
+                          component: 'span',
+                          variant: 'body2',
+                          color: 'text.secondary',
+                        }}
+                      />
+                    </ListItem>
+                    {index < activities.length - 1 && <Divider component="li" />}
+                  </React.Fragment>
+                ))}
+              </List>
+            )}
           </Paper>
         </Grid>
 
-        {/* Quick Actions */}
-        <Grid size={{ xs: 12 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>
-            Quick Actions
-          </Typography>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 6 }}>
-          <QuickActionCard
-            title="Add Item"
-            description="Register a new item"
-            icon={<Add sx={{ fontSize: 24 }} />}
-            href="/dashboard/master/item"
-            color={theme.palette.primary.main}
-          />
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 6 }}>
-          <QuickActionCard
-            title="New Customer"
-            description="Add a customer"
-            icon={<People sx={{ fontSize: 24 }} />}
-            href="/dashboard/master/customers"
-            color={theme.palette.success.main}
-          />
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 6 }}>
-          <QuickActionCard
-            title="Add Supplier"
-            description="Register a supplier"
-            icon={<LocalShipping sx={{ fontSize: 24 }} />}
-            href="/dashboard/master/supplier"
-            color={theme.palette.warning.main}
-          />
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 6 }}>
-          <QuickActionCard
-            title="Generate Report"
-            description="Create reports"
-            icon={<Description sx={{ fontSize: 24 }} />}
-            href="/dashboard/customs/incoming"
-            color={theme.palette.info.main}
-          />
-        </Grid>
       </Grid>
     </Box>
   );

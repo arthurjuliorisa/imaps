@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/app/components/ToastProvider';
 import { Box, Stack } from '@mui/material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
@@ -8,45 +9,39 @@ import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { MutationReportTable, MutationData } from '@/app/components/customs/MutationReportTable';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 
-// Sample data - Replace with actual API call
-const sampleData: MutationData[] = [
-  {
-    id: 1,
-    itemCode: 'FG-001',
-    itemName: 'Finished Product A',
-    unit: 'PCS',
-    beginning: 3000,
-    in: 500,
-    out: 400,
-    adjustment: 0,
-    ending: 3100,
-    stockOpname: 3100,
-    variant: 0,
-    remarks: 'Normal production cycle',
-  },
-  {
-    id: 2,
-    itemCode: 'FG-002',
-    itemName: 'Finished Product B',
-    unit: 'PCS',
-    beginning: 1500,
-    in: 300,
-    out: 350,
-    adjustment: 10,
-    ending: 1460,
-    stockOpname: 1450,
-    variant: -10,
-    remarks: 'Minor damage during storage',
-  },
-];
-
 export default function ProductionMutationPage() {
+  const toast = useToast();
   const [startDate, setStartDate] = useState('2024-01-01');
   const [endDate, setEndDate] = useState('2024-12-31');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [data, setData] = useState<MutationData[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const data = sampleData; // Replace with filtered data from API
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
+      });
+
+      const response = await fetch(`/api/customs/production?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch data');
+      const result = await response.json();
+      setData(result);
+    } catch (error) {
+      console.error('Error fetching production mutation data:', error);
+      toast.error('Failed to load production mutation data');
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [startDate, endDate, toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -146,7 +141,7 @@ export default function ProductionMutationPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={data.length === 0}
+              disabled={data.length === 0 || loading}
             />
           </Box>
         </Stack>
@@ -160,6 +155,7 @@ export default function ProductionMutationPage() {
         onRowsPerPageChange={handleChangeRowsPerPage}
         onEdit={handleEdit}
         onView={handleView}
+        loading={loading}
       />
     </ReportLayout>
   );

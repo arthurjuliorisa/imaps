@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/app/components/ToastProvider';
 import {
   Box,
   Table,
@@ -16,6 +17,7 @@ import {
   alpha,
   useTheme,
   Chip,
+  CircularProgress,
 } from '@mui/material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
@@ -38,48 +40,41 @@ interface OutgoingGoodsData {
   amount: number;
 }
 
-// Sample data - Replace with actual API call
-const sampleData: OutgoingGoodsData[] = [
-  {
-    id: 1,
-    docCode: 'BC-3.0',
-    registerNumber: 'OUT-2024-001',
-    registerDate: '2024-01-25',
-    docNumber: 'EXP-001',
-    docDate: '2024-01-20',
-    recipient: 'ABC Corp Singapore',
-    itemCode: 'FG-001',
-    itemName: 'Finished Product A',
-    uom: 'PCS',
-    qty: 200,
-    currency: 'USD',
-    amount: 8000,
-  },
-  {
-    id: 2,
-    docCode: 'BC-3.0',
-    registerNumber: 'OUT-2024-002',
-    registerDate: '2024-02-05',
-    docNumber: 'EXP-002',
-    docDate: '2024-02-01',
-    recipient: 'XYZ Trading Malaysia',
-    itemCode: 'FG-002',
-    itemName: 'Finished Product B',
-    uom: 'PCS',
-    qty: 150,
-    currency: 'USD',
-    amount: 6000,
-  },
-];
-
 export default function OutgoingGoodsReportPage() {
   const theme = useTheme();
+  const toast = useToast();
   const [startDate, setStartDate] = useState('2024-01-01');
   const [endDate, setEndDate] = useState('2024-12-31');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [data, setData] = useState<OutgoingGoodsData[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const data = sampleData; // Replace with filtered data from API
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
+      });
+
+      const response = await fetch(`/api/customs/outgoing?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch data');
+      const result = await response.json();
+      // API returns { data: [...], pagination: {...} }
+      setData(Array.isArray(result.data) ? result.data : []);
+    } catch (error) {
+      console.error('Error fetching outgoing goods data:', error);
+      toast.error('Failed to load outgoing goods data');
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [startDate, endDate, toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -174,45 +169,50 @@ export default function OutgoingGoodsReportPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={data.length === 0}
+              disabled={data.length === 0 || loading}
             />
           </Box>
         </Stack>
       }
     >
-      <TableContainer>
-        <Table sx={{ minWidth: 650 }} aria-label="outgoing goods report table">
-          <TableHead>
-            <TableRow
-              sx={{
-                bgcolor: alpha(theme.palette.primary.main, 0.08),
-              }}
-            >
-              <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Doc Code</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Register Number</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Register Date</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Doc Number</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Doc Date</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Recipient</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>UOM</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right">Qty</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right">Amount</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {paginatedData.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={13} align="center" sx={{ py: 8 }}>
-                  <Typography variant="body1" color="text.secondary">
-                    No data available for the selected date range
-                  </Typography>
-                </TableCell>
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 8 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer>
+          <Table sx={{ minWidth: 650 }} aria-label="outgoing goods report table">
+            <TableHead>
+              <TableRow
+                sx={{
+                  bgcolor: alpha(theme.palette.primary.main, 0.08),
+                }}
+              >
+                <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Doc Code</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Register Number</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Register Date</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Doc Number</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Doc Date</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Recipient</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>UOM</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Qty</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Amount</TableCell>
               </TableRow>
-            ) : (
+            </TableHead>
+            <TableBody>
+              {paginatedData.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={13} align="center" sx={{ py: 8 }}>
+                    <Typography variant="body1" color="text.secondary">
+                      No records found for the selected date range
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
               paginatedData.map((row, index) => (
                 <TableRow
                   key={row.id}
@@ -249,19 +249,22 @@ export default function OutgoingGoodsReportPage() {
                   </TableCell>
                 </TableRow>
               ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-      <TablePagination
-        rowsPerPageOptions={[5, 10, 25, 50]}
-        component="div"
-        count={data.length}
-        rowsPerPage={rowsPerPage}
-        page={page}
-        onPageChange={handleChangePage}
-        onRowsPerPageChange={handleChangeRowsPerPage}
-      />
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+      {!loading && (
+        <TablePagination
+          rowsPerPageOptions={[5, 10, 25, 50]}
+          component="div"
+          count={data.length}
+          rowsPerPage={rowsPerPage}
+          page={page}
+          onPageChange={handleChangePage}
+          onRowsPerPageChange={handleChangeRowsPerPage}
+        />
+      )}
     </ReportLayout>
   );
 }

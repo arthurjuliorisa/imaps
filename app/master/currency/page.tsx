@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -17,6 +17,8 @@ import {
 } from '@mui/material';
 import { Add, Save, Close } from '@mui/icons-material';
 import { DataTable, Column } from '@/app/components/DataTable';
+import { useToast } from '@/app/components/ToastProvider';
+import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 
 interface Currency {
   id: string;
@@ -31,12 +33,10 @@ const columns: Column[] = [
 
 export default function CurrencyPage() {
   const theme = useTheme();
-  const [currencies, setCurrencies] = useState<Currency[]>([
-    { id: '1', code: 'USD', name: 'US Dollar' },
-    { id: '2', code: 'IDR', name: 'Indonesian Rupiah' },
-    { id: '3', code: 'EUR', name: 'Euro' },
-  ]);
+  const toast = useToast();
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCurrency, setEditingCurrency] = useState<Currency | null>(null);
@@ -44,6 +44,28 @@ export default function CurrencyPage() {
     code: '',
     name: '',
   });
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [currencyToDelete, setCurrencyToDelete] = useState<Currency | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const fetchCurrencies = useCallback(async () => {
+    setDataLoading(true);
+    try {
+      const response = await fetch('/api/master/currency');
+      if (!response.ok) throw new Error('Failed to fetch currencies');
+      const data = await response.json();
+      setCurrencies(data);
+    } catch (err) {
+      console.error('Error fetching currencies:', err);
+      toast.error('Failed to load currencies');
+    } finally {
+      setDataLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    fetchCurrencies();
+  }, [fetchCurrencies]);
 
   const handleAdd = () => {
     setEditingCurrency(null);
@@ -57,26 +79,77 @@ export default function CurrencyPage() {
     setDialogOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this currency?')) return;
-    setCurrencies(currencies.filter((c) => c.id !== id));
+  const handleDelete = (currency: Currency) => {
+    setCurrencyToDelete(currency);
+    setConfirmDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!currencyToDelete) return;
+
+    setDeleteLoading(true);
+    try {
+      const response = await fetch(`/api/master/currency/${currencyToDelete.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to delete currency');
+      }
+
+      await fetchCurrencies();
+      toast.success(`Currency "${currencyToDelete.name}" deleted successfully!`);
+      setConfirmDialogOpen(false);
+      setCurrencyToDelete(null);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete currency';
+      toast.error(errorMessage);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setConfirmDialogOpen(false);
+    setCurrencyToDelete(null);
   };
 
   const handleSave = async () => {
-    if (editingCurrency) {
-      setCurrencies(
-        currencies.map((c) =>
-          c.id === editingCurrency.id ? { ...c, ...formData } : c
-        )
-      );
-    } else {
-      const newCurrency = {
-        id: Date.now().toString(),
-        ...formData,
-      };
-      setCurrencies([...currencies, newCurrency]);
+    if (!formData.code || !formData.name) {
+      toast.error('Please fill in all required fields');
+      return;
     }
-    setDialogOpen(false);
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const url = editingCurrency
+        ? `/api/master/currency/${editingCurrency.id}`
+        : '/api/master/currency';
+
+      const response = await fetch(url, {
+        method: editingCurrency ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to save currency');
+      }
+
+      await fetchCurrencies();
+      setDialogOpen(false);
+      toast.success(editingCurrency ? 'Currency updated successfully!' : 'Currency created successfully!');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save currency';
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -118,16 +191,21 @@ export default function CurrencyPage() {
       <DataTable
         columns={columns}
         data={currencies}
-        loading={loading}
+        loading={dataLoading}
         onEdit={handleEdit}
         onDelete={handleDelete}
       />
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={dialogOpen} onClose={() => !loading && setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
           {editingCurrency ? 'Edit Currency' : 'Add New Currency'}
         </DialogTitle>
         <DialogContent>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
           <Stack spacing={2} sx={{ mt: 2 }}>
             <TextField
               label="Code"
@@ -136,6 +214,7 @@ export default function CurrencyPage() {
               required
               fullWidth
               placeholder="e.g., USD, IDR"
+              disabled={loading}
             />
             <TextField
               label="Name"
@@ -144,18 +223,31 @@ export default function CurrencyPage() {
               required
               fullWidth
               placeholder="e.g., US Dollar"
+              disabled={loading}
             />
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)} startIcon={<Close />}>
+          <Button onClick={() => setDialogOpen(false)} startIcon={<Close />} disabled={loading}>
             Cancel
           </Button>
-          <Button onClick={handleSave} variant="contained" startIcon={<Save />}>
-            Save
+          <Button onClick={handleSave} variant="contained" startIcon={<Save />} disabled={loading}>
+            {loading ? 'Saving...' : 'Save'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDialogOpen}
+        title="Delete Currency"
+        message={`Are you sure you want to delete "${currencyToDelete?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+        severity="error"
+        loading={deleteLoading}
+      />
     </Box>
   );
 }

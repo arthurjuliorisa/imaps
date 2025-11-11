@@ -232,7 +232,7 @@ export default function LoginPage() {
                 mb: 1,
               }}
             >
-              Welcome to iMAPS for Ventora
+              Welcome to iMAPS for Polygroup
             </Typography>
             <Typography
               variant="body2"

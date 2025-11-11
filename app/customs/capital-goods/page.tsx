@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/app/components/ToastProvider';
 import { Box, Stack } from '@mui/material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
@@ -8,59 +9,39 @@ import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { MutationReportTable, MutationData } from '@/app/components/customs/MutationReportTable';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 
-// Sample data - Replace with actual API call
-const sampleData: MutationData[] = [
-  {
-    id: 1,
-    itemCode: 'CAP-001',
-    itemName: 'CNC Machine',
-    unit: 'UNIT',
-    beginning: 5,
-    in: 1,
-    out: 0,
-    adjustment: 0,
-    ending: 6,
-    stockOpname: 6,
-    variant: 0,
-    remarks: 'New machine purchased',
-  },
-  {
-    id: 2,
-    itemCode: 'CAP-002',
-    itemName: 'Forklift',
-    unit: 'UNIT',
-    beginning: 3,
-    in: 0,
-    out: 1,
-    adjustment: 0,
-    ending: 2,
-    stockOpname: 2,
-    variant: 0,
-    remarks: 'Old unit sold',
-  },
-  {
-    id: 3,
-    itemCode: 'CAP-003',
-    itemName: 'Welding Machine',
-    unit: 'UNIT',
-    beginning: 8,
-    in: 2,
-    out: 0,
-    adjustment: 0,
-    ending: 10,
-    stockOpname: 10,
-    variant: 0,
-    remarks: 'Capacity expansion',
-  },
-];
-
 export default function CapitalGoodsMutationPage() {
+  const toast = useToast();
   const [startDate, setStartDate] = useState('2024-01-01');
   const [endDate, setEndDate] = useState('2024-12-31');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [data, setData] = useState<MutationData[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const data = sampleData; // Replace with filtered data from API
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
+      });
+
+      const response = await fetch(`/api/customs/capital-goods?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch data');
+      const result = await response.json();
+      setData(result);
+    } catch (error) {
+      console.error('Error fetching capital goods mutation data:', error);
+      toast.error('Failed to load capital goods mutation data');
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [startDate, endDate, toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -160,7 +141,7 @@ export default function CapitalGoodsMutationPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={data.length === 0}
+              disabled={data.length === 0 || loading}
             />
           </Box>
         </Stack>
@@ -174,6 +155,7 @@ export default function CapitalGoodsMutationPage() {
         onRowsPerPageChange={handleChangeRowsPerPage}
         onEdit={handleEdit}
         onView={handleView}
+        loading={loading}
       />
     </ReportLayout>
   );
