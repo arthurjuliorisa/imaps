@@ -279,7 +279,7 @@ export default function DashboardPage() {
                 variant="outlined"
                 size="small"
                 component={Link}
-                href="/dashboard/master/item"
+                href="/master/item"
               >
                 View All
               </Button>
