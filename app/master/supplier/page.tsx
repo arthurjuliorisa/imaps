@@ -212,7 +212,16 @@ export default function SupplierPage() {
         onDelete={handleDelete}
       />
 
-      <Dialog open={dialogOpen} onClose={() => !loading && setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={dialogOpen}
+        onClose={(_event, reason) => {
+          if (loading) return;
+          if (reason === 'backdropClick' || reason === 'escapeKeyDown') return;
+          setDialogOpen(false);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>
           {editingSupplier ? 'Edit Supplier' : 'Add New Supplier'}
         </DialogTitle>

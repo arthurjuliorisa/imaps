@@ -234,7 +234,16 @@ export default function UsersPage() {
         onDelete={handleDelete}
       />
 
-      <Dialog open={dialogOpen} onClose={() => !loading && setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={dialogOpen}
+        onClose={(_event, reason) => {
+          if (loading) return;
+          if (reason === 'backdropClick' || reason === 'escapeKeyDown') return;
+          setDialogOpen(false);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>
           {editingUser ? 'Edit User' : 'Add New User'}
         </DialogTitle>

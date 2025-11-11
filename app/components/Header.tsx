@@ -47,7 +47,7 @@ export function Header({ onMenuClick, sidebarCollapsed }: HeaderProps) {
     setAnchorEl(event.currentTarget);
   };
 
-  const handleClose = () => {
+  const handleClose = (_event?: React.SyntheticEvent) => {
     setAnchorEl(null);
   };
 

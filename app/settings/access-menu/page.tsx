@@ -191,7 +191,7 @@ export default function AccessMenuPage() {
             fullWidth
             options={users}
             value={selectedUser}
-            onChange={(event, newValue) => setSelectedUser(newValue)}
+            onChange={(_event, newValue) => setSelectedUser(newValue)}
             isOptionEqualToValue={(option, value) => option.id === value.id}
             loading={usersLoading}
             renderInput={(params) => (

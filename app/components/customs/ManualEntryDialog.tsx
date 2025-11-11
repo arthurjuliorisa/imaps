@@ -219,7 +219,7 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
               options={items}
               loading={loadingItems}
               getOptionLabel={(option) => `${option.code} - ${option.name}`}
-              onChange={(event, newValue) => handleItemSelect(newValue)}
+              onChange={(_event, newValue) => handleItemSelect(newValue)}
               value={items.find((item) => item.id === formData.itemId) || null}
               renderInput={(params) => (
                 <TextField
@@ -244,7 +244,7 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
             <Autocomplete
               options={uoms}
               value={uoms.find((u) => u.id === formData.uomId) || null}
-              onChange={(event, newValue) =>
+              onChange={(_event, newValue) =>
                 setFormData((prev) => ({
                   ...prev,
                   uomId: newValue?.id || '',
