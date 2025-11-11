@@ -51,8 +51,8 @@ export default function ScrapMutationPage() {
   const [endDate, setEndDate] = useState('2024-12-31');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [data, setData] = useState<MutationData[]>(sampleData);
-  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<MutationData[]>([]);
+  const [loading, setLoading] = useState(true);
   const [manualEntryOpen, setManualEntryOpen] = useState(false);
   const [excelImportOpen, setExcelImportOpen] = useState(false);
 
@@ -328,6 +328,7 @@ export default function ScrapMutationPage() {
         onRowsPerPageChange={handleChangeRowsPerPage}
         onEdit={handleEdit}
         onView={handleView}
+        loading={loading}
       />
 
       {/* Manual Entry Dialog */}
