@@ -228,7 +228,7 @@ export default function LoginPage() {
               component="h1"
               sx={{
                 fontWeight: 600,
-                color: 'text.primary',
+                color: (theme) => theme.palette.text.primary,
                 mb: 1,
               }}
             >
@@ -237,7 +237,7 @@ export default function LoginPage() {
             <Typography
               variant="body2"
               sx={{
-                color: 'text.secondary',
+                color: (theme) => theme.palette.text.secondary,
                 mb: 4,
               }}
             >
@@ -263,9 +263,20 @@ export default function LoginPage() {
                   helperText={!!error && !email ? 'Email is required' : ''}
                   autoComplete="email"
                   autoFocus
+                  InputLabelProps={{
+                    sx: {
+                      color: (theme) => theme.palette.text.primary,
+                      '&.Mui-focused': {
+                        color: (theme) => theme.palette.primary.main,
+                      },
+                    },
+                  }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       bgcolor: 'white',
+                      '& input': {
+                        color: (theme) => theme.palette.text.primary,
+                      },
                     },
                   }}
                 />
@@ -277,9 +288,20 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="current-password"
+                  InputLabelProps={{
+                    sx: {
+                      color: (theme) => theme.palette.text.primary,
+                      '&.Mui-focused': {
+                        color: (theme) => theme.palette.primary.main,
+                      },
+                    },
+                  }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       bgcolor: 'white',
+                      '& input': {
+                        color: (theme) => theme.palette.text.primary,
+                      },
                     },
                   }}
                   slotProps={{
@@ -309,7 +331,10 @@ export default function LoginPage() {
                     />
                   }
                   label={
-                    <Typography variant="body2" color="text.primary">
+                    <Typography
+                      variant="body2"
+                      sx={{ color: (theme) => theme.palette.text.primary }}
+                    >
                       Remember Me
                     </Typography>
                   }

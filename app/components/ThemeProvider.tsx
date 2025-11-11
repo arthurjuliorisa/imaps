@@ -21,21 +21,17 @@ const ThemeContext = createContext<ThemeContextType>({
 export const useThemeMode = () => useContext(ThemeContext);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setMode] = useState<ThemeMode>('light');
-  const [mounted, setMounted] = useState(false);
-
-  // Load theme preference from localStorage on mount
-  useEffect(() => {
-    setMounted(true);
-    const savedMode = localStorage.getItem('themeMode') as ThemeMode;
-    if (savedMode) {
-      setMode(savedMode);
-    } else {
+  // Initialize mode from localStorage synchronously
+  const [mode, setMode] = useState<ThemeMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('themeMode') as ThemeMode;
+      if (saved) return saved;
       // Check system preference
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      if (prefersDark) setMode('dark');
+      return prefersDark ? 'dark' : 'light';
     }
-  }, []);
+    return 'light';
+  });
 
   const toggleTheme = () => {
     setMode((prevMode) => {
@@ -52,7 +48,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       <ThemeContext.Provider value={{ mode, toggleTheme }}>
         <MuiThemeProvider theme={theme}>
           <CssBaseline />
-          {mounted ? children : null}
+          {children}
         </MuiThemeProvider>
       </ThemeContext.Provider>
     </EmotionRegistry>
