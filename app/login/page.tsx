@@ -93,7 +93,7 @@ export default function LoginPage() {
         sx={{
           flex: { xs: 'none', md: '1 1 58%' },
           position: 'relative',
-          bgcolor: '#FFFFFF',
+          bgcolor: (theme) => theme.palette.mode === 'dark' ? 'grey.900' : 'grey.50',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -153,7 +153,7 @@ export default function LoginPage() {
                   sx={{
                     width: '150px',
                     height: '200px',
-                    bgcolor: '#FF8B7B',
+                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'primary.dark' : '#FF8B7B',
                     borderRadius: '50% 50% 0 0',
                     opacity: 0.3,
                   }}
@@ -162,7 +162,7 @@ export default function LoginPage() {
                   sx={{
                     width: '150px',
                     height: '200px',
-                    bgcolor: '#FF8B7B',
+                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'primary.dark' : '#FF8B7B',
                     borderRadius: '50% 50% 0 0',
                     opacity: 0.3,
                   }}
@@ -171,7 +171,7 @@ export default function LoginPage() {
                   sx={{
                     width: '150px',
                     height: '200px',
-                    bgcolor: '#FF8B7B',
+                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'primary.dark' : '#FF8B7B',
                     borderRadius: '50% 50% 0 0',
                     opacity: 0.3,
                   }}
@@ -199,7 +199,7 @@ export default function LoginPage() {
                     position: 'absolute',
                     width: '50px',
                     height: '50px',
-                    border: '2px solid #E0E0E0',
+                    border: (theme) => `2px solid ${theme.palette.mode === 'dark' ? theme.palette.grey[700] : '#E0E0E0'}`,
                     borderRadius: '8px',
                     opacity: 0.5,
                     top: position.top,
@@ -273,9 +273,18 @@ export default function LoginPage() {
                   }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
-                      bgcolor: 'white',
+                      bgcolor: (theme) => theme.palette.mode === 'dark' ? 'grey.800' : 'white',
                       '& input': {
                         color: (theme) => theme.palette.text.primary,
+                      },
+                      '& fieldset': {
+                        borderColor: (theme) => theme.palette.mode === 'dark' ? 'grey.700' : 'rgba(0, 0, 0, 0.23)',
+                      },
+                      '&:hover fieldset': {
+                        borderColor: (theme) => theme.palette.mode === 'dark' ? 'grey.600' : 'rgba(0, 0, 0, 0.87)',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: (theme) => theme.palette.primary.main,
                       },
                     },
                   }}
@@ -298,9 +307,18 @@ export default function LoginPage() {
                   }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
-                      bgcolor: 'white',
+                      bgcolor: (theme) => theme.palette.mode === 'dark' ? 'grey.800' : 'white',
                       '& input': {
                         color: (theme) => theme.palette.text.primary,
+                      },
+                      '& fieldset': {
+                        borderColor: (theme) => theme.palette.mode === 'dark' ? 'grey.700' : 'rgba(0, 0, 0, 0.23)',
+                      },
+                      '&:hover fieldset': {
+                        borderColor: (theme) => theme.palette.mode === 'dark' ? 'grey.600' : 'rgba(0, 0, 0, 0.87)',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: (theme) => theme.palette.primary.main,
                       },
                     },
                   }}
