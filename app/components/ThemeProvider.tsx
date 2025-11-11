@@ -21,17 +21,19 @@ const ThemeContext = createContext<ThemeContextType>({
 export const useThemeMode = () => useContext(ThemeContext);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Initialize mode from localStorage synchronously
-  const [mode, setMode] = useState<ThemeMode>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('themeMode') as ThemeMode;
-      if (saved) return saved;
-      // Check system preference
+  const [mode, setMode] = useState<ThemeMode>('light');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const saved = localStorage.getItem('themeMode') as ThemeMode;
+    if (saved) {
+      setMode(saved);
+    } else {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      return prefersDark ? 'dark' : 'light';
+      setMode(prefersDark ? 'dark' : 'light');
     }
-    return 'light';
-  });
+  }, []);
 
   const toggleTheme = () => {
     setMode((prevMode) => {
@@ -42,6 +44,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const theme = React.useMemo(() => getTheme(mode), [mode]);
+
+  // Prevent flash by rendering a consistent state during hydration
+  if (!mounted) {
+    return (
+      <EmotionRegistry options={{ key: 'mui' }}>
+        <ThemeContext.Provider value={{ mode: 'light', toggleTheme }}>
+          <MuiThemeProvider theme={getTheme('light')}>
+            <CssBaseline />
+            {children}
+          </MuiThemeProvider>
+        </ThemeContext.Provider>
+      </EmotionRegistry>
+    );
+  }
 
   return (
     <EmotionRegistry options={{ key: 'mui' }}>

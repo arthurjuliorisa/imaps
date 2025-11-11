@@ -84,7 +84,7 @@ export default function LoginPage() {
       sx={{
         minHeight: '100vh',
         display: 'flex',
-        bgcolor: '#FAFAFA',
+        bgcolor: 'background.default',
         flexDirection: { xs: 'column', md: 'row' },
       }}
     >
@@ -219,7 +219,7 @@ export default function LoginPage() {
           alignItems: 'center',
           justifyContent: 'center',
           p: { xs: 3, md: 6 },
-          bgcolor: '#FAFAFA',
+          bgcolor: 'background.default',
         }}
       >
           <Box sx={{ width: '100%', maxWidth: 450, px: 2 }}>
@@ -349,11 +349,11 @@ export default function LoginPage() {
                   startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <LockOutlined />}
                   sx={{
                     py: 1.5,
-                    bgcolor: '#5865F2',
+                    bgcolor: 'primary.main',
                     textTransform: 'uppercase',
                     fontWeight: 600,
                     '&:hover': {
-                      bgcolor: '#4752C4',
+                      bgcolor: 'primary.dark',
                     },
                   }}
                 >
