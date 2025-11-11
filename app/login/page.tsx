@@ -228,7 +228,7 @@ export default function LoginPage() {
               component="h1"
               sx={{
                 fontWeight: 600,
-                color: '#2C3E50',
+                color: 'text.primary',
                 mb: 1,
               }}
             >
@@ -237,7 +237,7 @@ export default function LoginPage() {
             <Typography
               variant="body2"
               sx={{
-                color: '#7F8C8D',
+                color: 'text.secondary',
                 mb: 4,
               }}
             >
@@ -305,11 +305,11 @@ export default function LoginPage() {
                     <Checkbox
                       checked={rememberMe}
                       onChange={(e) => setRememberMe(e.target.checked)}
-                      sx={{ color: '#7F8C8D' }}
+                      color="primary"
                     />
                   }
                   label={
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" color="text.primary">
                       Remember Me
                     </Typography>
                   }
