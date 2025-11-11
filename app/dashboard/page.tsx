@@ -161,43 +161,68 @@ export default function DashboardPage() {
 
     try {
       const [metricsRes, activitiesRes, inventoryRes] = await Promise.all([
-        fetch('/api/dashboard/metrics'),
-        fetch('/api/dashboard/activities'),
-        fetch('/api/dashboard/inventory-status')
+        fetch('/api/dashboard/metrics').catch(err => {
+          console.error('Metrics fetch failed:', err);
+          return null;
+        }),
+        fetch('/api/dashboard/activities').catch(err => {
+          console.error('Activities fetch failed:', err);
+          return null;
+        }),
+        fetch('/api/dashboard/inventory-status').catch(err => {
+          console.error('Inventory fetch failed:', err);
+          return null;
+        })
       ]);
 
-      if (metricsRes.ok) {
-        const metricsData = await metricsRes.json();
-        setMetrics({
-          totalItems: metricsData.totalItems || 0,
-          totalScrap: metricsData.totalScrap || 0,
-          totalRawMaterials: metricsData.totalRawMaterials || 0,
-          totalProduction: metricsData.totalProduction || 0,
-          totalCapitalGoods: metricsData.totalCapitalGoods || 0,
-          totalCustomers: metricsData.totalCustomers || 0,
-          totalSuppliers: metricsData.totalSuppliers || 0,
-          totalUsers: metricsData.totalUsers || 0,
-          incomingDocuments: metricsData.incomingDocuments || 0,
-          outgoingDocuments: metricsData.outgoingDocuments || 0,
-          totalReports: metricsData.totalReports || 0,
-          itemsTrend: metricsData.itemsTrend,
-          customersTrend: metricsData.customersTrend,
-          suppliersTrend: metricsData.suppliersTrend,
-          reportsTrend: metricsData.reportsTrend,
-        });
+      if (metricsRes?.ok) {
+        try {
+          const metricsData = await metricsRes.json();
+          setMetrics({
+            totalItems: metricsData.totalItems || 0,
+            totalScrap: metricsData.totalScrap || 0,
+            totalRawMaterials: metricsData.totalRawMaterials || 0,
+            totalProduction: metricsData.totalProduction || 0,
+            totalCapitalGoods: metricsData.totalCapitalGoods || 0,
+            totalCustomers: metricsData.totalCustomers || 0,
+            totalSuppliers: metricsData.totalSuppliers || 0,
+            totalUsers: metricsData.totalUsers || 0,
+            incomingDocuments: metricsData.incomingDocuments || 0,
+            outgoingDocuments: metricsData.outgoingDocuments || 0,
+            totalReports: metricsData.totalReports || 0,
+            itemsTrend: metricsData.itemsTrend,
+            customersTrend: metricsData.customersTrend,
+            suppliersTrend: metricsData.suppliersTrend,
+            reportsTrend: metricsData.reportsTrend,
+          });
+        } catch (err) {
+          console.error('Error parsing metrics data:', err);
+        }
       }
-      if (activitiesRes.ok) {
-        const activitiesData = await activitiesRes.json();
-        setActivities(activitiesData.activities || activitiesData || []);
+      setMetricsLoading(false);
+
+      if (activitiesRes?.ok) {
+        try {
+          const activitiesData = await activitiesRes.json();
+          setActivities(activitiesData.activities || activitiesData || []);
+        } catch (err) {
+          console.error('Error parsing activities data:', err);
+        }
       }
-      if (inventoryRes.ok) {
-        const inventoryData = await inventoryRes.json();
-        setInventory(inventoryData.inventoryStatus || inventoryData);
+      setActivitiesLoading(false);
+
+      if (inventoryRes?.ok) {
+        try {
+          const inventoryData = await inventoryRes.json();
+          setInventory(inventoryData);
+        } catch (err) {
+          console.error('Error parsing inventory data:', err);
+        }
       }
+      setInventoryLoading(false);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
       toast.error('Failed to load dashboard data');
-    } finally {
       setMetricsLoading(false);
       setActivitiesLoading(false);
       setInventoryLoading(false);
