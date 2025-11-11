@@ -1,39 +1,33 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Drawer,
   List,
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Collapse,
   Toolbar,
   Box,
   Typography,
   Divider,
   alpha,
   useTheme,
-  Chip,
   IconButton,
   useMediaQuery,
   Tooltip,
+  ListSubheader,
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
-  ExpandLess,
-  ExpandMore,
-  Inventory as InventoryIcon,
   Description as DescriptionIcon,
   Settings as SettingsIcon,
   Category as CategoryIcon,
   People as PeopleIcon,
-  Store as StoreIcon,
   LocalShipping as LocalShippingIcon,
   AttachMoney as AttachMoneyIcon,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
-  Menu as MenuIcon,
 } from '@mui/icons-material';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -45,20 +39,28 @@ const DRAWER_WIDTH_COLLAPSED = 72;
 interface MenuItem {
   title: string;
   icon: React.ReactNode;
-  path?: string;
-  children?: MenuItem[];
+  path: string;
 }
 
-const menuItems: MenuItem[] = [
+interface MenuSection {
+  title?: string;
+  items: MenuItem[];
+}
+
+// Flattened menu structure with sections
+const menuSections: MenuSection[] = [
   {
-    title: 'Dashboard',
-    icon: <DashboardIcon />,
-    path: '/dashboard',
+    items: [
+      {
+        title: 'Dashboard',
+        icon: <DashboardIcon />,
+        path: '/dashboard',
+      },
+    ],
   },
   {
     title: 'Master',
-    icon: <InventoryIcon />,
-    children: [
+    items: [
       { title: 'Item', icon: <CategoryIcon />, path: '/master/item' },
       { title: 'UOM', icon: <CategoryIcon />, path: '/master/uom' },
       { title: 'Currency', icon: <AttachMoneyIcon />, path: '/master/currency' },
@@ -68,8 +70,7 @@ const menuItems: MenuItem[] = [
   },
   {
     title: 'Customs Report',
-    icon: <DescriptionIcon />,
-    children: [
+    items: [
       {
         title: 'Laporan Pemasukan Barang',
         icon: <DescriptionIcon />,
@@ -109,8 +110,7 @@ const menuItems: MenuItem[] = [
   },
   {
     title: 'Settings',
-    icon: <SettingsIcon />,
-    children: [
+    items: [
       { title: 'User Management', icon: <PeopleIcon />, path: '/settings/users' },
       { title: 'Access Menu', icon: <SettingsIcon />, path: '/settings/access-menu' },
     ],
@@ -126,82 +126,20 @@ interface SidebarProps {
 
 export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
-  const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  const handleToggle = (title: string) => {
-    setExpandedItems((prev) =>
-      prev.includes(title) ? prev.filter((item) => item !== title) : [...prev, title]
-    );
-  };
-
-  const renderMenuItem = (item: MenuItem, depth: number = 0) => {
-    const isExpanded = expandedItems.includes(item.title);
+  const renderMenuItem = (item: MenuItem) => {
     const isActive = item.path === pathname;
-    // Check if any child is active to highlight parent
-    const hasActiveChild = item.children?.some(child => child.path === pathname);
-
-    if (item.children) {
-      return (
-        <React.Fragment key={item.title}>
-          <Tooltip title={collapsed ? item.title : ''} placement="right">
-            <ListItemButton
-              onClick={() => !collapsed && handleToggle(item.title)}
-              sx={{
-                pl: collapsed ? 1.5 : 2 + depth * 2,
-                borderRadius: 1,
-                mx: 1,
-                my: 0.25,
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                '&:hover': {
-                  bgcolor: alpha(theme.palette.primary.main, 0.08),
-                },
-              }}
-            >
-              <ListItemIcon
-                sx={{
-                  minWidth: collapsed ? 'unset' : 40,
-                  color: (isExpanded || hasActiveChild) ? theme.palette.primary.main : 'inherit',
-                  justifyContent: 'center'
-                }}
-              >
-                {item.icon}
-              </ListItemIcon>
-              {!collapsed && (
-                <>
-                  <ListItemText
-                    primary={item.title}
-                    primaryTypographyProps={{
-                      fontWeight: (isExpanded || hasActiveChild) ? 600 : 500,
-                      fontSize: '0.875rem',
-                      color: hasActiveChild ? theme.palette.primary.main : 'inherit',
-                    }}
-                  />
-                  {isExpanded ? <ExpandLess /> : <ExpandMore />}
-                </>
-              )}
-            </ListItemButton>
-          </Tooltip>
-          {!collapsed && (
-            <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-              <List component="div" disablePadding sx={{ py: 0.5 }}>
-                {item.children.map((child) => renderMenuItem(child, depth + 1))}
-              </List>
-            </Collapse>
-          )}
-        </React.Fragment>
-      );
-    }
 
     return (
       <Tooltip key={item.title} title={collapsed ? item.title : ''} placement="right">
         <ListItemButton
           component={Link}
-          href={item.path || '#'}
+          href={item.path}
           selected={isActive}
           sx={{
-            pl: collapsed ? 1.5 : 2 + depth * 2,
+            pl: collapsed ? 1.5 : 2,
             borderRadius: 1,
             mx: 1,
             my: 0.25,
@@ -244,6 +182,49 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
           )}
         </ListItemButton>
       </Tooltip>
+    );
+  };
+
+  const renderSectionDivider = (title: string) => {
+    if (collapsed) {
+      return (
+        <Divider
+          key={`divider-${title}`}
+          sx={{
+            my: 1.5,
+            mx: 1,
+            borderColor: theme.palette.divider,
+          }}
+        />
+      );
+    }
+
+    return (
+      <Divider
+        key={`divider-${title}`}
+        textAlign="left"
+        sx={{
+          my: 1.5,
+          mx: 1,
+          '&::before, &::after': {
+            borderColor: theme.palette.divider,
+          },
+        }}
+      >
+        <Typography
+          variant="caption"
+          sx={{
+            color: theme.palette.text.secondary,
+            fontWeight: 600,
+            fontSize: '0.75rem',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            px: 1,
+          }}
+        >
+          {title}
+        </Typography>
+      </Divider>
     );
   };
 
@@ -320,7 +301,12 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
       </Toolbar>
       <Box sx={{ py: 2, overflowY: 'auto', overflowX: 'hidden', height: 'calc(100vh - 88px)' }}>
         <List component="nav" sx={{ px: collapsed ? 0.5 : 0.5 }}>
-          {menuItems.map((item) => renderMenuItem(item))}
+          {menuSections.map((section, sectionIndex) => (
+            <React.Fragment key={`section-${sectionIndex}`}>
+              {section.title && renderSectionDivider(section.title)}
+              {section.items.map((item) => renderMenuItem(item))}
+            </React.Fragment>
+          ))}
         </List>
       </Box>
     </>
