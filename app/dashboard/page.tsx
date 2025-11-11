@@ -209,9 +209,9 @@ export default function DashboardPage() {
   }, [fetchAllData]);
 
   const inventoryProgress = inventory ? [
-    { name: 'Raw Materials', value: inventory.rawMaterials, color: '#6366f1' },
-    { name: 'Finished Goods', value: inventory.finishedGoods, color: '#10b981' },
-    { name: 'Work In Progress', value: inventory.workInProgress, color: '#f59e0b' },
+    { name: 'Raw Materials', value: inventory.rawMaterials ?? 0, color: '#6366f1' },
+    { name: 'Finished Goods', value: inventory.finishedGoods ?? 0, color: '#10b981' },
+    { name: 'Work In Progress', value: inventory.workInProgress ?? 0, color: '#f59e0b' },
   ] : [];
 
   return (
@@ -349,7 +349,7 @@ export default function DashboardPage() {
                 <Grid size={{ xs: 4 }}>
                   <Box sx={{ textAlign: 'center' }}>
                     <Typography variant="h5" fontWeight="bold" color="primary.main">
-                      {inventory?.inStock.toLocaleString() || '0'}
+                      {inventory?.inStock?.toLocaleString() ?? '0'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       In Stock
@@ -359,7 +359,7 @@ export default function DashboardPage() {
                 <Grid size={{ xs: 4 }}>
                   <Box sx={{ textAlign: 'center' }}>
                     <Typography variant="h5" fontWeight="bold" color="warning.main">
-                      {inventory?.lowStock.toLocaleString() || '0'}
+                      {inventory?.lowStock?.toLocaleString() ?? '0'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       Low Stock
@@ -369,7 +369,7 @@ export default function DashboardPage() {
                 <Grid size={{ xs: 4 }}>
                   <Box sx={{ textAlign: 'center' }}>
                     <Typography variant="h5" fontWeight="bold" color="error.main">
-                      {inventory?.outOfStock.toLocaleString() || '0'}
+                      {inventory?.outOfStock?.toLocaleString() ?? '0'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       Out of Stock

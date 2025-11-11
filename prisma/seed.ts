@@ -7,12 +7,16 @@ async function main() {
   console.log('Starting database seed...');
 
   // Create default admin user
-  const hashedPassword = await hash('12345', 10);
+  const hashedPassword = await hash('admin123', 10);
 
-  const admin = await prisma.user.upsert({
+  // Delete existing admin user if exists
+  await prisma.user.deleteMany({
     where: { email: 'admin@email.com' },
-    update: {},
-    create: {
+  });
+
+  // Create new admin user
+  const admin = await prisma.user.create({
+    data: {
       username: 'admin',
       email: 'admin@email.com',
       password: hashedPassword,

@@ -100,8 +100,29 @@ export async function GET(request: Request) {
       });
     }
 
+    // Calculate summary statistics
+    const totalItems = inventoryStatus.length;
+    const inStock = inventoryStatus.filter(item => item.currentStock > 0).length;
+    const lowStock = inventoryStatus.filter(item => item.currentStock > 0 && item.currentStock <= 10).length;
+    const outOfStock = inventoryStatus.filter(item => item.currentStock === 0).length;
+
+    // Calculate percentages for inventory categories
+    const rawMaterialsCount = inventoryStatus.filter(item => item.type === 'RM').length;
+    const finishedGoodsCount = inventoryStatus.filter(item => item.type === 'FG' || item.type === 'SFG').length;
+    const workInProgressCount = inventoryStatus.filter(item => item.type === 'SCRAP').length;
+
+    const rawMaterials = totalItems > 0 ? Math.round((rawMaterialsCount / totalItems) * 100) : 0;
+    const finishedGoods = totalItems > 0 ? Math.round((finishedGoodsCount / totalItems) * 100) : 0;
+    const workInProgress = totalItems > 0 ? Math.round((workInProgressCount / totalItems) * 100) : 0;
+
     return NextResponse.json({
       inventoryStatus,
+      rawMaterials,
+      finishedGoods,
+      workInProgress,
+      inStock,
+      lowStock,
+      outOfStock,
     });
   } catch (error) {
     console.error('[API Error] Failed to fetch inventory status:', error);
