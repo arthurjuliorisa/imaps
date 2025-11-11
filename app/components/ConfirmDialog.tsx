@@ -58,7 +58,15 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   return (
     <Dialog
       open={open}
-      onClose={onCancel}
+      onClose={(event, reason) => {
+        // Prevent accidental dismissal during loading
+        if (loading) return;
+        // Prevent closing on backdrop click or escape key for better UX
+        if (reason === 'backdropClick' || reason === 'escapeKeyDown') {
+          return;
+        }
+        onCancel();
+      }}
       maxWidth="xs"
       fullWidth
       PaperProps={{

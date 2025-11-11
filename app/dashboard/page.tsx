@@ -155,9 +155,13 @@ export default function DashboardPage() {
   const [inventoryLoading, setInventoryLoading] = useState(true);
 
   const fetchAllData = useCallback(async () => {
-    setMetricsLoading(true);
-    setActivitiesLoading(true);
-    setInventoryLoading(true);
+    let isMounted = true;
+
+    if (isMounted) {
+      setMetricsLoading(true);
+      setActivitiesLoading(true);
+      setInventoryLoading(true);
+    }
 
     try {
       const [metricsRes, activitiesRes, inventoryRes] = await Promise.all([
@@ -175,58 +179,72 @@ export default function DashboardPage() {
         })
       ]);
 
+      if (!isMounted) return;
+
       if (metricsRes?.ok) {
         try {
           const metricsData = await metricsRes.json();
-          setMetrics({
-            totalItems: metricsData.totalItems || 0,
-            totalScrap: metricsData.totalScrap || 0,
-            totalRawMaterials: metricsData.totalRawMaterials || 0,
-            totalProduction: metricsData.totalProduction || 0,
-            totalCapitalGoods: metricsData.totalCapitalGoods || 0,
-            totalCustomers: metricsData.totalCustomers || 0,
-            totalSuppliers: metricsData.totalSuppliers || 0,
-            totalUsers: metricsData.totalUsers || 0,
-            incomingDocuments: metricsData.incomingDocuments || 0,
-            outgoingDocuments: metricsData.outgoingDocuments || 0,
-            totalReports: metricsData.totalReports || 0,
-            itemsTrend: metricsData.itemsTrend,
-            customersTrend: metricsData.customersTrend,
-            suppliersTrend: metricsData.suppliersTrend,
-            reportsTrend: metricsData.reportsTrend,
-          });
+          if (isMounted) {
+            setMetrics({
+              totalItems: metricsData.totalItems || 0,
+              totalScrap: metricsData.totalScrap || 0,
+              totalRawMaterials: metricsData.totalRawMaterials || 0,
+              totalProduction: metricsData.totalProduction || 0,
+              totalCapitalGoods: metricsData.totalCapitalGoods || 0,
+              totalCustomers: metricsData.totalCustomers || 0,
+              totalSuppliers: metricsData.totalSuppliers || 0,
+              totalUsers: metricsData.totalUsers || 0,
+              incomingDocuments: metricsData.incomingDocuments || 0,
+              outgoingDocuments: metricsData.outgoingDocuments || 0,
+              totalReports: metricsData.totalReports || 0,
+              itemsTrend: metricsData.itemsTrend,
+              customersTrend: metricsData.customersTrend,
+              suppliersTrend: metricsData.suppliersTrend,
+              reportsTrend: metricsData.reportsTrend,
+            });
+          }
         } catch (err) {
           console.error('Error parsing metrics data:', err);
         }
       }
-      setMetricsLoading(false);
+      if (isMounted) setMetricsLoading(false);
 
       if (activitiesRes?.ok) {
         try {
           const activitiesData = await activitiesRes.json();
-          setActivities(activitiesData.activities || activitiesData || []);
+          if (isMounted) {
+            setActivities(activitiesData.activities || activitiesData || []);
+          }
         } catch (err) {
           console.error('Error parsing activities data:', err);
         }
       }
-      setActivitiesLoading(false);
+      if (isMounted) setActivitiesLoading(false);
 
       if (inventoryRes?.ok) {
         try {
           const inventoryData = await inventoryRes.json();
-          setInventory(inventoryData);
+          if (isMounted) {
+            setInventory(inventoryData);
+          }
         } catch (err) {
           console.error('Error parsing inventory data:', err);
         }
       }
-      setInventoryLoading(false);
+      if (isMounted) setInventoryLoading(false);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
-      toast.error('Failed to load dashboard data');
-      setMetricsLoading(false);
-      setActivitiesLoading(false);
-      setInventoryLoading(false);
+      if (isMounted) {
+        toast.error('Failed to load dashboard data');
+        setMetricsLoading(false);
+        setActivitiesLoading(false);
+        setInventoryLoading(false);
+      }
     }
+
+    return () => {
+      isMounted = false;
+    };
   }, [toast]);
 
   useEffect(() => {

@@ -190,7 +190,7 @@ export default function UomPage() {
         onDelete={handleDelete}
       />
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={dialogOpen} onClose={() => !loading && setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
           {editingUom ? 'Edit UOM' : 'Add New UOM'}
         </DialogTitle>

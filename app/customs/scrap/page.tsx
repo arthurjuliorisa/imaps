@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Stack, Button } from '@mui/material';
 import { Add as AddIcon, UploadFile as UploadFileIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
@@ -139,7 +139,7 @@ export default function ScrapMutationPage() {
   };
 
   // Fetch data from API
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch(
@@ -158,12 +158,12 @@ export default function ScrapMutationPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [startDate, endDate, toast]);
 
   // Load data on mount and when date range changes
   useEffect(() => {
     fetchData();
-  }, [startDate, endDate]);
+  }, [fetchData]);
 
   // Handle manual entry submission
   const handleManualEntrySubmit = async (formData: any) => {

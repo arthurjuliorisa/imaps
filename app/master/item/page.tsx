@@ -47,6 +47,8 @@ const columns: Column[] = [
     label: 'Type',
     minWidth: 120,
     format: (value: string) => {
+      if (!value) return '-';
+
       const typeMap: { [key: string]: string } = {
         'RM': 'Raw Material',
         'FG': 'Finished Goods',
