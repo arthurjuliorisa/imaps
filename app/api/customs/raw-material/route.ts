@@ -97,6 +97,10 @@ export async function GET(request: Request) {
       itemType: mutation.item.type,
       uomCode: mutation.uom.code,
       uomName: mutation.uom.name,
+      unit: mutation.uom.code,
+      // Fix property name mismatch: database uses 'incoming'/'outgoing' but component expects 'in'/'out'
+      in: mutation.incoming,
+      out: mutation.outgoing,
     }));
 
     return NextResponse.json(transformedData);

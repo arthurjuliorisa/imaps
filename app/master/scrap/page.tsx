@@ -55,27 +55,10 @@ const columns: Column[] = [
     minWidth: 250,
     format: (value: Item[]) => {
       if (!value || value.length === 0) return '-';
-      return (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-          {value.slice(0, 3).map((item) => (
-            <Chip
-              key={item.id}
-              label={`${item.code}`}
-              size="small"
-              variant="outlined"
-              sx={{ fontWeight: 500, fontSize: '0.75rem' }}
-            />
-          ))}
-          {value.length > 3 && (
-            <Chip
-              label={`+${value.length - 3} more`}
-              size="small"
-              color="primary"
-              sx={{ fontWeight: 600, fontSize: '0.75rem' }}
-            />
-          )}
-        </Box>
-      );
+      const itemCodes = value.map(item => item.code).join(', ');
+      return value.length > 3
+        ? `${value.slice(0, 3).map(item => item.code).join(', ')} +${value.length - 3} more`
+        : itemCodes;
     }
   },
 ];

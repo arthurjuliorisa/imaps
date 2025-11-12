@@ -9,7 +9,9 @@ export function exportToExcel(data: any[], fileName: string, sheetName: string =
 
   // Auto-adjust column widths
   const maxWidth = 50;
-  const wscols = Object.keys(data[0] || {}).map(() => ({ wch: maxWidth }));
+  const wscols = data.length > 0
+    ? Object.keys(data[0]).map(() => ({ wch: maxWidth }))
+    : [];
   worksheet['!cols'] = wscols;
 
   XLSX.writeFile(workbook, `${fileName}.xlsx`);

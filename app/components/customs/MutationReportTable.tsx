@@ -127,29 +127,29 @@ export function MutationReportTable({
                   <TableCell>
                     <Chip label={row.unit} size="small" />
                   </TableCell>
-                  <TableCell align="right">{row.beginning.toLocaleString('id-ID')}</TableCell>
+                  <TableCell align="right">{(row.beginning ?? 0).toLocaleString('id-ID')}</TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" color="success.main" fontWeight={600}>
-                      {row.in.toLocaleString('id-ID')}
+                      {(row.in ?? 0).toLocaleString('id-ID')}
                     </Typography>
                   </TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" color="error.main" fontWeight={600}>
-                      {row.out.toLocaleString('id-ID')}
+                      {(row.out ?? 0).toLocaleString('id-ID')}
                     </Typography>
                   </TableCell>
-                  <TableCell align="right">{row.adjustment.toLocaleString('id-ID')}</TableCell>
+                  <TableCell align="right">{(row.adjustment ?? 0).toLocaleString('id-ID')}</TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" fontWeight={700}>
-                      {row.ending.toLocaleString('id-ID')}
+                      {(row.ending ?? 0).toLocaleString('id-ID')}
                     </Typography>
                   </TableCell>
-                  <TableCell align="right">{row.stockOpname.toLocaleString('id-ID')}</TableCell>
+                  <TableCell align="right">{(row.stockOpname ?? 0).toLocaleString('id-ID')}</TableCell>
                   <TableCell align="right">
                     <Chip
-                      label={row.variant.toLocaleString('id-ID')}
+                      label={(row.variant ?? 0).toLocaleString('id-ID')}
                       size="small"
-                      color={getVariantColor(row.variant)}
+                      color={getVariantColor(row.variant ?? 0)}
                       sx={{ fontWeight: 600 }}
                     />
                   </TableCell>

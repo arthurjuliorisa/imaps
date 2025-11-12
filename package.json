@@ -6,7 +6,9 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "seed": "npx prisma db seed",
+    "seed:menu": "ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/seed-menus.ts"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",

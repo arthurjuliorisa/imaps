@@ -133,7 +133,7 @@ export async function POST(request: Request) {
       index: number;
       data: {
         date: Date;
-        itemCode: string;
+        scrapCode: string;
         incoming: number;
         remarks: string | null;
       };

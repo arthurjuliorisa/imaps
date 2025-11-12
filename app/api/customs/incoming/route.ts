@@ -112,6 +112,10 @@ export async function GET(request: Request) {
     // Transform response with flattened relations
     const transformedData = documents.map((doc) => ({
       ...doc,
+      qty: doc.quantity, // Transform quantity to qty for frontend
+      shipper: doc.shipper.name, // Flatten for display
+      uom: doc.uom.code, // Flatten for display
+      currency: doc.currency.code, // Flatten for display
       shipperCode: doc.shipper.code,
       shipperName: doc.shipper.name,
       itemCode: doc.item.code,

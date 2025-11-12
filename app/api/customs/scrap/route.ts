@@ -92,11 +92,17 @@ export async function GET(request: Request) {
     // Transform the response to include flattened scrap and UOM data
     const transformedData = scrapMutations.map((mutation) => ({
       ...mutation,
+      itemCode: mutation.scrap.code,
+      itemName: mutation.scrap.name,
       scrapCode: mutation.scrap.code,
       scrapName: mutation.scrap.name,
       scrapDescription: mutation.scrap.description,
       uomCode: mutation.uom.code,
       uomName: mutation.uom.name,
+      unit: mutation.uom.code,
+      // Fix property name mismatch: database uses 'incoming'/'outgoing' but component expects 'in'/'out'
+      in: mutation.incoming,
+      out: mutation.outgoing,
     }));
 
     return NextResponse.json(transformedData);

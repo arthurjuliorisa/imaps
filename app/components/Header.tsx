@@ -47,7 +47,7 @@ export function Header({ onMenuClick, sidebarCollapsed }: HeaderProps) {
     setAnchorEl(event.currentTarget);
   };
 
-  const handleClose = (_event?: React.SyntheticEvent) => {
+  const handleClose = (_event?: {}, _reason?: "escapeKeyDown" | "backdropClick") => {
     setAnchorEl(null);
   };
 

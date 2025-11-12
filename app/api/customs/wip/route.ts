@@ -96,6 +96,8 @@ export async function GET(request: Request) {
     // Transform response with flattened relations
     const transformedData = wipRecords.map((record) => ({
       ...record,
+      qty: record.quantity, // Transform quantity to qty for frontend
+      unit: record.uom.code, // Transform uom to unit for WIP display
       itemCode: record.item.code,
       itemName: record.item.name,
       itemType: record.item.type,

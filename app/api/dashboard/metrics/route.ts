@@ -74,6 +74,7 @@ export async function GET(request: Request) {
       totalUsers,
       incomingDocuments,
       outgoingDocuments,
+      totalReports: totalScrap + totalRawMaterials + totalProduction + totalCapitalGoods,
     };
 
     return NextResponse.json(metrics);

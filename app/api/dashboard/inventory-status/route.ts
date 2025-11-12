@@ -52,11 +52,21 @@ export async function GET(request: Request) {
       // Determine which mutation table to query based on item type
       switch (item.type) {
         case 'SCRAP':
-          latestMutation = await prisma.scrapMutation.findFirst({
+          // Scrap mutations are now tracked at ScrapMaster level, not individual items
+          // Find which scrap master collections contain this item
+          const scrapItems = await prisma.scrapItem.findMany({
             where: { itemId: item.id },
-            orderBy: { date: 'desc' },
-            select: { ending: true, updatedAt: true },
+            select: { scrapId: true },
           });
+
+          if (scrapItems.length > 0) {
+            // Get the most recent mutation from any scrap master containing this item
+            latestMutation = await prisma.scrapMutation.findFirst({
+              where: { scrapId: { in: scrapItems.map(si => si.scrapId) } },
+              orderBy: { date: 'desc' },
+              select: { ending: true, updatedAt: true },
+            });
+          }
           break;
 
         case 'RM':

@@ -116,19 +116,19 @@ export function parseNumericValue(value: any, defaultValue: number = 0): number 
 }
 
 /**
- * Gets the previous day's ending balance for an item
- * @param itemId - The item ID to query
+ * Gets the previous day's ending balance for a scrap
+ * @param scrapId - The scrap ID to query
  * @param currentDate - The current date (we'll look for records before this date)
  * @returns The ending balance from the previous day, or 0 if no previous record exists
  */
 export async function getPreviousEndingBalance(
-  itemId: string,
+  scrapId: string,
   currentDate: Date
 ): Promise<number> {
-  // Find the most recent record before the current date for this item
+  // Find the most recent record before the current date for this scrap
   const previousRecord = await prisma.scrapMutation.findFirst({
     where: {
-      itemId,
+      scrapId,
       date: {
         lt: currentDate,
       },
