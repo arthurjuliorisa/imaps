@@ -21,7 +21,7 @@ export async function GET() {
     // ============================================
 
     // Define headers
-    const headers = ['Date', 'Item Code', 'Incoming', 'Remarks'];
+    const headers = ['Date', 'Scrap Code', 'Incoming', 'Remarks'];
 
     // Define format hints (row 2)
     const formatHints = ['YYYY-MM-DD', 'e.g., SCRAP-001', 'Positive number', 'Optional notes'];
@@ -46,7 +46,7 @@ export async function GET() {
     // Set column widths for better readability
     worksheet['!cols'] = [
       { wch: 15 },  // Date column
-      { wch: 20 },  // Item Code column
+      { wch: 20 },  // Scrap Code column
       { wch: 15 },  // Incoming column
       { wch: 30 },  // Remarks column
     ];
@@ -105,28 +105,29 @@ export async function GET() {
       ['  - Format: YYYY-MM-DD (e.g., 2025-01-15)'],
       ['  - Required field'],
       ['  - Must be a valid date'],
+      ['  - Cannot be in the future'],
       [],
-      ['Item Code:'],
-      ['  - The unique code of the scrap item (e.g., SCRAP-001)'],
+      ['Scrap Code:'],
+      ['  - The unique code of the Scrap Master (e.g., SCRAP-001)'],
       ['  - Required field'],
-      ['  - Must exist in the Item master data'],
+      ['  - Must exist in the Scrap Master data'],
       ['  - Case sensitive'],
       [],
       ['Incoming:'],
       ['  - The quantity of incoming scrap'],
       ['  - Required field'],
-      ['  - Must be a positive number (can include decimals)'],
+      ['  - Must be a positive number greater than 0 (can include decimals)'],
       ['  - Format: Number with up to 2 decimal places'],
       [],
       ['Remarks:'],
       ['  - Optional notes about the scrap mutation'],
-      ['  - Maximum 500 characters recommended'],
+      ['  - Maximum 1000 characters'],
       ['  - Can be left empty'],
       [],
       ['Validation Rules:'],
-      ['  - Date and Item Code combination must be unique'],
-      ['  - All Item Codes must exist in the system'],
-      ['  - Incoming values must be >= 0'],
+      ['  - Date and Scrap Code combination must be unique'],
+      ['  - All Scrap Codes must exist in the Scrap Master data'],
+      ['  - Incoming values must be > 0'],
       ['  - Date cannot be in the future'],
       [],
       ['Important Notes:'],
@@ -137,7 +138,7 @@ export async function GET() {
       ['  - If an error occurs for any row, the entire import will be rolled back'],
       [],
       ['Example Data:'],
-      ['Date         | Item Code   | Incoming | Remarks'],
+      ['Date         | Scrap Code  | Incoming | Remarks'],
       ['2025-01-15   | SCRAP-001   | 50       | New scrap received'],
       ['2025-01-16   | SCRAP-002   | 75.50    | Additional scrap from production'],
       ['2025-01-17   | SCRAP-001   | 30       | Daily intake'],

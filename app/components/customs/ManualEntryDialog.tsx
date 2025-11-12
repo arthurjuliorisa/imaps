@@ -24,9 +24,9 @@ import { Save, Close } from '@mui/icons-material';
 
 interface FormData {
   date: Dayjs | null;
-  itemId: string;
-  itemCode: string;
-  itemName: string;
+  scrapId: string;
+  scrapCode: string;
+  scrapName: string;
   uomId: string;
   uom: string;
   incoming: number;
@@ -39,16 +39,12 @@ interface ManualEntryDialogProps {
   onSubmit: (data: FormData) => Promise<void>;
 }
 
-interface Item {
+interface ScrapMaster {
   id: string;
   code: string;
   name: string;
-  uomId: string;
-  uom: {
-    id: string;
-    code: string;
-    name: string;
-  };
+  description?: string;
+  items?: any[];
 }
 
 interface UOM {
@@ -60,40 +56,40 @@ interface UOM {
 export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialogProps) {
   const theme = useTheme();
   const [loading, setLoading] = useState(false);
-  const [items, setItems] = useState<Item[]>([]);
+  const [scraps, setScraps] = useState<ScrapMaster[]>([]);
   const [uoms, setUoms] = useState<UOM[]>([]);
-  const [loadingItems, setLoadingItems] = useState(false);
+  const [loadingScraps, setLoadingScraps] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     date: dayjs(),
-    itemId: '',
-    itemCode: '',
-    itemName: '',
+    scrapId: '',
+    scrapCode: '',
+    scrapName: '',
     uomId: '',
     uom: '',
     incoming: 0,
     remarks: '',
   });
 
-  // Fetch items and UOMs when dialog opens
+  // Fetch scraps and UOMs when dialog opens
   useEffect(() => {
     if (open) {
-      fetchItems();
+      fetchScraps();
       fetchUOMs();
     }
   }, [open]);
 
-  const fetchItems = async () => {
-    setLoadingItems(true);
+  const fetchScraps = async () => {
+    setLoadingScraps(true);
     try {
-      const response = await fetch('/api/master/item?type=SCRAP');
+      const response = await fetch('/api/master/scrap');
       if (response.ok) {
         const data = await response.json();
-        setItems(data);
+        setScraps(data);
       }
     } catch (error) {
-      console.error('Error fetching items:', error);
+      console.error('Error fetching scraps:', error);
     } finally {
-      setLoadingItems(false);
+      setLoadingScraps(false);
     }
   };
 
@@ -109,22 +105,24 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
     }
   };
 
-  const handleItemSelect = (item: Item | null) => {
-    if (item) {
+  const handleScrapSelect = (scrap: ScrapMaster | null) => {
+    if (scrap) {
+      // Get the first item's UOM if available
+      const firstItem = scrap.items && scrap.items.length > 0 ? scrap.items[0] : null;
       setFormData((prev) => ({
         ...prev,
-        itemId: item.id,
-        itemCode: item.code,
-        itemName: item.name,
-        uomId: item.uom.id,
-        uom: item.uom.code,
+        scrapId: scrap.id,
+        scrapCode: scrap.code,
+        scrapName: scrap.name,
+        uomId: firstItem?.uom?.id || '',
+        uom: firstItem?.uom?.code || '',
       }));
     } else {
       setFormData((prev) => ({
         ...prev,
-        itemId: '',
-        itemCode: '',
-        itemName: '',
+        scrapId: '',
+        scrapCode: '',
+        scrapName: '',
         uomId: '',
         uom: '',
       }));
@@ -148,9 +146,9 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
       // Reset form after successful submission
       setFormData({
         date: dayjs(),
-        itemId: '',
-        itemCode: '',
-        itemName: '',
+        scrapId: '',
+        scrapCode: '',
+        scrapName: '',
         uomId: '',
         uom: '',
         incoming: 0,
@@ -166,7 +164,7 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
 
   const isFormValid =
     formData.date !== null &&
-    formData.itemId !== '' &&
+    formData.scrapId !== '' &&
     formData.uomId !== '' &&
     formData.incoming > 0;
 
@@ -214,24 +212,24 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
               }}
             />
 
-            {/* Item Autocomplete */}
+            {/* Scrap Master Autocomplete */}
             <Autocomplete
-              options={items}
-              loading={loadingItems}
+              options={scraps}
+              loading={loadingScraps}
               getOptionLabel={(option) => `${option.code} - ${option.name}`}
-              onChange={(_event, newValue) => handleItemSelect(newValue)}
-              value={items.find((item) => item.id === formData.itemId) || null}
+              onChange={(_event, newValue) => handleScrapSelect(newValue)}
+              value={scraps.find((scrap) => scrap.id === formData.scrapId) || null}
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Item"
-                  placeholder="Search item..."
+                  label="Scrap"
+                  placeholder="Search scrap master..."
                   required
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
                       <>
-                        {loadingItems ? <CircularProgress color="inherit" size={20} /> : null}
+                        {loadingScraps ? <CircularProgress color="inherit" size={20} /> : null}
                         {params.InputProps.endAdornment}
                       </>
                     ),
@@ -257,7 +255,7 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
                   {...params}
                   label="Unit of Measure (UOM)"
                   required
-                  helperText="Auto-filled from selected item"
+                  helperText="Auto-filled from selected scrap master"
                 />
               )}
               disabled={true}

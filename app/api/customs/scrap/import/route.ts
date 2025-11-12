@@ -42,10 +42,11 @@ function sanitizeRemarks(remarks: string | null | undefined): string | null {
 
 /**
  * Interface for import record validation (INCOMING-only)
+ * UPDATED: Now uses scrapCode instead of itemCode
  */
 interface ImportRecord {
   date: string | Date;
-  itemCode: string;
+  scrapCode: string;
   incoming: number;
   remarks?: string;
 }
@@ -66,12 +67,13 @@ interface ImportResult {
 
 /**
  * Interface for records to process within transaction
+ * UPDATED: Now uses scrapId and scrapCode
  */
 interface RecordToProcess {
   index: number;
   date: Date;
-  itemId: string;
-  itemCode: string;
+  scrapId: string;
+  scrapCode: string;
   uomId: string;
   incoming: number;
   remarks: string | null;
@@ -80,7 +82,7 @@ interface RecordToProcess {
 /**
  * POST /api/customs/scrap/import
  * Import INCOMING-only scrap mutations from Excel
- * Uses itemCode to lookup items, automatically calculates beginning and ending
+ * UPDATED: Uses scrapCode to lookup ScrapMaster, automatically calculates beginning and ending
  *
  * FIXES APPLIED:
  * - Bug #2: Sequential balance calculation inside transaction with proper sorting
@@ -141,11 +143,11 @@ export async function POST(request: Request) {
       const record = records[i];
 
       // Validate required fields
-      if (!record.date || !record.itemCode || record.incoming === undefined || record.incoming === null) {
+      if (!record.date || !record.scrapCode || record.incoming === undefined || record.incoming === null) {
         result.errors.push({
           index: i,
           record,
-          error: 'Missing required fields: date, itemCode, and incoming are required',
+          error: 'Missing required fields: date, scrapCode, and incoming are required',
         });
         result.errorCount++;
         continue;
@@ -206,7 +208,7 @@ export async function POST(request: Request) {
         index: i,
         data: {
           date: parsedDate,
-          itemCode: record.itemCode.trim(),
+          scrapCode: record.scrapCode.trim(),
           incoming,
           remarks: sanitizedRemarks,
         },
@@ -225,29 +227,40 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get all unique itemCodes for batch lookup
-    const itemCodes = [...new Set(validatedRecords.map((r) => r.data.itemCode))];
+    // Get all unique scrapCodes for batch lookup
+    const scrapCodes = [...new Set(validatedRecords.map((r) => r.data.scrapCode))];
 
-    // Lookup all items by code
-    const items = await prisma.item.findMany({
-      where: { code: { in: itemCodes } },
-      select: { id: true, code: true, uomId: true },
+    // Lookup all scrap masters by code
+    const scrapMasters = await prisma.scrapMaster.findMany({
+      where: { code: { in: scrapCodes } },
+      select: { id: true, code: true },
     });
 
-    // Create a map of itemCode to item data
-    const itemMap = new Map(items.map((item) => [item.code, { id: item.id, uomId: item.uomId }]));
+    // Create a map of scrapCode to scrap data
+    const scrapMap = new Map(scrapMasters.map((scrap) => [scrap.code, { id: scrap.id }]));
 
-    // Prepare records with item IDs
+    // Get UOM - we'll use a default UOM for scrap (you may need to adjust this)
+    // For now, we'll get the first UOM or require it to be specified
+    const defaultUom = await prisma.uOM.findFirst();
+
+    if (!defaultUom) {
+      return NextResponse.json(
+        { message: 'No UOM found in the system. Please create at least one UOM first.' },
+        { status: 400 }
+      );
+    }
+
+    // Prepare records with scrap IDs
     const recordsToProcess: RecordToProcess[] = [];
 
     for (const record of validatedRecords) {
-      const item = itemMap.get(record.data.itemCode);
+      const scrap = scrapMap.get(record.data.scrapCode);
 
-      if (!item) {
+      if (!scrap) {
         result.errors.push({
           index: record.index,
           record: records[record.index],
-          error: `Invalid itemCode: Item '${record.data.itemCode}' does not exist`,
+          error: `Invalid scrapCode: Scrap Master '${record.data.scrapCode}' does not exist`,
         });
         result.errorCount++;
         continue;
@@ -256,19 +269,19 @@ export async function POST(request: Request) {
       recordsToProcess.push({
         index: record.index,
         date: record.data.date,
-        itemId: item.id,
-        itemCode: record.data.itemCode,
-        uomId: item.uomId,
+        scrapId: scrap.id,
+        scrapCode: record.data.scrapCode,
+        uomId: defaultUom.id,
         incoming: record.data.incoming,
         remarks: record.data.remarks,
       });
     }
 
-    // FIX BUG #2: Sort records by itemId first, then by date
-    // This ensures we process records in chronological order within each item
+    // FIX BUG #2: Sort records by scrapId first, then by date
+    // This ensures we process records in chronological order within each scrap
     const sortedRecords = recordsToProcess.sort((a, b) => {
-      const itemCompare = a.itemId.localeCompare(b.itemId);
-      if (itemCompare !== 0) return itemCompare;
+      const scrapCompare = a.scrapId.localeCompare(b.scrapId);
+      if (scrapCompare !== 0) return scrapCompare;
       return a.date.getTime() - b.date.getTime();
     });
 
@@ -276,21 +289,21 @@ export async function POST(request: Request) {
     try {
       const results = await prisma.$transaction(async (tx) => {
         const processedResults = [];
-        // Track running balances per item within this batch
-        const itemBalances = new Map<string, number>();
+        // Track running balances per scrap within this batch
+        const scrapBalances = new Map<string, number>();
 
         for (const record of sortedRecords) {
           // Get previous ending - either from our batch or from database
           let beginning: number;
 
-          if (itemBalances.has(record.itemId)) {
+          if (scrapBalances.has(record.scrapId)) {
             // Use the ending from previous record in this batch
-            beginning = itemBalances.get(record.itemId)!;
+            beginning = scrapBalances.get(record.scrapId)!;
           } else {
             // Query database for most recent record before this date
             const previousRecord = await tx.scrapMutation.findFirst({
               where: {
-                itemId: record.itemId,
+                scrapId: record.scrapId,
                 date: { lt: record.date },
               },
               orderBy: { date: 'desc' },
@@ -304,9 +317,9 @@ export async function POST(request: Request) {
           // Upsert the record (handles duplicates)
           const result = await tx.scrapMutation.upsert({
             where: {
-              date_itemId: {
+              date_scrapId: {
                 date: record.date,
-                itemId: record.itemId,
+                scrapId: record.scrapId,
               },
             },
             update: {
@@ -322,7 +335,7 @@ export async function POST(request: Request) {
             },
             create: {
               date: record.date,
-              itemId: record.itemId,
+              scrapId: record.scrapId,
               uomId: record.uomId,
               beginning,
               incoming: record.incoming,
@@ -335,32 +348,32 @@ export async function POST(request: Request) {
             },
           });
 
-          // Update running balance for this item
-          itemBalances.set(record.itemId, ending);
+          // Update running balance for this scrap
+          scrapBalances.set(record.scrapId, ending);
           processedResults.push(result);
         }
 
-        // After processing all records, recalculate subsequent records for each affected item
-        const affectedItems = [...new Set(sortedRecords.map(r => r.itemId))];
+        // After processing all records, recalculate subsequent records for each affected scrap
+        const affectedScraps = [...new Set(sortedRecords.map(r => r.scrapId))];
 
-        for (const itemId of affectedItems) {
-          // Get the latest date we processed for this item
+        for (const scrapId of affectedScraps) {
+          // Get the latest date we processed for this scrap
           const latestProcessedDate = Math.max(
-            ...sortedRecords.filter(r => r.itemId === itemId).map(r => r.date.getTime())
+            ...sortedRecords.filter(r => r.scrapId === scrapId).map(r => r.date.getTime())
           );
           const latestDate = new Date(latestProcessedDate);
 
-          // Get all subsequent records for this item
+          // Get all subsequent records for this scrap
           const subsequentRecords = await tx.scrapMutation.findMany({
             where: {
-              itemId,
+              scrapId,
               date: { gt: latestDate },
             },
             orderBy: { date: 'asc' },
           });
 
           // Recalculate balances for all subsequent records
-          let runningEnding = itemBalances.get(itemId)!;
+          let runningEnding = scrapBalances.get(scrapId)!;
           for (const subRecord of subsequentRecords) {
             const newBeginning = runningEnding;
             const newEnding = newBeginning + subRecord.incoming - subRecord.outgoing + subRecord.adjustment;
@@ -404,7 +417,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             success: false,
-            message: 'Foreign key constraint failed - invalid itemId or uomId',
+            message: 'Foreign key constraint failed - invalid scrapId or uomId',
             error: error.message,
           },
           { status: 400 }

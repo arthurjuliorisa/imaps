@@ -30,7 +30,7 @@ import { useToast } from '../ToastProvider';
 
 interface ImportedRecord {
   date: string;
-  itemCode: string;
+  scrapCode: string;
   incoming: number;
   remarks: string;
   // Validation
@@ -110,7 +110,7 @@ export function ExcelImportDialog({ open, onClose, onSubmit }: ExcelImportDialog
 
     // Required field validation
     if (!row.Date) errors.push('Date is required');
-    if (!row['Item Code']) errors.push('Item Code is required');
+    if (!row['Scrap Code']) errors.push('Scrap Code is required');
     if (!row.Incoming && row.Incoming !== 0) errors.push('Incoming is required');
 
     // Date validation
@@ -165,7 +165,7 @@ export function ExcelImportDialog({ open, onClose, onSubmit }: ExcelImportDialog
 
         return {
           date: row.Date ? dayjs(row.Date).format('YYYY-MM-DD') : '',
-          itemCode: row['Item Code'] || '',
+          scrapCode: row['Scrap Code'] || '',
           incoming,
           remarks: row.Remarks || '',
           isValid: validation.isValid,
@@ -325,7 +325,7 @@ export function ExcelImportDialog({ open, onClose, onSubmit }: ExcelImportDialog
 
           <Alert severity="info" icon={false} sx={{ mb: 2, py: 0.75 }}>
             <Typography variant="caption" component="div">
-              <strong>Format:</strong> Date | Item Code | Incoming | Remarks
+              <strong>Format:</strong> Date | Scrap Code | Incoming | Remarks
             </Typography>
           </Alert>
 
@@ -379,7 +379,7 @@ export function ExcelImportDialog({ open, onClose, onSubmit }: ExcelImportDialog
                     Date
                   </TableCell>
                   <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
-                    Item Code
+                    Scrap Code
                   </TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
                     Incoming
@@ -416,7 +416,7 @@ export function ExcelImportDialog({ open, onClose, onSubmit }: ExcelImportDialog
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600} fontSize="0.875rem">
-                        {record.itemCode || '-'}
+                        {record.scrapCode || '-'}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">

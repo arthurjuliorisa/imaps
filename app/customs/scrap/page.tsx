@@ -175,7 +175,7 @@ export default function ScrapMutationPage() {
         },
         body: JSON.stringify({
           date: formData.date?.format('YYYY-MM-DD'),
-          itemId: formData.itemId,
+          scrapId: formData.scrapId,
           uomId: formData.uomId,
           incoming: formData.incoming,
           remarks: formData.remarks,
@@ -190,25 +190,7 @@ export default function ScrapMutationPage() {
 
       toast.success('Incoming scrap record added successfully!');
       // Refresh data
-      // fetchData(); // Uncomment when API is ready
-
-      // For demo: add to existing data
-      // Backend should return the complete record with calculated values
-      const newRecord: MutationData = {
-        id: data.length + 1,
-        itemCode: formData.itemCode,
-        itemName: formData.itemName,
-        unit: formData.uom,
-        beginning: result.beginning || 0, // From backend calculation
-        in: formData.incoming,
-        out: 0, // Incoming-only records have 0 for these
-        adjustment: 0,
-        ending: result.ending || formData.incoming, // From backend calculation
-        stockOpname: result.stockOpname || result.ending || formData.incoming,
-        variant: 0,
-        remarks: formData.remarks,
-      };
-      setData([...data, newRecord]);
+      await fetchData();
     } catch (error) {
       console.error('Error saving data:', error);
       toast.error('Failed to save incoming scrap record. Please try again.');
@@ -227,7 +209,7 @@ export default function ScrapMutationPage() {
         body: JSON.stringify({
           records: records.map(r => ({
             date: r.date,
-            itemCode: r.itemCode,
+            scrapCode: r.scrapCode,
             incoming: r.incoming,
             remarks: r.remarks
           }))
@@ -242,25 +224,7 @@ export default function ScrapMutationPage() {
 
       toast.success(`Successfully imported ${records.length} incoming scrap record(s)!`);
       // Refresh data
-      // fetchData(); // Uncomment when API is ready
-
-      // For demo: add to existing data
-      // Backend should return the complete records with calculated values
-      const newRecords: MutationData[] = records.map((record, index) => ({
-        id: data.length + index + 1,
-        itemCode: record.itemCode,
-        itemName: `Item ${record.itemCode}`, // This should come from API
-        unit: 'KG', // This should come from API
-        beginning: 0, // Backend will calculate from previous day
-        in: record.incoming,
-        out: 0, // Incoming-only records have 0 for these
-        adjustment: 0,
-        ending: record.incoming, // Backend will calculate: beginning + incoming
-        stockOpname: record.incoming, // Backend will set this
-        variant: 0,
-        remarks: record.remarks,
-      }));
-      setData([...data, ...newRecords]);
+      await fetchData();
     } catch (error) {
       console.error('Error importing data:', error);
       toast.error('Failed to import records. Please try again.');

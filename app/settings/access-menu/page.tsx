@@ -51,8 +51,20 @@ export default function AccessMenuPage() {
   const [usersLoading, setUsersLoading] = useState(true);
 
   useEffect(() => {
-    fetchMenus();
-    fetchUsers();
+    let isMounted = true;
+
+    const fetchData = async () => {
+      await Promise.all([
+        fetchMenus(isMounted),
+        fetchUsers(isMounted)
+      ]);
+    };
+
+    fetchData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -63,22 +75,107 @@ export default function AccessMenuPage() {
     }
   }, [selectedUser]);
 
-  const fetchMenus = async () => {
+  // Transform API response to MenuItem format with safety checks
+  const mapMenuItems = (items: any[], depth = 0, visitedIds = new Set<string>()): MenuItem[] => {
+    // Guard against non-array inputs
+    if (!Array.isArray(items)) {
+      console.warn('mapMenuItems received non-array input:', items);
+      return [];
+    }
+
+    // Prevent stack overflow with max depth check
+    if (depth > 10) {
+      console.warn('Menu hierarchy exceeded maximum depth of 10');
+      return [];
+    }
+
+    return items
+      .filter((item) => {
+        // Validate item structure
+        if (!item || typeof item !== 'object') {
+          console.warn('Skipping invalid menu item:', item);
+          return false;
+        }
+
+        // Require id and name
+        if (typeof item.id !== 'string' || !item.id) {
+          console.warn('Skipping menu item with invalid id:', item);
+          return false;
+        }
+
+        if (typeof item.name !== 'string' || !item.name) {
+          console.warn('Skipping menu item with invalid name:', item);
+          return false;
+        }
+
+        // Detect circular references
+        if (visitedIds.has(item.id)) {
+          console.warn(`Circular reference detected for menu id: ${item.id}`);
+          return false;
+        }
+
+        return true;
+      })
+      .map((item) => {
+        // Track visited IDs for circular reference detection
+        const newVisited = new Set(visitedIds);
+        newVisited.add(item.id);
+
+        return {
+          id: item.id,
+          label: item.name,
+          children: item.children && Array.isArray(item.children) && item.children.length > 0
+            ? mapMenuItems(item.children, depth + 1, newVisited)
+            : undefined,
+        };
+      });
+  };
+
+  const fetchMenus = async (isMounted: boolean = true) => {
     setMenusLoading(true);
     try {
       const response = await fetch('/api/settings/access-menu');
-      if (!response.ok) throw new Error('Failed to fetch menus');
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}: Failed to fetch menus`);
+      }
+
       const data = await response.json();
-      setMenuItems(data);
+
+      // Validate response
+      if (!data) {
+        throw new Error('Received null/undefined response from menu API');
+      }
+
+      // Handle wrapped or direct array responses
+      const menuData = Array.isArray(data) ? data : (data.menus || data.data || []);
+
+      if (!Array.isArray(menuData)) {
+        console.error('Invalid menu API response format:', data);
+        throw new Error('Menu API returned invalid data format');
+      }
+
+      // Transform with safety checks
+      const transformedMenus = mapMenuItems(menuData);
+
+      if (isMounted) {
+        setMenuItems(transformedMenus);
+      }
     } catch (err) {
       console.error('Error fetching menus:', err);
-      toast.error('Failed to load menu structure');
+      if (isMounted) {
+        toast.error(err instanceof Error ? err.message : 'Failed to load menu structure');
+        setMenuItems([]);
+      }
     } finally {
-      setMenusLoading(false);
+      if (isMounted) {
+        setMenusLoading(false);
+      }
     }
   };
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (isMounted: boolean = true) => {
     setUsersLoading(true);
     try {
       const response = await fetch('/api/settings/users');
@@ -91,12 +188,19 @@ export default function AccessMenuPage() {
         id: user.id,
         label: user.username,
       }));
-      setUsers(userOptions);
+
+      if (isMounted) {
+        setUsers(userOptions);
+      }
     } catch (err) {
       console.error('Error fetching users:', err);
-      toast.error('Failed to load users');
+      if (isMounted) {
+        toast.error('Failed to load users');
+      }
     } finally {
-      setUsersLoading(false);
+      if (isMounted) {
+        setUsersLoading(false);
+      }
     }
   };
 
@@ -210,38 +314,83 @@ export default function AccessMenuPage() {
                 Menu Permissions
               </Typography>
 
-              {menuItems.map((item) => (
-                <Box key={item.id}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={permissions[item.id] || false}
-                        onChange={() => handleTogglePermission(item.id)}
-                      />
-                    }
-                    label={<Typography fontWeight={600}>{item.label}</Typography>}
-                  />
-                  {item.children && (
-                    <Box sx={{ pl: 4 }}>
-                      <FormGroup>
-                        {item.children.map((child) => (
-                          <FormControlLabel
-                            key={child.id}
-                            control={
-                              <Checkbox
-                                checked={permissions[child.id] || false}
-                                onChange={() => handleTogglePermission(child.id)}
-                                disabled={!permissions[item.id]}
-                              />
-                            }
-                            label={child.label}
-                          />
-                        ))}
-                      </FormGroup>
-                    </Box>
-                  )}
-                </Box>
-              ))}
+              <FormGroup>
+                {menuItems.map((item) => (
+                  <Box
+                    key={item.id}
+                    sx={{
+                      mb: 2,
+                      p: 2,
+                      borderRadius: 2,
+                      bgcolor: alpha(theme.palette.primary.main, 0.02),
+                      border: `1px solid ${alpha(theme.palette.primary.main, 0.08)}`,
+                    }}
+                  >
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={permissions[item.id] || false}
+                          onChange={() => handleTogglePermission(item.id)}
+                          sx={{
+                            '&.Mui-checked': {
+                              color: theme.palette.primary.main,
+                            },
+                          }}
+                        />
+                      }
+                      label={
+                        <Typography
+                          fontWeight={700}
+                          fontSize="1.05rem"
+                          color="primary"
+                        >
+                          {item.label}
+                        </Typography>
+                      }
+                    />
+                    {item.children && item.children.length > 0 && (
+                      <Box
+                        sx={{
+                          pl: 4,
+                          mt: 1.5,
+                          pt: 1.5,
+                          borderTop: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+                        }}
+                      >
+                        <FormGroup>
+                          {item.children.map((child) => (
+                            <FormControlLabel
+                              key={child.id}
+                              control={
+                                <Checkbox
+                                  checked={permissions[child.id] || false}
+                                  onChange={() => handleTogglePermission(child.id)}
+                                  disabled={!permissions[item.id]}
+                                  size="small"
+                                  sx={{
+                                    '&.Mui-checked': {
+                                      color: theme.palette.primary.main,
+                                    },
+                                  }}
+                                />
+                              }
+                              label={
+                                <Typography
+                                  fontSize="0.95rem"
+                                  color={permissions[item.id] ? 'text.primary' : 'text.disabled'}
+                                >
+                                  {child.label}
+                                </Typography>
+                              }
+                              sx={{ mb: 0.5 }}
+                            />
+                          ))}
+                        </FormGroup>
+                      </Box>
+                    )}
+                  </Box>
+                ))}
+              </FormGroup>
 
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
                 <Button

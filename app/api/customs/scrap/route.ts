@@ -67,12 +67,12 @@ export async function GET(request: Request) {
     const scrapMutations = await prisma.scrapMutation.findMany({
       where,
       include: {
-        item: {
+        scrap: {
           select: {
             id: true,
             code: true,
             name: true,
-            type: true,
+            description: true,
           },
         },
         uom: {
@@ -85,16 +85,16 @@ export async function GET(request: Request) {
       },
       orderBy: [
         { date: 'desc' },
-        { item: { code: 'asc' } },
+        { scrap: { code: 'asc' } },
       ],
     });
 
-    // Transform the response to include flattened item and UOM data
+    // Transform the response to include flattened scrap and UOM data
     const transformedData = scrapMutations.map((mutation) => ({
       ...mutation,
-      itemCode: mutation.item.code,
-      itemName: mutation.item.name,
-      itemType: mutation.item.type,
+      scrapCode: mutation.scrap.code,
+      scrapName: mutation.scrap.name,
+      scrapDescription: mutation.scrap.description,
       uomCode: mutation.uom.code,
       uomName: mutation.uom.name,
     }));
@@ -114,9 +114,13 @@ export async function GET(request: Request) {
  * Create a single INCOMING-only scrap mutation entry
  * Automatically fetches previous ending balance and calculates new ending
  *
+ * UPDATED: Now references ScrapMaster instead of Item
+ * - Uses scrapId instead of itemId
+ * - Validates scrap master exists before creating mutation
+ *
  * FIXES APPLIED:
  * - Bug #1: Race condition prevention using Serializable transaction
- * - Bug #3: Recalculates all subsequent records for the item
+ * - Bug #3: Recalculates all subsequent records for the scrap
  * - Bug #5, #12: Enhanced input validation
  * - Bug #14: Input sanitization for remarks
  * - Bug #16: Proper date normalization to UTC midnight
@@ -126,16 +130,16 @@ export async function POST(request: Request) {
     const body = await request.json();
     const {
       date,
-      itemId,
+      scrapId,
       uomId,
       incoming,
       remarks,
     } = body;
 
     // Validate required fields
-    if (!date || !itemId || !uomId || incoming === undefined || incoming === null) {
+    if (!date || !scrapId || !uomId || incoming === undefined || incoming === null) {
       return NextResponse.json(
-        { message: 'Missing required fields: date, itemId, uomId, and incoming are required' },
+        { message: 'Missing required fields: date, scrapId, uomId, and incoming are required' },
         { status: 400 }
       );
     }
@@ -187,15 +191,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate that itemId and uomId exist (moved inside transaction for consistency)
-    // These checks are done outside transaction to fail fast
-    const itemExists = await prisma.item.findUnique({
-      where: { id: itemId },
+    // Validate that scrapId and uomId exist (done outside transaction to fail fast)
+    const scrapExists = await prisma.scrapMaster.findUnique({
+      where: { id: scrapId },
     });
 
-    if (!itemExists) {
+    if (!scrapExists) {
       return NextResponse.json(
-        { message: 'Invalid itemId: Item does not exist' },
+        { message: 'Invalid scrapId: Scrap Master does not exist' },
         { status: 400 }
       );
     }
@@ -217,7 +220,7 @@ export async function POST(request: Request) {
       // Step 1: Read previous ending balance INSIDE transaction (Bug #1 fix)
       const previousRecord = await tx.scrapMutation.findFirst({
         where: {
-          itemId,
+          scrapId,
           date: { lt: normalizedDate },
         },
         orderBy: { date: 'desc' },
@@ -231,7 +234,7 @@ export async function POST(request: Request) {
       const scrapMutation = await tx.scrapMutation.create({
         data: {
           date: normalizedDate,
-          itemId,
+          scrapId,
           uomId,
           beginning,
           incoming: incomingValue,
@@ -243,11 +246,11 @@ export async function POST(request: Request) {
           remarks: sanitizedRemarks,
         },
         include: {
-          item: {
+          scrap: {
             select: {
               code: true,
               name: true,
-              type: true,
+              description: true,
             },
           },
           uom: {
@@ -259,10 +262,10 @@ export async function POST(request: Request) {
         },
       });
 
-      // Step 3: FIX BUG #3 - Recalculate all subsequent records for this item
+      // Step 3: FIX BUG #3 - Recalculate all subsequent records for this scrap
       const subsequentRecords = await tx.scrapMutation.findMany({
         where: {
-          itemId,
+          scrapId,
           date: { gt: normalizedDate },
         },
         orderBy: { date: 'asc' },
@@ -300,14 +303,14 @@ export async function POST(request: Request) {
     // Bug #13: Enhanced error handling for Prisma errors
     if (error.code === 'P2002') {
       return NextResponse.json(
-        { message: 'A scrap mutation for this item and date already exists' },
+        { message: 'A scrap mutation for this scrap and date already exists' },
         { status: 400 }
       );
     }
 
     if (error.code === 'P2003') {
       return NextResponse.json(
-        { message: 'Invalid itemId or uomId: Foreign key constraint failed' },
+        { message: 'Invalid scrapId or uomId: Foreign key constraint failed' },
         { status: 400 }
       );
     }

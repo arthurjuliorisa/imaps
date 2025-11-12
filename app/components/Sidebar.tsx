@@ -62,6 +62,7 @@ const menuSections: MenuSection[] = [
     title: 'Master',
     items: [
       { title: 'Item', icon: <CategoryIcon />, path: '/master/item' },
+      { title: 'Scrap', icon: <CategoryIcon />, path: '/master/scrap' },
       { title: 'UOM', icon: <CategoryIcon />, path: '/master/uom' },
       { title: 'Currency', icon: <AttachMoneyIcon />, path: '/master/currency' },
       { title: 'Customers', icon: <PeopleIcon />, path: '/master/customers' },
