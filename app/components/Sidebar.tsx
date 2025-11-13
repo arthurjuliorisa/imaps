@@ -110,6 +110,26 @@ const menuSections: MenuSection[] = [
     ],
   },
   {
+    title: 'Beginning Data',
+    items: [
+      {
+        title: 'Beginning Raw Material',
+        icon: <DescriptionIcon />,
+        path: '/customs/beginning-raw-material',
+      },
+      {
+        title: 'Beginning Finish Good',
+        icon: <DescriptionIcon />,
+        path: '/customs/beginning-finish-good',
+      },
+      {
+        title: 'Beginning Capital Goods',
+        icon: <DescriptionIcon />,
+        path: '/customs/beginning-capital-goods',
+      },
+    ],
+  },
+  {
     title: 'Settings',
     items: [
       { title: 'User Management', icon: <PeopleIcon />, path: '/settings/users' },

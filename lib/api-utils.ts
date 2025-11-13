@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
+import validator from 'validator';
 
 /**
  * Standard API error response handler
@@ -142,4 +143,129 @@ export function createPaginatedResponse<T>(
       totalPages: Math.ceil(total / limit),
     },
   };
+}
+
+/**
+ * Parse and normalize date to UTC midnight to avoid timezone issues
+ * @param dateInput - Date string or Date object
+ * @returns Normalized Date object at UTC midnight
+ * @throws Error if date format is invalid
+ */
+export function parseAndNormalizeDate(dateInput: string | Date): Date {
+  const parsed = new Date(dateInput);
+  if (isNaN(parsed.getTime())) {
+    throw new ValidationError('Invalid date format');
+  }
+
+  // Normalize to UTC midnight
+  return new Date(Date.UTC(
+    parsed.getFullYear(),
+    parsed.getMonth(),
+    parsed.getDate(),
+    0, 0, 0, 0
+  ));
+}
+
+/**
+ * Get current date normalized to UTC midnight
+ * @returns Today's date at UTC midnight
+ */
+export function getTodayUTC(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0, 0, 0, 0
+  ));
+}
+
+/**
+ * Validate that a date is not in the future
+ * @param date - Date to validate
+ * @throws ValidationError if date is in the future
+ */
+export function validateDateNotFuture(date: Date): void {
+  const today = getTodayUTC();
+  if (date > today) {
+    throw new ValidationError('Date cannot be in the future');
+  }
+}
+
+/**
+ * Sanitize and validate remarks input
+ * @param remarks - Remarks text (optional)
+ * @param maxLength - Maximum allowed length (default: 1000)
+ * @returns Sanitized remarks or null
+ * @throws ValidationError if remarks exceed max length
+ */
+export function sanitizeRemarks(
+  remarks: string | null | undefined,
+  maxLength: number = 1000
+): string | null {
+  if (!remarks) return null;
+
+  // Trim whitespace
+  const trimmed = remarks.trim();
+  if (trimmed.length === 0) return null;
+
+  // Validate max length
+  if (trimmed.length > maxLength) {
+    throw new ValidationError(`Remarks must not exceed ${maxLength} characters`);
+  }
+
+  // Sanitize to prevent XSS - escape HTML entities
+  return validator.escape(trimmed);
+}
+
+/**
+ * Validate that a number is positive (> 0)
+ * @param value - Value to validate
+ * @param fieldName - Name of the field for error message
+ * @throws ValidationError if value is not a positive number
+ */
+export function validatePositiveNumber(value: any, fieldName: string = 'Value'): number {
+  const numValue = parseFloat(String(value));
+  if (isNaN(numValue) || numValue <= 0) {
+    throw new ValidationError(`${fieldName} must be a positive number greater than 0`);
+  }
+  return numValue;
+}
+
+/**
+ * Validate that an item exists and matches the expected type
+ * @param prisma - Prisma client instance
+ * @param itemId - Item ID to validate
+ * @param expectedType - Expected ItemType (e.g., 'RM', 'FG', 'CAPITAL')
+ * @returns Item if valid
+ * @throws ValidationError if item doesn't exist or type doesn't match
+ */
+export async function validateItemType(
+  prisma: any,
+  itemId: string,
+  expectedType: string
+): Promise<any> {
+  const item = await prisma.item.findUnique({
+    where: { id: itemId },
+    select: { id: true, code: true, name: true, type: true, uomId: true },
+  });
+
+  if (!item) {
+    throw new ValidationError('Invalid itemId: Item does not exist');
+  }
+
+  if (item.type !== expectedType) {
+    const typeNames: Record<string, string> = {
+      RM: 'Raw Material',
+      FG: 'Finished Good',
+      CAPITAL: 'Capital Goods',
+      SFG: 'Semi-Finished Good',
+      SCRAP: 'Scrap',
+    };
+    throw new ValidationError(
+      `Invalid item type: Item is a ${typeNames[item.type] || item.type}, expected ${typeNames[expectedType] || expectedType}`
+    );
+  }
+
+  return item;
 }

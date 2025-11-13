@@ -4,9 +4,32 @@ import { prisma } from '@/lib/prisma';
 // Valid ItemType enum values from Prisma schema
 const VALID_ITEM_TYPES = ['RM', 'FG', 'SFG', 'CAPITAL', 'SCRAP'] as const;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const typeFilter = searchParams.get('type');
+
+    // Build where clause based on type filter
+    const whereClause: any = {};
+    if (typeFilter) {
+      // Map itemType values to database enum values
+      const typeMap: Record<string, string> = {
+        'RAW_MATERIAL': 'RM',
+        'FINISH_GOOD': 'FG',
+        'CAPITAL_GOODS': 'CAPITAL',
+        'SCRAP': 'SCRAP',
+        'SEMI_FINISH_GOOD': 'SFG',
+      };
+
+      const dbType = typeMap[typeFilter] || typeFilter;
+
+      if (VALID_ITEM_TYPES.includes(dbType as any)) {
+        whereClause.type = dbType;
+      }
+    }
+
     const items = await prisma.item.findMany({
+      where: whereClause,
       include: {
         uom: true,
       },

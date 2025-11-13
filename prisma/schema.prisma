@@ -75,6 +75,7 @@ model UOM {
   scrapMutations         ScrapMutation[]
   capitalGoodsMutations  CapitalGoodsMutation[]
   wipRecords             WIPRecord[]
+  beginningStocks        BeginningStock[]
 }
 
 model Currency {
@@ -115,6 +116,7 @@ model Item {
   capitalGoodsMutations  CapitalGoodsMutation[]
   wipRecords             WIPRecord[]
   scrapItems             ScrapItem[]
+  beginningStocks        BeginningStock[]
 }
 
 model Customer {
@@ -324,4 +326,32 @@ model ScrapItem {
   item  Item        @relation(fields: [itemId], references: [id])
 
   @@unique([scrapId, itemId])
+}
+
+// Beginning Stock Balance
+enum BeginningStockType {
+  RAW_MATERIAL
+  FINISH_GOOD
+  CAPITAL_GOODS
+}
+
+model BeginningStock {
+  id               String             @id @default(cuid())
+  type             BeginningStockType
+  itemId           String
+  uomId            String
+  beginningBalance Float
+  beginningDate    DateTime
+  remarks          String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  // Relations
+  item Item @relation(fields: [itemId], references: [id])
+  uom  UOM  @relation(fields: [uomId], references: [id])
+
+  @@unique([type, itemId, beginningDate])
+  @@index([type])
+  @@index([itemId])
+  @@index([beginningDate])
 }
