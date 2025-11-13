@@ -83,10 +83,8 @@ export async function GET(request: Request) {
           },
         },
       },
-      orderBy: [
-        { date: 'desc' },
-        { scrap: { code: 'asc' } },
-      ],
+      // FIX: Simplified orderBy to avoid nested relation issues in production
+      orderBy: { date: 'desc' },
     });
 
     // Transform the response to include flattened scrap and UOM data
@@ -104,6 +102,16 @@ export async function GET(request: Request) {
       in: mutation.incoming,
       out: mutation.outgoing,
     }));
+
+    // Secondary sort by scrap code (ascending) for records with the same date
+    transformedData.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      if (dateB !== dateA) {
+        return dateB - dateA;
+      }
+      return a.scrapCode.localeCompare(b.scrapCode);
+    });
 
     return NextResponse.json(transformedData);
   } catch (error) {
