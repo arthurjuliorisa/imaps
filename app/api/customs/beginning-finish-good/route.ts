@@ -104,21 +104,22 @@ export async function GET(request: Request) {
 
     // Item filtering
     if (itemCode || itemName) {
-      where.item = {};
+      const itemFilters: Prisma.ItemWhereInput = {};
       if (itemCode) {
-        where.item.code = { contains: itemCode, mode: 'insensitive' };
+        itemFilters.code = { contains: itemCode };
       }
       if (itemName) {
-        where.item.name = { contains: itemName, mode: 'insensitive' };
+        itemFilters.name = { contains: itemName };
       }
+      where.item = itemFilters;
     }
 
     // Date filtering
     if (startDate || endDate) {
-      where.beginningDate = {};
+      const dateFilter: Prisma.DateTimeFilter = {};
       if (startDate) {
         try {
-          where.beginningDate.gte = parseAndNormalizeDate(startDate);
+          dateFilter.gte = parseAndNormalizeDate(startDate);
         } catch (error) {
           return NextResponse.json(
             { message: 'Invalid startDate format' },
@@ -128,7 +129,7 @@ export async function GET(request: Request) {
       }
       if (endDate) {
         try {
-          where.beginningDate.lte = parseAndNormalizeDate(endDate);
+          dateFilter.lte = parseAndNormalizeDate(endDate);
         } catch (error) {
           return NextResponse.json(
             { message: 'Invalid endDate format' },
@@ -136,6 +137,7 @@ export async function GET(request: Request) {
           );
         }
       }
+      where.beginningDate = dateFilter;
     }
 
     const beginningStocks = await prisma.beginningStock.findMany({
@@ -168,7 +170,7 @@ export async function GET(request: Request) {
       if (dateB !== dateA) {
         return dateB - dateA;
       }
-      return a.item.code.localeCompare(b.item.code);
+      return (a.item?.code || '').localeCompare(b.item?.code || '');
     });
 
     return NextResponse.json(beginningStocks);

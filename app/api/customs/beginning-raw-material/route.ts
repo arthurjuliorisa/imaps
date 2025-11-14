@@ -110,17 +110,17 @@ export async function GET(request: Request) {
       if (itemCode && itemName && itemCode === itemName) {
         where.item = {
           OR: [
-            { code: { contains: itemCode, mode: 'insensitive' } },
-            { name: { contains: itemName, mode: 'insensitive' } },
+            { code: { contains: itemCode } },
+            { name: { contains: itemName } },
           ],
         };
       } else {
         // If different, use AND logic
         if (itemCode) {
-          itemFilters.code = { contains: itemCode, mode: 'insensitive' };
+          itemFilters.code = { contains: itemCode };
         }
         if (itemName) {
-          itemFilters.name = { contains: itemName, mode: 'insensitive' };
+          itemFilters.name = { contains: itemName };
         }
         where.item = itemFilters;
       }
@@ -181,7 +181,7 @@ export async function GET(request: Request) {
       if (dateB !== dateA) {
         return dateB - dateA;
       }
-      return a.item.code.localeCompare(b.item.code);
+      return (a.item?.code || '').localeCompare(b.item?.code || '');
     });
 
     return NextResponse.json(beginningStocks);
