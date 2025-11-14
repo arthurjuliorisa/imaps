@@ -48,3 +48,6 @@ next-env.d.ts
 
 # playwright
 /.playwright-mcp
+
+# backup files
+*.backup

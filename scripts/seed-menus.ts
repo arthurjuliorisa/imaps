@@ -45,10 +45,21 @@ const menuStructure: MenuInput[] = [
     ],
   },
   {
+    name: 'Beginning Data',
+    route: null,
+    icon: 'PlaylistAdd',
+    order: 4,
+    children: [
+      { name: 'Beginning Raw Material', route: '/customs/beginning-raw-material', icon: 'Description', order: 1 },
+      { name: 'Beginning Finish Good', route: '/customs/beginning-finish-good', icon: 'Description', order: 2 },
+      { name: 'Beginning Capital Goods', route: '/customs/beginning-capital-goods', icon: 'Description', order: 3 },
+    ],
+  },
+  {
     name: 'Settings',
     route: null,
     icon: 'Settings',
-    order: 4,
+    order: 5,
     children: [
       { name: 'User Management', route: '/settings/users', icon: 'ManageAccounts', order: 1 },
       { name: 'Access Menu', route: '/settings/access-menu', icon: 'Security', order: 2 },

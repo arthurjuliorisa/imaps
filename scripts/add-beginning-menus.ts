@@ -3,118 +3,128 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🚀 Adding Beginning Data menu items...\n');
+  console.log('🚀 Adding Beginning Data menu section...\n');
 
   try {
-    // List all existing menus first
-    const allMenus = await prisma.menu.findMany({
-      select: {
-        id: true,
-        name: true,
-        route: true,
-        parentId: true,
-      },
-      orderBy: {
-        name: 'asc',
-      },
-    });
-
-    console.log('📋 Existing menus:');
-    allMenus.forEach(menu => {
-      console.log(`   - ${menu.name} (${menu.route || 'no route'}) ${menu.parentId ? '[child]' : '[parent]'}`);
-    });
-    console.log('');
-
-    // Find the Customs parent menu (try multiple possible names)
-    let customsMenu = await prisma.menu.findFirst({
+    // Check if "Beginning Data" parent menu already exists
+    const existingBeginningData = await prisma.menu.findFirst({
       where: {
-        OR: [
-          { name: 'Customs' },
-          { name: 'CUSTOMS' },
-          { route: { contains: '/customs' } },
-        ],
+        name: 'Beginning Data',
       },
     });
 
-    // If not found, create the Customs parent menu
-    if (!customsMenu) {
-      console.log('⚠️  Customs parent menu not found. Creating it...');
-      customsMenu = await prisma.menu.create({
-        data: {
-          name: 'Customs',
-          icon: 'LocalShippingIcon',
-          order: 1,
+    if (existingBeginningData) {
+      console.log('⚠️  "Beginning Data" parent menu already exists. Skipping...\n');
+
+      // Show existing structure
+      const children = await prisma.menu.findMany({
+        where: {
+          parentId: existingBeginningData.id,
+        },
+        orderBy: {
+          order: 'asc',
         },
       });
-      console.log('✅ Created Customs parent menu');
-    } else {
-      console.log('✅ Found Customs menu:', customsMenu.name);
+
+      console.log('📋 Existing Beginning Data menus:');
+      console.log(`   - ${existingBeginningData.name} [parent]`);
+      children.forEach(child => {
+        console.log(`     └─ ${child.name} (${child.route})`);
+      });
+
+      return;
     }
 
-    // Get the highest order value for customs children
-    const lastCustomsChild = await prisma.menu.findFirst({
+    // Get the highest order value for parent menus
+    const lastParentMenu = await prisma.menu.findFirst({
       where: {
-        parentId: customsMenu.id,
+        parentId: null,
       },
       orderBy: {
         order: 'desc',
       },
     });
 
-    const startingOrder = (lastCustomsChild?.order || 0) + 1;
-    console.log(`📊 Starting order number: ${startingOrder}\n`);
+    const parentOrder = (lastParentMenu?.order || 0) + 1;
+    console.log(`📊 Creating "Beginning Data" parent menu with order: ${parentOrder}\n`);
 
-    // Create the three new menu items
+    // Create the "Beginning Data" parent menu
+    const beginningDataParent = await prisma.menu.create({
+      data: {
+        name: 'Beginning Data',
+        route: null,
+        icon: 'PlaylistAdd',
+        order: parentOrder,
+      },
+    });
+
+    console.log(`✅ Created parent menu: "${beginningDataParent.name}"\n`);
+
+    // Create the three child menu items
     const menuItems = [
       {
         name: 'Beginning Raw Material',
         route: '/customs/beginning-raw-material',
-        icon: 'PlaylistAddCheckIcon',
-        parentId: customsMenu.id,
-        order: startingOrder,
+        icon: 'Description',
+        parentId: beginningDataParent.id,
+        order: 1,
       },
       {
         name: 'Beginning Finish Good',
         route: '/customs/beginning-finish-good',
-        icon: 'PlaylistAddCheckIcon',
-        parentId: customsMenu.id,
-        order: startingOrder + 1,
+        icon: 'Description',
+        parentId: beginningDataParent.id,
+        order: 2,
       },
       {
         name: 'Beginning Capital Goods',
         route: '/customs/beginning-capital-goods',
-        icon: 'PlaylistAddCheckIcon',
-        parentId: customsMenu.id,
-        order: startingOrder + 2,
+        icon: 'Description',
+        parentId: beginningDataParent.id,
+        order: 3,
       },
     ];
 
-    // Check if menus already exist
+    console.log('Adding child menu items...\n');
+
     for (const item of menuItems) {
-      const existing = await prisma.menu.findFirst({
-        where: {
-          name: item.name,
-        },
-      });
-
-      if (existing) {
-        console.log(`⚠️  Menu "${item.name}" already exists. Skipping...`);
-        continue;
-      }
-
-      // Create the menu item
       const created = await prisma.menu.create({
         data: item,
       });
 
-      console.log(`✅ Created menu: "${created.name}" with route: ${created.route}`);
+      console.log(`✅ Created child menu: "${created.name}"`);
+      console.log(`   Route: ${created.route}`);
+      console.log(`   Order: ${created.order}\n`);
     }
 
-    console.log('\n✨ All Beginning Data menus have been added successfully!');
+    console.log('\n✨ Beginning Data menu section has been added successfully!\n');
+
+    // Show final structure
+    const allBeginningMenus = await prisma.menu.findMany({
+      where: {
+        OR: [
+          { id: beginningDataParent.id },
+          { parentId: beginningDataParent.id },
+        ],
+      },
+      orderBy: [
+        { parentId: 'asc' },
+        { order: 'asc' },
+      ],
+    });
+
+    console.log('📋 Final menu structure:');
+    console.log(`   ${beginningDataParent.name} [parent]`);
+    allBeginningMenus
+      .filter(m => m.parentId === beginningDataParent.id)
+      .forEach(child => {
+        console.log(`     └─ ${child.name}`);
+      });
+
     console.log('\n📝 Next steps:');
     console.log('   1. Go to Settings > Access Menu to configure permissions');
     console.log('   2. Assign these menus to users who need access');
-    console.log('   3. Test the new pages in the application\n');
+    console.log('   3. Refresh the page to see the new menu section\n');
 
   } catch (error) {
     console.error('❌ Error adding menu items:', error);
