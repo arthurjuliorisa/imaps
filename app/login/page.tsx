@@ -94,23 +94,27 @@ export default function LoginPage() {
           flex: { xs: 'none', md: '1 1 58%' },
           position: 'relative',
           bgcolor: (theme) => theme.palette.mode === 'dark' ? 'grey.900' : 'grey.50',
-          display: 'flex',
+          display: { xs: 'flex', sm: 'flex', md: 'flex' },
           alignItems: 'center',
           justifyContent: 'center',
-          p: 4,
+          p: { xs: 2, sm: 3, md: 4 },
           overflow: 'hidden',
-          minHeight: { xs: '300px', md: '100vh' },
+          minHeight: { xs: '200px', sm: '250px', md: '100vh' },
         }}
       >
           {/* Logo at top left */}
-          <Box sx={{ position: 'absolute', top: 32, left: 32 }}>
+          <Box sx={{
+            position: 'absolute',
+            top: { xs: 16, sm: 24, md: 32 },
+            left: { xs: 16, sm: 24, md: 32 }
+          }}>
             <Image
               src="/logo.png"
               alt="iMAPS Logo"
               width={210}
               height={62}
               priority
-              style={{ objectFit: 'contain', height: 'auto', width: 'auto', maxWidth: '210px' }}
+              style={{ objectFit: 'contain', height: 'auto', width: 'auto', maxWidth: '100%' }}
             />
           </Box>
 
@@ -118,7 +122,7 @@ export default function LoginPage() {
           <Box
             sx={{
               width: '100%',
-              maxWidth: 600,
+              maxWidth: { xs: '100%', sm: 500, md: 600 },
               height: '100%',
               display: 'flex',
               alignItems: 'center',
@@ -131,7 +135,7 @@ export default function LoginPage() {
               sx={{
                 position: 'relative',
                 width: '100%',
-                height: '500px',
+                height: { xs: '200px', sm: '350px', md: '500px' },
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -140,19 +144,19 @@ export default function LoginPage() {
               {/* Placeholder for illustration - you can replace with actual SVG or image */}
               <Box
                 sx={{
-                  width: '500px',
-                  height: '300px',
+                  width: { xs: '100%', sm: '400px', md: '500px' },
+                  height: { xs: '150px', sm: '250px', md: '300px' },
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 2,
+                  gap: { xs: 1, sm: 1.5, md: 2 },
                 }}
               >
                 {/* Three people working illustration placeholder */}
                 <Box
                   sx={{
-                    width: '150px',
-                    height: '200px',
+                    width: { xs: '60px', sm: '100px', md: '150px' },
+                    height: { xs: '100px', sm: '150px', md: '200px' },
                     bgcolor: (theme) => theme.palette.mode === 'dark' ? 'primary.dark' : '#FF8B7B',
                     borderRadius: '50% 50% 0 0',
                     opacity: 0.3,
@@ -160,8 +164,8 @@ export default function LoginPage() {
                 />
                 <Box
                   sx={{
-                    width: '150px',
-                    height: '200px',
+                    width: { xs: '60px', sm: '100px', md: '150px' },
+                    height: { xs: '100px', sm: '150px', md: '200px' },
                     bgcolor: (theme) => theme.palette.mode === 'dark' ? 'primary.dark' : '#FF8B7B',
                     borderRadius: '50% 50% 0 0',
                     opacity: 0.3,
@@ -169,8 +173,8 @@ export default function LoginPage() {
                 />
                 <Box
                   sx={{
-                    width: '150px',
-                    height: '200px',
+                    width: { xs: '60px', sm: '100px', md: '150px' },
+                    height: { xs: '100px', sm: '150px', md: '200px' },
                     bgcolor: (theme) => theme.palette.mode === 'dark' ? 'primary.dark' : '#FF8B7B',
                     borderRadius: '50% 50% 0 0',
                     opacity: 0.3,
@@ -197,13 +201,14 @@ export default function LoginPage() {
                   key={i}
                   sx={{
                     position: 'absolute',
-                    width: '50px',
-                    height: '50px',
+                    width: { xs: '30px', sm: '40px', md: '50px' },
+                    height: { xs: '30px', sm: '40px', md: '50px' },
                     border: (theme) => `2px solid ${theme.palette.mode === 'dark' ? theme.palette.grey[700] : '#E0E0E0'}`,
-                    borderRadius: '8px',
+                    borderRadius: { xs: '6px', sm: '7px', md: '8px' },
                     opacity: 0.5,
                     top: position.top,
                     left: position.left,
+                    display: { xs: i > 7 ? 'none' : 'block', sm: i > 9 ? 'none' : 'block', md: 'block' },
                   }}
                 />
               ))}
@@ -218,11 +223,15 @@ export default function LoginPage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          p: { xs: 3, md: 6 },
+          p: { xs: 3, sm: 4, md: 6 },
           bgcolor: 'background.default',
         }}
       >
-          <Box sx={{ width: '100%', maxWidth: 450, px: 2 }}>
+          <Box sx={{
+            width: '100%',
+            maxWidth: { xs: '100%', sm: 420, md: 450 },
+            px: { xs: 1, sm: 2 }
+          }}>
             <Typography
               variant="h4"
               component="h1"
@@ -230,6 +239,7 @@ export default function LoginPage() {
                 fontWeight: 600,
                 color: (theme) => theme.palette.text.primary,
                 mb: 1,
+                fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2.125rem' },
               }}
             >
               Welcome to iMAPS for Polygroup
@@ -238,20 +248,21 @@ export default function LoginPage() {
               variant="body2"
               sx={{
                 color: (theme) => theme.palette.text.secondary,
-                mb: 4,
+                mb: { xs: 3, sm: 3.5, md: 4 },
+                fontSize: { xs: '0.875rem', sm: '0.875rem', md: '0.875rem' },
               }}
             >
               Please sign-in to your account and start the using of this program
             </Typography>
 
             {error && (
-              <Alert severity="error" sx={{ mb: 3 }}>
+              <Alert severity="error" sx={{ mb: { xs: 2.5, sm: 3 } }}>
                 {error}
               </Alert>
             )}
 
             <form onSubmit={handleSubmit}>
-              <Stack spacing={2.5}>
+              <Stack spacing={{ xs: 2, sm: 2.5 }}>
                 <TextField
                   fullWidth
                   label="Email"
@@ -266,6 +277,7 @@ export default function LoginPage() {
                   InputLabelProps={{
                     sx: {
                       color: (theme) => theme.palette.text.primary,
+                      fontSize: { xs: '0.875rem', sm: '1rem' },
                       '&.Mui-focused': {
                         color: (theme) => theme.palette.primary.main,
                       },
@@ -274,8 +286,11 @@ export default function LoginPage() {
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       bgcolor: (theme) => theme.palette.mode === 'dark' ? 'grey.800' : 'white',
+                      fontSize: { xs: '0.875rem', sm: '1rem' },
+                      minHeight: { xs: '48px', sm: '56px' },
                       '& input': {
                         color: (theme) => theme.palette.text.primary,
+                        padding: { xs: '12px 14px', sm: '16.5px 14px' },
                       },
                       '& fieldset': {
                         borderColor: (theme) => theme.palette.mode === 'dark' ? 'grey.700' : 'rgba(0, 0, 0, 0.23)',
@@ -300,6 +315,7 @@ export default function LoginPage() {
                   InputLabelProps={{
                     sx: {
                       color: (theme) => theme.palette.text.primary,
+                      fontSize: { xs: '0.875rem', sm: '1rem' },
                       '&.Mui-focused': {
                         color: (theme) => theme.palette.primary.main,
                       },
@@ -308,8 +324,11 @@ export default function LoginPage() {
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       bgcolor: (theme) => theme.palette.mode === 'dark' ? 'grey.800' : 'white',
+                      fontSize: { xs: '0.875rem', sm: '1rem' },
+                      minHeight: { xs: '48px', sm: '56px' },
                       '& input': {
                         color: (theme) => theme.palette.text.primary,
+                        padding: { xs: '12px 14px', sm: '16.5px 14px' },
                       },
                       '& fieldset': {
                         borderColor: (theme) => theme.palette.mode === 'dark' ? 'grey.700' : 'rgba(0, 0, 0, 0.23)',
@@ -331,6 +350,10 @@ export default function LoginPage() {
                             edge="end"
                             aria-label={showPassword ? 'Hide password' : 'Show password'}
                             tabIndex={0}
+                            sx={{
+                              minWidth: { xs: '44px', sm: '48px' },
+                              minHeight: { xs: '44px', sm: '48px' },
+                            }}
                           >
                             {showPassword ? <VisibilityOff /> : <Visibility />}
                           </IconButton>
@@ -346,16 +369,28 @@ export default function LoginPage() {
                       checked={rememberMe}
                       onChange={(e) => setRememberMe(e.target.checked)}
                       color="primary"
+                      sx={{
+                        padding: { xs: '6px', sm: '9px' },
+                      }}
                     />
                   }
                   label={
                     <Typography
                       variant="body2"
-                      sx={{ color: (theme) => theme.palette.text.primary }}
+                      sx={{
+                        color: (theme) => theme.palette.text.primary,
+                        fontSize: { xs: '0.875rem', sm: '0.875rem' },
+                      }}
                     >
                       Remember Me
                     </Typography>
                   }
+                  sx={{
+                    marginLeft: { xs: 0, sm: 0 },
+                    '& .MuiFormControlLabel-label': {
+                      paddingLeft: { xs: '4px', sm: '8px' },
+                    },
+                  }}
                 />
 
                 <Button
@@ -366,7 +401,9 @@ export default function LoginPage() {
                   disabled={loading}
                   startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <LockOutlined />}
                   sx={{
-                    py: 1.5,
+                    py: { xs: 1.25, sm: 1.5 },
+                    minHeight: { xs: '48px', sm: '52px' },
+                    fontSize: { xs: '0.875rem', sm: '0.9375rem', md: '1rem' },
                     bgcolor: 'primary.main',
                     textTransform: 'uppercase',
                     fontWeight: 600,

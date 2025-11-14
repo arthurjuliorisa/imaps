@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import {
   parseAndNormalizeDate,
   validateDateNotFuture,
@@ -18,7 +18,7 @@ import {
  * @param newBeginningBalance - New beginning balance to use
  */
 async function recalculateMutationRecords(
-  tx: any,
+  tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>,
   itemId: string,
   fromDate: Date,
   newBeginningBalance: number
@@ -58,13 +58,20 @@ async function recalculateMutationRecords(
     orderBy: { date: 'asc' },
   });
 
-  // Recalculate all subsequent records
+  // Recalculate all subsequent records using batch updates for better performance
+  const runningBalances: number[] = [];
   let runningEnding = newEnding;
-  for (const mutation of subsequentMutations) {
-    const newBeginning = runningEnding;
-    const calculatedEnding = newBeginning + mutation.incoming - mutation.outgoing + mutation.adjustment;
 
-    await tx.rawMaterialMutation.update({
+  for (const mutation of subsequentMutations) {
+    runningBalances.push(runningEnding);
+    runningEnding = runningEnding + mutation.incoming - mutation.outgoing + mutation.adjustment;
+  }
+
+  // Batch update all mutations in parallel
+  const updates = subsequentMutations.map((mutation, index) => {
+    const newBeginning = runningBalances[index];
+    const calculatedEnding = newBeginning + mutation.incoming - mutation.outgoing + mutation.adjustment;
+    return tx.rawMaterialMutation.update({
       where: { id: mutation.id },
       data: {
         beginning: newBeginning,
@@ -72,9 +79,9 @@ async function recalculateMutationRecords(
         variant: mutation.stockOpname > 0 ? mutation.stockOpname - calculatedEnding : 0,
       },
     });
+  });
 
-    runningEnding = calculatedEnding;
-  }
+  await Promise.all(updates);
 }
 
 /**
@@ -95,28 +102,41 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    // Build where clause
-    const where: any = {
+    // Build where clause with proper typing
+    const where: Prisma.BeginningStockWhereInput = {
       type: 'RAW_MATERIAL',
     };
 
-    // Item filtering
+    // Item filtering - use proper nested where with OR logic for search
     if (itemCode || itemName) {
-      where.item = {};
-      if (itemCode) {
-        where.item.code = { contains: itemCode, mode: 'insensitive' };
-      }
-      if (itemName) {
-        where.item.name = { contains: itemName, mode: 'insensitive' };
+      const itemFilters: Prisma.ItemWhereInput = {};
+
+      // If both are the same (from search box), use OR logic
+      if (itemCode && itemName && itemCode === itemName) {
+        where.item = {
+          OR: [
+            { code: { contains: itemCode, mode: 'insensitive' } },
+            { name: { contains: itemName, mode: 'insensitive' } },
+          ],
+        };
+      } else {
+        // If different, use AND logic
+        if (itemCode) {
+          itemFilters.code = { contains: itemCode, mode: 'insensitive' };
+        }
+        if (itemName) {
+          itemFilters.name = { contains: itemName, mode: 'insensitive' };
+        }
+        where.item = itemFilters;
       }
     }
 
     // Date filtering
     if (startDate || endDate) {
-      where.beginningDate = {};
+      const dateFilter: Prisma.DateTimeFilter = {};
       if (startDate) {
         try {
-          where.beginningDate.gte = parseAndNormalizeDate(startDate);
+          dateFilter.gte = parseAndNormalizeDate(startDate);
         } catch (error) {
           return NextResponse.json(
             { message: 'Invalid startDate format' },
@@ -126,7 +146,7 @@ export async function GET(request: Request) {
       }
       if (endDate) {
         try {
-          where.beginningDate.lte = parseAndNormalizeDate(endDate);
+          dateFilter.lte = parseAndNormalizeDate(endDate);
         } catch (error) {
           return NextResponse.json(
             { message: 'Invalid endDate format' },
@@ -134,6 +154,7 @@ export async function GET(request: Request) {
           );
         }
       }
+      where.beginningDate = dateFilter;
     }
 
     const beginningStocks = await prisma.beginningStock.findMany({
@@ -155,7 +176,6 @@ export async function GET(request: Request) {
           },
         },
       },
-      // FIX: Simplified orderBy to avoid nested relation issues in production
       orderBy: { beginningDate: 'desc' },
     });
 
@@ -170,10 +190,14 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json(beginningStocks);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[API Error] Failed to fetch beginning raw material stocks:', error);
+    console.error('[API Error] Error stack:', error?.stack);
     return NextResponse.json(
-      { message: 'Error fetching beginning stock records' },
+      {
+        message: 'Error fetching beginning stock records',
+        ...(process.env.NODE_ENV === 'development' && { error: error?.message }),
+      },
       { status: 500 }
     );
   }
@@ -238,9 +262,8 @@ export async function POST(request: Request) {
     }
 
     // Validate item exists and is of type RAW_MATERIAL
-    let item: any;
     try {
-      item = await validateItemType(prisma, itemId, 'RM');
+      await validateItemType(prisma, itemId, 'RM');
     } catch (error: any) {
       return NextResponse.json(
         { message: error.message },
@@ -316,6 +339,7 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { status: 201 });
   } catch (error: any) {
     console.error('[API Error] Failed to create beginning stock record:', error);
+    console.error('[API Error] Error stack:', error?.stack);
 
     // Handle validation errors
     if (error instanceof ValidationError) {
@@ -355,7 +379,10 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { message: 'Error creating beginning stock record' },
+      {
+        message: 'Error creating beginning stock record',
+        ...(process.env.NODE_ENV === 'development' && { error: error?.message }),
+      },
       { status: 500 }
     );
   }

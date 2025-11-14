@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import {
   parseAndNormalizeDate,
   validateDateNotFuture,
@@ -18,7 +18,7 @@ import {
  * @param newBeginningBalance - New beginning balance to use
  */
 async function recalculateMutationRecords(
-  tx: any,
+  tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>,
   itemId: string,
   fromDate: Date,
   newBeginningBalance: number
@@ -58,13 +58,20 @@ async function recalculateMutationRecords(
     orderBy: { date: 'asc' },
   });
 
-  // Recalculate all subsequent records
+  // Recalculate all subsequent records using batch updates for better performance
+  const runningBalances: number[] = [];
   let runningEnding = newEnding;
-  for (const mutation of subsequentMutations) {
-    const newBeginning = runningEnding;
-    const calculatedEnding = newBeginning + mutation.incoming - mutation.outgoing + mutation.adjustment;
 
-    await tx.productionMutation.update({
+  for (const mutation of subsequentMutations) {
+    runningBalances.push(runningEnding);
+    runningEnding = runningEnding + mutation.incoming - mutation.outgoing + mutation.adjustment;
+  }
+
+  // Batch update all mutations in parallel
+  const updates = subsequentMutations.map((mutation, index) => {
+    const newBeginning = runningBalances[index];
+    const calculatedEnding = newBeginning + mutation.incoming - mutation.outgoing + mutation.adjustment;
+    return tx.productionMutation.update({
       where: { id: mutation.id },
       data: {
         beginning: newBeginning,
@@ -72,9 +79,9 @@ async function recalculateMutationRecords(
         variant: mutation.stockOpname > 0 ? mutation.stockOpname - calculatedEnding : 0,
       },
     });
+  });
 
-    runningEnding = calculatedEnding;
-  }
+  await Promise.all(updates);
 }
 
 /**
@@ -96,7 +103,7 @@ export async function GET(request: Request) {
     const endDate = searchParams.get('endDate');
 
     // Build where clause
-    const where: any = {
+    const where: Prisma.BeginningStockWhereInput = {
       type: 'FINISH_GOOD',
     };
 
@@ -170,10 +177,14 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json(beginningStocks);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[API Error] Failed to fetch beginning finish good stocks:', error);
+    console.error('[API Error] Error stack:', error?.stack);
     return NextResponse.json(
-      { message: 'Error fetching beginning stock records' },
+      {
+        message: 'Error fetching beginning stock records',
+        ...(process.env.NODE_ENV === 'development' && { error: error?.message }),
+      },
       { status: 500 }
     );
   }
@@ -238,9 +249,8 @@ export async function POST(request: Request) {
     }
 
     // Validate item exists and is of type FINISH_GOOD
-    let item: any;
     try {
-      item = await validateItemType(prisma, itemId, 'FG');
+      await validateItemType(prisma, itemId, 'FG');
     } catch (error: any) {
       return NextResponse.json(
         { message: error.message },
@@ -316,6 +326,7 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { status: 201 });
   } catch (error: any) {
     console.error('[API Error] Failed to create beginning stock record:', error);
+    console.error('[API Error] Error stack:', error?.stack);
 
     // Handle validation errors
     if (error instanceof ValidationError) {
