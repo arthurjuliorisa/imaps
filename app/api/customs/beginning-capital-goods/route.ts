@@ -18,7 +18,7 @@ import {
  * @param newBeginningBalance - New beginning balance to use
  */
 async function recalculateMutationRecords(
-  tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>,
+  tx: Prisma.TransactionClient,
   itemId: string,
   fromDate: Date,
   newBeginningBalance: number
@@ -58,20 +58,15 @@ async function recalculateMutationRecords(
     orderBy: { date: 'asc' },
   });
 
-  // Recalculate all subsequent records using batch updates for better performance
-  const runningBalances: number[] = [];
+  // Update all subsequent records sequentially to avoid transaction conflicts
   let runningEnding = newEnding;
 
-  for (const mutation of subsequentMutations) {
-    runningBalances.push(runningEnding);
-    runningEnding = runningEnding + mutation.incoming - mutation.outgoing + mutation.adjustment;
-  }
-
-  // Batch update all mutations in parallel
-  const updates = subsequentMutations.map((mutation, index) => {
-    const newBeginning = runningBalances[index];
+  for (let i = 0; i < subsequentMutations.length; i++) {
+    const mutation = subsequentMutations[i];
+    const newBeginning = runningEnding;
     const calculatedEnding = newBeginning + mutation.incoming - mutation.outgoing + mutation.adjustment;
-    return tx.capitalGoodsMutation.update({
+
+    await tx.capitalGoodsMutation.update({
       where: { id: mutation.id },
       data: {
         beginning: newBeginning,
@@ -79,9 +74,9 @@ async function recalculateMutationRecords(
         variant: mutation.stockOpname > 0 ? mutation.stockOpname - calculatedEnding : 0,
       },
     });
-  });
 
-  await Promise.all(updates);
+    runningEnding = calculatedEnding;
+  }
 }
 
 /**
@@ -177,13 +172,17 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json(beginningStocks);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[API Error] Failed to fetch beginning capital goods stocks:', error);
-    console.error('[API Error] Error stack:', error?.stack);
+
+    if (error instanceof Error) {
+      console.error('[API Error] Error stack:', error.stack);
+    }
+
     return NextResponse.json(
       {
         message: 'Error fetching beginning stock records',
-        ...(process.env.NODE_ENV === 'development' && { error: error?.message }),
+        ...(process.env.NODE_ENV === 'development' && error instanceof Error && { error: error.message }),
       },
       { status: 500 }
     );
@@ -319,14 +318,17 @@ export async function POST(request: Request) {
 
       return beginningStock;
     }, {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      isolationLevel: 'Serializable' as const,
       timeout: 10000,
     });
 
     return NextResponse.json(result, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[API Error] Failed to create beginning stock record:', error);
-    console.error('[API Error] Error stack:', error?.stack);
+
+    if (error instanceof Error) {
+      console.error('[API Error] Error stack:', error.stack);
+    }
 
     // Handle validation errors
     if (error instanceof ValidationError) {
@@ -337,36 +339,41 @@ export async function POST(request: Request) {
     }
 
     // Handle Prisma errors
-    if (error.code === 'P2002') {
-      return NextResponse.json(
-        { message: 'A beginning stock record with this combination already exists' },
-        { status: 400 }
-      );
-    }
+    if (error && typeof error === 'object' && 'code' in error) {
+      if (error.code === 'P2002') {
+        return NextResponse.json(
+          { message: 'A beginning stock record with this combination already exists' },
+          { status: 400 }
+        );
+      }
 
-    if (error.code === 'P2003') {
-      return NextResponse.json(
-        { message: 'Invalid itemId or uomId: Foreign key constraint failed' },
-        { status: 400 }
-      );
-    }
+      if (error.code === 'P2003') {
+        return NextResponse.json(
+          { message: 'Invalid itemId or uomId: Foreign key constraint failed' },
+          { status: 400 }
+        );
+      }
 
-    if (error.code === 'P2025') {
-      return NextResponse.json(
-        { message: 'Record not found' },
-        { status: 404 }
-      );
-    }
+      if (error.code === 'P2025') {
+        return NextResponse.json(
+          { message: 'Record not found' },
+          { status: 404 }
+        );
+      }
 
-    if (error.code === 'P2034') {
-      return NextResponse.json(
-        { message: 'Transaction conflict detected. Please retry your request.' },
-        { status: 409 }
-      );
+      if (error.code === 'P2034') {
+        return NextResponse.json(
+          { message: 'Transaction conflict detected. Please retry your request.' },
+          { status: 409 }
+        );
+      }
     }
 
     return NextResponse.json(
-      { message: 'Error creating beginning stock record' },
+      {
+        message: 'Error creating beginning stock record',
+        ...(process.env.NODE_ENV === 'development' && error instanceof Error && { error: error.message }),
+      },
       { status: 500 }
     );
   }
