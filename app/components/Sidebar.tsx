@@ -70,40 +70,45 @@ const menuSections: MenuSection[] = [
     ],
   },
   {
-    title: 'Customs Report',
+    title: 'Lap. per Dokumen',
     items: [
       {
-        title: 'Laporan Pemasukan Barang',
+        title: 'Pemasukan Barang',
         icon: <DescriptionIcon />,
         path: '/customs/incoming',
       },
       {
-        title: 'Laporan Pengeluaran Barang',
+        title: 'Pengeluaran Barang',
         icon: <DescriptionIcon />,
         path: '/customs/outgoing',
       },
+    ],
+  },
+  {
+    title: 'LPJ Mutasi',
+    items: [
       {
-        title: 'LPJ Mutasi Bahan Baku',
-        icon: <DescriptionIcon />,
-        path: '/customs/raw-material',
-      },
-      {
-        title: 'LPJ Work In Progress',
+        title: 'Work in Progress',
         icon: <DescriptionIcon />,
         path: '/customs/wip',
       },
       {
-        title: 'LPJ Mutasi Hasil Produksi',
+        title: 'Bahan Baku/Penolong',
+        icon: <DescriptionIcon />,
+        path: '/customs/raw-material',
+      },
+      {
+        title: 'Hasil Produksi',
         icon: <DescriptionIcon />,
         path: '/customs/production',
       },
       {
-        title: 'LPJ Mutasi Barang Scrap',
+        title: 'Barang Scrap/Reject',
         icon: <DescriptionIcon />,
         path: '/customs/scrap',
       },
       {
-        title: 'LPJ Mutasi Barang Modal',
+        title: 'Barang Modal',
         icon: <DescriptionIcon />,
         path: '/customs/capital-goods',
       },

@@ -49,6 +49,8 @@ next-env.d.ts
 
 # playwright
 /.playwright-mcp
+/test-results
+/playwright-report
 
 # backup files
 *.backup
