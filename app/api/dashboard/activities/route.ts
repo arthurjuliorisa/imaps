@@ -57,156 +57,62 @@ const getActivityColor = (type: string): string => {
 
 /**
  * GET /api/dashboard/activities
- * Returns recent activity log across all operational tables
+ * Returns the 10 most recent activity log entries
  *
- * Fetches the 20 most recent records:
- * - Recent IncomingDocuments (last 5)
- * - Recent OutgoingDocuments (last 5)
- * - Recent ScrapMutations (last 5)
- * - Recent RawMaterialMutations (last 5)
- *
+ * Optimized to fetch directly from ActivityLog table
  * Returns unified format with type, description, timestamp, and user
  */
 export async function GET(request: Request) {
   try {
-    // Fetch recent records from each table in parallel
-    const [
-      recentIncoming,
-      recentOutgoing,
-      recentScrap,
-      recentRawMaterial,
-    ] = await Promise.all([
-      // Recent Incoming Documents
-      prisma.incomingDocument.findMany({
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          shipper: {
-            select: { name: true },
-          },
-          item: {
-            select: { code: true, name: true },
-          },
-          uom: {
-            select: { code: true },
+    // Fetch the 10 most recent activity logs
+    const activityLogs = await prisma.activityLog.findMany({
+      take: 10,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: {
+            username: true,
+            email: true,
           },
         },
-      }),
-
-      // Recent Outgoing Documents
-      prisma.outgoingDocument.findMany({
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          recipient: {
-            select: { name: true },
-          },
-          item: {
-            select: { code: true, name: true },
-          },
-          uom: {
-            select: { code: true },
-          },
-        },
-      }),
-
-      // Recent Scrap Mutations
-      prisma.scrapMutation.findMany({
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          scrap: {
-            select: { code: true, name: true },
-          },
-          uom: {
-            select: { code: true },
-          },
-        },
-      }),
-
-      // Recent Raw Material Mutations
-      prisma.rawMaterialMutation.findMany({
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          item: {
-            select: { code: true, name: true },
-          },
-          uom: {
-            select: { code: true },
-          },
-        },
-      }),
-    ]);
-
-    // Transform to unified activity format
-    const activities: Activity[] = [];
-
-    // Add incoming document activities
-    recentIncoming.forEach((doc) => {
-      const activityType = 'incoming';
-      activities.push({
-        id: doc.id,
-        type: getActivityType(activityType),
-        title: `Document ${doc.docNumber}`,
-        description: `Incoming: ${doc.docNumber} - ${doc.shipper.name} - ${doc.quantity} ${doc.uom.code} ${doc.item.name}`,
-        time: dayjs(doc.createdAt).fromNow(),
-        timestamp: doc.createdAt.toISOString(),
-        color: getActivityColor(activityType),
-      });
+      },
     });
 
-    // Add outgoing document activities
-    recentOutgoing.forEach((doc) => {
-      const activityType = 'outgoing';
-      activities.push({
-        id: doc.id,
-        type: getActivityType(activityType),
-        title: `Document ${doc.docNumber}`,
-        description: `Outgoing: ${doc.docNumber} - ${doc.recipient.name} - ${doc.quantity} ${doc.uom.code} ${doc.item.name}`,
-        time: dayjs(doc.createdAt).fromNow(),
-        timestamp: doc.createdAt.toISOString(),
-        color: getActivityColor(activityType),
-      });
-    });
+    // Transform to frontend-compatible activity format
+    const activities: Activity[] = activityLogs.map((log) => {
+      // Determine activity type based on action
+      let activityType: 'item' | 'customer' | 'supplier' | 'report' = 'item';
+      if (log.action.includes('INCOMING') || log.action.includes('OUTGOING') || log.action.includes('DOCUMENT')) {
+        activityType = 'report';
+      } else if (log.action.includes('CUSTOMER')) {
+        activityType = 'customer';
+      } else if (log.action.includes('SUPPLIER')) {
+        activityType = 'supplier';
+      }
 
-    // Add scrap mutation activities
-    recentScrap.forEach((mutation) => {
-      const activityType = 'scrap';
-      activities.push({
-        id: mutation.id,
-        type: getActivityType(activityType),
-        title: `Scrap ${mutation.scrap.code}`,
-        description: `Scrap Incoming: ${mutation.scrap.code} - ${mutation.incoming} ${mutation.uom.code}`,
-        time: dayjs(mutation.createdAt).fromNow(),
-        timestamp: mutation.createdAt.toISOString(),
-        color: getActivityColor(activityType),
-      });
-    });
+      // Determine color based on status
+      let color = '#6366f1'; // indigo default
+      if (log.status === 'SUCCESS') {
+        color = '#10b981'; // green
+      } else if (log.status === 'FAILED') {
+        color = '#ef4444'; // red
+      } else if (log.status === 'WARNING') {
+        color = '#f59e0b'; // amber
+      }
 
-    // Add raw material mutation activities
-    recentRawMaterial.forEach((mutation) => {
-      const action = mutation.incoming > 0 ? 'Incoming' : mutation.outgoing > 0 ? 'Outgoing' : 'Adjustment';
-      const amount = mutation.incoming > 0 ? mutation.incoming : mutation.outgoing > 0 ? mutation.outgoing : mutation.adjustment;
-      const activityType = 'raw-material';
-      activities.push({
-        id: mutation.id,
-        type: getActivityType(activityType),
-        title: `Raw Material ${mutation.item.code}`,
-        description: `Raw Material ${action}: ${mutation.item.code} - ${amount} ${mutation.uom.code}`,
-        time: dayjs(mutation.createdAt).fromNow(),
-        timestamp: mutation.createdAt.toISOString(),
-        color: getActivityColor(activityType),
-      });
+      return {
+        id: log.id,
+        type: activityType,
+        title: log.action,
+        description: log.description,
+        time: dayjs(log.createdAt).fromNow(),
+        timestamp: log.createdAt.toISOString(),
+        color,
+      };
     });
-
-    // Sort all activities by timestamp (most recent first) and take top 20
-    const sortedActivities = activities
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 20);
 
     return NextResponse.json({
-      activities: sortedActivities,
+      activities,
     });
   } catch (error) {
     console.error('[API Error] Failed to fetch dashboard activities:', error);

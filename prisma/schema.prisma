@@ -20,7 +20,8 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relations
-  accessMenus UserAccessMenu[]
+  accessMenus  UserAccessMenu[]
+  activityLogs ActivityLog[]
 }
 
 // Access Menu Management
@@ -354,4 +355,31 @@ model BeginningStock {
   @@index([type])
   @@index([itemId])
   @@index([beginningDate])
+}
+
+// Activity Log
+enum ActivityStatus {
+  SUCCESS
+  FAILED
+  WARNING
+}
+
+model ActivityLog {
+  id          String         @id @default(cuid())
+  userId      String?
+  action      String
+  description String         @db.Text
+  ipAddress   String?
+  userAgent   String?
+  status      ActivityStatus @default(SUCCESS)
+  metadata    Json?
+  createdAt   DateTime       @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([status])
+  @@index([createdAt])
 }

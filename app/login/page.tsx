@@ -130,89 +130,20 @@ export default function LoginPage() {
               position: 'relative',
             }}
           >
-            {/* Manufacturing/Business icons scattered around */}
-            <Box
-              sx={{
-                position: 'relative',
+            <Image
+              src="/login-illustration.jpg"
+              alt="iMAPS Business Illustration"
+              width={600}
+              height={500}
+              priority
+              style={{
+                objectFit: 'contain',
                 width: '100%',
-                height: { xs: '200px', sm: '350px', md: '500px' },
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                height: 'auto',
+                maxWidth: '600px',
+                borderRadius: '24px',
               }}
-            >
-              {/* Placeholder for illustration - you can replace with actual SVG or image */}
-              <Box
-                sx={{
-                  width: { xs: '100%', sm: '400px', md: '500px' },
-                  height: { xs: '150px', sm: '250px', md: '300px' },
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: { xs: 1, sm: 1.5, md: 2 },
-                }}
-              >
-                {/* Three people working illustration placeholder */}
-                <Box
-                  sx={{
-                    width: { xs: '60px', sm: '100px', md: '150px' },
-                    height: { xs: '100px', sm: '150px', md: '200px' },
-                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'primary.dark' : '#FF8B7B',
-                    borderRadius: '50% 50% 0 0',
-                    opacity: 0.3,
-                  }}
-                />
-                <Box
-                  sx={{
-                    width: { xs: '60px', sm: '100px', md: '150px' },
-                    height: { xs: '100px', sm: '150px', md: '200px' },
-                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'primary.dark' : '#FF8B7B',
-                    borderRadius: '50% 50% 0 0',
-                    opacity: 0.3,
-                  }}
-                />
-                <Box
-                  sx={{
-                    width: { xs: '60px', sm: '100px', md: '150px' },
-                    height: { xs: '100px', sm: '150px', md: '200px' },
-                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'primary.dark' : '#FF8B7B',
-                    borderRadius: '50% 50% 0 0',
-                    opacity: 0.3,
-                  }}
-                />
-              </Box>
-
-              {/* Scattered icon placeholders */}
-              {[
-                { top: '10%', left: '15%' },
-                { top: '20%', left: '75%' },
-                { top: '35%', left: '10%' },
-                { top: '45%', left: '80%' },
-                { top: '60%', left: '20%' },
-                { top: '70%', left: '70%' },
-                { top: '15%', left: '50%' },
-                { top: '50%', left: '45%' },
-                { top: '80%', left: '30%' },
-                { top: '25%', left: '85%' },
-                { top: '75%', left: '55%' },
-                { top: '40%', left: '65%' },
-              ].map((position, i) => (
-                <Box
-                  key={i}
-                  sx={{
-                    position: 'absolute',
-                    width: { xs: '30px', sm: '40px', md: '50px' },
-                    height: { xs: '30px', sm: '40px', md: '50px' },
-                    border: (theme) => `2px solid ${theme.palette.mode === 'dark' ? theme.palette.grey[700] : '#E0E0E0'}`,
-                    borderRadius: { xs: '6px', sm: '7px', md: '8px' },
-                    opacity: 0.5,
-                    top: position.top,
-                    left: position.left,
-                    display: { xs: i > 7 ? 'none' : 'block', sm: i > 9 ? 'none' : 'block', md: 'block' },
-                  }}
-                />
-              ))}
-            </Box>
+            />
           </Box>
       </Box>
 

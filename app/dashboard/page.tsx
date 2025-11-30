@@ -426,7 +426,7 @@ export default function DashboardPage() {
 
         {/* Recent Activity */}
         <Grid size={{ xs: 12, md: 4 }}>
-          <Paper sx={{ p: 3 }}>
+          <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
             <Typography variant="h6" fontWeight="bold" gutterBottom>
               Recent Activity
             </Typography>
@@ -450,49 +450,73 @@ export default function DashboardPage() {
                 </Typography>
               </Box>
             ) : (
-              <List>
-                {activities.map((activity, index) => (
-                  <React.Fragment key={activity.id}>
-                    <ListItem alignItems="flex-start" sx={{ px: 0 }}>
-                      <ListItemAvatar>
-                        <Avatar
-                          sx={{
-                            bgcolor: alpha(activity.color, 0.1),
-                            color: activity.color,
-                            width: 36,
-                            height: 36,
+              <Box
+                sx={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  maxHeight: 480,
+                  mt: 1,
+                  pr: 1,
+                  '&::-webkit-scrollbar': {
+                    width: '6px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    bgcolor: alpha(theme.palette.primary.main, 0.05),
+                    borderRadius: '10px',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    bgcolor: alpha(theme.palette.primary.main, 0.3),
+                    borderRadius: '10px',
+                    '&:hover': {
+                      bgcolor: alpha(theme.palette.primary.main, 0.5),
+                    },
+                  },
+                }}
+              >
+                <List>
+                  {activities.slice(0, 10).map((activity, index) => (
+                    <React.Fragment key={activity.id}>
+                      <ListItem alignItems="flex-start" sx={{ px: 0 }}>
+                        <ListItemAvatar>
+                          <Avatar
+                            sx={{
+                              bgcolor: alpha(activity.color, 0.1),
+                              color: activity.color,
+                              width: 36,
+                              height: 36,
+                            }}
+                          >
+                            <Circle sx={{ fontSize: 10 }} />
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={activity.title}
+                          secondary={
+                            <Box component="span" sx={{ display: 'block' }}>
+                              <Box component="span" sx={{ display: 'block', mb: 0.5 }}>
+                                {activity.description}
+                              </Box>
+                              <Box component="span" sx={{ display: 'block', fontSize: '0.75rem', opacity: 0.7 }}>
+                                {activity.timestamp ? dayjs(activity.timestamp).fromNow() : activity.time}
+                              </Box>
+                            </Box>
+                          }
+                          primaryTypographyProps={{
+                            variant: 'body2',
+                            fontWeight: 600,
                           }}
-                        >
-                          <Circle sx={{ fontSize: 10 }} />
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={activity.title}
-                        secondary={
-                          <Box component="span" sx={{ display: 'block' }}>
-                            <Box component="span" sx={{ display: 'block', mb: 0.5 }}>
-                              {activity.description}
-                            </Box>
-                            <Box component="span" sx={{ display: 'block', fontSize: '0.75rem', opacity: 0.7 }}>
-                              {activity.timestamp ? dayjs(activity.timestamp).fromNow() : activity.time}
-                            </Box>
-                          </Box>
-                        }
-                        primaryTypographyProps={{
-                          variant: 'body2',
-                          fontWeight: 600,
-                        }}
-                        secondaryTypographyProps={{
-                          component: 'span',
-                          variant: 'body2',
-                          color: 'text.secondary',
-                        }}
-                      />
-                    </ListItem>
-                    {index < activities.length - 1 && <Divider component="li" />}
-                  </React.Fragment>
-                ))}
-              </List>
+                          secondaryTypographyProps={{
+                            component: 'span',
+                            variant: 'body2',
+                            color: 'text.secondary',
+                          }}
+                        />
+                      </ListItem>
+                      {index < Math.min(activities.length, 10) - 1 && <Divider component="li" />}
+                    </React.Fragment>
+                  ))}
+                </List>
+              </Box>
             )}
           </Paper>
         </Grid>

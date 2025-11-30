@@ -28,6 +28,7 @@ import {
   AttachMoney as AttachMoneyIcon,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
+  History as HistoryIcon,
 } from '@mui/icons-material';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -139,6 +140,7 @@ const menuSections: MenuSection[] = [
     items: [
       { title: 'User Management', icon: <PeopleIcon />, path: '/settings/users' },
       { title: 'Access Menu', icon: <SettingsIcon />, path: '/settings/access-menu' },
+      { title: 'Log Activity', icon: <HistoryIcon />, path: '/settings/log-activity' },
     ],
   },
 ];
