@@ -197,13 +197,13 @@ export default function LoginPage() {
                 <TextField
                   fullWidth
                   label="Email"
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   error={!!error && !email}
                   helperText={!!error && !email ? 'Email is required' : ''}
-                  autoComplete="email"
+                  autoComplete="username"
                   autoFocus
                   InputLabelProps={{
                     sx: {
