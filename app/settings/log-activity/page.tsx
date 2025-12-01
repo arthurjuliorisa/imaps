@@ -93,22 +93,17 @@ export default function LogActivityPage() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
     fetchLogs();
-  }, [page, searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter]);
 
   const fetchLogs = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        page: page.toString(),
-        pageSize: pageSize.toString(),
         ...(searchQuery && { search: searchQuery }),
         ...(statusFilter !== 'ALL' && { status: statusFilter }),
       });
@@ -118,7 +113,6 @@ export default function LogActivityPage() {
 
       const data = await response.json();
       setLogs(Array.isArray(data) ? data : (data.data || data.logs || []));
-      setTotalCount(data.total || data.count || 0);
       setError(null);
     } catch (err) {
       console.error('Error fetching activity logs:', err);
@@ -208,10 +202,7 @@ export default function LogActivityPage() {
             <TextField
               label="Search"
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by action, description, or user..."
               size="small"
               fullWidth
@@ -221,10 +212,7 @@ export default function LogActivityPage() {
               select
               label="Status"
               value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) => setStatusFilter(e.target.value)}
               size="small"
               sx={{ minWidth: 150 }}
             >
@@ -242,11 +230,7 @@ export default function LogActivityPage() {
         columns={columns}
         data={logs}
         loading={loading}
-        page={page}
-        pageSize={pageSize}
-        totalCount={totalCount}
-        onPageChange={setPage}
-        showActions={false}
+        searchable={false}
       />
     </Box>
   );

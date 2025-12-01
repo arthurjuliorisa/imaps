@@ -28,7 +28,7 @@ export interface Column {
   label: string;
   minWidth?: number;
   align?: 'left' | 'right' | 'center';
-  format?: (value: any) => string;
+  format?: (value: any) => string | React.ReactNode;
 }
 
 interface DataTableProps {

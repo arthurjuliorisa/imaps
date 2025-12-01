@@ -46,8 +46,8 @@ export async function GET(request: Request) {
       const headers = ['Date & Time', 'User', 'Email', 'Action', 'Description', 'Status', 'IP Address'];
       const csvData = logs.map(log => [
         new Date(log.createdAt).toLocaleString(),
-        log.user.username,
-        log.user.email,
+        log.user?.username || 'Unknown',
+        log.user?.email || '-',
         log.action,
         log.description,
         log.status,
