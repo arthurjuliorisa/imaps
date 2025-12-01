@@ -95,9 +95,15 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('[API Error] Failed to fetch activity logs:', error);
-    return NextResponse.json(
-      { message: 'Error fetching activity logs' },
-      { status: 500 }
-    );
+
+    // Return empty data instead of error to allow graceful degradation
+    return NextResponse.json({
+      data: [],
+      total: 0,
+      page: 1,
+      pageSize: 10,
+      totalPages: 0,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 }

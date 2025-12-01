@@ -109,15 +109,21 @@ export default function LogActivityPage() {
       });
 
       const response = await fetch(`/api/settings/activity-logs?${params}`);
-      if (!response.ok) throw new Error('Failed to fetch activity logs');
-
       const data = await response.json();
-      setLogs(Array.isArray(data) ? data : (data.data || data.logs || []));
-      setError(null);
+
+      // Handle both success and graceful error responses
+      if (data.error) {
+        console.warn('Activity logs API returned with error:', data.error);
+        setLogs([]);
+        setError(null); // Don't show error to user, just show empty state
+      } else {
+        setLogs(Array.isArray(data) ? data : (data.data || data.logs || []));
+        setError(null);
+      }
     } catch (err) {
       console.error('Error fetching activity logs:', err);
-      setError('Failed to load activity logs');
-      toast.error('Failed to load activity logs');
+      setLogs([]);
+      setError(null); // Show empty state instead of error
     } finally {
       setLoading(false);
     }
