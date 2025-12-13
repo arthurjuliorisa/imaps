@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useToast } from '@/app/components/ToastProvider';
 import {
   Box,
@@ -18,31 +19,22 @@ import {
   useTheme,
   Chip,
   CircularProgress,
+  Button,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
+import { Add, Visibility } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcel, exportToPDF, formatCurrency, formatDate } from '@/lib/exportUtils';
-
-interface OutgoingGoodsData {
-  id: number;
-  docCode: string;
-  registerNumber: string;
-  registerDate: string;
-  docNumber: string;
-  docDate: string;
-  recipient: string;
-  itemCode: string;
-  itemName: string;
-  uom: string;
-  qty: number;
-  currency: string;
-  amount: number;
-}
+import { getOutgoingTransactions } from '@/lib/api';
+import type { OutgoingHeader } from '@/types/v2.4.2';
 
 export default function OutgoingGoodsReportPage() {
   const theme = useTheme();
   const toast = useToast();
+  const router = useRouter();
 
   // Default date range: last 30 days to today
   const now = new Date();
@@ -51,126 +43,126 @@ export default function OutgoingGoodsReportPage() {
 
   const [startDate, setStartDate] = useState(thirtyDaysAgo.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [data, setData] = useState<OutgoingGoodsData[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [data, setData] = useState<OutgoingHeader[]>([]);
+  const [totalRecords, setTotalRecords] = useState(0);
   const [loading, setLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        startDate,
-        endDate,
+      const response = await getOutgoingTransactions({
+        page,
+        page_size: pageSize,
+        start_date: startDate,
+        end_date: endDate,
       });
 
-      const response = await fetch(`/api/customs/outgoing?${params}`);
-      if (!response.ok) throw new Error('Failed to fetch data');
-      const result = await response.json();
-      // API returns { data: [...], pagination: {...} }
-      setData(Array.isArray(result.data) ? result.data : []);
+      setData(response.data);
+      setTotalRecords(response.pagination.total_records);
     } catch (error) {
-      console.error('Error fetching outgoing goods data:', error);
-      toast.error('Failed to load outgoing goods data');
+      console.error('Error fetching outgoing transactions:', error);
+      toast.error('Failed to load outgoing transactions');
       setData([]);
+      setTotalRecords(0);
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, toast]);
+  }, [startDate, endDate, page, pageSize, toast]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
-    setPage(newPage);
+    setPage(newPage + 1); // MUI uses 0-based, API uses 1-based
   };
 
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
+    setPageSize(parseInt(event.target.value, 10));
+    setPage(1);
+  };
+
+  const handleNewDocument = () => {
+    router.push('/customs/outgoing/new');
   };
 
   const handleExportExcel = () => {
     const exportData = data.map((row, index) => ({
-      No: index + 1,
-      'Doc Code': row.docCode,
-      'Register Number': row.registerNumber,
-      'Register Date': formatDate(row.registerDate),
-      'Doc Number': row.docNumber,
-      'Doc Date': formatDate(row.docDate),
-      'Recipient': row.recipient,
-      'Item Code': row.itemCode,
-      'Item Name': row.itemName,
-      'UOM': row.uom,
-      'Qty': row.qty,
-      'Currency': row.currency,
-      'Amount': row.amount,
+      No: (page - 1) * pageSize + index + 1,
+      'WMS ID': row.wms_id,
+      'Company': row.company_code,
+      'Doc Type': row.customs_doc_type,
+      'Doc Number': row.customs_doc_number,
+      'Doc Date': formatDate(row.customs_doc_date.toISOString()),
+      'PPKEK': row.ppkek_number,
+      'Transaction Date': formatDate(row.trx_date.toISOString()),
+      'Buyer': row.buyer_name || '-',
+      'Remarks': row.remarks || '-',
     }));
 
     exportToExcel(
       exportData,
-      `Laporan_Pengeluaran_Barang_${startDate}_${endDate}`,
-      'Outgoing Goods'
+      `Outgoing_Transactions_${startDate}_${endDate}`,
+      'Outgoing Transactions'
     );
   };
 
   const handleExportPDF = () => {
     const exportData = data.map((row, index) => ({
-      no: index + 1,
-      docCode: row.docCode,
-      registerNumber: row.registerNumber,
-      registerDate: formatDate(row.registerDate),
-      docNumber: row.docNumber,
-      docDate: formatDate(row.docDate),
-      recipient: row.recipient,
-      itemCode: row.itemCode,
-      itemName: row.itemName,
-      uom: row.uom,
-      qty: row.qty.toString(),
-      currency: row.currency,
-      amount: formatCurrency(row.amount, row.currency),
+      no: (page - 1) * pageSize + index + 1,
+      wmsId: row.wms_id,
+      company: row.company_code,
+      docType: row.customs_doc_type,
+      docNumber: row.customs_doc_number,
+      docDate: formatDate(row.customs_doc_date.toISOString()),
+      ppkek: row.ppkek_number,
+      transactionDate: formatDate(row.trx_date.toISOString()),
     }));
 
     const columns = [
       { header: 'No', dataKey: 'no' },
-      { header: 'Doc Code', dataKey: 'docCode' },
-      { header: 'Register No', dataKey: 'registerNumber' },
-      { header: 'Register Date', dataKey: 'registerDate' },
+      { header: 'WMS ID', dataKey: 'wmsId' },
+      { header: 'Company', dataKey: 'company' },
+      { header: 'Doc Type', dataKey: 'docType' },
       { header: 'Doc Number', dataKey: 'docNumber' },
       { header: 'Doc Date', dataKey: 'docDate' },
-      { header: 'Recipient', dataKey: 'recipient' },
-      { header: 'Item Code', dataKey: 'itemCode' },
-      { header: 'Item Name', dataKey: 'itemName' },
-      { header: 'UOM', dataKey: 'uom' },
-      { header: 'Qty', dataKey: 'qty' },
-      { header: 'Currency', dataKey: 'currency' },
-      { header: 'Amount', dataKey: 'amount' },
+      { header: 'PPKEK', dataKey: 'ppkek' },
+      { header: 'Transaction Date', dataKey: 'transactionDate' },
     ];
 
     exportToPDF(
       exportData,
       columns,
-      `Laporan_Pengeluaran_Barang_${startDate}_${endDate}`,
-      'Laporan Pengeluaran Barang per Dokumen Pabean',
+      `Outgoing_Transactions_${startDate}_${endDate}`,
+      'Outgoing Transactions Report',
       `Period: ${formatDate(startDate)} - ${formatDate(endDate)}`
     );
   };
 
-  const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
-
   return (
     <ReportLayout
-      title="Laporan Pengeluaran Barang"
-      subtitle="Laporan Pengeluaran Barang per Dokumen Pabean"
+      title="Outgoing Transactions"
+      subtitle="Manage outgoing customs documents (BC30, BC25, BC27, BC41)"
       actions={
-        <Stack spacing={3}>
-          <DateRangeFilter
-            startDate={startDate}
-            endDate={endDate}
-            onStartDateChange={setStartDate}
-            onEndDateChange={setEndDate}
-          />
+        <Stack spacing={2}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Button
+              variant="contained"
+              startIcon={<Add />}
+              onClick={handleNewDocument}
+              disabled={loading}
+            >
+              New Document
+            </Button>
+            <DateRangeFilter
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
+            />
+          </Box>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
             <ExportButtons
               onExportExcel={handleExportExcel}
@@ -187,7 +179,7 @@ export default function OutgoingGoodsReportPage() {
         </Box>
       ) : (
         <TableContainer>
-          <Table sx={{ minWidth: 650 }} aria-label="outgoing goods report table">
+          <Table sx={{ minWidth: 650 }} aria-label="outgoing transactions table">
             <TableHead>
               <TableRow
                 sx={{
@@ -195,80 +187,93 @@ export default function OutgoingGoodsReportPage() {
                 }}
               >
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Doc Code</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Register Number</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Register Date</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Doc Type</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Doc Number</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Doc Date</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Recipient</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>UOM</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Qty</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Amount</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>PPKEK</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Transaction Date</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Buyer</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {paginatedData.length === 0 ? (
+              {data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={13} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={10} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
                   </TableCell>
                 </TableRow>
               ) : (
-              paginatedData.map((row, index) => (
-                <TableRow
-                  key={row.id}
-                  sx={{
-                    '&:hover': {
-                      bgcolor: alpha(theme.palette.primary.main, 0.04),
-                    },
-                  }}
-                >
-                  <TableCell>{page * rowsPerPage + index + 1}</TableCell>
-                  <TableCell>
-                    <Chip label={row.docCode} size="small" color="secondary" variant="outlined" />
-                  </TableCell>
-                  <TableCell>{row.registerNumber}</TableCell>
-                  <TableCell>{formatDate(row.registerDate)}</TableCell>
-                  <TableCell>{row.docNumber}</TableCell>
-                  <TableCell>{formatDate(row.docDate)}</TableCell>
-                  <TableCell>{row.recipient}</TableCell>
-                  <TableCell>
-                    <Typography variant="body2" fontWeight={600}>
-                      {row.itemCode}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>{row.itemName}</TableCell>
-                  <TableCell>
-                    <Chip label={row.uom} size="small" />
-                  </TableCell>
-                  <TableCell align="right">{row.qty.toLocaleString('id-ID')}</TableCell>
-                  <TableCell>{row.currency}</TableCell>
-                  <TableCell align="right">
-                    <Typography variant="body2" fontWeight={600}>
-                      {formatCurrency(row.amount, row.currency)}
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              ))
+                data.map((row, index) => (
+                  <TableRow
+                    key={`${row.company_code}-${row.wms_id}`}
+                    sx={{
+                      '&:hover': {
+                        bgcolor: alpha(theme.palette.primary.main, 0.04),
+                      },
+                    }}
+                  >
+                    <TableCell>{(page - 1) * pageSize + index + 1}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={600}>
+                        {row.wms_id}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={row.company_code} size="small" />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={row.customs_doc_type}
+                        size="small"
+                        color="secondary"
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell>{row.customs_doc_number}</TableCell>
+                    <TableCell>{formatDate(row.customs_doc_date.toISOString())}</TableCell>
+                    <TableCell>
+                      <Chip label={row.ppkek_number} size="small" color="info" variant="outlined" />
+                    </TableCell>
+                    <TableCell>{formatDate(row.trx_date.toISOString())}</TableCell>
+                    <TableCell>{row.buyer_name || '-'}</TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Tooltip title="View Details">
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => router.push(`/customs/outgoing/${row.wms_id}`)}
+                          >
+                            <Visibility fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                ))
               )}
             </TableBody>
           </Table>
         </TableContainer>
       )}
-      {!loading && (
+      {!loading && totalRecords > 0 && (
         <TablePagination
-          rowsPerPageOptions={[5, 10, 25, 50]}
+          rowsPerPageOptions={[10, 20, 50, 100]}
           component="div"
-          count={data.length}
-          rowsPerPage={rowsPerPage}
-          page={page}
+          count={totalRecords}
+          rowsPerPage={pageSize}
+          page={page - 1} // MUI uses 0-based
           onPageChange={handleChangePage}
           onRowsPerPageChange={handleChangeRowsPerPage}
+          labelRowsPerPage="Rows per page:"
+          labelDisplayedRows={({ from, to, count }) =>
+            `${from}-${to} of ${count !== -1 ? count : `more than ${to}`}`
+          }
         />
       )}
     </ReportLayout>

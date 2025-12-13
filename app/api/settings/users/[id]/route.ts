@@ -19,14 +19,14 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const user = await prisma.user.findUnique({
+    const user = await prisma.users.findUnique({
       where: { id },
       select: {
         id: true,
         username: true,
         email: true,
-        createdAt: true,
-        updatedAt: true,
+        created_at: true,
+        updated_at: true,
       },
     });
 
@@ -100,15 +100,15 @@ export async function PUT(
     }
 
     // Update user
-    const user = await prisma.user.update({
+    const user = await prisma.users.update({
       where: { id },
       data: updateData,
       select: {
         id: true,
         username: true,
         email: true,
-        createdAt: true,
-        updatedAt: true,
+        created_at: true,
+        updated_at: true,
       },
     });
 
@@ -131,7 +131,7 @@ export async function DELETE(
     const { id } = await params;
 
     // Delete user (cascade delete UserAccessMenu via Prisma schema)
-    await prisma.user.delete({
+    await prisma.users.delete({
       where: { id },
     });
 

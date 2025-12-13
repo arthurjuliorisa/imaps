@@ -80,19 +80,21 @@ async function seedMenus() {
     console.log('Starting menu seeding...\n');
 
     // Delete all existing menus (this will cascade delete user access menus)
-    await prisma.menu.deleteMany({});
+    await prisma.menus.deleteMany({});
     console.log('Deleted all existing menus\n');
 
     // Create menus with parent-child relationships
     for (const parentMenu of menuStructure) {
       console.log(`Creating parent menu: ${parentMenu.name}`);
 
-      const parent = await prisma.menu.create({
+      const parent = await prisma.menus.create({
         data: {
+          id: `MENU-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: parentMenu.name,
           route: parentMenu.route,
           icon: parentMenu.icon,
           order: parentMenu.order,
+          updated_at: new Date(),
         },
       });
 
@@ -102,13 +104,15 @@ async function seedMenus() {
         console.log(`  Creating ${parentMenu.children.length} children...`);
 
         for (const childMenu of parentMenu.children) {
-          const child = await prisma.menu.create({
+          const child = await prisma.menus.create({
             data: {
+              id: `MENU-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
               name: childMenu.name,
               route: childMenu.route,
               icon: childMenu.icon,
               order: childMenu.order,
-              parentId: parent.id,
+              parent_id: parent.id,
+              updated_at: new Date(),
             },
           });
 
@@ -120,21 +124,21 @@ async function seedMenus() {
     }
 
     // Verify the results
-    const allMenus = await prisma.menu.findMany({
+    const allMenus = await prisma.menus.findMany({
       orderBy: { order: 'asc' },
     });
 
     console.log('\n=== SEEDING COMPLETE ===');
     console.log(`Total menus created: ${allMenus.length}`);
-    console.log(`Parent menus: ${allMenus.filter(m => !m.parentId).length}`);
-    console.log(`Child menus: ${allMenus.filter(m => m.parentId).length}`);
+    console.log(`Parent menus: ${allMenus.filter(m => !m.parent_id).length}`);
+    console.log(`Child menus: ${allMenus.filter(m => m.parent_id).length}`);
 
     console.log('\n=== MENU HIERARCHY ===\n');
-    const rootMenus = allMenus.filter(m => !m.parentId);
+    const rootMenus = allMenus.filter(m => !m.parent_id);
 
     rootMenus.forEach((parent) => {
       console.log(`${parent.name}`);
-      const children = allMenus.filter(m => m.parentId === parent.id);
+      const children = allMenus.filter(m => m.parent_id === parent.id);
       children.forEach((child) => {
         console.log(`  └─ ${child.name}`);
       });

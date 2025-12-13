@@ -84,17 +84,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    await prisma.menu.deleteMany({});
+    await prisma.menus.deleteMany({});
 
     const results = [];
 
     for (const parentMenu of menuStructure) {
-      const parent = await prisma.menu.create({
+      const parentId = parentMenu.name.toLowerCase().replace(/\s+/g, '-');
+      const parent = await prisma.menus.create({
         data: {
+          id: parentId,
           name: parentMenu.name,
           route: parentMenu.route,
           icon: parentMenu.icon,
           order: parentMenu.order,
+          updated_at: new Date(),
         },
       });
 
@@ -102,13 +105,16 @@ export async function POST(request: Request) {
 
       if (parentMenu.children && parentMenu.children.length > 0) {
         for (const childMenu of parentMenu.children) {
-          const child = await prisma.menu.create({
+          const childId = `${parentId}-${childMenu.name.toLowerCase().replace(/\s+/g, '-')}`;
+          const child = await prisma.menus.create({
             data: {
+              id: childId,
               name: childMenu.name,
               route: childMenu.route,
               icon: childMenu.icon,
               order: childMenu.order,
-              parentId: parent.id,
+              parent_id: parent.id,
+              updated_at: new Date(),
             },
           });
 
@@ -117,7 +123,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const allMenus = await prisma.menu.findMany({
+    const allMenus = await prisma.menus.findMany({
       orderBy: { order: 'asc' },
     });
 
@@ -125,8 +131,8 @@ export async function POST(request: Request) {
       success: true,
       message: 'Menus seeded successfully',
       total: allMenus.length,
-      parents: allMenus.filter(m => !m.parentId).length,
-      children: allMenus.filter(m => m.parentId).length,
+      parents: allMenus.filter(m => !m.parent_id).length,
+      children: allMenus.filter(m => m.parent_id).length,
       results,
     });
   } catch (error) {

@@ -1,551 +1,301 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, ItemTypeCode, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
-
-// Import data from seeders
-import { uomData } from './seeders/uom.data';
-import { currencyData } from './seeders/currency.data';
-import { supplierData } from './seeders/supplier.data';
-import { customerData } from './seeders/customer.data';
-import { userData } from './seeders/user.data';
-import {
-  rawMaterialData,
-  finishedGoodsData,
-  semiFinishedData,
-  capitalGoodsData,
-  scrapItemsData,
-} from './seeders/item.data';
-import { scrapMasterData } from './seeders/scrap.data';
-import { getIncomingDocData, getOutgoingDocData } from './seeders/document.data';
-import {
-  getRawMaterialMutationData,
-  getProductionMutationData,
-  getWIPData,
-  getScrapMutationData,
-  getCapitalGoodsMutationData,
-} from './seeders/mutation.data';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Starting database seeding...\n');
+  console.log('🌱 Starting database seeding for v2.4.2...\n');
 
   try {
-    // Store references for relational data
-    const uoms: Record<string, any> = {};
-    const currencies: Record<string, any> = {};
-    const suppliers: Record<string, any> = {};
-    const customers: Record<string, any> = {};
-    const users: Record<string, any> = {};
-    const items: Record<string, any> = {};
-    const scrapMasters: Record<string, any> = {};
+    // ==================== SEED COMPANIES ====================
+    console.log('🏢 Seeding Companies...');
+    const companies = [
+      { company_code: 'ACME', company_name: 'PT ACME Manufacturing Indonesia', is_active: true },
+      { company_code: 'XYZ', company_name: 'PT XYZ Industries', is_active: true },
+    ];
 
-    // ==================== SEED UOM ====================
-    console.log('📦 Seeding UOM (Unit of Measure)...');
-    for (const uom of uomData) {
-      const existing = await prisma.uOM.findUnique({ where: { code: uom.code } });
-      if (!existing) {
-        const created = await prisma.uOM.create({ data: uom });
-        uoms[uom.code] = created;
-        console.log(`  ✓ Created UOM: ${uom.code} - ${uom.name}`);
-      } else {
-        uoms[uom.code] = existing;
-        console.log(`  → UOM already exists: ${uom.code}`);
-      }
+    for (const company of companies) {
+      await prisma.companies.upsert({
+        where: { company_code: company.company_code },
+        update: {},
+        create: company,
+      });
+      console.log(`  ✓ Created/Updated Company: ${company.company_code} - ${company.company_name}`);
     }
     console.log('');
 
-    // ==================== SEED CURRENCY ====================
-    console.log('💱 Seeding Currency...');
-    for (const currency of currencyData) {
-      const existing = await prisma.currency.findUnique({ where: { code: currency.code } });
-      if (!existing) {
-        const created = await prisma.currency.create({ data: currency });
-        currencies[currency.code] = created;
-        console.log(`  ✓ Created Currency: ${currency.code} - ${currency.name}`);
-      } else {
-        currencies[currency.code] = existing;
-        console.log(`  → Currency already exists: ${currency.code}`);
-      }
+    // ==================== SEED ITEM TYPES ====================
+    console.log('📦 Seeding Item Types...');
+    const itemTypes = [
+      { item_type_code: ItemTypeCode.ROH, item_type_name: 'Bahan Baku / Raw Material', is_capital_goods: false },
+      { item_type_code: ItemTypeCode.HALB, item_type_name: 'Barang Setengah Jadi / WIP', is_capital_goods: false },
+      { item_type_code: ItemTypeCode.FERT, item_type_name: 'Barang Jadi / Finished Goods', is_capital_goods: false },
+      { item_type_code: ItemTypeCode.HIBE, item_type_name: 'Barang Modal / Capital Goods (General)', is_capital_goods: true },
+      { item_type_code: ItemTypeCode.HIBE_M, item_type_name: 'Mesin / Machinery', is_capital_goods: true },
+      { item_type_code: ItemTypeCode.HIBE_E, item_type_name: 'Peralatan / Equipment', is_capital_goods: true },
+      { item_type_code: ItemTypeCode.HIBE_T, item_type_name: 'Alat Produksi / Production Tools', is_capital_goods: true },
+      { item_type_code: ItemTypeCode.DIEN, item_type_name: 'Jasa / Services', is_capital_goods: false },
+      { item_type_code: ItemTypeCode.SCRAP, item_type_name: 'Sisa/Skrap / Scrap', is_capital_goods: false },
+    ];
+
+    for (const itemType of itemTypes) {
+      await prisma.item_types.upsert({
+        where: { item_type_code: itemType.item_type_code },
+        update: { item_type_name: itemType.item_type_name, is_capital_goods: itemType.is_capital_goods },
+        create: itemType,
+      });
+      console.log(`  ✓ Created/Updated Item Type: ${itemType.item_type_code} - ${itemType.item_type_name}`);
     }
     console.log('');
 
-    // ==================== SEED SUPPLIERS ====================
-    console.log('🚚 Seeding Suppliers...');
-    for (const supplier of supplierData) {
-      const existing = await prisma.supplier.findUnique({ where: { code: supplier.code } });
-      if (!existing) {
-        const created = await prisma.supplier.create({ data: supplier });
-        suppliers[supplier.code] = created;
-        console.log(`  ✓ Created Supplier: ${supplier.code} - ${supplier.name}`);
-      } else {
-        suppliers[supplier.code] = existing;
-        console.log(`  → Supplier already exists: ${supplier.code}`);
-      }
-    }
-    console.log('');
+    // ==================== SEED MENUS ====================
+    console.log('🗂️ Seeding Menus...');
+    const menus = [
+      { name: 'Dashboard', route: '/dashboard', icon: 'HomeIcon', order: 1, parentId: null },
 
-    // ==================== SEED CUSTOMERS ====================
-    console.log('👥 Seeding Customers...');
-    for (const customer of customerData) {
-      const existing = await prisma.customer.findUnique({ where: { code: customer.code } });
-      if (!existing) {
-        const created = await prisma.customer.create({ data: customer });
-        customers[customer.code] = created;
-        console.log(`  ✓ Created Customer: ${customer.code} - ${customer.name}`);
-      } else {
-        customers[customer.code] = existing;
-        console.log(`  → Customer already exists: ${customer.code}`);
-      }
+      // Master Data
+      { name: 'Master Data', route: '#', icon: 'DatabaseIcon', order: 10, parentId: null },
+      { name: 'Companies', route: '/master/companies', icon: 'BuildingIcon', order: 11, parentId: null },
+      { name: 'Item Types', route: '/master/item-types', icon: 'TagIcon', order: 12, parentId: null },
+      { name: 'Beginning Balances', route: '/master/beginning-balances', icon: 'ScaleIcon', order: 13, parentId: null },
+
+      // Customs Transactions
+      { name: 'Customs', route: '#', icon: 'TruckIcon', order: 20, parentId: null },
+      { name: 'Incoming Goods', route: '/customs/incoming', icon: 'ArrowDownIcon', order: 21, parentId: null },
+      { name: 'Outgoing Goods', route: '/customs/outgoing', icon: 'ArrowUpIcon', order: 22, parentId: null },
+      { name: 'Material Usage', route: '/customs/material-usage', icon: 'CogIcon', order: 23, parentId: null },
+      { name: 'Production Output', route: '/customs/production', icon: 'PackageIcon', order: 24, parentId: null },
+      { name: 'WIP Balance', route: '/customs/wip-balance', icon: 'LayersIcon', order: 25, parentId: null },
+      { name: 'Adjustments', route: '/customs/adjustments', icon: 'EditIcon', order: 26, parentId: null },
+
+      // Reports
+      { name: 'Reports', route: '#', icon: 'FileTextIcon', order: 30, parentId: null },
+      { name: 'Stock Daily Snapshot', route: '/reports/stock-snapshot', icon: 'CameraIcon', order: 31, parentId: null },
+      { name: 'PPKEK Traceability', route: '/reports/traceability', icon: 'GitBranchIcon', order: 32, parentId: null },
+      { name: 'Work Order Summary', route: '/reports/work-orders', icon: 'ClipboardIcon', order: 33, parentId: null },
+
+      // Settings
+      { name: 'Settings', route: '#', icon: 'SettingsIcon', order: 40, parentId: null },
+      { name: 'Users', route: '/settings/users', icon: 'UsersIcon', order: 41, parentId: null },
+      { name: 'Access Control', route: '/settings/access-menu', icon: 'ShieldIcon', order: 42, parentId: null },
+      { name: 'Activity Logs', route: '/settings/activity-logs', icon: 'ListIcon', order: 43, parentId: null },
+      { name: 'Batch Processing Logs', route: '/settings/batch-logs', icon: 'ServerIcon', order: 44, parentId: null },
+    ];
+
+    const createdMenus = [];
+    for (const menu of menus) {
+      const menuData = { ...menu, parent_id: menu.parentId };
+      delete (menuData as any).parentId;
+      const created = await prisma.menus.upsert({
+        where: { name: menu.name },
+        update: { route: menu.route, icon: menu.icon, order: menu.order, parent_id: menu.parentId },
+        create: menuData,
+      });
+      createdMenus.push(created);
+      console.log(`  ✓ Created/Updated Menu: ${menu.name}`);
     }
     console.log('');
 
     // ==================== SEED USERS ====================
-    console.log('👤 Seeding Users...');
-    for (const user of userData) {
-      const existing = await prisma.user.findUnique({ where: { username: user.username } });
-      if (!existing) {
-        const hashedPassword = await bcrypt.hash(user.password, 10);
-        const created = await prisma.user.create({
-          data: {
-            username: user.username,
-            email: user.email,
-            password: hashedPassword,
-          },
-        });
-        users[user.username] = created;
-        console.log(`  ✓ Created User: ${user.username} (${user.email})`);
-        console.log(`    Password: ${user.password}`);
-      } else {
-        users[user.username] = existing;
-        console.log(`  → User already exists: ${user.username}`);
-      }
+    console.log('👥 Seeding Users...');
+    const users = [
+      {
+        username: 'admin',
+        email: 'admin@imaps.local',
+        password: await bcrypt.hash('admin123', 10),
+        role: UserRole.ADMIN,
+        company_code: 'ACME',
+      },
+      {
+        username: 'viewer',
+        email: 'viewer@imaps.local',
+        password: await bcrypt.hash('viewer123', 10),
+        role: UserRole.VIEWER,
+        company_code: 'ACME',
+      },
+      {
+        username: 'operator',
+        email: 'operator@imaps.local',
+        password: await bcrypt.hash('operator123', 10),
+        role: UserRole.USER,
+        company_code: 'ACME',
+      },
+    ];
+
+    for (const user of users) {
+      await prisma.users.upsert({
+        where: { email: user.email },
+        update: {
+          username: user.username,
+          password: user.password,
+          role: user.role,
+          company_code: user.company_code,
+        },
+        create: user,
+      });
+      console.log(`  ✓ Created/Updated User: ${user.email} (${user.role})`);
     }
     console.log('');
 
-    // ==================== SEED ITEMS ====================
-    console.log('📦 Seeding Items - Raw Materials...');
-    for (const item of rawMaterialData) {
-      const existing = await prisma.item.findUnique({ where: { code: item.code } });
-      if (!existing) {
-        const created = await prisma.item.create({
-          data: {
-            code: item.code,
-            name: item.name,
-            type: item.type,
-            uomId: uoms[item.uomCode].id,
+    // ==================== SEED USER ACCESS MENU ====================
+    console.log('🔐 Seeding User Access Menu...');
+
+    // Admin has access to all menus
+    const adminUser = await prisma.users.findUnique({ where: { email: 'admin@imaps.local' } });
+    if (adminUser) {
+      const allMenus = await prisma.menus.findMany();
+      for (const menu of allMenus) {
+        await prisma.user_access_menus.upsert({
+          where: {
+            user_id_menu_id: {
+              user_id: adminUser.id,
+              menu_id: menu.id,
+            },
+          },
+          update: { can_view: true, can_create: true, can_edit: true, can_delete: true },
+          create: {
+            user_id: adminUser.id,
+            menu_id: menu.id,
+            can_view: true,
+            can_create: true,
+            can_edit: true,
+            can_delete: true,
           },
         });
-        items[item.code] = created;
-        console.log(`  ✓ Created Item: ${item.code} - ${item.name}`);
-      } else {
-        items[item.code] = existing;
-        console.log(`  → Item already exists: ${item.code}`);
       }
+      console.log(`  ✓ Granted full access to admin user (${allMenus.length} menus)`);
     }
-    console.log('');
 
-    console.log('📦 Seeding Items - Finished Goods...');
-    for (const item of finishedGoodsData) {
-      const existing = await prisma.item.findUnique({ where: { code: item.code } });
-      if (!existing) {
-        const created = await prisma.item.create({
-          data: {
-            code: item.code,
-            name: item.name,
-            type: item.type,
-            uomId: uoms[item.uomCode].id,
-          },
-        });
-        items[item.code] = created;
-        console.log(`  ✓ Created Item: ${item.code} - ${item.name}`);
-      } else {
-        items[item.code] = existing;
-        console.log(`  → Item already exists: ${item.code}`);
-      }
-    }
-    console.log('');
-
-    console.log('📦 Seeding Items - Semi-Finished Goods...');
-    for (const item of semiFinishedData) {
-      const existing = await prisma.item.findUnique({ where: { code: item.code } });
-      if (!existing) {
-        const created = await prisma.item.create({
-          data: {
-            code: item.code,
-            name: item.name,
-            type: item.type,
-            uomId: uoms[item.uomCode].id,
-          },
-        });
-        items[item.code] = created;
-        console.log(`  ✓ Created Item: ${item.code} - ${item.name}`);
-      } else {
-        items[item.code] = existing;
-        console.log(`  → Item already exists: ${item.code}`);
-      }
-    }
-    console.log('');
-
-    console.log('📦 Seeding Items - Capital Goods...');
-    for (const item of capitalGoodsData) {
-      const existing = await prisma.item.findUnique({ where: { code: item.code } });
-      if (!existing) {
-        const created = await prisma.item.create({
-          data: {
-            code: item.code,
-            name: item.name,
-            type: item.type,
-            uomId: uoms[item.uomCode].id,
-          },
-        });
-        items[item.code] = created;
-        console.log(`  ✓ Created Item: ${item.code} - ${item.name}`);
-      } else {
-        items[item.code] = existing;
-        console.log(`  → Item already exists: ${item.code}`);
-      }
-    }
-    console.log('');
-
-    console.log('📦 Seeding Items - Scrap...');
-    for (const item of scrapItemsData) {
-      const existing = await prisma.item.findUnique({ where: { code: item.code } });
-      if (!existing) {
-        const created = await prisma.item.create({
-          data: {
-            code: item.code,
-            name: item.name,
-            type: item.type,
-            uomId: uoms[item.uomCode].id,
-          },
-        });
-        items[item.code] = created;
-        console.log(`  ✓ Created Item: ${item.code} - ${item.name}`);
-      } else {
-        items[item.code] = existing;
-        console.log(`  → Item already exists: ${item.code}`);
-      }
-    }
-    console.log('');
-
-    // ==================== SEED SCRAP MASTER ====================
-    console.log('🗑️  Seeding Scrap Master Collections...');
-    for (const scrap of scrapMasterData) {
-      const existing = await prisma.scrapMaster.findUnique({ where: { code: scrap.code } });
-      if (!existing) {
-        const created = await prisma.scrapMaster.create({
-          data: {
-            code: scrap.code,
-            name: scrap.name,
-            description: scrap.description,
-          },
-        });
-        scrapMasters[scrap.code] = created;
-        console.log(`  ✓ Created ScrapMaster: ${scrap.code} - ${scrap.name}`);
-
-        // Create scrap items
-        for (const scrapItem of scrap.items) {
-          await prisma.scrapItem.create({
-            data: {
-              scrapId: created.id,
-              itemId: items[scrapItem.itemCode].id,
-              quantity: scrapItem.quantity,
-              remarks: scrapItem.remarks,
+    // Viewer has read-only access to Dashboard and Reports
+    const viewerUser = await prisma.users.findUnique({ where: { email: 'viewer@imaps.local' } });
+    if (viewerUser) {
+      const viewerMenuNames = ['Dashboard', 'Reports', 'Stock Daily Snapshot', 'PPKEK Traceability', 'Work Order Summary'];
+      for (const menuName of viewerMenuNames) {
+        const menu = await prisma.menus.findUnique({ where: { name: menuName } });
+        if (menu) {
+          await prisma.user_access_menus.upsert({
+            where: {
+              user_id_menu_id: {
+                user_id: viewerUser.id,
+                menu_id: menu.id,
+              },
+            },
+            update: { can_view: true, can_create: false, can_edit: false, can_delete: false },
+            create: {
+              user_id: viewerUser.id,
+              menu_id: menu.id,
+              can_view: true,
+              can_create: false,
+              can_edit: false,
+              can_delete: false,
             },
           });
-          console.log(`    └─ Added item: ${scrapItem.itemCode} (qty: ${scrapItem.quantity})`);
         }
-      } else {
-        scrapMasters[scrap.code] = existing;
-        console.log(`  → ScrapMaster already exists: ${scrap.code}`);
       }
+      console.log(`  ✓ Granted read-only access to viewer user (${viewerMenuNames.length} menus)`);
+    }
+
+    // Operator has CRUD access to Customs module
+    const operatorUser = await prisma.users.findUnique({ where: { email: 'operator@imaps.local' } });
+    if (operatorUser) {
+      const operatorMenuNames = ['Dashboard', 'Customs', 'Incoming Goods', 'Outgoing Goods', 'Material Usage', 'Production Output', 'WIP Balance', 'Adjustments'];
+      for (const menuName of operatorMenuNames) {
+        const menu = await prisma.menus.findUnique({ where: { name: menuName } });
+        if (menu) {
+          await prisma.user_access_menus.upsert({
+            where: {
+              user_id_menu_id: {
+                user_id: operatorUser.id,
+                menu_id: menu.id,
+              },
+            },
+            update: { can_view: true, can_create: true, can_edit: true, can_delete: false },
+            create: {
+              user_id: operatorUser.id,
+              menu_id: menu.id,
+              can_view: true,
+              can_create: true,
+              can_edit: true,
+              can_delete: false,
+            },
+          });
+        }
+      }
+      console.log(`  ✓ Granted CRUD access to operator user (${operatorMenuNames.length} menus)`);
     }
     console.log('');
 
-    // ==================== SEED INCOMING DOCUMENTS ====================
-    console.log('📥 Seeding Incoming Documents...');
-    const incomingDocData = getIncomingDocData();
-    for (const doc of incomingDocData) {
-      const existing = await prisma.incomingDocument.findFirst({
-        where: { registerNumber: doc.registerNumber },
-      });
-      if (!existing) {
-        await prisma.incomingDocument.create({
-          data: {
-            docCode: doc.docCode,
-            registerNumber: doc.registerNumber,
-            registerDate: doc.registerDate,
-            docNumber: doc.docNumber,
-            docDate: doc.docDate,
-            shipperId: suppliers[doc.supplierCode].id,
-            itemId: items[doc.itemCode].id,
-            uomId: uoms[doc.uomCode].id,
-            quantity: doc.quantity,
-            currencyId: currencies[doc.currencyCode].id,
-            amount: doc.amount,
-          },
-        });
-        console.log(`  ✓ Created Incoming Doc: ${doc.registerNumber} - ${doc.docNumber}`);
-      } else {
-        console.log(`  → Incoming Doc already exists: ${doc.registerNumber}`);
-      }
-    }
-    console.log('');
+    // ==================== SEED SAMPLE BEGINNING BALANCES ====================
+    console.log('📊 Seeding Sample Beginning Balances...');
+    const beginningBalances = [
+      {
+        company_code: 'ACME',
+        item_code: 'RM-STEEL-A36',
+        item_name: 'Steel Plate A36 - 10mm',
+        item_type_code: ItemTypeCode.ROH,
+        uom: 'KG',
+        balance_qty: 5000.000,
+        balance_date: new Date('2026-01-01'),
+      },
+      {
+        company_code: 'ACME',
+        item_code: 'WIP-FRAME-001',
+        item_name: 'Machine Frame Assembly',
+        item_type_code: ItemTypeCode.HALB,
+        uom: 'PCS',
+        balance_qty: 50.000,
+        balance_date: new Date('2026-01-01'),
+      },
+      {
+        company_code: 'ACME',
+        item_code: 'FG-MACHINE-X100',
+        item_name: 'Industrial Machine X100',
+        item_type_code: ItemTypeCode.FERT,
+        uom: 'UNIT',
+        balance_qty: 10.000,
+        balance_date: new Date('2026-01-01'),
+      },
+    ];
 
-    // ==================== SEED OUTGOING DOCUMENTS ====================
-    console.log('📤 Seeding Outgoing Documents...');
-    const outgoingDocData = getOutgoingDocData();
-    for (const doc of outgoingDocData) {
-      const existing = await prisma.outgoingDocument.findFirst({
-        where: { registerNumber: doc.registerNumber },
-      });
-      if (!existing) {
-        await prisma.outgoingDocument.create({
-          data: {
-            docCode: doc.docCode,
-            registerNumber: doc.registerNumber,
-            registerDate: doc.registerDate,
-            docNumber: doc.docNumber,
-            docDate: doc.docDate,
-            recipientId: customers[doc.customerCode].id,
-            itemId: items[doc.itemCode].id,
-            uomId: uoms[doc.uomCode].id,
-            quantity: doc.quantity,
-            currencyId: currencies[doc.currencyCode].id,
-            amount: doc.amount,
-          },
-        });
-        console.log(`  ✓ Created Outgoing Doc: ${doc.registerNumber} - ${doc.docNumber}`);
-      } else {
-        console.log(`  → Outgoing Doc already exists: ${doc.registerNumber}`);
-      }
-    }
-    console.log('');
-
-    // ==================== SEED RAW MATERIAL MUTATIONS ====================
-    console.log('🔄 Seeding Raw Material Mutations...');
-    const rmMutationData = getRawMaterialMutationData();
-    for (const mutation of rmMutationData) {
-      const existing = await prisma.rawMaterialMutation.findFirst({
+    for (const balance of beginningBalances) {
+      await prisma.beginning_balances.upsert({
         where: {
-          date: mutation.date,
-          itemId: items[mutation.itemCode].id,
+          company_code_item_code_balance_date: {
+            company_code: balance.company_code,
+            item_code: balance.item_code,
+            balance_date: balance.balance_date,
+          },
         },
-      });
-      if (!existing) {
-        await prisma.rawMaterialMutation.create({
-          data: {
-            date: mutation.date,
-            itemId: items[mutation.itemCode].id,
-            uomId: uoms[mutation.uomCode].id,
-            beginning: mutation.beginning,
-            incoming: mutation.incoming,
-            outgoing: mutation.outgoing,
-            adjustment: mutation.adjustment,
-            ending: mutation.ending,
-            stockOpname: mutation.stockOpname,
-            variant: mutation.variant,
-            remarks: mutation.remarks,
-          },
-        });
-        console.log(`  ✓ Created RM Mutation for date: ${mutation.date.toISOString().split('T')[0]}`);
-      } else {
-        console.log(`  → RM Mutation already exists for this date and item`);
-      }
-    }
-    console.log('');
-
-    // ==================== SEED PRODUCTION MUTATIONS ====================
-    console.log('🔄 Seeding Production Mutations...');
-    const prodMutationData = getProductionMutationData();
-    for (const mutation of prodMutationData) {
-      const existing = await prisma.productionMutation.findFirst({
-        where: {
-          date: mutation.date,
-          itemId: items[mutation.itemCode].id,
+        update: {
+          item_name: balance.item_name,
+          item_type_code: balance.item_type_code,
+          uom: balance.uom,
+          balance_qty: balance.balance_qty,
         },
+        create: balance,
       });
-      if (!existing) {
-        await prisma.productionMutation.create({
-          data: {
-            date: mutation.date,
-            itemId: items[mutation.itemCode].id,
-            uomId: uoms[mutation.uomCode].id,
-            beginning: mutation.beginning,
-            incoming: mutation.incoming,
-            outgoing: mutation.outgoing,
-            adjustment: mutation.adjustment,
-            ending: mutation.ending,
-            stockOpname: mutation.stockOpname,
-            variant: mutation.variant,
-            remarks: mutation.remarks,
-          },
-        });
-        console.log(`  ✓ Created Production Mutation for date: ${mutation.date.toISOString().split('T')[0]}`);
-      } else {
-        console.log(`  → Production Mutation already exists for this date and item`);
-      }
+      console.log(`  ✓ Created/Updated Beginning Balance: ${balance.item_code} - ${balance.balance_qty} ${balance.uom}`);
     }
     console.log('');
 
-    // ==================== SEED WIP RECORDS ====================
-    console.log('⏳ Seeding WIP Records...');
-    const wipData = getWIPData();
-    for (const wip of wipData) {
-      const existing = await prisma.wIPRecord.findUnique({
-        where: { date: wip.date },
-      });
-      if (!existing) {
-        await prisma.wIPRecord.create({
-          data: {
-            date: wip.date,
-            itemId: items[wip.itemCode].id,
-            uomId: uoms[wip.uomCode].id,
-            quantity: wip.quantity,
-            remarks: wip.remarks,
-          },
-        });
-        console.log(`  ✓ Created WIP Record for date: ${wip.date.toISOString().split('T')[0]}`);
-      } else {
-        console.log(`  → WIP Record already exists for date: ${wip.date.toISOString().split('T')[0]}`);
-      }
-    }
+    console.log('✅ Database seeding completed successfully!\n');
+    console.log('📝 Default Credentials:');
+    console.log('   Admin    : admin@imaps.local / admin123');
+    console.log('   Viewer   : viewer@imaps.local / viewer123');
+    console.log('   Operator : operator@imaps.local / operator123');
     console.log('');
-
-    // ==================== SEED SCRAP MUTATIONS ====================
-    console.log('🔄 Seeding Scrap Mutations...');
-    const scrapMutationData = getScrapMutationData();
-    for (const mutation of scrapMutationData) {
-      const existing = await prisma.scrapMutation.findFirst({
-        where: {
-          date: mutation.date,
-          scrapId: scrapMasters[mutation.scrapCode].id,
-        },
-      });
-      if (!existing) {
-        await prisma.scrapMutation.create({
-          data: {
-            date: mutation.date,
-            scrapId: scrapMasters[mutation.scrapCode].id,
-            uomId: uoms[mutation.uomCode].id,
-            beginning: mutation.beginning,
-            incoming: mutation.incoming,
-            outgoing: mutation.outgoing,
-            adjustment: mutation.adjustment,
-            ending: mutation.ending,
-            stockOpname: mutation.stockOpname,
-            variant: mutation.variant,
-            remarks: mutation.remarks,
-          },
-        });
-        console.log(`  ✓ Created Scrap Mutation for date: ${mutation.date.toISOString().split('T')[0]}`);
-      } else {
-        console.log(`  → Scrap Mutation already exists for this date and scrap`);
-      }
-    }
-    console.log('');
-
-    // ==================== SEED CAPITAL GOODS MUTATIONS ====================
-    console.log('🔄 Seeding Capital Goods Mutations...');
-    const capitalMutationData = getCapitalGoodsMutationData();
-    for (const mutation of capitalMutationData) {
-      const existing = await prisma.capitalGoodsMutation.findFirst({
-        where: {
-          date: mutation.date,
-          itemId: items[mutation.itemCode].id,
-        },
-      });
-      if (!existing) {
-        await prisma.capitalGoodsMutation.create({
-          data: {
-            date: mutation.date,
-            itemId: items[mutation.itemCode].id,
-            uomId: uoms[mutation.uomCode].id,
-            beginning: mutation.beginning,
-            incoming: mutation.incoming,
-            outgoing: mutation.outgoing,
-            adjustment: mutation.adjustment,
-            ending: mutation.ending,
-            stockOpname: mutation.stockOpname,
-            variant: mutation.variant,
-            remarks: mutation.remarks,
-          },
-        });
-        console.log(`  ✓ Created Capital Goods Mutation for date: ${mutation.date.toISOString().split('T')[0]}`);
-      } else {
-        console.log(`  → Capital Goods Mutation already exists for this date and item`);
-      }
-    }
-    console.log('');
-
-    // ==================== SUMMARY ====================
-    console.log('\n═══════════════════════════════════════════════');
-    console.log('✅ DATABASE SEEDING COMPLETED SUCCESSFULLY!');
-    console.log('═══════════════════════════════════════════════\n');
-
-    const counts = await Promise.all([
-      prisma.uOM.count(),
-      prisma.currency.count(),
-      prisma.supplier.count(),
-      prisma.customer.count(),
-      prisma.user.count(),
-      prisma.item.count(),
-      prisma.scrapMaster.count(),
-      prisma.scrapItem.count(),
-      prisma.incomingDocument.count(),
-      prisma.outgoingDocument.count(),
-      prisma.rawMaterialMutation.count(),
-      prisma.productionMutation.count(),
-      prisma.wIPRecord.count(),
-      prisma.scrapMutation.count(),
-      prisma.capitalGoodsMutation.count(),
-    ]);
-
-    console.log('📊 Database Statistics:');
-    console.log('─────────────────────────────────────────────');
-    console.log(`  UOM                      : ${counts[0]} records`);
-    console.log(`  Currency                 : ${counts[1]} records`);
-    console.log(`  Supplier                 : ${counts[2]} records`);
-    console.log(`  Customer                 : ${counts[3]} records`);
-    console.log(`  User                     : ${counts[4]} records`);
-    console.log(`  Item (All Types)         : ${counts[5]} records`);
-    console.log(`  Scrap Master             : ${counts[6]} records`);
-    console.log(`  Scrap Item               : ${counts[7]} records`);
-    console.log(`  Incoming Document        : ${counts[8]} records`);
-    console.log(`  Outgoing Document        : ${counts[9]} records`);
-    console.log(`  Raw Material Mutation    : ${counts[10]} records`);
-    console.log(`  Production Mutation      : ${counts[11]} records`);
-    console.log(`  WIP Record               : ${counts[12]} records`);
-    console.log(`  Scrap Mutation           : ${counts[13]} records`);
-    console.log(`  Capital Goods Mutation   : ${counts[14]} records`);
-    console.log('─────────────────────────────────────────────\n');
-
-    console.log('👤 Test User Credentials:');
-    console.log('─────────────────────────────────────────────');
-    console.log('  Username: admin      | Password: admin123');
-    console.log('  Username: operator   | Password: operator123');
-    console.log('  Username: supervisor | Password: supervisor123');
-    console.log('─────────────────────────────────────────────\n');
-
-    console.log('📝 Notes:');
-    console.log('  - Menu data should be seeded separately using: npm run seed:menu');
-    console.log('  - All dates are relative to today for realistic data');
-    console.log('  - Passwords are hashed with bcrypt (cost factor: 10)');
-    console.log('  - The seeder is idempotent - safe to run multiple times');
-    console.log('  - Existing data will not be duplicated\n');
 
   } catch (error) {
-    console.error('\n❌ ERROR during seeding:', error);
+    console.error('❌ Error during seeding:', error);
     throw error;
   }
 }
 
 main()
   .catch((e) => {
-    console.error('Fatal error:', e);
+    console.error(e);
     process.exit(1);
   })
   .finally(async () => {
-    console.log('🔌 Disconnecting from database...\n');
     await prisma.$disconnect();
   });

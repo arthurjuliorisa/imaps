@@ -38,10 +38,13 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     validateRequiredFields(body, ['code', 'name']);
 
-    // Trim string fields
+    // Trim string fields and add required fields
+    const id = `UOM-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const data = trimStringFields({
+      id,
       code: body.code,
       name: body.name,
+      updatedAt: new Date(),
     });
 
     // Create UOM

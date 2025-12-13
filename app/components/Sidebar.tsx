@@ -270,19 +270,46 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
           justifyContent: 'center',
           alignItems: 'center',
           position: 'relative',
+          flexDirection: 'column',
+          gap: 1,
         }}
       >
         {!collapsed ? (
-          <Image
-            src="/logo.png"
-            alt="iMAPS Logo"
-            width={180}
-            height={60}
-            priority
-            style={{
-              objectFit: 'contain',
-            }}
-          />
+          <>
+            <Image
+              src="/logo.png"
+              alt="iMAPS Logo"
+              width={180}
+              height={60}
+              priority
+              style={{
+                objectFit: 'contain',
+              }}
+            />
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 700,
+                  color: theme.palette.primary.main,
+                  fontSize: '1.25rem',
+                  lineHeight: 1.2,
+                }}
+              >
+                iMAPS
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{
+                  color: theme.palette.text.secondary,
+                  fontSize: '0.75rem',
+                  display: 'block',
+                }}
+              >
+                ERP Series
+              </Typography>
+            </Box>
+          </>
         ) : (
           <Box
             sx={{

@@ -65,11 +65,11 @@ const getActivityColor = (type: string): string => {
 export async function GET(request: Request) {
   try {
     // Fetch the 10 most recent activity logs
-    const activityLogs = await prisma.activityLog.findMany({
+    const activityLogs = await prisma.activity_logs.findMany({
       take: 10,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { created_at: 'desc' },
       include: {
-        user: {
+        users: {
           select: {
             username: true,
             email: true,
@@ -105,8 +105,8 @@ export async function GET(request: Request) {
         type: activityType,
         title: log.action,
         description: log.description,
-        time: dayjs(log.createdAt).fromNow(),
-        timestamp: log.createdAt.toISOString(),
+        time: dayjs(log.created_at).fromNow(),
+        timestamp: log.created_at.toISOString(),
         color,
       };
     });

@@ -13,8 +13,11 @@ import {
   Stack,
   Checkbox,
   FormControlLabel,
+  Paper,
+  Divider,
+  Chip,
 } from '@mui/material';
-import { Visibility, VisibilityOff, LockOutlined } from '@mui/icons-material';
+import { Visibility, VisibilityOff, LockOutlined, PersonOutline, AdminPanelSettings, Visibility as ViewIcon, Engineering } from '@mui/icons-material';
 import { signIn, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
@@ -78,6 +81,42 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  // Quick login helper for development
+  const quickLogin = (userEmail: string, userPassword: string) => {
+    setEmail(userEmail);
+    setPassword(userPassword);
+  };
+
+  // Development credentials
+  const devCredentials = [
+    {
+      role: 'Admin',
+      email: 'admin@imaps.local',
+      password: 'admin123',
+      icon: <AdminPanelSettings fontSize="small" />,
+      color: 'error' as const,
+      description: 'Full system access'
+    },
+    {
+      role: 'Operator',
+      email: 'operator@imaps.local',
+      password: 'operator123',
+      icon: <Engineering fontSize="small" />,
+      color: 'primary' as const,
+      description: 'Customs module (CRUD)'
+    },
+    {
+      role: 'Viewer',
+      email: 'viewer@imaps.local',
+      password: 'viewer123',
+      icon: <ViewIcon fontSize="small" />,
+      color: 'success' as const,
+      description: 'Dashboard & Reports (Read-only)'
+    },
+  ];
+
+  const isDevelopment = process.env.NODE_ENV === 'development';
 
   return (
     <Box
@@ -190,6 +229,136 @@ export default function LoginPage() {
               <Alert severity="error" sx={{ mb: { xs: 2.5, sm: 3 } }}>
                 {error}
               </Alert>
+            )}
+
+            {/* Development Credentials - Only show in development mode */}
+            {isDevelopment && (
+              <Paper
+                elevation={0}
+                sx={{
+                  mb: 3,
+                  p: 2,
+                  bgcolor: (theme) => theme.palette.mode === 'dark' ? 'grey.900' : 'grey.50',
+                  border: (theme) => `1px solid ${theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[200]}`,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                  <Chip
+                    label="DEV MODE"
+                    size="small"
+                    color="warning"
+                    sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+                  />
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      ml: 1,
+                      color: 'text.secondary',
+                      fontWeight: 500,
+                    }}
+                  >
+                    Quick Login Credentials
+                  </Typography>
+                </Box>
+
+                <Stack spacing={1}>
+                  {devCredentials.map((cred) => (
+                    <Box
+                      key={cred.role}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        p: 1.5,
+                        bgcolor: (theme) => theme.palette.mode === 'dark' ? 'background.paper' : 'white',
+                        borderRadius: 1,
+                        border: (theme) => `1px solid ${theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[200]}`,
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
+                        <Box
+                          sx={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            bgcolor: `${cred.color}.main`,
+                            color: 'white',
+                          }}
+                        >
+                          {cred.icon}
+                        </Box>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: 600,
+                              color: 'text.primary',
+                              fontSize: '0.875rem',
+                            }}
+                          >
+                            {cred.role}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: 'text.secondary',
+                              display: 'block',
+                              fontSize: '0.75rem',
+                            }}
+                          >
+                            {cred.email} • {cred.password}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: 'text.disabled',
+                              fontSize: '0.7rem',
+                              fontStyle: 'italic',
+                            }}
+                          >
+                            {cred.description}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => quickLogin(cred.email, cred.password)}
+                        sx={{
+                          minWidth: 60,
+                          fontSize: '0.75rem',
+                          textTransform: 'none',
+                          borderColor: `${cred.color}.main`,
+                          color: `${cred.color}.main`,
+                          '&:hover': {
+                            borderColor: `${cred.color}.dark`,
+                            bgcolor: `${cred.color}.50`,
+                          },
+                        }}
+                      >
+                        Use
+                      </Button>
+                    </Box>
+                  ))}
+                </Stack>
+
+                <Divider sx={{ my: 1.5 }} />
+
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: 'text.disabled',
+                    fontSize: '0.7rem',
+                    display: 'block',
+                    textAlign: 'center',
+                  }}
+                >
+                  This section is only visible in development mode
+                </Typography>
+              </Paper>
             )}
 
             <form onSubmit={handleSubmit}>

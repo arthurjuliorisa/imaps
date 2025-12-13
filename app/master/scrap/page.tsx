@@ -94,7 +94,7 @@ export default function ScrapMasterPage() {
 
   const fetchItems = useCallback(async () => {
     try {
-      const response = await fetch('/api/master/item?type=SCRAP');
+      const response = await fetch('/api/master/item');
       if (response.ok) {
         const data = await response.json();
         setItems(data);

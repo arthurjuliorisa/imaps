@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { ItemType } from '@prisma/client';
+import { ItemTypeCode } from '@prisma/client';
 
 /**
  * Inventory status interface
@@ -8,7 +10,7 @@ import { ItemType } from '@prisma/client';
 interface InventoryStatus {
   itemCode: string;
   itemName: string;
-  type: ItemType;
+  type: ItemTypeCode;
   currentStock: number;
   unit: string;
   lastUpdated: Date;
@@ -16,99 +18,64 @@ interface InventoryStatus {
 
 /**
  * GET /api/dashboard/inventory-status
- * Returns inventory overview with current stock levels
+ * Returns inventory overview with current stock levels from StockDailySnapshot
  *
- * Queries the most recent mutation record for each item across all mutation tables:
- * - ScrapMutation
- * - RawMaterialMutation
- * - ProductionMutation
- * - CapitalGoodsMutation
- *
- * Returns the latest ending balance as current stock for each item
+ * Queries the most recent snapshot for each item to get current stock levels
+ * Uses the new StockDailySnapshot table which aggregates all transactions
  */
 export async function GET(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
-    // Get all items with their UOM
-    const items = await prisma.item.findMany({
-      include: {
-        uom: {
-          select: {
-            code: true,
-          },
-        },
+    // Build where clause with companyCode filter
+    const whereClause: any = {};
+    if (session.user.companyCode) {
+      whereClause.company_code = session.user.companyCode;
+    }
+
+    // Get the most recent snapshot date
+    const latestSnapshot = await prisma.stock_daily_snapshot.findFirst({
+      where: whereClause,
+      orderBy: { snapshot_date: 'desc' },
+      select: { snapshot_date: true },
+    });
+
+    if (!latestSnapshot) {
+      // No snapshots available, return empty inventory
+      return NextResponse.json({
+        inventoryStatus: [],
+        rawMaterials: 0,
+        finishedGoods: 0,
+        workInProgress: 0,
+        inStock: 0,
+        lowStock: 0,
+        outOfStock: 0,
+      });
+    }
+
+    // Get all items from latest snapshot
+    const snapshots = await prisma.stock_daily_snapshot.findMany({
+      where: {
+        snapshot_date: latestSnapshot.snapshot_date,
+        ...whereClause,
       },
       orderBy: {
-        code: 'asc',
+        item_code: 'asc',
       },
     });
 
-    // Prepare inventory status array
-    const inventoryStatus: InventoryStatus[] = [];
-
-    // For each item, find the most recent mutation record across all relevant tables
-    for (const item of items) {
-      let latestMutation: { ending: number; updatedAt: Date } | null = null;
-
-      // Determine which mutation table to query based on item type
-      switch (item.type) {
-        case 'SCRAP':
-          // Scrap mutations are now tracked at ScrapMaster level, not individual items
-          // Find which scrap master collections contain this item
-          const scrapItems = await prisma.scrapItem.findMany({
-            where: { itemId: item.id },
-            select: { scrapId: true },
-          });
-
-          if (scrapItems.length > 0) {
-            // Get the most recent mutation from any scrap master containing this item
-            latestMutation = await prisma.scrapMutation.findFirst({
-              where: { scrapId: { in: scrapItems.map(si => si.scrapId) } },
-              orderBy: { date: 'desc' },
-              select: { ending: true, updatedAt: true },
-            });
-          }
-          break;
-
-        case 'RM':
-          latestMutation = await prisma.rawMaterialMutation.findFirst({
-            where: { itemId: item.id },
-            orderBy: { date: 'desc' },
-            select: { ending: true, updatedAt: true },
-          });
-          break;
-
-        case 'FG':
-        case 'SFG':
-          latestMutation = await prisma.productionMutation.findFirst({
-            where: { itemId: item.id },
-            orderBy: { date: 'desc' },
-            select: { ending: true, updatedAt: true },
-          });
-          break;
-
-        case 'CAPITAL':
-          latestMutation = await prisma.capitalGoodsMutation.findFirst({
-            where: { itemId: item.id },
-            orderBy: { date: 'desc' },
-            select: { ending: true, updatedAt: true },
-          });
-          break;
-
-        default:
-          // If item type doesn't match any mutation table, skip or default to 0
-          latestMutation = null;
-      }
-
-      // Add to inventory status
-      inventoryStatus.push({
-        itemCode: item.code,
-        itemName: item.name,
-        type: item.type,
-        currentStock: latestMutation?.ending ?? 0,
-        unit: item.uom.code,
-        lastUpdated: latestMutation?.updatedAt ?? item.updatedAt,
-      });
-    }
+    // Transform to inventory status format
+    const inventoryStatus: InventoryStatus[] = snapshots.map(snapshot => ({
+      itemCode: snapshot.item_code,
+      itemName: snapshot.item_name,
+      type: snapshot.item_type_code as ItemTypeCode,
+      currentStock: Number(snapshot.closing_balance),
+      unit: 'KG', // TODO: Add UOM field to stock_daily_snapshot model
+      lastUpdated: snapshot.updated_at,
+    }));
 
     // Calculate summary statistics
     const totalItems = inventoryStatus.length;
@@ -116,10 +83,10 @@ export async function GET(request: Request) {
     const lowStock = inventoryStatus.filter(item => item.currentStock > 0 && item.currentStock <= 10).length;
     const outOfStock = inventoryStatus.filter(item => item.currentStock === 0).length;
 
-    // Calculate percentages for inventory categories
-    const rawMaterialsCount = inventoryStatus.filter(item => item.type === 'RM').length;
-    const finishedGoodsCount = inventoryStatus.filter(item => item.type === 'FG' || item.type === 'SFG').length;
-    const workInProgressCount = inventoryStatus.filter(item => item.type === 'SCRAP').length;
+    // Calculate percentages for inventory categories based on new ItemTypeCode enum
+    const rawMaterialsCount = inventoryStatus.filter(item => item.type === 'ROH').length;
+    const finishedGoodsCount = inventoryStatus.filter(item => item.type === 'FERT').length;
+    const workInProgressCount = inventoryStatus.filter(item => item.type === 'HALB').length;
 
     const rawMaterials = totalItems > 0 ? Math.round((rawMaterialsCount / totalItems) * 100) : 0;
     const finishedGoods = totalItems > 0 ? Math.round((finishedGoodsCount / totalItems) * 100) : 0;
@@ -133,11 +100,12 @@ export async function GET(request: Request) {
       inStock,
       lowStock,
       outOfStock,
+      snapshotDate: latestSnapshot.snapshot_date.toISOString(),
     });
   } catch (error) {
     console.error('[API Error] Failed to fetch inventory status:', error);
     return NextResponse.json(
-      { message: 'Error fetching inventory status' },
+      { message: 'Error fetching inventory status', error: String(error) },
       { status: 500 }
     );
   }

@@ -37,10 +37,10 @@ export async function GET(request: NextRequest) {
       : {};
 
     // Get total count
-    const total = await prisma.user.count({ where });
+    const total = await prisma.users.count({ where });
 
     // Get paginated users (EXCLUDE password field)
-    const users = await prisma.user.findMany({
+    const users = await prisma.users.findMany({
       where,
       skip,
       take,
@@ -48,8 +48,8 @@ export async function GET(request: NextRequest) {
         id: true,
         username: true,
         email: true,
-        createdAt: true,
-        updatedAt: true,
+        created_at: true,
+        updated_at: true,
       },
       orderBy: { username: 'asc' },
     });
@@ -104,18 +104,21 @@ export async function POST(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
     // Create user
-    const user = await prisma.user.create({
+    const id = `USER-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const user = await prisma.users.create({
       data: {
+        id,
         username: data.username,
         email: data.email,
         password: hashedPassword,
+        updated_at: new Date(),
       },
       select: {
         id: true,
         username: true,
         email: true,
-        createdAt: true,
-        updatedAt: true,
+        created_at: true,
+        updated_at: true,
       },
     });
 

@@ -10,10 +10,10 @@ interface MenuWithChildren {
   name: string;
   route: string | null;
   icon: string | null;
-  parentId: string | null;
+  parent_id: string | null;
   order: number;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
   children: MenuWithChildren[];
 }
 
@@ -33,8 +33,8 @@ function buildMenuHierarchy(menus: any[]): MenuWithChildren[] {
   menus.forEach((menu) => {
     const menuItem = menuMap.get(menu.id)!;
 
-    if (menu.parentId) {
-      const parent = menuMap.get(menu.parentId);
+    if (menu.parent_id) {
+      const parent = menuMap.get(menu.parent_id);
       if (parent) {
         parent.children.push(menuItem);
       } else {
@@ -70,7 +70,7 @@ function buildMenuHierarchy(menus: any[]): MenuWithChildren[] {
 export async function GET() {
   try {
     // Get all menus
-    const menus = await prisma.menu.findMany({
+    const menus = await prisma.menus.findMany({
       orderBy: { order: 'asc' },
     });
 

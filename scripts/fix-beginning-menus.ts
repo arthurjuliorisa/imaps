@@ -7,7 +7,7 @@ async function main() {
 
   try {
     // Find the Beginning Data parent menu
-    const beginningDataParent = await prisma.menu.findFirst({
+    const beginningDataParent = await prisma.menus.findFirst({
       where: {
         name: 'Beginning Data',
       },
@@ -30,7 +30,7 @@ async function main() {
     console.log('Updating orphaned children to correct parent...\n');
 
     for (const childName of childrenNames) {
-      const child = await prisma.menu.findFirst({
+      const child = await prisma.menus.findFirst({
         where: {
           name: childName,
         },
@@ -42,26 +42,26 @@ async function main() {
       }
 
       // Update the parentId
-      await prisma.menu.update({
+      await prisma.menus.update({
         where: {
           id: child.id,
         },
         data: {
-          parentId: beginningDataParent.id,
+          parent_id: beginningDataParent.id,
         },
       });
 
       console.log(`✅ Updated "${childName}"`);
-      console.log(`   Old parentId: ${child.parentId}`);
-      console.log(`   New parentId: ${beginningDataParent.id}\n`);
+      console.log(`   Old parent_id: ${child.parent_id}`);
+      console.log(`   New parent_id: ${beginningDataParent.id}\n`);
     }
 
     console.log('✨ Menu structure has been fixed!\n');
 
     // Verify the results
-    const fixedChildren = await prisma.menu.findMany({
+    const fixedChildren = await prisma.menus.findMany({
       where: {
-        parentId: beginningDataParent.id,
+        parent_id: beginningDataParent.id,
       },
       orderBy: {
         order: 'asc',

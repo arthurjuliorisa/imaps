@@ -107,15 +107,15 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
     }
 
     // Create activity log entry
-    await prisma.activityLog.create({
+    await prisma.activity_logs.create({
       data: {
-        userId,
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        user_id: userId,
         action,
         description,
-        ipAddress,
-        userAgent,
+        ip_address: ipAddress,
+        user_agent: userAgent,
         status,
-        metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : null,
       },
     });
   } catch (error) {

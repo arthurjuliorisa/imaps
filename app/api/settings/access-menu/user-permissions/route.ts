@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Verify user exists
-    const user = await prisma.user.findUnique({
+    const user = await prisma.users.findUnique({
       where: { id: userId },
     });
 
@@ -46,11 +46,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all menus with user's permissions
-    const menus = await prisma.menu.findMany({
+    const menus = await prisma.menus.findMany({
       orderBy: { order: 'asc' },
       include: {
-        userAccess: {
-          where: { userId },
+        user_access_menus: {
+          where: { user_id: userId },
         },
       },
     });
@@ -61,12 +61,12 @@ export async function GET(request: NextRequest) {
       menuName: menu.name,
       route: menu.route,
       icon: menu.icon,
-      parentId: menu.parentId,
+      parentId: menu.parent_id,
       order: menu.order,
-      canView: menu.userAccess[0]?.canView ?? false,
-      canCreate: menu.userAccess[0]?.canCreate ?? false,
-      canEdit: menu.userAccess[0]?.canEdit ?? false,
-      canDelete: menu.userAccess[0]?.canDelete ?? false,
+      canView: menu.user_access_menus[0]?.can_view ?? false,
+      canCreate: menu.user_access_menus[0]?.can_create ?? false,
+      canEdit: menu.user_access_menus[0]?.can_edit ?? false,
+      canDelete: menu.user_access_menus[0]?.can_delete ?? false,
     }));
 
     return NextResponse.json(permissions);
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify user exists
-    const user = await prisma.user.findUnique({
+    const user = await prisma.users.findUnique({
       where: { id: userId },
     });
 
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
 
     // Validate all menu IDs exist
     const menuIds = permissions.map((p: UserPermission) => p.menuId);
-    const existingMenus = await prisma.menu.findMany({
+    const existingMenus = await prisma.menus.findMany({
       where: { id: { in: menuIds } },
       select: { id: true },
     });
@@ -125,19 +125,21 @@ export async function POST(request: NextRequest) {
     // Use transaction to delete existing and insert new permissions
     const result = await prisma.$transaction(async (tx) => {
       // Delete existing permissions for this user
-      await tx.userAccessMenu.deleteMany({
-        where: { userId },
+      await tx.user_access_menus.deleteMany({
+        where: { user_id: userId },
       });
 
       // Insert new permissions
-      const createdPermissions = await tx.userAccessMenu.createMany({
-        data: permissions.map((p: UserPermission) => ({
-          userId,
-          menuId: p.menuId,
-          canView: p.canView ?? false,
-          canCreate: p.canCreate ?? false,
-          canEdit: p.canEdit ?? false,
-          canDelete: p.canDelete ?? false,
+      const createdPermissions = await tx.user_access_menus.createMany({
+        data: permissions.map((p: UserPermission, index: number) => ({
+          id: `UAM-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+          user_id: userId,
+          menu_id: p.menuId,
+          can_view: p.canView ?? false,
+          can_create: p.canCreate ?? false,
+          can_edit: p.canEdit ?? false,
+          can_delete: p.canDelete ?? false,
+          updated_at: new Date(),
         })),
       });
 
