@@ -19,7 +19,7 @@ export async function GET(request: Request) {
       where.OR = [
         { action: { contains: search } },
         { description: { contains: search } },
-        { user: { username: { contains: search } } },
+        { users: { username: { contains: search } } },
       ];
     }
 
@@ -29,11 +29,11 @@ export async function GET(request: Request) {
 
     // If export, get all data
     if (exportData) {
-      const logs = await prisma.activityLog.findMany({
+      const logs = await prisma.activity_logs.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { created_at: 'desc' },
         include: {
-          user: {
+          users: {
             select: {
               username: true,
               email: true,
@@ -45,13 +45,13 @@ export async function GET(request: Request) {
       // Convert to CSV
       const headers = ['Date & Time', 'User', 'Email', 'Action', 'Description', 'Status', 'IP Address'];
       const csvData = logs.map(log => [
-        new Date(log.createdAt).toLocaleString(),
-        log.user?.username || 'Unknown',
-        log.user?.email || '-',
+        new Date(log.created_at).toLocaleString(),
+        log.users?.username || 'Unknown',
+        log.users?.email || '-',
         log.action,
         log.description,
         log.status,
-        log.ipAddress || '-',
+        log.ip_address || '-',
       ]);
 
       const csv = [
@@ -69,13 +69,13 @@ export async function GET(request: Request) {
 
     // Get paginated data
     const [logs, total] = await Promise.all([
-      prisma.activityLog.findMany({
+      prisma.activity_logs.findMany({
         where,
         skip,
         take: pageSize,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { created_at: 'desc' },
         include: {
-          user: {
+          users: {
             select: {
               username: true,
               email: true,
@@ -83,7 +83,7 @@ export async function GET(request: Request) {
           },
         },
       }),
-      prisma.activityLog.count({ where }),
+      prisma.activity_logs.count({ where }),
     ]);
 
     return NextResponse.json({

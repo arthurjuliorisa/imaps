@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useToast } from '@/app/components/ToastProvider';
 import {
   Box,
@@ -17,125 +18,138 @@ import {
   useTheme,
   Chip,
   CircularProgress,
+  Button,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
+import { Add, Visibility } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
-import { DateSelector } from '@/app/components/customs/DateSelector';
+import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
+import { getWIPBalanceTransactions } from '@/lib/api';
+import type { WIPBalanceHeader } from '@/types/v2.4.2';
 
-interface WIPData {
-  id: number;
-  itemCode: string;
-  itemName: string;
-  unit: string;
-  qty: number;
-  remarks: string;
-}
-
-export default function WIPReportPage() {
+export default function WIPBalancePage() {
   const theme = useTheme();
   const toast = useToast();
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [data, setData] = useState<WIPData[]>([]);
+  const router = useRouter();
+
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now);
+  thirtyDaysAgo.setDate(now.getDate() - 30);
+
+  const [startDate, setStartDate] = useState(thirtyDaysAgo.toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [data, setData] = useState<WIPBalanceHeader[]>([]);
+  const [totalRecords, setTotalRecords] = useState(0);
   const [loading, setLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        startDate: selectedDate,
-        endDate: selectedDate,
+      const response = await getWIPBalanceTransactions({
+        page,
+        page_size: pageSize,
+        start_date: startDate,
+        end_date: endDate,
       });
 
-      const response = await fetch(`/api/customs/wip?${params}`);
-      if (!response.ok) throw new Error('Failed to fetch data');
-      const result = await response.json();
-      // API returns { data: [...], pagination: {...} }
-      setData(Array.isArray(result.data) ? result.data : []);
+      setData(response.data);
+      setTotalRecords(response.pagination.total_records);
     } catch (error) {
-      console.error('Error fetching WIP data:', error);
-      toast.error('Failed to load WIP data');
+      console.error('Error fetching WIP balance:', error);
+      toast.error('Failed to load WIP balance data');
       setData([]);
+      setTotalRecords(0);
     } finally {
       setLoading(false);
     }
-  }, [selectedDate, toast]);
+  }, [startDate, endDate, page, pageSize, toast]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
-    setPage(newPage);
+    setPage(newPage + 1);
   };
 
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
+    setPageSize(parseInt(event.target.value, 10));
+    setPage(1);
+  };
+
+  const handleNewDocument = () => {
+    router.push('/customs/wip/new');
   };
 
   const handleExportExcel = () => {
     const exportData = data.map((row, index) => ({
-      No: index + 1,
-      'Item Code': row.itemCode,
-      'Item Name': row.itemName,
-      'Unit': row.unit,
-      'Qty': row.qty,
-      'Remarks': row.remarks,
+      No: (page - 1) * pageSize + index + 1,
+      'WMS ID': row.wms_id,
+      'Company': row.company_code,
+      'Transaction Date': formatDate(row.trx_date.toISOString()),
+      'Remarks': row.remarks || '-',
     }));
 
     exportToExcel(
       exportData,
-      `LPJ_Work_In_Progress_${selectedDate}`,
-      'WIP'
+      `WIP_Balance_${startDate}_${endDate}`,
+      'WIP Balance'
     );
   };
 
   const handleExportPDF = () => {
     const exportData = data.map((row, index) => ({
-      no: index + 1,
-      itemCode: row.itemCode,
-      itemName: row.itemName,
-      unit: row.unit,
-      qty: row.qty.toString(),
+      no: (page - 1) * pageSize + index + 1,
+      wmsId: row.wms_id,
+      company: row.company_code,
+      transactionDate: formatDate(row.trx_date.toISOString()),
       remarks: row.remarks || '-',
     }));
 
     const columns = [
       { header: 'No', dataKey: 'no' },
-      { header: 'Item Code', dataKey: 'itemCode' },
-      { header: 'Item Name', dataKey: 'itemName' },
-      { header: 'Unit', dataKey: 'unit' },
-      { header: 'Qty', dataKey: 'qty' },
+      { header: 'WMS ID', dataKey: 'wmsId' },
+      { header: 'Company', dataKey: 'company' },
+      { header: 'Transaction Date', dataKey: 'transactionDate' },
       { header: 'Remarks', dataKey: 'remarks' },
     ];
 
     exportToPDF(
       exportData,
       columns,
-      `LPJ_Work_In_Progress_${selectedDate}`,
-      'LPJ Work In Progress',
-      `Date: ${formatDate(selectedDate)}`
+      `WIP_Balance_${startDate}_${endDate}`,
+      'WIP Balance Report',
+      `Period: ${formatDate(startDate)} - ${formatDate(endDate)}`
     );
   };
 
-  const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
-
-  const totalQty = data.reduce((sum, item) => sum + item.qty, 0);
-
   return (
     <ReportLayout
-      title="LPJ Work In Progress"
-      subtitle="Laporan Pertanggungjawaban Barang Setengah Jadi dalam Proses"
+      title="WIP Balance"
+      subtitle="Work in Process balance snapshots"
       actions={
-        <Stack spacing={3}>
-          <DateSelector
-            date={selectedDate}
-            onDateChange={setSelectedDate}
-            label="Select Report Date"
-          />
+        <Stack spacing={2}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Button
+              variant="contained"
+              startIcon={<Add />}
+              onClick={handleNewDocument}
+              disabled={loading}
+            >
+              New WIP Balance
+            </Button>
+            <DateRangeFilter
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
+            />
+          </Box>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
             <ExportButtons
               onExportExcel={handleExportExcel}
@@ -152,96 +166,78 @@ export default function WIPReportPage() {
         </Box>
       ) : (
         <TableContainer>
-          <Table sx={{ minWidth: 650 }} aria-label="wip report table">
+          <Table sx={{ minWidth: 650 }}>
             <TableHead>
-              <TableRow
-                sx={{
-                  bgcolor: alpha(theme.palette.primary.main, 0.08),
-                }}
-              >
+              <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Unit</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Qty</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Transaction Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {paginatedData.length === 0 ? (
+              {data.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
-                      No records found for the selected date
+                      No records found for the selected date range
                     </Typography>
                   </TableCell>
                 </TableRow>
               ) : (
-              <>
-                {paginatedData.map((row, index) => (
+                data.map((row, index) => (
                   <TableRow
-                    key={row.id}
-                    sx={{
-                      '&:hover': {
-                        bgcolor: alpha(theme.palette.primary.main, 0.04),
-                      },
-                    }}
+                    key={`${row.company_code}-${row.wms_id}`}
+                    sx={{ '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.04) } }}
                   >
-                    <TableCell>{page * rowsPerPage + index + 1}</TableCell>
+                    <TableCell>{(page - 1) * pageSize + index + 1}</TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>
-                        {row.itemCode}
+                        {row.wms_id}
                       </Typography>
                     </TableCell>
-                    <TableCell>{row.itemName}</TableCell>
                     <TableCell>
-                      <Chip label={row.unit} size="small" />
+                      <Chip label={row.company_code} size="small" />
                     </TableCell>
-                    <TableCell align="right">
-                      <Typography variant="body2" fontWeight={600}>
-                        {row.qty.toLocaleString('id-ID')}
-                      </Typography>
-                    </TableCell>
+                    <TableCell>{formatDate(row.trx_date.toISOString())}</TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary">
                         {row.remarks || '-'}
                       </Typography>
                     </TableCell>
+                    <TableCell>
+                      <Tooltip title="View Details">
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => router.push(`/customs/wip/${row.wms_id}`)}
+                        >
+                          <Visibility fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
                   </TableRow>
-                ))}
-                <TableRow
-                  sx={{
-                    bgcolor: alpha(theme.palette.warning.main, 0.1),
-                    '& td': { fontWeight: 700 },
-                  }}
-                >
-                  <TableCell colSpan={4} align="right">
-                    <Typography variant="body1" fontWeight={700}>
-                      Total:
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Typography variant="body1" fontWeight={700} color="primary">
-                      {totalQty.toLocaleString('id-ID')}
-                    </Typography>
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-                </>
+                ))
               )}
             </TableBody>
           </Table>
         </TableContainer>
       )}
-      {!loading && (
+      {!loading && totalRecords > 0 && (
         <TablePagination
-          rowsPerPageOptions={[5, 10, 25, 50]}
+          rowsPerPageOptions={[10, 20, 50, 100]}
           component="div"
-          count={data.length}
-          rowsPerPage={rowsPerPage}
-          page={page}
+          count={totalRecords}
+          rowsPerPage={pageSize}
+          page={page - 1}
           onPageChange={handleChangePage}
           onRowsPerPageChange={handleChangeRowsPerPage}
+          labelRowsPerPage="Rows per page:"
+          labelDisplayedRows={({ from, to, count }) =>
+            `${from}-${to} of ${count !== -1 ? count : `more than ${to}`}`
+          }
         />
       )}
     </ReportLayout>
