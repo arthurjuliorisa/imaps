@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    "app/api/admin/**",
+    "app/api/dashboard/**",
+    "app/api/master/**",
+    "app/api/settings/**",
+    "app/api/wms/**",
+    "lib/jobs/**",
+    "lib/auth.ts",
+    "lib/log-activity.ts",
+    "scripts/**",
+    "tests/**"
+  ],
+  "include": [
+    "app/api/v1/**",
+    "lib/types/**",
+    "lib/validators/**",
+    "lib/repositories/**",
+    "lib/services/**",
+    "lib/middleware/**",
+    "lib/utils/**"
+  ]
+}
