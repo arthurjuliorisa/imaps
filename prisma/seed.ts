@@ -265,10 +265,11 @@ async function main() {
   console.log(`✅ Created ${items.length} items\n`);
 
   // ============================================================================
-  // 4. SEED TRANSACTIONS (Now works with auto-increment!)
+  // 5. SEED TRANSACTIONS (Fixed for partitioned tables - no nested creates)
   // ============================================================================
   console.log('📦 Seeding transactions...');
 
+  // 1. INCOMING GOODS
   const incomingGood = await prisma.incomingGood.create({
     data: {
       wms_id: 'INC-1310-20251214-001',
@@ -283,25 +284,28 @@ async function main() {
       invoice_date: new Date('2026-12-08'),
       shipper_name: 'PT Supplier Materials',
       timestamp: new Date(),
-      items: {
-        create: [
-          {
-            item_type: 'ROH',
-            item_code: 'RM-1310-001',
-            item_name: 'Polyester Yarn 150D White',
-            hs_code: '5402.46.00',
-            uom: 'KG',
-            qty: 1000,
-            currency: 'USD',
-            amount: 5000,
-          },
-        ],
-      },
+    },
+  });
+
+  await prisma.incomingGoodItem.create({
+    data: {
+      incoming_good_id: incomingGood.id,
+      incoming_good_company: incomingGood.company_code,
+      incoming_good_date: incomingGood.incoming_date,
+      item_type: 'ROH',
+      item_code: 'RM-1310-001',
+      item_name: 'Polyester Yarn 150D White',
+      hs_code: '5402.46.00',
+      uom: 'KG',
+      qty: 1000,
+      currency: 'USD',
+      amount: 5000,
     },
   });
 
   console.log(`✅ Created incoming goods: ${incomingGood.wms_id}`);
 
+  // 2. MATERIAL USAGE
   const materialUsage = await prisma.materialUsage.create({
     data: {
       wms_id: 'MAT-1310-20251214-001',
@@ -310,23 +314,26 @@ async function main() {
       internal_evidence_number: 'INT-MAT-001',
       transaction_date: new Date('2026-12-14'),
       timestamp: new Date(),
-      items: {
-        create: [
-          {
-            item_type: 'ROH',
-            item_code: 'RM-1310-001',
-            item_name: 'Polyester Yarn 150D White',
-            uom: 'KG',
-            qty: 300,
-            ppkek_number: 'PPKEK-1310-2025-0001',
-          },
-        ],
-      },
+    },
+  });
+
+  await prisma.materialUsageItem.create({
+    data: {
+      material_usage_id: materialUsage.id,
+      material_usage_company: materialUsage.company_code,
+      material_usage_date: materialUsage.transaction_date,
+      item_type: 'ROH',
+      item_code: 'RM-1310-001',
+      item_name: 'Polyester Yarn 150D White',
+      uom: 'KG',
+      qty: 300,
+      ppkek_number: 'PPKEK-1310-2025-0001',
     },
   });
 
   console.log(`✅ Created material usage: ${materialUsage.wms_id}`);
 
+  // 3. PRODUCTION OUTPUT
   const productionOutput = await prisma.productionOutput.create({
     data: {
       wms_id: 'PROD-1310-20251214-001',
@@ -334,23 +341,26 @@ async function main() {
       internal_evidence_number: 'INT-PROD-001',
       transaction_date: new Date('2026-12-14'),
       timestamp: new Date(),
-      items: {
-        create: [
-          {
-            item_type: 'FERT',
-            item_code: 'FG-1310-001',
-            item_name: 'Finished Fabric Roll Grade A',
-            uom: 'ROLL',
-            qty: 50,
-            work_order_numbers: ['WO-1310-001'],
-          },
-        ],
-      },
+    },
+  });
+
+  await prisma.productionOutputItem.create({
+    data: {
+      production_output_id: productionOutput.id,
+      production_output_company: productionOutput.company_code,
+      production_output_date: productionOutput.transaction_date,
+      item_type: 'FERT',
+      item_code: 'FG-1310-001',
+      item_name: 'Finished Fabric Roll Grade A',
+      uom: 'ROLL',
+      qty: 50,
+      work_order_numbers: ['WO-1310-001'],
     },
   });
 
   console.log(`✅ Created production output: ${productionOutput.wms_id}`);
 
+  // 4. OUTGOING GOODS
   const outgoingGood = await prisma.outgoingGood.create({
     data: {
       wms_id: 'OUT-1310-20251214-001',
@@ -365,21 +375,23 @@ async function main() {
       invoice_date: new Date('2026-12-11'),
       recipient_name: 'Global Textile Buyers',
       timestamp: new Date(),
-      items: {
-        create: [
-          {
-            item_type: 'FERT',
-            item_code: 'FG-1310-001',
-            item_name: 'Finished Fabric Roll Grade A',
-            production_output_wms_ids: ['PROD-1310-20251214-001'],
-            hs_code: '5407.42.00',
-            uom: 'ROLL',
-            qty: 30,
-            currency: 'USD',
-            amount: 4500,
-          },
-        ],
-      },
+    },
+  });
+
+  await prisma.outgoingGoodItem.create({
+    data: {
+      outgoing_good_id: outgoingGood.id,
+      outgoing_good_company: outgoingGood.company_code,
+      outgoing_good_date: outgoingGood.outgoing_date,
+      item_type: 'FERT',
+      item_code: 'FG-1310-001',
+      item_name: 'Finished Fabric Roll Grade A',
+      production_output_wms_ids: ['PROD-1310-20251214-001'],
+      hs_code: '5407.42.00',
+      uom: 'ROLL',
+      qty: 30,
+      currency: 'USD',
+      amount: 4500,
     },
   });
 

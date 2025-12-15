@@ -33,6 +33,41 @@ export interface UpsertResult {
  */
 export class IncomingGoodRepository {
   /**
+   * Create incoming_good_items in chunks to avoid exceeding query/parameter limits
+   * when item count is very large (e.g., thousands of rows).
+   */
+  private async createItemsInChunks(
+    tx: any,
+    recordId: number,
+    company_code: number,
+    incoming_date: Date,
+    items: IncomingGoodData['items'],
+    chunkSize = 1000
+  ) {
+    if (!items?.length) return;
+
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const chunk = items.slice(i, i + chunkSize);
+
+      await tx.incomingGoodItem.createMany({
+        data: chunk.map((item) => ({
+          incoming_good_id: recordId,
+          incoming_good_company: company_code,
+          incoming_good_date: incoming_date,
+          item_type: item.item_type,
+          item_code: item.item_code,
+          item_name: item.item_name,
+          hs_code: item.hs_code,
+          uom: item.uom,
+          qty: new Prisma.Decimal(item.qty),
+          currency: item.currency,
+          amount: new Prisma.Decimal(item.amount),
+        })),
+      });
+    }
+  }
+
+  /**
    * Upsert incoming good with items (idempotent operation)
    * 
    * How it works:
@@ -97,23 +132,18 @@ export class IncomingGoodRepository {
           });
 
           // Step 2c: Insert new items
-          await tx.incomingGoodItem.createMany({
-            data: data.items.map((item) => ({
-              incoming_good_id: recordId,
-              incoming_good_company: data.company_code,
-              incoming_good_date: data.incoming_date,
-              item_type: item.item_type,
-              item_code: item.item_code,
-              item_name: item.item_name,
-              hs_code: item.hs_code,
-              uom: item.uom,
-              qty: new Prisma.Decimal(item.qty),
-              currency: item.currency,
-              amount: new Prisma.Decimal(item.amount),
-            })),
-          });
+          await this.createItemsInChunks(
+            tx,
+            recordId,
+            data.company_code,
+            data.incoming_date,
+            data.items
+          );
         } else {
           // Record doesn't exist - INSERT flow
+          // IMPORTANT:
+          // - We intentionally avoid Prisma relation field `items` (partitioning constraints/FK issues)
+          // - Therefore we must do header insert first, then insert detail rows via incomingGoodItem
           const created = await tx.incomingGood.create({
             data: {
               wms_id: data.wms_id,
@@ -128,26 +158,19 @@ export class IncomingGoodRepository {
               invoice_date: data.invoice_date,
               shipper_name: data.shipper_name,
               timestamp: data.timestamp,
-              items: {
-                createMany: {
-                  data: data.items.map((item) => ({
-                    incoming_good_company: data.company_code,
-                    incoming_good_date: data.incoming_date,
-                    item_type: item.item_type,
-                    item_code: item.item_code,
-                    item_name: item.item_name,
-                    hs_code: item.hs_code,
-                    uom: item.uom,
-                    qty: new Prisma.Decimal(item.qty),
-                    currency: item.currency,
-                    amount: new Prisma.Decimal(item.amount),
-                  })),
-                },
-              },
             },
+            select: { id: true },
           });
 
           recordId = created.id;
+
+          await this.createItemsInChunks(
+            tx,
+            recordId,
+            data.company_code,
+            data.incoming_date,
+            data.items
+          );
         }
 
         return { recordId, wasUpdated };
@@ -186,26 +209,32 @@ export class IncomingGoodRepository {
    */
   async findByWmsId(company_code: number, wms_id: string) {
     try {
-      return await prisma.incomingGood.findFirst({
+      // NOTE: We avoid Prisma relation `items` due to partitioning constraints,
+      // so we fetch header and items separately.
+      const header = await prisma.incomingGood.findFirst({
         where: {
           company_code,
           wms_id,
           deleted_at: null,
         },
-        include: {
-          items: {
-            where: {
-              deleted_at: null,
-            },
-            orderBy: {
-              id: 'asc',
-            },
-          },
-        },
         orderBy: {
           created_at: 'desc',
         },
       });
+
+      if (!header) return null;
+
+      const items = await prisma.incomingGoodItem.findMany({
+        where: {
+          incoming_good_id: header.id,
+          deleted_at: null,
+        },
+        orderBy: {
+          id: 'asc',
+        },
+      });
+
+      return { ...header, items };
     } catch (error) {
       console.error('Error in IncomingGoodRepository.findByWmsId:', error);
       return null;
