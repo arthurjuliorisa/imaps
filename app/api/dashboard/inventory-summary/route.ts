@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { ItemTypeCode } from '@prisma/client';
+import { serializeBigInt } from '@/lib/bigint-serializer';
 
 /**
  * Inventory summary by item type

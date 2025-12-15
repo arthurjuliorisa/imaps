@@ -84,9 +84,6 @@ export default function OutgoingGoodsReportPage() {
     setPage(1);
   };
 
-  const handleNewDocument = () => {
-    router.push('/customs/outgoing/new');
-  };
 
   const handleExportExcel = () => {
     const exportData = data.map((row, index) => ({
@@ -148,14 +145,6 @@ export default function OutgoingGoodsReportPage() {
       actions={
         <Stack spacing={2}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Button
-              variant="contained"
-              startIcon={<Add />}
-              onClick={handleNewDocument}
-              disabled={loading}
-            >
-              New Document
-            </Button>
             <DateRangeFilter
               startDate={startDate}
               endDate={endDate}

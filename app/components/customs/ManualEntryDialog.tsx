@@ -27,8 +27,6 @@ interface FormData {
   scrapId: string;
   scrapCode: string;
   scrapName: string;
-  uomId: string;
-  uom: string;
   incoming: number;
   remarks: string;
 }
@@ -47,34 +45,24 @@ interface ScrapMaster {
   items?: any[];
 }
 
-interface UOM {
-  id: string;
-  code: string;
-  name: string;
-}
-
 export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialogProps) {
   const theme = useTheme();
   const [loading, setLoading] = useState(false);
   const [scraps, setScraps] = useState<ScrapMaster[]>([]);
-  const [uoms, setUoms] = useState<UOM[]>([]);
   const [loadingScraps, setLoadingScraps] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     date: dayjs(),
     scrapId: '',
     scrapCode: '',
     scrapName: '',
-    uomId: '',
-    uom: '',
     incoming: 0,
     remarks: '',
   });
 
-  // Fetch scraps and UOMs when dialog opens
+  // Fetch scraps when dialog opens
   useEffect(() => {
     if (open) {
       fetchScraps();
-      fetchUOMs();
     }
   }, [open]);
 
@@ -93,29 +81,13 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
     }
   };
 
-  const fetchUOMs = async () => {
-    try {
-      const response = await fetch('/api/master/uom');
-      if (response.ok) {
-        const data = await response.json();
-        setUoms(data);
-      }
-    } catch (error) {
-      console.error('Error fetching UOMs:', error);
-    }
-  };
-
   const handleScrapSelect = (scrap: ScrapMaster | null) => {
     if (scrap) {
-      // Get the first item's UOM if available
-      const firstItem = scrap.items && scrap.items.length > 0 ? scrap.items[0] : null;
       setFormData((prev) => ({
         ...prev,
         scrapId: scrap.id,
         scrapCode: scrap.code,
         scrapName: scrap.name,
-        uomId: firstItem?.uom?.id || '',
-        uom: firstItem?.uom?.code || '',
       }));
     } else {
       setFormData((prev) => ({
@@ -123,8 +95,6 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
         scrapId: '',
         scrapCode: '',
         scrapName: '',
-        uomId: '',
-        uom: '',
       }));
     }
   };
@@ -149,8 +119,6 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
         scrapId: '',
         scrapCode: '',
         scrapName: '',
-        uomId: '',
-        uom: '',
         incoming: 0,
         remarks: '',
       });
@@ -165,7 +133,6 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
   const isFormValid =
     formData.date !== null &&
     formData.scrapId !== '' &&
-    formData.uomId !== '' &&
     formData.incoming > 0;
 
   return (
@@ -236,29 +203,6 @@ export function ManualEntryDialog({ open, onClose, onSubmit }: ManualEntryDialog
                   }}
                 />
               )}
-            />
-
-            {/* UOM Autocomplete - Auto-filled from selected item */}
-            <Autocomplete
-              options={uoms}
-              value={uoms.find((u) => u.id === formData.uomId) || null}
-              onChange={(_event, newValue) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  uomId: newValue?.id || '',
-                  uom: newValue?.code || '',
-                }))
-              }
-              getOptionLabel={(option) => `${option.code} - ${option.name}`}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Unit of Measure (UOM)"
-                  required
-                  helperText="Auto-filled from selected scrap master"
-                />
-              )}
-              disabled={true}
             />
 
             {/* Incoming Quantity */}

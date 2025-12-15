@@ -150,30 +150,6 @@ model companies {
   @@index([company_name], map: "idx_companies_name")
 }
 
-/// Master data model for Currency
-/// Maps to "Currency" table in database (PascalCase from initial migration)
-model currency {
-  id        String   @id
-  code      String   @unique
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("Currency")
-}
-
-/// Master data model for Unit of Measure (UOM)
-/// Maps to "UOM" table in database (PascalCase from initial migration)
-model uOM {
-  id        String   @id
-  code      String   @unique
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("UOM")
-}
-
 /// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments

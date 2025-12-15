@@ -23,7 +23,7 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
-import { Add, Visibility, Edit, Delete } from '@mui/icons-material';
+import { Visibility, Edit, Delete } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
@@ -84,9 +84,6 @@ export default function IncomingGoodsReportPage() {
     setPage(1);
   };
 
-  const handleNewDocument = () => {
-    router.push('/customs/incoming/new');
-  };
 
   const handleExportExcel = () => {
     const exportData = data.map((row, index) => ({
@@ -148,14 +145,6 @@ export default function IncomingGoodsReportPage() {
       actions={
         <Stack spacing={2}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Button
-              variant="contained"
-              startIcon={<Add />}
-              onClick={handleNewDocument}
-              disabled={loading}
-            >
-              New Document
-            </Button>
             <DateRangeFilter
               startDate={startDate}
               endDate={endDate}

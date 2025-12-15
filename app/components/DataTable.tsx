@@ -31,11 +31,20 @@ export interface Column {
   format?: (value: any) => string | React.ReactNode;
 }
 
+export interface ExtraAction {
+  icon: React.ReactNode;
+  label: string;
+  onClick: (row: any) => void;
+  color?: 'primary' | 'secondary' | 'success' | 'error' | 'info' | 'warning';
+}
+
+
 interface DataTableProps {
   columns: Column[];
   data: any[];
   onEdit?: (row: any) => void;
   onDelete?: (row: any) => void;
+  extraActions?: ExtraAction[];
   searchable?: boolean;
   searchPlaceholder?: string;
   loading?: boolean;
@@ -47,6 +56,7 @@ export function DataTable({
   data,
   onEdit,
   onDelete,
+  extraActions,
   searchable = true,
   searchPlaceholder = 'Search...',
   loading = false,
@@ -70,6 +80,8 @@ export function DataTable({
     setRowsPerPage(+event.target.value);
     setPage(0);
   };
+
+  const hasActions = onEdit || onDelete || (extraActions && extraActions.length > 0);
 
   const filteredData = searchable
     ? data.filter((row) =>
@@ -142,7 +154,7 @@ export function DataTable({
                   {column.label}
                 </TableCell>
               ))}
-              {(onEdit || onDelete) && (
+              {hasActions && (
                 <TableCell
                   align="center"
                   sx={{
@@ -170,7 +182,7 @@ export function DataTable({
                       <Skeleton variant="text" />
                     </TableCell>
                   ))}
-                  {(onEdit || onDelete) && (
+                  {hasActions && (
                     <TableCell align="center">
                       <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
                         <Skeleton variant="circular" width={32} height={32} />
@@ -238,9 +250,27 @@ export function DataTable({
                         </TableCell>
                       );
                     })}
-                    {(onEdit || onDelete) && (
+                    {hasActions && (
                       <TableCell align="center">
                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+                          {extraActions?.map((action, actionIndex) => (
+                            <Tooltip key={actionIndex} title={action.label} arrow>
+                              <IconButton
+                                size="small"
+                                color={action.color || 'primary'}
+                                onClick={() => action.onClick(row)}
+                                sx={{
+                                  transition: 'all 0.2s',
+                                  '&:hover': {
+                                    bgcolor: alpha(theme.palette[action.color || 'primary'].main, 0.1),
+                                    transform: 'scale(1.1)',
+                                  },
+                                }}
+                              >
+                                {action.icon}
+                              </IconButton>
+                            </Tooltip>
+                          ))}
                           {onEdit && (
                             <Tooltip title="Edit" arrow>
                               <IconButton

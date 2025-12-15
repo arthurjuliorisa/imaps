@@ -15,17 +15,26 @@ import {
   alpha,
   useTheme,
   Chip,
+  Autocomplete,
 } from '@mui/material';
-import { Add, Save, Close } from '@mui/icons-material';
-import { DataTable, Column } from '@/app/components/DataTable';
+import { Add, Save, Close, VpnKey } from '@mui/icons-material';
+import { DataTable, Column, ExtraAction } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import { ConfirmDialog } from '@/app/components/ConfirmDialog';
+import { useRouter } from 'next/navigation';
 
 interface User {
   id: string;
   username: string;
   email: string;
   role: string;
+  company_code?: string | null;
+}
+
+interface Company {
+  company_code: string;
+  company_name: string;
+  is_active: boolean;
 }
 
 const columns: Column[] = [
@@ -40,6 +49,7 @@ const columns: Column[] = [
 
 export default function UsersPage() {
   const theme = useTheme();
+  const router = useRouter();
   const toast = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,6 +62,7 @@ export default function UsersPage() {
     email: '',
     password: '',
     role: 'User',
+    company_code: '',
   });
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
@@ -59,10 +70,29 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companiesLoading, setCompaniesLoading] = useState(false);
+  const [companyError, setCompanyError] = useState(false);
 
   useEffect(() => {
     fetchUsers();
+    fetchCompanies();
   }, [page, searchQuery]);
+
+  const fetchCompanies = async () => {
+    setCompaniesLoading(true);
+    try {
+      const response = await fetch('/api/master/companies');
+      if (!response.ok) throw new Error('Failed to fetch companies');
+      const data = await response.json();
+      setCompanies(data.success ? data.data : []);
+    } catch (err) {
+      console.error('Error fetching companies:', err);
+      toast.error('Failed to load companies');
+    } finally {
+      setCompaniesLoading(false);
+    }
+  };
 
   const fetchUsers = async () => {
     setDataLoading(true);
@@ -87,13 +117,21 @@ export default function UsersPage() {
 
   const handleAdd = () => {
     setEditingUser(null);
-    setFormData({ username: '', email: '', password: '', role: 'User' });
+    setFormData({ username: '', email: '', password: '', role: 'User', company_code: '' });
+    setCompanyError(false);
     setDialogOpen(true);
   };
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
-    setFormData({ username: user.username, email: user.email, password: '', role: user.role });
+    setFormData({
+      username: user.username,
+      email: user.email,
+      password: '',
+      role: user.role,
+      company_code: user.company_code || ''
+    });
+    setCompanyError(false);
     setDialogOpen(true);
   };
 
@@ -132,11 +170,32 @@ export default function UsersPage() {
     setConfirmDialogOpen(false);
     setUserToDelete(null);
   };
+  const handleManageAccess = (user: User) => {
+    router.push(`/settings/access-menu?userId=${user.id}&username=${encodeURIComponent(user.username)}`);
+  };
+
+
+
+  const extraActions: ExtraAction[] = [
+    {
+      icon: <VpnKey fontSize="small" />,
+      label: 'Manage Access Menu',
+      onClick: handleManageAccess,
+      color: 'info',
+    },
+  ];
 
   const handleSave = async () => {
     // Validation
     if (!formData.username || !formData.email) {
       toast.error('Please fill in username and email');
+      return;
+    }
+
+    // Company is required
+    if (!formData.company_code) {
+      setCompanyError(true);
+      toast.error('Please select a company');
       return;
     }
 
@@ -148,6 +207,7 @@ export default function UsersPage() {
 
     setLoading(true);
     setError(null);
+    setCompanyError(false);
 
     try {
       const url = editingUser
@@ -160,6 +220,7 @@ export default function UsersPage() {
         username: formData.username,
         email: formData.email,
         role: formData.role,
+        company_code: formData.company_code,
       };
 
       // Only include password if it's provided
@@ -230,6 +291,7 @@ export default function UsersPage() {
         columns={columns}
         data={users}
         loading={dataLoading}
+        extraActions={extraActions}
         onEdit={handleEdit}
         onDelete={handleDelete}
       />
@@ -270,6 +332,27 @@ export default function UsersPage() {
               required
               fullWidth
               disabled={loading}
+            />
+            <Autocomplete
+              options={companies}
+              getOptionLabel={(option) => option.company_name}
+              value={companies.find(c => c.company_code === formData.company_code) || null}
+              onChange={(event, newValue) => {
+                setFormData({ ...formData, company_code: newValue?.company_code || '' });
+                setCompanyError(false);
+              }}
+              loading={companiesLoading}
+              disabled={loading}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Company"
+                  required
+                  error={companyError}
+                  helperText={companyError ? 'Please select a company' : ''}
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option.company_code === value.company_code}
             />
             <TextField
               label="Password"

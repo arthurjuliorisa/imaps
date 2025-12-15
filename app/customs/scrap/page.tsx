@@ -182,7 +182,6 @@ export default function ScrapMutationPage() {
         body: JSON.stringify({
           date: formData.date?.format('YYYY-MM-DD'),
           scrapId: formData.scrapId,
-          uomId: formData.uomId,
           incoming: formData.incoming,
           remarks: formData.remarks,
         }),

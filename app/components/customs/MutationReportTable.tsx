@@ -21,7 +21,7 @@ import {
 import { Edit as EditIcon, Visibility as ViewIcon } from '@mui/icons-material';
 
 export interface MutationData {
-  id: number;
+  id: string;
   itemCode: string;
   itemName: string;
   unit: string;
@@ -32,7 +32,7 @@ export interface MutationData {
   ending: number;
   stockOpname: number;
   variant: number;
-  remarks: string;
+  remarks: string | null;
 }
 
 interface MutationReportTableProps {

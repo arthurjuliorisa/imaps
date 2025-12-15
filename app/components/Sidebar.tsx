@@ -62,12 +62,8 @@ const menuSections: MenuSection[] = [
   {
     title: 'Master',
     items: [
-      { title: 'Item', icon: <CategoryIcon />, path: '/master/item' },
-      { title: 'Scrap', icon: <CategoryIcon />, path: '/master/scrap' },
-      { title: 'UOM', icon: <CategoryIcon />, path: '/master/uom' },
-      { title: 'Currency', icon: <AttachMoneyIcon />, path: '/master/currency' },
-      { title: 'Customers', icon: <PeopleIcon />, path: '/master/customers' },
-      { title: 'Supplier', icon: <LocalShippingIcon />, path: '/master/supplier' },
+      { title: 'Company', icon: <CategoryIcon />, path: '/master/companies' },
+      { title: 'Item Type', icon: <CategoryIcon />, path: '/master/item-types' },
     ],
   },
   {
@@ -286,29 +282,6 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
                 objectFit: 'contain',
               }}
             />
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography
-                variant="h6"
-                sx={{
-                  fontWeight: 700,
-                  color: theme.palette.primary.main,
-                  fontSize: '1.25rem',
-                  lineHeight: 1.2,
-                }}
-              >
-                iMAPS
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{
-                  color: theme.palette.text.secondary,
-                  fontSize: '0.75rem',
-                  display: 'block',
-                }}
-              >
-                ERP Series
-              </Typography>
-            </Box>
           </>
         ) : (
           <Box
