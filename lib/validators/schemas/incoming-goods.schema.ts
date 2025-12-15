@@ -4,27 +4,40 @@
  * Incoming Goods Validation Schema
  * 
  * Purpose:
- * - Validate incoming goods request payload from WMS
- * - Enforce data types, formats, and business rules
- * - Provide clear error messages for validation failures
+ * - Validate incoming goods request payload
+ * - Enforce business rules and data constraints
+ * - Provide detailed error messages
  * 
- * Based on: WMS-iMAPS API Contract v2.4 Section 5.1
+ * Version: 2.0 - Updated with ItemType enum validation
+ * 
+ * Validation Layers:
+ * 1. Schema validation (Zod) - format, required fields, data types
+ * 2. Business rules - date logic, conditional fields, enum values
+ * 3. Database constraints - unique keys, foreign keys
+ * 
+ * Changes from v1.0:
+ * - item_type validation now uses ItemType enum values
+ * - Explicit enum validation with all valid values
+ * - Better error messages showing allowed enum values
  */
 
 import { z } from 'zod';
-import { CustomsDocumentType, ItemType, Currency } from '@prisma/client';
+import { CustomsDocumentType, Currency, ItemType } from '@prisma/client';
 
-// ============================================================================
+// =============================================================================
 // CONSTANTS
-// ============================================================================
+// =============================================================================
 
-const VALID_COMPANY_CODES = [1370, 1310, 1380];
+const VALID_COMPANY_CODES = [1370, 1310, 1380] as const;
+
+// CustomsDocumentType enum values for incoming goods
 const INCOMING_CUSTOMS_TYPES: CustomsDocumentType[] = ['BC23', 'BC27', 'BC40'];
 
-// All item types are supported (no restrictions per API Contract v2.4)
-const ALL_ITEM_TYPES: ItemType[] = [
+// ItemType enum values - MANUALLY DEFINED for build-time safety
+// Must match Prisma schema enum ItemType values
+const VALID_ITEM_TYPES = [
   'ROH',
-  'HALB',
+  'HALB', 
   'FERT',
   'HIBE',
   'HIBE_M',
@@ -32,13 +45,14 @@ const ALL_ITEM_TYPES: ItemType[] = [
   'HIBE_T',
   'DIEN',
   'SCRAP',
-];
+] as const;
 
-const ALL_CURRENCIES: Currency[] = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
+// Currency enum values - MANUALLY DEFINED for build-time safety
+const VALID_CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'] as const;
 
-// ============================================================================
-// HELPER SCHEMAS
-// ============================================================================
+// =============================================================================
+// REUSABLE SCHEMAS
+// =============================================================================
 
 /**
  * Date string schema (YYYY-MM-DD format)
@@ -74,23 +88,26 @@ const companyCodeSchema = z
   .number()
   .int('Company code must be an integer')
   .refine(
-    (code) => VALID_COMPANY_CODES.includes(code),
+    (code) => VALID_COMPANY_CODES.includes(code as any),
     {
       message: `Company code must be one of: ${VALID_COMPANY_CODES.join(', ')}`,
     }
   );
 
-// ============================================================================
+// =============================================================================
 // ITEM SCHEMA
-// ============================================================================
+// =============================================================================
 
 /**
- * Single item validation schema
+ * Single item schema with ItemType enum validation
  */
 export const incomingGoodItemSchema = z.object({
-  item_type: z.enum(ALL_ITEM_TYPES as [ItemType, ...ItemType[]], {
-    message: `Item type must be one of: ${ALL_ITEM_TYPES.join(', ')}`,
-  }),
+  item_type: z.enum(
+    VALID_ITEM_TYPES,
+    {
+      message: `Item type must be one of: ${VALID_ITEM_TYPES.join(', ')}`,
+    }
+  ).transform(val => val as ItemType), // Type assertion for TypeScript
   
   item_code: z
     .string()
@@ -123,37 +140,40 @@ export const incomingGoodItemSchema = z.object({
     .finite('Quantity must be a finite number')
     .refine(
       (val) => {
-        // Check max 3 decimal places
-        const decimalPlaces = (val.toString().split('.')[1] || '').length;
+        const decimalPlaces = val.toString().split('.')[1]?.length || 0;
         return decimalPlaces <= 3;
       },
-      { message: 'Quantity must have at most 3 decimal places' }
+      { message: 'Quantity must have maximum 3 decimal places' }
     ),
   
-  currency: z.enum(ALL_CURRENCIES as [Currency, ...Currency[]], {
-    message: `Currency must be one of: ${ALL_CURRENCIES.join(', ')}`,
-  }),
+  currency: z.enum(
+    VALID_CURRENCIES,
+    {
+      message: `Currency must be one of: ${VALID_CURRENCIES.join(', ')}`,
+    }
+  ).transform(val => val as Currency),
   
   amount: z
     .number()
-    .nonnegative('Amount must be 0 or greater')
+    .nonnegative('Amount must be greater than or equal to 0')
     .finite('Amount must be a finite number')
     .refine(
       (val) => {
-        // Check max 4 decimal places
-        const decimalPlaces = (val.toString().split('.')[1] || '').length;
+        const decimalPlaces = val.toString().split('.')[1]?.length || 0;
         return decimalPlaces <= 4;
       },
-      { message: 'Amount must have at most 4 decimal places' }
+      { message: 'Amount must have maximum 4 decimal places' }
     ),
 });
 
-// ============================================================================
-// HEADER SCHEMA
-// ============================================================================
+export type IncomingGoodItemInput = z.infer<typeof incomingGoodItemSchema>;
+
+// =============================================================================
+// MAIN REQUEST SCHEMA
+// =============================================================================
 
 /**
- * Complete incoming goods request validation schema
+ * Complete incoming goods request schema
  */
 export const incomingGoodRequestSchema = z
   .object({
@@ -164,7 +184,6 @@ export const incomingGoodRequestSchema = z
       .trim(),
     
     company_code: companyCodeSchema,
-    
     owner: companyCodeSchema,
     
     customs_document_type: z.enum(
@@ -211,9 +230,22 @@ export const incomingGoodRequestSchema = z
     
     timestamp: iso8601Schema,
   })
+  // Business rule: customs_registration_date <= incoming_date
   .refine(
     (data) => {
-      // Business rule: incoming_date cannot be in the future
+      const customsDate = new Date(data.customs_registration_date);
+      const incomingDate = new Date(data.incoming_date);
+      
+      return customsDate <= incomingDate;
+    },
+    {
+      message: 'Customs registration date cannot be after incoming date',
+      path: ['customs_registration_date'],
+    }
+  )
+  // Business rule: incoming_date cannot be in the future (environment-based)
+  .refine(
+    (data) => {
       // Skip validation in development/staging for testing purposes
       const isDevelopment = process.env.NODE_ENV === 'development' || 
                            process.env.ALLOW_FUTURE_DATES === 'true';
@@ -232,50 +264,42 @@ export const incomingGoodRequestSchema = z
       message: 'Incoming date cannot be in the future',
       path: ['incoming_date'],
     }
-  )
-  .refine(
-    (data) => {
-      // Business rule: customs_registration_date <= incoming_date
-      const customsDate = new Date(data.customs_registration_date);
-      const incomingDate = new Date(data.incoming_date);
-      
-      return customsDate <= incomingDate;
-    },
-    {
-      message: 'Customs registration date cannot be after incoming date',
-      path: ['customs_registration_date'],
-    }
   );
 
-// ============================================================================
-// TYPE EXPORTS (inferred from schemas)
-// ============================================================================
-
-export type IncomingGoodItemInput = z.infer<typeof incomingGoodItemSchema>;
 export type IncomingGoodRequestInput = z.infer<typeof incomingGoodRequestSchema>;
 
-// ============================================================================
-// VALIDATION HELPER FUNCTION
-// ============================================================================
+// =============================================================================
+// VALIDATION FUNCTION
+// =============================================================================
 
 /**
- * Validate incoming goods request and return detailed errors
- * 
- * @param data - Request payload to validate
- * @returns Validation result with structured errors
+ * Validation error detail
  */
-export function validateIncomingGoodRequest(data: unknown): {
+interface ValidationErrorDetail {
+  location: 'header' | 'item';
+  field: string;
+  code: string;
+  message: string;
+  item_index?: number;
+  item_code?: string;
+}
+
+/**
+ * Validation result
+ */
+interface ValidationResult {
   success: boolean;
   data?: IncomingGoodRequestInput;
-  errors?: Array<{
-    location: 'header' | 'item';
-    field: string;
-    code: string;
-    message: string;
-    item_index?: number;
-    item_code?: string;
-  }>;
-} {
+  errors?: ValidationErrorDetail[];
+}
+
+/**
+ * Validate incoming good request
+ * 
+ * @param data - Request payload
+ * @returns Validation result with detailed errors
+ */
+export function validateIncomingGoodRequest(data: unknown): ValidationResult {
   const result = incomingGoodRequestSchema.safeParse(data);
   
   if (result.success) {
@@ -285,23 +309,23 @@ export function validateIncomingGoodRequest(data: unknown): {
     };
   }
   
-  // Transform Zod errors to API Contract error format
-  const errors = result.error.issues.map((err) => {
+  // Transform Zod errors to API error format
+  const errors: ValidationErrorDetail[] = result.error.issues.map((err) => {
     const path = err.path.join('.');
     const isItemError = path.startsWith('items.');
     
-    // Extract item index if it's an item error
     let itemIndex: number | undefined;
     let itemCode: string | undefined;
     let field = path;
     
+    // Extract item index and field for item-level errors
     if (isItemError) {
       const match = path.match(/^items\.(\d+)\.(.+)$/);
       if (match) {
         itemIndex = parseInt(match[1], 10);
         field = match[2];
         
-        // Try to get item_code if available
+        // Get item_code if available
         if (typeof data === 'object' && data !== null && 'items' in data) {
           const items = (data as any).items;
           if (Array.isArray(items) && items[itemIndex]) {

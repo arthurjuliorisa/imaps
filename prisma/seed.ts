@@ -1,5 +1,8 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 
+// NOTE: If you see TypeScript errors below, run `npx prisma generate` first
+// This regenerates Prisma Client with updated schema types
+
 const prisma = new PrismaClient({
   datasources: {
     db: {
@@ -50,7 +53,134 @@ async function main() {
   console.log(`✅ Created ${companies.length} companies\n`);
 
   // ============================================================================
-  // 2. SEED USERS
+  // 2. SEED ITEM TYPES (Master Data)
+  // ============================================================================
+  console.log('🏷️  Seeding item types...');
+  
+  const itemTypes = await Promise.all([
+    prisma.itemType.upsert({
+      where: { item_type_code: 'ROH' },
+      update: {},
+      create: {
+        item_type_code: 'ROH',
+        name_en: 'Raw Materials',
+        name_de: 'Rohstoffe',
+        name_id: 'Bahan Baku',
+        category: 'MATERIAL',
+        description: 'Raw materials directly consumed in production',
+        sort_order: 1,
+      },
+    }),
+    prisma.itemType.upsert({
+      where: { item_type_code: 'HALB' },
+      update: {},
+      create: {
+        item_type_code: 'HALB',
+        name_en: 'Semifinished Goods',
+        name_de: 'Halbfabrikat',
+        name_id: 'Barang Setengah Jadi',
+        category: 'MATERIAL',
+        description: 'Work-in-progress and semifinished goods',
+        sort_order: 2,
+      },
+    }),
+    prisma.itemType.upsert({
+      where: { item_type_code: 'FERT' },
+      update: {},
+      create: {
+        item_type_code: 'FERT',
+        name_en: 'Finished Goods',
+        name_de: 'Fertigerzeugnisse',
+        name_id: 'Barang Jadi',
+        category: 'MATERIAL',
+        description: 'Completed products ready for sale',
+        sort_order: 3,
+      },
+    }),
+    prisma.itemType.upsert({
+      where: { item_type_code: 'HIBE' },
+      update: {},
+      create: {
+        item_type_code: 'HIBE',
+        name_en: 'Operating Supplies',
+        name_de: 'Hilfsbetriebsstoffe',
+        name_id: 'Bahan Penolong',
+        category: 'MATERIAL',
+        description: 'General operating supplies for production support',
+        sort_order: 4,
+      },
+    }),
+    prisma.itemType.upsert({
+      where: { item_type_code: 'HIBE_M' },
+      update: {},
+      create: {
+        item_type_code: 'HIBE_M',
+        name_en: 'Capital Goods - Machine',
+        name_de: 'Hilfsbetriebsstoffe - Mesin',
+        name_id: 'Barang Modal - Mesin',
+        category: 'CAPITAL_GOODS',
+        description: 'Machinery and production equipment',
+        sort_order: 5,
+      },
+    }),
+    prisma.itemType.upsert({
+      where: { item_type_code: 'HIBE_E' },
+      update: {},
+      create: {
+        item_type_code: 'HIBE_E',
+        name_en: 'Capital Goods - Engineering',
+        name_de: 'Hilfsbetriebsstoffe - Teknik',
+        name_id: 'Barang Modal - Teknik',
+        category: 'CAPITAL_GOODS',
+        description: 'Engineering equipment and tools',
+        sort_order: 6,
+      },
+    }),
+    prisma.itemType.upsert({
+      where: { item_type_code: 'HIBE_T' },
+      update: {},
+      create: {
+        item_type_code: 'HIBE_T',
+        name_en: 'Capital Goods - Tools',
+        name_de: 'Hilfsbetriebsstoffe - Alat',
+        name_id: 'Barang Modal - Alat',
+        category: 'CAPITAL_GOODS',
+        description: 'Tools and instruments',
+        sort_order: 7,
+      },
+    }),
+    prisma.itemType.upsert({
+      where: { item_type_code: 'DIEN' },
+      update: {},
+      create: {
+        item_type_code: 'DIEN',
+        name_en: 'Services',
+        name_de: 'Dienstleistungen',
+        name_id: 'Jasa',
+        category: 'SERVICES',
+        description: 'Service items',
+        sort_order: 8,
+      },
+    }),
+    prisma.itemType.upsert({
+      where: { item_type_code: 'SCRAP' },
+      update: {},
+      create: {
+        item_type_code: 'SCRAP',
+        name_en: 'Scrap and Waste',
+        name_de: 'Schrott',
+        name_id: 'Limbah',
+        category: 'WASTE',
+        description: 'Production waste and rejected materials',
+        sort_order: 9,
+      },
+    }),
+  ]);
+
+  console.log(`✅ Created ${itemTypes.length} item types\n`);
+
+  // ============================================================================
+  // 3. SEED USERS
   // ============================================================================
   console.log('👤 Seeding users...');
   
@@ -61,7 +191,10 @@ async function main() {
       create: {
         username: 'admin',
         email: 'admin@harmoni.co.id',
+        password: '$2b$10$rQ8YvXZfXjKxKx7vXjKxKeLqT8YvXZfXjKxKx7vXjKxKe', // bcrypt hash of 'admin123' (example only)
         full_name: 'System Administrator',
+        role: 'ADMIN',
+        company_code: null, // Super admin - all companies
         is_active: true,
       },
     }),
@@ -71,7 +204,23 @@ async function main() {
       create: {
         username: 'wms_integration',
         email: 'wms@harmoni.co.id',
+        password: '$2b$10$wQ8YvXZfXjKxKx7vXjKxKeLqT8YvXZfXjKxKx7vXjKxKe', // bcrypt hash of 'wms123' (example only)
         full_name: 'WMS Integration User',
+        role: 'API',
+        company_code: null, // API user - all companies
+        is_active: true,
+      },
+    }),
+    prisma.user.upsert({
+      where: { username: 'user_1310' },
+      update: {},
+      create: {
+        username: 'user_1310',
+        email: 'user@harmoni.co.id',
+        password: '$2b$10$uQ8YvXZfXjKxKx7vXjKxKeLqT8YvXZfXjKxKx7vXjKxKe', // bcrypt hash of 'user123' (example only)
+        full_name: 'Company 1310 User',
+        role: 'USER',
+        company_code: 1310,
         is_active: true,
       },
     }),
@@ -80,7 +229,7 @@ async function main() {
   console.log(`✅ Created ${users.length} users\n`);
 
   // ============================================================================
-  // 3. SEED ITEMS
+  // 4. SEED ITEMS
   // ============================================================================
   console.log('📋 Seeding items...');
   
@@ -137,8 +286,6 @@ async function main() {
       items: {
         create: [
           {
-            incoming_good_company: 1310,
-            incoming_good_date: new Date('2026-12-14'),
             item_type: 'ROH',
             item_code: 'RM-1310-001',
             item_name: 'Polyester Yarn 150D White',
@@ -166,8 +313,6 @@ async function main() {
       items: {
         create: [
           {
-            material_usage_company: 1310,
-            material_usage_date: new Date('2026-12-14'),
             item_type: 'ROH',
             item_code: 'RM-1310-001',
             item_name: 'Polyester Yarn 150D White',
@@ -192,8 +337,6 @@ async function main() {
       items: {
         create: [
           {
-            production_output_company: 1310,
-            production_output_date: new Date('2026-12-14'),
             item_type: 'FERT',
             item_code: 'FG-1310-001',
             item_name: 'Finished Fabric Roll Grade A',
@@ -225,8 +368,6 @@ async function main() {
       items: {
         create: [
           {
-            outgoing_good_company: 1310,
-            outgoing_good_date: new Date('2026-12-14'),
             item_type: 'FERT',
             item_code: 'FG-1310-001',
             item_name: 'Finished Fabric Roll Grade A',

@@ -15,23 +15,32 @@ datasource db {
 // ============================================================================
 
 enum CustomsDocumentType {
-  BC23  // Import Declaration
-  BC27  // Other Bonded Zone Release (Incoming & Outgoing)
-  BC40  // Local Purchase from Non-Bonded Zone
-  BC30  // Export Declaration
-  BC25  // Local Sales to Non-Bonded Zone
+  BC23   // Import Declaration
+  BC27   // Other Bonded Zone Release (Incoming & Outgoing)
+  BC40   // Local Purchase from Non-Bonded Zone
+  BC30   // Export Declaration
+  BC25   // Local Sales to Non-Bonded Zone
+  BC261  // Subcontracting - Incoming
+  BC262  // Subcontracting - Outgoing
 }
 
-enum ItemType {
-  ROH      // Raw Material (Rohstoffe)
-  HALB     // Semifinished (Halbfabrikat)
-  FERT     // Finished Goods (Fertigerzeugnisse)
-  HIBE     // Operating Supplies (Hilfsbetriebsstoffe)
-  HIBE_M   // Capital Goods - Machine
-  HIBE_E   // Capital Goods - Engineering
-  HIBE_T   // Capital Goods - Tools
-  DIEN     // Services (Dienstleistungen)
-  SCRAP    // Scrap and Waste
+// ============================================================================
+// ITEM TYPE MASTER TABLE (Replaced ENUM for extensibility)
+// ============================================================================
+
+model ItemType {
+  item_type_code String   @id @db.VarChar(10)
+  name_en        String   @db.VarChar(100)
+  name_de        String?  @db.VarChar(100)
+  name_id        String?  @db.VarChar(100)
+  category       String   @db.VarChar(50)
+  description    String?  @db.Text
+  is_active      Boolean  @default(true)
+  sort_order     Int?
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("item_types")
 }
 
 enum AdjustmentType {
@@ -74,6 +83,7 @@ model Company {
   adjustments          Adjustment[]
   beginning_balances   BeginningBalance[]
   items                Item[]
+  users                User[]
 
   @@index([code])
   @@index([status])
@@ -85,7 +95,7 @@ model Item {
   company_code Int
   item_code    String    @db.VarChar(50)
   item_name    String    @db.VarChar(200)
-  item_type    ItemType
+  item_type    String       @db.VarChar(10)
   hs_code      String?   @db.VarChar(20)
   uom          String    @db.VarChar(20)
   currency     Currency  @default(USD)
@@ -105,26 +115,77 @@ model Item {
 }
 
 model User {
-  id         Int       @id @default(autoincrement())
-  username   String    @unique @db.VarChar(100)
-  email      String    @unique @db.VarChar(200)
-  full_name  String    @db.VarChar(200)
-  is_active  Boolean   @default(true)
-  created_at DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at DateTime? @db.Timestamptz(6)
+  id                String              @id @default(dbgenerated("gen_random_uuid()"))
+  username          String              @unique @db.VarChar(100)
+  email             String              @unique @db.VarChar(200)
+  password          String              @db.VarChar(255)
+  full_name         String              @db.VarChar(200)
+  role              String              @default("USER") @db.VarChar(50)
+  company_code      Int?
+  is_active         Boolean             @default(true)
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime            @updatedAt @db.Timestamptz(6)
+  deleted_at        DateTime?           @db.Timestamptz(6)
+
+  // Relations
+  company           Company?            @relation(fields: [company_code], references: [code], onDelete: NoAction, onUpdate: NoAction)
+  user_access_menus UserAccessMenu[]
 
   @@index([username])
   @@index([email])
+  @@index([company_code])
   @@map("users")
 }
 
+model Menu {
+  id                String           @id @default(dbgenerated("gen_random_uuid()"))
+  parent_id         String?
+  menu_name         String           @db.VarChar(100)
+  menu_path         String?          @db.VarChar(255)
+  menu_icon         String?          @db.VarChar(50)
+  menu_order        Int?
+  is_active         Boolean          @default(true)
+  created_at        DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime         @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  parent            Menu?            @relation("MenuHierarchy", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children          Menu[]           @relation("MenuHierarchy")
+  user_access_menus UserAccessMenu[]
+
+  @@index([parent_id])
+  @@index([menu_order])
+  @@map("menus")
+}
+
+model UserAccessMenu {
+  id         String   @id @default(dbgenerated("gen_random_uuid()"))
+  user_id    String
+  menu_id    String
+  can_view   Boolean  @default(true)
+  can_create Boolean  @default(false)
+  can_edit   Boolean  @default(false)
+  can_delete Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  menu Menu @relation(fields: [menu_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, menu_id])
+  @@index([user_id])
+  @@index([menu_id])
+  @@map("user_access_menus")
+}
+
+
 model BeginningBalance {
-  id           Int       @id @default(autoincrement())
+  id           Int
   company_code Int
   item_code    String    @db.VarChar(50)
   item_name    String    @db.VarChar(200)
-  item_type    ItemType
+  item_type    String       @db.VarChar(10)
   uom          String    @db.VarChar(20)
   qty          Decimal   @db.Decimal(15, 3)
   balance_date DateTime  @db.Date
@@ -166,8 +227,16 @@ model AuditLog {
 // Then setup_partitions.sql will convert them to partitioned tables
 // ============================================================================
 
+// ============================================================================
+// INCOMING GOODS - PARTITIONED TABLE
+// ============================================================================
+// IMPORTANT: FK relation removed because PostgreSQL doesn't support
+// foreign keys from regular tables to partitioned tables.
+// Referential integrity is maintained at application level.
+// ============================================================================
+
 model IncomingGood {
-  id                         Int                  @id @default(autoincrement())
+  id                         Int                  @default(autoincrement())
   wms_id                     String               @db.VarChar(100)
   company_code               Int
   owner                      Int
@@ -184,10 +253,12 @@ model IncomingGood {
   updated_at                 DateTime             @updatedAt @db.Timestamptz(6)
   deleted_at                 DateTime?            @db.Timestamptz(6)
 
-  company Company             @relation(fields: [company_code], references: [code])
-  items   IncomingGoodItem[]
+  company Company @relation(fields: [company_code], references: [code])
+  // NOTE: items relation removed - use manual joins in queries
+  // items   IncomingGoodItem[]
 
   @@unique([company_code, wms_id, incoming_date])
+  @@unique([company_code, id, incoming_date])
   @@index([wms_id])
   @@index([company_code])
   @@index([incoming_date])
@@ -202,7 +273,7 @@ model IncomingGoodItem {
   incoming_good_id            Int
   incoming_good_company       Int
   incoming_good_date          DateTime  @db.Date
-  item_type                   ItemType
+  item_type                   String   @db.VarChar(10)
   item_code                   String    @db.VarChar(50)
   item_name                   String    @db.VarChar(200)
   hs_code                     String?   @db.VarChar(20)
@@ -214,7 +285,10 @@ model IncomingGoodItem {
   updated_at                  DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at                  DateTime? @db.Timestamptz(6)
 
-  incoming_good IncomingGood @relation(fields: [incoming_good_id], references: [id], onDelete: Cascade)
+  // NOTE: incoming_good relation removed due to partitioning limitation
+  // PostgreSQL doesn't support FK from regular table to partitioned table
+  // Use manual joins: WHERE incoming_good_company = ? AND incoming_good_id = ? AND incoming_good_date = ?
+  // incoming_good IncomingGood @relation(fields: [incoming_good_company, incoming_good_id, incoming_good_date], references: [company_code, id, incoming_date], onDelete: Cascade)
 
   @@index([incoming_good_id])
   @@index([incoming_good_id, incoming_good_company, incoming_good_date])
@@ -224,7 +298,7 @@ model IncomingGoodItem {
 }
 
 model MaterialUsage {
-  id                       Int                 @id @default(autoincrement())
+  id                       Int                 @default(autoincrement())
   wms_id                   String              @db.VarChar(100)
   company_code             Int
   work_order_number        String?             @db.VarChar(50)
@@ -241,6 +315,7 @@ model MaterialUsage {
   items   MaterialUsageItem[]
 
   @@unique([company_code, wms_id, transaction_date])
+  @@unique([company_code, id, transaction_date])
   @@index([wms_id])
   @@index([company_code])
   @@index([transaction_date])
@@ -255,7 +330,7 @@ model MaterialUsageItem {
   material_usage_id         Int
   material_usage_company    Int
   material_usage_date       DateTime  @db.Date
-  item_type                 ItemType
+  item_type                 String   @db.VarChar(10)
   item_code                 String    @db.VarChar(50)
   item_name                 String    @db.VarChar(200)
   uom                       String    @db.VarChar(20)
@@ -265,7 +340,7 @@ model MaterialUsageItem {
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime? @db.Timestamptz(6)
 
-  material_usage MaterialUsage @relation(fields: [material_usage_id], references: [id], onDelete: Cascade)
+  material_usage MaterialUsage @relation(fields: [material_usage_company, material_usage_id, material_usage_date], references: [company_code, id, transaction_date], onDelete: Cascade)
 
   @@index([material_usage_id])
   @@index([material_usage_id, material_usage_company, material_usage_date])
@@ -276,10 +351,10 @@ model MaterialUsageItem {
 }
 
 model WipBalance {
-  id           Int       @id @default(autoincrement())
+  id           Int       @default(autoincrement())
   wms_id       String    @db.VarChar(100)
   company_code Int
-  item_type    ItemType
+  item_type    String       @db.VarChar(10)
   item_code    String    @db.VarChar(50)
   item_name    String    @db.VarChar(200)
   stock_date   DateTime  @db.Date
@@ -302,7 +377,7 @@ model WipBalance {
 }
 
 model ProductionOutput {
-  id                       Int                 @id @default(autoincrement())
+  id                       Int                 @default(autoincrement())
   wms_id                   String                 @db.VarChar(100)
   company_code             Int
   internal_evidence_number String                 @db.VarChar(50)
@@ -317,6 +392,7 @@ model ProductionOutput {
   items   ProductionOutputItem[]
 
   @@unique([company_code, wms_id, transaction_date])
+  @@unique([company_code, id, transaction_date])
   @@index([wms_id])
   @@index([company_code])
   @@index([transaction_date])
@@ -329,7 +405,7 @@ model ProductionOutputItem {
   production_output_id        Int
   production_output_company   Int
   production_output_date      DateTime  @db.Date
-  item_type                   ItemType
+  item_type                   String   @db.VarChar(10)
   item_code                   String    @db.VarChar(50)
   item_name                   String    @db.VarChar(200)
   uom                         String    @db.VarChar(20)
@@ -339,7 +415,7 @@ model ProductionOutputItem {
   updated_at                  DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at                  DateTime? @db.Timestamptz(6)
 
-  production_output ProductionOutput @relation(fields: [production_output_id], references: [id], onDelete: Cascade)
+  production_output ProductionOutput @relation(fields: [production_output_company, production_output_id, production_output_date], references: [company_code, id, transaction_date], onDelete: Cascade)
 
   @@index([production_output_id])
   @@index([production_output_id, production_output_company, production_output_date])
@@ -349,7 +425,7 @@ model ProductionOutputItem {
 }
 
 model OutgoingGood {
-  id                         Int                  @id @default(autoincrement())
+  id                         Int                  @default(autoincrement())
   wms_id                    String               @db.VarChar(100)
   company_code              Int
   owner                     Int
@@ -370,6 +446,7 @@ model OutgoingGood {
   items   OutgoingGoodItem[]
 
   @@unique([company_code, wms_id, outgoing_date])
+  @@unique([company_code, id, outgoing_date])
   @@index([wms_id])
   @@index([company_code])
   @@index([outgoing_date])
@@ -384,7 +461,7 @@ model OutgoingGoodItem {
   outgoing_good_id          Int
   outgoing_good_company     Int
   outgoing_good_date        DateTime  @db.Date
-  item_type                 ItemType
+  item_type                 String   @db.VarChar(10)
   item_code                 String    @db.VarChar(50)
   item_name                 String    @db.VarChar(200)
   production_output_wms_ids String[]
@@ -397,7 +474,7 @@ model OutgoingGoodItem {
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime? @db.Timestamptz(6)
 
-  outgoing_good OutgoingGood @relation(fields: [outgoing_good_id], references: [id], onDelete: Cascade)
+  outgoing_good OutgoingGood @relation(fields: [outgoing_good_company, outgoing_good_id, outgoing_good_date], references: [company_code, id, outgoing_date], onDelete: Cascade)
 
   @@index([outgoing_good_id])
   @@index([outgoing_good_id, outgoing_good_company, outgoing_good_date])
@@ -407,7 +484,7 @@ model OutgoingGoodItem {
 }
 
 model Adjustment {
-  id                       Int                 @id @default(autoincrement())
+  id                       Int                 @default(autoincrement())
   wms_id                   String           @db.VarChar(100)
   company_code             Int
   wms_doc_type             String?          @db.VarChar(100)
@@ -422,6 +499,7 @@ model Adjustment {
   items   AdjustmentItem[]
 
   @@unique([company_code, wms_id, transaction_date])
+  @@unique([company_code, id, transaction_date])
   @@index([wms_id])
   @@index([company_code])
   @@index([transaction_date])
@@ -435,7 +513,7 @@ model AdjustmentItem {
   adjustment_company  Int
   adjustment_date     DateTime       @db.Date
   adjustment_type     AdjustmentType
-  item_type           ItemType
+  item_type           String   @db.VarChar(10)
   item_code           String         @db.VarChar(50)
   item_name           String         @db.VarChar(200)
   uom                 String         @db.VarChar(20)
@@ -445,7 +523,7 @@ model AdjustmentItem {
   updated_at          DateTime       @updatedAt @db.Timestamptz(6)
   deleted_at          DateTime?      @db.Timestamptz(6)
 
-  adjustment Adjustment @relation(fields: [adjustment_id], references: [id], onDelete: Cascade)
+  adjustment Adjustment @relation(fields: [adjustment_company, adjustment_id, adjustment_date], references: [company_code, id, transaction_date], onDelete: Cascade)
 
   @@index([adjustment_id])
   @@index([adjustment_id, adjustment_company, adjustment_date])
