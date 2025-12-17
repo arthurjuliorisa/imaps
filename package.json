@@ -6,7 +6,6 @@
     "dev": "next dev",
     "dev:turbo": "next dev --turbopack",
     "build": "prisma generate && next build",
-    "postbuild": "npx prisma db seed || echo 'Seeding skipped (data may already exist)'",
     "vercel-build": "bash scripts/vercel-build.sh",
     "start": "next start",
     "lint": "next lint",

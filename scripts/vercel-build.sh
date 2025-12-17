@@ -35,6 +35,16 @@ echo ""
 echo "Building Next.js application..."
 npm run build
 
+# Step 3: Seed database (if needed)
+if [ -n "$DATABASE_URL" ]; then
+    echo ""
+    echo "Seeding database..."
+    npm run seed || echo "Seeding skipped or already completed"
+else
+    echo ""
+    echo "Skipping database seeding (no DATABASE_URL)"
+fi
+
 echo ""
 echo "========================================"
 echo "Vercel Build Completed Successfully!"
