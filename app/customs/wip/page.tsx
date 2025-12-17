@@ -91,8 +91,7 @@ export default function WIPBalancePage() {
       No: (page - 1) * pageSize + index + 1,
       'WMS ID': row.wms_id,
       'Company': row.company_code,
-      'Transaction Date': formatDate(row.trx_date.toISOString()),
-      'Remarks': row.remarks || '-',
+      'Stock Date': formatDate(row.stock_date.toISOString()),
     }));
 
     exportToExcel(
@@ -107,16 +106,14 @@ export default function WIPBalancePage() {
       no: (page - 1) * pageSize + index + 1,
       wmsId: row.wms_id,
       company: row.company_code,
-      transactionDate: formatDate(row.trx_date.toISOString()),
-      remarks: row.remarks || '-',
+      stockDate: formatDate(row.stock_date.toISOString()),
     }));
 
     const columns = [
       { header: 'No', dataKey: 'no' },
       { header: 'WMS ID', dataKey: 'wmsId' },
       { header: 'Company', dataKey: 'company' },
-      { header: 'Transaction Date', dataKey: 'transactionDate' },
-      { header: 'Remarks', dataKey: 'remarks' },
+      { header: 'Stock Date', dataKey: 'stockDate' },
     ];
 
     exportToPDF(
@@ -172,15 +169,14 @@ export default function WIPBalancePage() {
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Transaction Date</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Stock Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -201,12 +197,7 @@ export default function WIPBalancePage() {
                     <TableCell>
                       <Chip label={row.company_code} size="small" />
                     </TableCell>
-                    <TableCell>{formatDate(row.trx_date.toISOString())}</TableCell>
-                    <TableCell>
-                      <Typography variant="body2" color="text.secondary">
-                        {row.remarks || '-'}
-                      </Typography>
-                    </TableCell>
+                    <TableCell>{formatDate(row.stock_date.toISOString())}</TableCell>
                     <TableCell>
                       <Tooltip title="View Details">
                         <IconButton

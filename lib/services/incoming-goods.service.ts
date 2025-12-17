@@ -16,7 +16,6 @@
 import { validateIncomingGoodRequest } from '@/lib/validators/schemas/incoming-goods.schema';
 import { incomingGoodRepository } from '@/lib/repositories/incoming-goods.repository';
 import {
-  IncomingGoodRequest,
   IncomingGoodData,
   IncomingGoodSuccessResponse,
   IncomingGoodErrorResponse,
@@ -126,16 +125,16 @@ export class IncomingGoodService {
 
   /**
    * Transform validated request to database format
-   * 
+   *
    * Conversions:
    * - Date strings (YYYY-MM-DD) → Date objects
    * - ISO datetime string → Date object
    * - Add partition key fields to items
-   * 
+   *
    * @param data - Validated request data
    * @returns Database-ready format
    */
-  private transformToDbFormat(data: IncomingGoodRequest): IncomingGoodData {
+  private transformToDbFormat(data: any): IncomingGoodData {
     const incomingDate = new Date(data.incoming_date);
     
     return {
@@ -151,7 +150,7 @@ export class IncomingGoodService {
       invoice_date: new Date(data.invoice_date),
       shipper_name: data.shipper_name,
       timestamp: new Date(data.timestamp),
-      items: data.items.map((item) => ({
+      items: data.items.map((item: any) => ({
         item_type: item.item_type,
         item_code: item.item_code,
         item_name: item.item_name,

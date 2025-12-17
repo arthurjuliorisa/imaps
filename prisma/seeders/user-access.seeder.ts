@@ -63,8 +63,8 @@ export async function seedUserAccessMenus() {
 
     let grantedCount = 0;
     for (const menuName of viewerMenuNames) {
-      const menu = await prisma.menus.findUnique({
-        where: { name: menuName },
+      const menu = await prisma.menus.findFirst({
+        where: { menu_name: menuName },
       });
 
       if (menu) {
@@ -117,8 +117,8 @@ export async function seedUserAccessMenus() {
 
     let grantedCount = 0;
     for (const menuName of operatorMenuNames) {
-      const menu = await prisma.menus.findUnique({
-        where: { name: menuName },
+      const menu = await prisma.menus.findFirst({
+        where: { menu_name: menuName },
       });
 
       if (menu) {

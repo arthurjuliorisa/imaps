@@ -214,7 +214,7 @@ export default function OutgoingGoodsReportPage() {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={row.customs_doc_type}
+                        label={row.customs_document_type}
                         size="small"
                         color="secondary"
                         variant="outlined"

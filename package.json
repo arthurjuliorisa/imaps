@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:turbo": "next dev --turbopack",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
@@ -30,7 +30,7 @@
     "exceljs": "^4.4.0",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
-    "next": "16.0.10",
+    "next": "^16.0.10",
     "next-auth": "^4.24.11",
     "node-cron": "^4.2.1",
     "react": "^19.2.0",

@@ -198,12 +198,15 @@ export default function BeginningFinishGoodPage() {
 
     return {
       itemId: (selectedItem as any).itemId || '',
-      itemCode: selectedItem.itemCode,
-      itemName: selectedItem.itemName,
+      item_code: selectedItem.itemCode,
+      item_name: selectedItem.itemName,
+      item_type: (selectedItem as any).itemType || '',
       uomId: (selectedItem as any).uomId || '',
       uom: selectedItem.uom,
       beginningBalance: selectedItem.beginningBalance,
+      qty: selectedItem.beginningBalance,
       beginningDate: dayjs(selectedItem.beginningDate),
+      balance_date: dayjs(selectedItem.beginningDate),
       remarks: selectedItem.remarks || '',
     };
   };

@@ -23,12 +23,17 @@ import dayjs, { Dayjs } from 'dayjs';
 import { Save, Close } from '@mui/icons-material';
 
 export interface BeginningStockFormData {
+  itemId?: string;
   item_code: string;
   item_name: string;
   item_type: string;
+  uomId?: string;
   uom: string;
+  beginningBalance: number;
   qty: number;
+  beginningDate: Dayjs | null;
   balance_date: Dayjs | null;
+  remarks?: string;
 }
 
 interface Item {
@@ -72,12 +77,17 @@ export function BeginningStockForm({
   const [uoms, setUoms] = useState<UOM[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
   const [formData, setFormData] = useState<BeginningStockFormData>({
+    itemId: undefined,
     item_code: '',
     item_name: '',
     item_type: '',
+    uomId: undefined,
     uom: '',
+    beginningBalance: 0,
     qty: 0,
+    beginningDate: dayjs(),
     balance_date: dayjs(),
+    remarks: '',
   });
 
   // Reset form when dialog opens or initialData changes
@@ -91,12 +101,17 @@ export function BeginningStockForm({
           setFormData(initialData);
         } else {
           setFormData({
+            itemId: undefined,
             item_code: '',
             item_name: '',
             item_type: '',
+            uomId: undefined,
             uom: '',
+            beginningBalance: 0,
             qty: 0,
+            beginningDate: dayjs(),
             balance_date: dayjs(),
+            remarks: '',
           });
         }
       };
@@ -135,17 +150,21 @@ export function BeginningStockForm({
     if (item) {
       setFormData((prev) => ({
         ...prev,
+        itemId: item.id,
         item_code: item.code,
         item_name: item.name,
         item_type: item.type,
+        uomId: item.uom?.id,
         uom: item.uom?.code || '',
       }));
     } else {
       setFormData((prev) => ({
         ...prev,
+        itemId: undefined,
         item_code: '',
         item_name: '',
         item_type: '',
+        uomId: undefined,
         uom: '',
       }));
     }
@@ -165,6 +184,7 @@ export function BeginningStockForm({
       setFormData((prev) => ({
         ...prev,
         qty: numValue,
+        beginningBalance: numValue,
       }));
     }
   };
@@ -288,7 +308,7 @@ export function BeginningStockForm({
             <DatePicker
               label="Balance Date"
               value={formData.balance_date}
-              onChange={(newValue) => setFormData((prev) => ({ ...prev, balance_date: newValue }))}
+              onChange={(newValue) => setFormData((prev) => ({ ...prev, balance_date: newValue, beginningDate: newValue }))}
               maxDate={dayjs()}
               slotProps={{
                 textField: {

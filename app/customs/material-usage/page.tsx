@@ -92,8 +92,7 @@ export default function MaterialUsagePage() {
       'WMS ID': row.wms_id,
       'Company': row.company_code,
       'Work Order': row.work_order_number,
-      'Transaction Date': formatDate(row.trx_date.toISOString()),
-      'Remarks': row.remarks || '-',
+      'Transaction Date': formatDate(row.transaction_date.toISOString()),
     }));
 
     exportToExcel(
@@ -109,7 +108,7 @@ export default function MaterialUsagePage() {
       wmsId: row.wms_id,
       company: row.company_code,
       workOrder: row.work_order_number,
-      transactionDate: formatDate(row.trx_date.toISOString()),
+      transactionDate: formatDate(row.transaction_date.toISOString()),
     }));
 
     const columns = [
@@ -175,14 +174,13 @@ export default function MaterialUsagePage() {
                 <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Work Order</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Transaction Date</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -206,8 +204,7 @@ export default function MaterialUsagePage() {
                     <TableCell>
                       <Chip label={row.work_order_number} size="small" color="info" variant="outlined" />
                     </TableCell>
-                    <TableCell>{formatDate(row.trx_date.toISOString())}</TableCell>
-                    <TableCell>{row.remarks || '-'}</TableCell>
+                    <TableCell>{formatDate(row.transaction_date.toISOString())}</TableCell>
                     <TableCell>
                       <Tooltip title="View Details">
                         <IconButton

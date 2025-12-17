@@ -233,8 +233,8 @@ export async function GET(request: Request) {
       // Transaction values by currency
       transactionValues: transactionValueSummary,
 
-      // Latest snapshot info
-      latestSnapshotDate: latestSnapshot?.snapshot_date?.toISOString() || null,
+      // Latest snapshot info (DEPRECATED: stock_daily_snapshot table removed)
+      latestSnapshotDate: null,
 
       // Legacy fields (for backward compatibility)
       totalItems: totalCompanies, // Using companies as item proxy
