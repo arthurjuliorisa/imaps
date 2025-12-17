@@ -1,178 +1,56 @@
-// @ts-nocheck
-// TODO: Fix - scrapMaster model doesn't exist in schema
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 /**
  * GET /api/master/scrap
- * Fetch all scrap master records with their items
+ * Returns list of scrap items from beginning_balances
+ * Filters by item_type_code = 'SCRAP'
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
-    const scraps = await prisma.scrapMaster.findMany({
-      include: {
-        ScrapItem: {
-          include: {
-            Item: {
-              include: {
-                UOM: true,
-              },
-            },
-          },
-          orderBy: {
-            createdAt: 'asc',
-          },
-        },
+    // Build where clause with company_code filter if applicable
+    const whereClause: any = {
+      item_type_code: 'SCRAP',
+    };
+
+    if (session.user.companyCode) {
+      whereClause.company_code = session.user.companyCode;
+    }
+
+    // Get distinct scrap items from beginning_balances
+    const scrapItems = await prisma.beginning_balances.findMany({
+      where: whereClause,
+      select: {
+        item_code: true,
+        item_name: true,
+        uom: true,
       },
+      distinct: ['item_code'],
       orderBy: {
-        code: 'asc',
+        item_code: 'asc',
       },
     });
 
-    // Transform the data to include item details at the top level
-    const scrapsWithDetails = scraps.map(scrap => ({
-      ...scrap,
-      items: scrap.ScrapItem.map(scrapItem => ({
-        id: scrapItem.id,
-        itemId: scrapItem.itemId,
-        itemCode: scrapItem.Item.code,
-        itemName: scrapItem.Item.name,
-        uomId: scrapItem.Item.uomId,
-        uomName: scrapItem.Item.UOM.name,
-        quantity: scrapItem.quantity,
-        remarks: scrapItem.remarks,
-      })),
+    // Transform to match the expected interface
+    const formattedScrapItems = scrapItems.map((item) => ({
+      id: item.item_code,
+      code: item.item_code,
+      name: item.item_name,
+      uom: item.uom,
     }));
 
-    return NextResponse.json(scrapsWithDetails);
+    return NextResponse.json(formattedScrapItems);
   } catch (error) {
-    console.error('[API Error] Failed to fetch scrap masters:', error);
+    console.error('[API Error] Failed to fetch scrap items:', error);
     return NextResponse.json(
-      { message: 'Error fetching scrap masters' },
-      { status: 500 }
-    );
-  }
-}
-
-/**
- * POST /api/master/scrap
- * Create a new scrap master record with items
- *
- * Request body:
- * {
- *   code: string,
- *   name: string,
- *   description?: string,
- *   items: Array<{
- *     itemId: string,
- *     quantity?: number,
- *     remarks?: string
- *   }>
- * }
- */
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { code, name, description, items } = body;
-
-    // Validate required fields
-    if (!code || !name) {
-      return NextResponse.json(
-        { message: 'Code and name are required' },
-        { status: 400 }
-      );
-    }
-
-    // Validate items array
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json(
-        { message: 'At least one item is required' },
-        { status: 400 }
-      );
-    }
-
-    // Validate each item has itemId
-    const invalidItems = items.filter(item => !item.itemId);
-    if (invalidItems.length > 0) {
-      return NextResponse.json(
-        { message: 'All items must have an itemId' },
-        { status: 400 }
-      );
-    }
-
-    // Verify all items exist
-    const itemIds = items.map(item => item.itemId);
-    const existingItems = await prisma.item.findMany({
-      where: {
-        id: {
-          in: itemIds,
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    if (existingItems.length !== itemIds.length) {
-      return NextResponse.json(
-        { message: 'One or more items do not exist' },
-        { status: 400 }
-      );
-    }
-
-    // Create scrap master with items in a transaction
-    const id = `SCPM-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const scrap = await prisma.scrapMaster.create({
-      data: {
-        id,
-        code,
-        name,
-        description: description || null,
-        updatedAt: new Date(),
-        ScrapItem: {
-          create: items.map((item, index) => ({
-            id: `SCPI-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
-            itemId: item.itemId,
-            quantity: item.quantity || null,
-            remarks: item.remarks || null,
-            updatedAt: new Date(),
-          })),
-        },
-      },
-      include: {
-        ScrapItem: {
-          include: {
-            Item: {
-              include: {
-                UOM: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    return NextResponse.json(scrap, { status: 201 });
-  } catch (error: any) {
-    console.error('[API Error] Failed to create scrap master:', error);
-
-    // Handle specific Prisma error codes
-    if (error.code === 'P2002') {
-      return NextResponse.json(
-        { message: 'Scrap code already exists' },
-        { status: 400 }
-      );
-    }
-
-    if (error.code === 'P2003') {
-      return NextResponse.json(
-        { message: 'Invalid item reference' },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(
-      { message: 'Error creating scrap master' },
+      { message: 'Error fetching scrap items', error: String(error) },
       { status: 500 }
     );
   }

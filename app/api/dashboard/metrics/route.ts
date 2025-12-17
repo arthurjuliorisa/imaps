@@ -1,9 +1,8 @@
-// @ts-nocheck
-// TODO: Fix model names - company, customer, supplier, etc. don't exist
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { serializeBigInt } from '@/lib/bigint-serializer';
 
 /**
  * GET /api/dashboard/metrics
@@ -38,10 +37,6 @@ export async function GET(request: Request) {
     // Use Promise.all to execute all counts in parallel for better performance
     const [
       totalCompanies,
-      totalUOMs,
-      totalCurrencies,
-      totalCustomers,
-      totalSuppliers,
       totalUsers,
       totalIncoming,
       totalOutgoing,
@@ -58,20 +53,16 @@ export async function GET(request: Request) {
       latestSnapshot,
     ] = await Promise.all([
       // Master data counts
-      prisma.company.count(),
-      prisma.uOM.count(),
-      prisma.currency.count(),
-      prisma.customer.count(),
-      prisma.supplier.count(),
-      prisma.user.count(),
+      prisma.companies.count(),
+      prisma.users.count(),
 
       // Transaction counts (total all time)
       prisma.incoming_headers.count({ where: whereClause }),
       prisma.outgoing_headers.count({ where: whereClause }),
       prisma.material_usage_headers.count({ where: whereClause }),
       prisma.finished_goods_production_headers.count({ where: whereClause }),
-      prisma.wip_balance_headers.count({ where: whereClause }),
-      prisma.adjustment_headers.count({ where: whereClause }),
+      prisma.wip_balance.count({ where: whereClause }),
+      prisma.adjustments.count({ where: whereClause }),
 
       // Incoming documents this month
       prisma.incoming_headers.count({
@@ -148,7 +139,7 @@ export async function GET(request: Request) {
       ]).then(counts => counts.reduce((sum, count) => sum + count, 0)),
 
       // Get latest stock snapshot data
-      prisma.stock_daily_snapshots.findFirst({
+      prisma.stock_daily_snapshot.findFirst({
         where: whereClause,
         orderBy: { snapshot_date: 'desc' },
         select: {
@@ -209,10 +200,8 @@ export async function GET(request: Request) {
     const metrics = {
       // Master data
       totalCompanies,
-      totalUOMs,
-      totalCurrencies,
-      totalCustomers,
-      totalSuppliers,
+      totalCustomers: 0, // No customer table in schema
+      totalSuppliers: 0, // No supplier table in schema
       totalUsers,
 
       // Documents with trends
@@ -265,7 +254,7 @@ export async function GET(request: Request) {
       totalReports: transactionsThisMonth,
     };
 
-    return NextResponse.json(metrics);
+    return NextResponse.json(serializeBigInt(metrics));
   } catch (error) {
     console.error('[API Error] Failed to fetch dashboard metrics:', error);
     return NextResponse.json(

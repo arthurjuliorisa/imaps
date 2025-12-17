@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import { serializeBigInt } from '@/lib/bigint-serializer';
 
 dayjs.extend(relativeTime);
 

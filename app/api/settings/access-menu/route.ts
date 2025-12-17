@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { handleApiError } from '@/lib/api-utils';
+import { serializeBigInt } from '@/lib/bigint-serializer';
 
 /**
  * Menu item with hierarchical children
@@ -77,7 +78,7 @@ export async function GET() {
     // Build hierarchical structure
     const hierarchy = buildMenuHierarchy(menus);
 
-    return NextResponse.json(hierarchy);
+    return NextResponse.json(serializeBigInt(hierarchy));
   } catch (error) {
     return handleApiError(error);
   }

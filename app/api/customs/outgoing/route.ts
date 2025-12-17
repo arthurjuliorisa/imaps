@@ -1,141 +1,76 @@
-// @ts-nocheck
-// TODO: This file needs to be rewritten - outgoingDocument model doesn't exist
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import validator from 'validator';
+import { checkAuth } from '@/lib/api-auth';
+import { serializeBigInt } from '@/lib/bigint-serializer';
 
-/**
- * Parse and normalize date to UTC midnight to avoid timezone issues
- */
-function parseAndNormalizeDate(dateInput: string | Date): Date {
-  const parsed = new Date(dateInput);
-  if (isNaN(parsed.getTime())) {
-    throw new Error('Invalid date format');
-  }
-
-  // Normalize to UTC midnight
-  return new Date(Date.UTC(
-    parsed.getFullYear(),
-    parsed.getMonth(),
-    parsed.getDate(),
-    0, 0, 0, 0
-  ));
-}
-
-/**
- * GET /api/customs/outgoing
- * Fetch outgoing documents with date range filtering and pagination
- * Query params: startDate, endDate, page, pageSize
- */
 export async function GET(request: Request) {
   try {
+    const authCheck = await checkAuth();
+    if (!authCheck.authenticated) {
+      return authCheck.response;
+    }
+
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-    const page = parseInt(searchParams.get('page') || '1');
-    const pageSize = parseInt(searchParams.get('pageSize') || '50');
 
-    // Validate pagination parameters
-    if (page < 1 || pageSize < 1 || pageSize > 100) {
-      return NextResponse.json(
-        { message: 'Invalid pagination parameters. Page must be >= 1, pageSize between 1-100' },
-        { status: 400 }
-      );
-    }
-
-    // Build where clause for date filtering
     const where: any = {};
 
-    // Default to last 30 days if no dates specified
-    if (!startDate && !endDate) {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      where.registerDate = { gte: parseAndNormalizeDate(thirtyDaysAgo) };
-    } else if (startDate || endDate) {
-      where.registerDate = {};
+    if (startDate || endDate) {
+      where.outgoing_date = {};
       if (startDate) {
-        where.registerDate.gte = parseAndNormalizeDate(startDate);
+        where.outgoing_date.gte = new Date(startDate);
       }
       if (endDate) {
-        where.registerDate.lte = parseAndNormalizeDate(endDate);
+        where.outgoing_date.lte = new Date(endDate);
       }
     }
 
-    // Get total count for pagination
-    const totalCount = await prisma.outgoingDocument.count({ where });
-
-    // Calculate pagination
-    const totalPages = Math.ceil(totalCount / pageSize);
-    const skip = (page - 1) * pageSize;
-
-    // Fetch documents with relations
-    const documents = await prisma.outgoingDocument.findMany({
+    const outgoingHeaders = await prisma.outgoing_headers.findMany({
       where,
       include: {
-        Customer: {
+        outgoing_details: {
           select: {
-            id: true,
-            code: true,
-            name: true,
-            address: true,
-          },
-        },
-        Item: {
-          select: {
-            id: true,
-            code: true,
-            name: true,
-          },
-        },
-        UOM: {
-          select: {
-            id: true,
-            code: true,
-            name: true,
-          },
-        },
-        Currency: {
-          select: {
-            id: true,
-            code: true,
-            name: true,
+            item_code: true,
+            item_name: true,
+            uom: true,
+            qty: true,
+            currency: true,
+            amount: true,
+            hs_code: true,
           },
         },
       },
       orderBy: [
-        { registerDate: 'desc' },
-        { docNumber: 'desc' },
+        { outgoing_date: 'desc' },
+        { customs_registration_date: 'desc' },
       ],
-      skip,
-      take: pageSize,
     });
 
-    // Transform response with flattened relations
-    const transformedData = documents.map((doc) => ({
-      ...doc,
-      qty: doc.quantity, // Transform quantity to qty for frontend
-      recipient: doc.Customer.name, // Flatten for display
-      uom: doc.UOM.code, // Flatten for display
-      currency: doc.Currency.code, // Flatten for display
-      recipientCode: doc.Customer.code,
-      recipientName: doc.Customer.name,
-      itemCode: doc.Item.code,
-      itemName: doc.Item.name,
-      uomCode: doc.UOM.code,
-      uomName: doc.UOM.name,
-      currencyCode: doc.Currency.code,
-      currencyName: doc.Currency.name,
-    }));
+    const transformedData = outgoingHeaders.flatMap((header) =>
+      header.outgoing_details.map((detail) => ({
+        id: header.wms_id + '-' + detail.item_code,
+        wmsId: header.wms_id,
+        companyCode: header.company_code,
+        documentType: header.customs_document_type,
+        ppkekNumber: header.ppkek_number,
+        registrationDate: header.customs_registration_date,
+        documentNumber: header.outgoing_evidence_number,
+        date: header.outgoing_date,
+        invoiceNumber: header.invoice_number,
+        invoiceDate: header.invoice_date,
+        recipientName: header.recipient_name,
+        itemCode: detail.item_code,
+        itemName: detail.item_name,
+        unit: detail.uom,
+        qty: Number(detail.qty),
+        currency: detail.currency,
+        amount: Number(detail.amount),
+        hsCode: detail.hs_code,
+      }))
+    );
 
-    return NextResponse.json({
-      data: transformedData,
-      pagination: {
-        totalCount,
-        totalPages,
-        currentPage: page,
-        pageSize,
-      },
-    });
+    return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {
     console.error('[API Error] Failed to fetch outgoing documents:', error);
     return NextResponse.json(
@@ -144,194 +79,3 @@ export async function GET(request: Request) {
     );
   }
 }
-
-/**
- * POST /api/customs/outgoing
- * Create a new outgoing document
- */
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const {
-      docCode,
-      registerNumber,
-      registerDate,
-      docNumber,
-      docDate,
-      recipientId,
-      itemId,
-      uomId,
-      quantity,
-      currencyId,
-      amount,
-    } = body;
-
-    // Validate required fields
-    if (!docCode || !registerNumber || !registerDate || !docNumber || !docDate ||
-        !recipientId || !itemId || !uomId || quantity === undefined || !currencyId || amount === undefined) {
-      return NextResponse.json(
-        { message: 'All fields are required: docCode, registerNumber, registerDate, docNumber, docDate, recipientId, itemId, uomId, quantity, currencyId, amount' },
-        { status: 400 }
-      );
-    }
-
-    // Validate and normalize dates
-    let normalizedRegisterDate: Date;
-    let normalizedDocDate: Date;
-    try {
-      normalizedRegisterDate = parseAndNormalizeDate(registerDate);
-      normalizedDocDate = parseAndNormalizeDate(docDate);
-    } catch (error) {
-      return NextResponse.json(
-        { message: 'Invalid date format for registerDate or docDate' },
-        { status: 400 }
-      );
-    }
-
-    // Validate dates are not in the future
-    const now = new Date();
-    const today = new Date(Date.UTC(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      0, 0, 0, 0
-    ));
-
-    if (normalizedRegisterDate > today || normalizedDocDate > today) {
-      return NextResponse.json(
-        { message: 'Dates cannot be in the future' },
-        { status: 400 }
-      );
-    }
-
-    // Validate quantity and amount are positive numbers
-    const quantityValue = parseFloat(String(quantity));
-    const amountValue = parseFloat(String(amount));
-
-    if (isNaN(quantityValue) || quantityValue <= 0) {
-      return NextResponse.json(
-        { message: 'Quantity must be a positive number greater than 0' },
-        { status: 400 }
-      );
-    }
-
-    if (isNaN(amountValue) || amountValue <= 0) {
-      return NextResponse.json(
-        { message: 'Amount must be a positive number greater than 0' },
-        { status: 400 }
-      );
-    }
-
-    // Sanitize string inputs
-    const sanitizedDocCode = validator.escape(docCode.trim());
-    const sanitizedRegisterNumber = validator.escape(registerNumber.trim());
-    const sanitizedDocNumber = validator.escape(docNumber.trim());
-
-    // Validate foreign keys exist
-    const [recipientExists, itemExists, uomExists, currencyExists] = await Promise.all([
-      prisma.customer.findUnique({ where: { id: recipientId } }),
-      prisma.item.findUnique({ where: { id: itemId } }),
-      prisma.uOM.findUnique({ where: { id: uomId } }),
-      prisma.currency.findUnique({ where: { id: currencyId } }),
-    ]);
-
-    if (!recipientExists) {
-      return NextResponse.json(
-        { message: 'Invalid recipientId: Customer does not exist' },
-        { status: 400 }
-      );
-    }
-
-    if (!itemExists) {
-      return NextResponse.json(
-        { message: 'Invalid itemId: Item does not exist' },
-        { status: 400 }
-      );
-    }
-
-    if (!uomExists) {
-      return NextResponse.json(
-        { message: 'Invalid uomId: UOM does not exist' },
-        { status: 400 }
-      );
-    }
-
-    if (!currencyExists) {
-      return NextResponse.json(
-        { message: 'Invalid currencyId: Currency does not exist' },
-        { status: 400 }
-      );
-    }
-
-    // Create the document
-    const id = `OUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const document = await prisma.outgoingDocument.create({
-      data: {
-        id,
-        docCode: sanitizedDocCode,
-        registerNumber: sanitizedRegisterNumber,
-        registerDate: normalizedRegisterDate,
-        docNumber: sanitizedDocNumber,
-        docDate: normalizedDocDate,
-        recipientId,
-        itemId,
-        uomId,
-        quantity: quantityValue,
-        currencyId,
-        amount: amountValue,
-        updatedAt: new Date(),
-      },
-      include: {
-        Customer: {
-          select: {
-            code: true,
-            name: true,
-          },
-        },
-        Item: {
-          select: {
-            code: true,
-            name: true,
-          },
-        },
-        UOM: {
-          select: {
-            code: true,
-            name: true,
-          },
-        },
-        Currency: {
-          select: {
-            code: true,
-            name: true,
-          },
-        },
-      },
-    });
-
-    return NextResponse.json(document, { status: 201 });
-  } catch (error: any) {
-    console.error('[API Error] Failed to create outgoing document:', error);
-
-    // Handle Prisma errors
-    if (error.code === 'P2003') {
-      return NextResponse.json(
-        { message: 'Foreign key constraint failed: Invalid recipientId, itemId, uomId, or currencyId' },
-        { status: 400 }
-      );
-    }
-
-    if (error.code === 'P2000') {
-      return NextResponse.json(
-        { message: 'Value provided is too long for the column' },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(
-      { message: 'Error creating outgoing document' },
-      { status: 500 }
-    );
-  }
-}
-

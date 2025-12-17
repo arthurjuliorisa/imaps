@@ -19,6 +19,7 @@ import {
 } from '@mui/material';
 import { Save } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
+import { useSearchParams } from 'next/navigation';
 
 interface MenuItem {
   id: string;
@@ -42,6 +43,7 @@ interface Permission {
 export default function AccessMenuPage() {
   const theme = useTheme();
   const toast = useToast();
+  const searchParams = useSearchParams();
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserOption | null>(null);
@@ -66,6 +68,23 @@ export default function AccessMenuPage() {
       isMounted = false;
     };
   }, []);
+
+  // Set selected user from query params
+  useEffect(() => {
+    const userId = searchParams.get('userId');
+    const username = searchParams.get('username');
+
+    if (userId && username && users.length > 0) {
+      const user = users.find(u => u.id === userId);
+      if (user) {
+        setSelectedUser(user);
+      } else {
+        // If user not found in list but we have the data from query params, create it
+        setSelectedUser({ id: userId, label: decodeURIComponent(username) });
+      }
+    }
+  }, [searchParams, users]);
+
 
   useEffect(() => {
     if (selectedUser) {

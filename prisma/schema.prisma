@@ -1,3 +1,6 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,770 +10,525 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model activity_logs {
-  id          String   @id @default(dbgenerated("(gen_random_uuid())::text"))
-  user_id     String?
-  action      String   @db.VarChar(100)
-  description String
-  ip_address  String?  @db.VarChar(45)
-  user_agent  String?
-  status      String
-  created_at  DateTime @default(now()) @db.Timestamp(6)
-  users       users?   @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+// ============================================================================
+// ENUMS
+// ============================================================================
 
-  @@index([created_at(sort: Desc)], map: "idx_activity_logs_created_at")
-  @@index([status], map: "idx_activity_logs_status")
-  @@index([user_id], map: "idx_activity_logs_user_id")
+enum CustomsDocumentType {
+  BC23   // Import Declaration
+  BC27   // Other Bonded Zone Release (Incoming & Outgoing)
+  BC40   // Local Purchase from Non-Bonded Zone
+  BC30   // Export Declaration
+  BC25   // Local Sales to Non-Bonded Zone
+  BC261  // Subcontracting - Incoming
+  BC262  // Subcontracting - Outgoing
 }
 
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model adjustment_details {
-  id              BigInt          @default(autoincrement())
-  header_id       BigInt
-  wms_id          String          @db.VarChar(100)
-  company_code    String          @db.VarChar(50)
-  trx_date        DateTime        @db.Date
-  adjustment_type adjustment_type
-  item_type_code  String          @db.VarChar(10)
-  item_code       String          @db.VarChar(50)
-  item_name       String          @db.VarChar(200)
-  uom             String          @db.VarChar(20)
-  qty             Decimal         @db.Decimal(15, 3)
-  reason          String?         @db.VarChar(500)
-  created_at      DateTime        @default(now()) @db.Timestamp(6)
-  updated_at      DateTime        @default(now()) @db.Timestamp(6)
-  companies       companies       @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-  item_types      item_types      @relation(fields: [item_type_code], references: [item_type_code], onDelete: NoAction, onUpdate: NoAction)
-  adjustments     adjustments     @relation(fields: [header_id, trx_date], references: [id, trx_date], onDelete: Cascade, onUpdate: NoAction, map: "fk_adjustment_details_header")
+// ============================================================================
+// ITEM TYPE MASTER TABLE (Replaced ENUM for extensibility)
+// ============================================================================
 
-  @@id([id, trx_date])
-  @@index([header_id, trx_date], map: "idx_adjustment_details_header")
-  @@index([company_code, item_code, trx_date(sort: Desc)], map: "idx_adjustment_details_item")
-  @@index([company_code, item_type_code, trx_date(sort: Desc)], map: "idx_adjustment_details_item_type")
-  @@index([company_code, item_code, item_type_code, trx_date(sort: Desc), adjustment_type, qty], map: "idx_adjustment_details_stock_calc")
-  @@index([adjustment_type, company_code], map: "idx_adjustment_details_type")
-  @@index([wms_id, company_code], map: "idx_adjustment_details_wms_id")
+model ItemType {
+  item_type_code String   @id @db.VarChar(10)
+  name_en        String   @db.VarChar(100)
+  name_de        String?  @db.VarChar(100)
+  name_id        String?  @db.VarChar(100)
+  category       String   @db.VarChar(50)
+  description    String?  @db.Text
+  is_active      Boolean  @default(true)
+  sort_order     Int?
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("item_types")
 }
 
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model adjustments {
-  id                       BigInt               @default(autoincrement())
-  wms_id                   String               @db.VarChar(100)
-  company_code             String               @db.VarChar(50)
-  wms_doc_type             String?              @db.VarChar(100)
-  internal_evidence_number String               @db.VarChar(50)
-  trx_date                 DateTime             @db.Date
-  wms_timestamp            DateTime             @db.Timestamptz(6)
-  received_at              DateTime             @default(now()) @db.Timestamptz(6)
-  created_at               DateTime             @default(now()) @db.Timestamp(6)
-  updated_at               DateTime             @default(now()) @db.Timestamp(6)
-  adjustment_details       adjustment_details[]
-  companies                companies            @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([id, trx_date])
-  @@unique([wms_id, trx_date], map: "uk_adjustments_wms_id")
-  @@index([company_code, trx_date(sort: Desc)], map: "idx_adjustments_company")
-  @@index([wms_id], map: "idx_adjustments_wms_id")
+enum AdjustmentType {
+  GAIN  // Inventory increase
+  LOSS  // Inventory decrease
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model batch_processing_logs {
-  id                 String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  job_type           String
-  status             String
-  started_at         DateTime  @default(now()) @db.Timestamp(6)
-  completed_at       DateTime? @db.Timestamp(6)
-  total_records      Int?
-  successful_records Int?
-  failed_records     Int?
-  error_message      String?
-  created_at         DateTime  @default(now()) @db.Timestamp(6)
-  updated_at         DateTime  @default(now()) @db.Timestamp(6)
-
-  @@index([job_type], map: "idx_batch_logs_job_type")
-  @@index([started_at(sort: Desc)], map: "idx_batch_logs_started_at")
-  @@index([status], map: "idx_batch_logs_status")
+enum Currency {
+  USD
+  IDR
+  CNY
+  EUR
+  JPY
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model beginning_balances {
-  id             BigInt     @id @default(autoincrement())
-  company_code   String     @db.VarChar(50)
-  item_type_code String     @db.VarChar(10)
-  item_code      String     @db.VarChar(50)
-  item_name      String     @db.VarChar(200)
-  uom            String     @db.VarChar(20)
-  balance_qty    Decimal    @default(0) @db.Decimal(15, 3)
-  balance_date   DateTime   @db.Date
-  created_at     DateTime   @default(now()) @db.Timestamp(6)
-  updated_at     DateTime   @default(now()) @db.Timestamp(6)
-  companies      companies  @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-  item_types     item_types @relation(fields: [item_type_code], references: [item_type_code], onDelete: NoAction, onUpdate: NoAction)
-
-  @@unique([company_code, item_code, balance_date], map: "uk_beginning_balances_item")
-  @@index([company_code, balance_date(sort: Desc)], map: "idx_beginning_balances_company")
-  @@index([company_code, item_code], map: "idx_beginning_balances_item")
-  @@index([item_type_code], map: "idx_beginning_balances_item_type")
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model companies {
-  company_code                                              String                                @id @db.VarChar(50)
-  company_name                                              String                                @unique @db.VarChar(200)
-  is_active                                                 Boolean                               @default(true)
-  created_at                                                DateTime                              @default(now()) @db.Timestamp(6)
-  updated_at                                                DateTime                              @default(now()) @db.Timestamp(6)
-  adjustment_details                                        adjustment_details[]
-  adjustments                                               adjustments[]
-  beginning_balances                                        beginning_balances[]
-  finished_goods_production_details                         finished_goods_production_details[]
-  finished_goods_production_headers                         finished_goods_production_headers[]
-  incoming_details                                          incoming_details[]
-  incoming_headers_incoming_headers_company_codeTocompanies incoming_headers[]                    @relation("incoming_headers_company_codeTocompanies")
-  incoming_headers_incoming_headers_ownerTocompanies        incoming_headers[]                    @relation("incoming_headers_ownerTocompanies")
-  material_usage_details                                    material_usage_details[]
-  material_usage_headers                                    material_usage_headers[]
-  outgoing_details                                          outgoing_details[]
-  outgoing_fg_production_traceability                       outgoing_fg_production_traceability[]
-  outgoing_headers_outgoing_headers_company_codeTocompanies outgoing_headers[]                    @relation("outgoing_headers_company_codeTocompanies")
-  outgoing_headers_outgoing_headers_ownerTocompanies        outgoing_headers[]                    @relation("outgoing_headers_ownerTocompanies")
-  snapshot_recalc_queue                                     snapshot_recalc_queue[]
-  stock_daily_snapshot                                      stock_daily_snapshot[]
-  users                                                     users[]
-  wip_balance                                               wip_balance[]
-  work_order_fg_production                                  work_order_fg_production[]
-  work_order_material_consumption                           work_order_material_consumption[]
+// ============================================================================
+// MASTER DATA TABLES
+// ============================================================================
 
-  @@index([is_active], map: "idx_companies_active")
-  @@index([company_name], map: "idx_companies_name")
+model Company {
+  id           Int           @id @default(autoincrement())
+  code         Int           @unique
+  name         String        @db.VarChar(200)
+  status       CompanyStatus @default(ACTIVE)
+  created_at   DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime      @updatedAt @db.Timestamptz(6)
+  deleted_at   DateTime?     @db.Timestamptz(6)
+
+  // Relations
+  incoming_goods       IncomingGood[]
+  material_usages      MaterialUsage[]
+  wip_balances         WipBalance[]
+  production_outputs   ProductionOutput[]
+  outgoing_goods       OutgoingGood[]
+  adjustments          Adjustment[]
+  beginning_balances   BeginningBalance[]
+  items                Item[]
+  users                User[]
+
+  @@index([code])
+  @@index([status])
+  @@map("companies")
 }
 
-/// Master data model for Currency
-/// Maps to "Currency" table in database (PascalCase from initial migration)
-model currency {
-  id        String   @id
-  code      String   @unique
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Item {
+  id           Int       @id @default(autoincrement())
+  company_code Int
+  item_code    String    @db.VarChar(50)
+  item_name    String    @db.VarChar(200)
+  item_type    String       @db.VarChar(10)
+  hs_code      String?   @db.VarChar(20)
+  uom          String    @db.VarChar(20)
+  currency     Currency  @default(USD)
+  is_active    Boolean   @default(true)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at   DateTime? @db.Timestamptz(6)
 
-  @@map("Currency")
+  company Company @relation(fields: [company_code], references: [code])
+
+  @@unique([company_code, item_code])
+  @@index([company_code])
+  @@index([item_code])
+  @@index([item_type])
+  @@index([is_active])
+  @@map("items")
 }
 
-/// Master data model for Unit of Measure (UOM)
-/// Maps to "UOM" table in database (PascalCase from initial migration)
-model uOM {
-  id        String   @id
-  code      String   @unique
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model User {
+  id                String              @id @default(dbgenerated("gen_random_uuid()"))
+  username          String              @unique @db.VarChar(100)
+  email             String              @unique @db.VarChar(200)
+  password          String              @db.VarChar(255)
+  full_name         String              @db.VarChar(200)
+  role              String              @default("USER") @db.VarChar(50)
+  company_code      Int?
+  is_active         Boolean             @default(true)
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime            @updatedAt @db.Timestamptz(6)
+  deleted_at        DateTime?           @db.Timestamptz(6)
 
-  @@map("UOM")
+  // Relations
+  company           Company?            @relation(fields: [company_code], references: [code], onDelete: NoAction, onUpdate: NoAction)
+  user_access_menus UserAccessMenu[]
+
+  @@index([username])
+  @@index([email])
+  @@index([company_code])
+  @@map("users")
 }
 
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model finished_goods_production_details {
-  id                                BigInt                            @default(autoincrement())
-  header_id                         BigInt
-  wms_id                            String                            @db.VarChar(100)
-  company_code                      String                            @db.VarChar(50)
-  trx_date                          DateTime                          @db.Date
-  item_type_code                    String                            @db.VarChar(10)
-  item_code                         String                            @db.VarChar(50)
-  item_name                         String                            @db.VarChar(200)
-  uom                               String                            @db.VarChar(20)
-  qty                               Decimal                           @db.Decimal(15, 3)
-  work_order_numbers                String[]
-  created_at                        DateTime                          @default(now()) @db.Timestamp(6)
-  updated_at                        DateTime                          @default(now()) @db.Timestamp(6)
-  companies                         companies                         @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-  item_types                        item_types                        @relation(fields: [item_type_code], references: [item_type_code], onDelete: NoAction, onUpdate: NoAction)
-  finished_goods_production_headers finished_goods_production_headers @relation(fields: [header_id, trx_date], references: [id, trx_date], onDelete: Cascade, onUpdate: NoAction, map: "fk_finished_goods_production_details_header")
-
-  @@id([id, trx_date])
-  @@index([header_id, trx_date], map: "idx_finished_goods_production_details_header")
-  @@index([company_code, item_code, trx_date(sort: Desc)], map: "idx_finished_goods_production_details_item")
-  @@index([item_code, trx_date(sort: Desc)], map: "idx_finished_goods_production_details_item_date")
-  @@index([item_name(ops: raw("gin_trgm_ops"))], map: "idx_finished_goods_production_details_item_name_trgm", type: Gin)
-  @@index([company_code, item_type_code, trx_date(sort: Desc)], map: "idx_finished_goods_production_details_item_type")
-  @@index([company_code, item_code, item_type_code, trx_date(sort: Desc), qty], map: "idx_finished_goods_production_details_stock_calc")
-  @@index([wms_id, company_code], map: "idx_finished_goods_production_details_wms_id")
-  @@index([work_order_numbers], map: "idx_finished_goods_production_details_wo", type: Gin)
-}
-
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model finished_goods_production_headers {
-  id                                BigInt                              @default(autoincrement())
-  wms_id                            String                              @db.VarChar(100)
-  company_code                      String                              @db.VarChar(50)
-  internal_evidence_number          String                              @db.VarChar(50)
-  reversal                          String?                             @db.VarChar(1)
-  trx_date                          DateTime                            @db.Date
-  wms_timestamp                     DateTime                            @db.Timestamptz(6)
-  received_at                       DateTime                            @default(now()) @db.Timestamptz(6)
-  created_at                        DateTime                            @default(now()) @db.Timestamp(6)
-  updated_at                        DateTime                            @default(now()) @db.Timestamp(6)
-  finished_goods_production_details finished_goods_production_details[]
-  companies                         companies                           @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([id, trx_date])
-  @@unique([wms_id, trx_date], map: "uk_finished_goods_production_headers_wms_id")
-  @@index([company_code, trx_date(sort: Desc)], map: "idx_finished_goods_production_headers_company")
-  @@index([wms_id], map: "idx_finished_goods_production_headers_wms_id")
-}
-
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model incoming_details {
-  id               BigInt           @default(autoincrement())
-  header_id        BigInt
-  wms_id           String           @db.VarChar(100)
-  company_code     String           @db.VarChar(50)
-  trx_date         DateTime         @db.Date
-  item_type_code   String           @db.VarChar(10)
-  item_code        String           @db.VarChar(50)
-  item_name        String           @db.VarChar(200)
-  hs_code          String?          @db.VarChar(20)
-  uom              String           @db.VarChar(20)
-  qty              Decimal          @db.Decimal(15, 3)
-  currency         currency_code
-  amount           Decimal          @db.Decimal(15, 4)
-  created_at       DateTime         @default(now()) @db.Timestamp(6)
-  updated_at       DateTime         @default(now()) @db.Timestamp(6)
-  incoming_headers incoming_headers @relation(fields: [header_id, trx_date], references: [id, trx_date], onDelete: Cascade, onUpdate: NoAction, map: "fk_incoming_details_header")
-  companies        companies        @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-  item_types       item_types       @relation(fields: [item_type_code], references: [item_type_code], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([id, trx_date])
-  @@index([header_id, trx_date], map: "idx_incoming_details_header")
-  @@index([company_code, item_code, trx_date(sort: Desc)], map: "idx_incoming_details_item")
-  @@index([item_name(ops: raw("gin_trgm_ops"))], map: "idx_incoming_details_item_name_trgm", type: Gin)
-  @@index([company_code, item_type_code, trx_date(sort: Desc)], map: "idx_incoming_details_item_type")
-  @@index([company_code, item_code, item_type_code, trx_date(sort: Desc), qty, currency, amount], map: "idx_incoming_details_stock_calc")
-  @@index([wms_id, company_code], map: "idx_incoming_details_wms_id")
-}
-
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model incoming_headers {
-  id                                                 BigInt                         @default(autoincrement())
-  wms_id                                             String                         @db.VarChar(100)
-  company_code                                       String                         @db.VarChar(50)
-  owner                                              String                         @db.VarChar(50)
-  customs_document_type                              customs_document_type_incoming
-  ppkek_number                                       String                         @db.VarChar(50)
-  customs_registration_date                          DateTime                       @db.Date
-  incoming_evidence_number                           String                         @db.VarChar(50)
-  incoming_date                                      DateTime                       @db.Date
-  invoice_number                                     String                         @db.VarChar(50)
-  invoice_date                                       DateTime                       @db.Date
-  shipper_name                                       String                         @db.VarChar(200)
-  trx_date                                           DateTime                       @db.Date
-  wms_timestamp                                      DateTime                       @db.Timestamptz(6)
-  received_at                                        DateTime                       @default(now()) @db.Timestamptz(6)
-  created_at                                         DateTime                       @default(now()) @db.Timestamp(6)
-  updated_at                                         DateTime                       @default(now()) @db.Timestamp(6)
-  incoming_details                                   incoming_details[]
-  companies_incoming_headers_company_codeTocompanies companies                      @relation("incoming_headers_company_codeTocompanies", fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-  companies_incoming_headers_ownerTocompanies        companies                      @relation("incoming_headers_ownerTocompanies", fields: [owner], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([id, trx_date])
-  @@unique([wms_id, trx_date], map: "uk_incoming_headers_wms_id")
-  @@index([company_code, trx_date(sort: Desc)], map: "idx_incoming_headers_company")
-  @@index([company_code, incoming_date, customs_registration_date], map: "idx_incoming_headers_company_date_range")
-  @@index([customs_document_type, company_code], map: "idx_incoming_headers_customs_doc")
-  @@index([incoming_date, company_code], map: "idx_incoming_headers_date")
-  @@index([owner, trx_date(sort: Desc)], map: "idx_incoming_headers_owner")
-  @@index([ppkek_number, company_code], map: "idx_incoming_headers_ppkek")
-  @@index([wms_id], map: "idx_incoming_headers_wms_id")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model item_types {
-  item_type_code                    String                              @id @db.VarChar(10)
-  item_type_name                    String                              @unique @db.VarChar(100)
-  item_type_name_local              String?                             @db.VarChar(100)
-  is_active                         Boolean                             @default(true)
-  is_inventory_item                 Boolean                             @default(true)
-  is_capital_goods                  Boolean                             @default(false)
-  created_at                        DateTime                            @default(now()) @db.Timestamp(6)
-  updated_at                        DateTime                            @default(now()) @db.Timestamp(6)
-  adjustment_details                adjustment_details[]
-  beginning_balances                beginning_balances[]
-  finished_goods_production_details finished_goods_production_details[]
-  incoming_details                  incoming_details[]
-  material_usage_details            material_usage_details[]
-  outgoing_details                  outgoing_details[]
-  stock_daily_snapshot              stock_daily_snapshot[]
-  wip_balance                       wip_balance[]
-  work_order_fg_production          work_order_fg_production[]
-
-  @@index([is_active], map: "idx_item_types_active")
-  @@index([is_capital_goods], map: "idx_item_types_capital")
-  @@index([is_inventory_item], map: "idx_item_types_inventory")
-}
-
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model material_usage_details {
-  id                     BigInt                 @default(autoincrement())
-  header_id              BigInt
-  wms_id                 String                 @db.VarChar(100)
-  company_code           String                 @db.VarChar(50)
-  work_order_number      String?                @db.VarChar(50)
-  cost_center_number     String?                @db.VarChar(50)
-  trx_date               DateTime               @db.Date
-  item_type_code         String                 @db.VarChar(10)
-  item_code              String                 @db.VarChar(50)
-  item_name              String                 @db.VarChar(200)
-  uom                    String                 @db.VarChar(20)
-  qty                    Decimal                @db.Decimal(15, 3)
-  ppkek_number           String?                @db.VarChar(50)
-  created_at             DateTime               @default(now()) @db.Timestamp(6)
-  updated_at             DateTime               @default(now()) @db.Timestamp(6)
-  material_usage_headers material_usage_headers @relation(fields: [header_id, trx_date], references: [id, trx_date], onDelete: Cascade, onUpdate: NoAction, map: "fk_material_usage_details_header")
-  companies              companies              @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-  item_types             item_types             @relation(fields: [item_type_code], references: [item_type_code], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([id, trx_date])
-  @@index([header_id, trx_date], map: "idx_material_usage_details_header")
-  @@index([company_code, item_code, trx_date(sort: Desc)], map: "idx_material_usage_details_item")
-  @@index([item_name(ops: raw("gin_trgm_ops"))], map: "idx_material_usage_details_item_name_trgm", type: Gin)
-  @@index([company_code, item_code, item_type_code, trx_date(sort: Desc), qty], map: "idx_material_usage_details_stock_calc")
-  @@index([wms_id, company_code], map: "idx_material_usage_details_wms_id")
-}
-
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model material_usage_headers {
-  id                       BigInt                   @default(autoincrement())
-  wms_id                   String                   @db.VarChar(100)
-  company_code             String                   @db.VarChar(50)
-  work_order_number        String?                  @db.VarChar(50)
-  cost_center_number       String?                  @db.VarChar(50)
-  internal_evidence_number String                   @db.VarChar(50)
-  reversal                 String?                  @db.VarChar(1)
-  trx_date                 DateTime                 @db.Date
-  wms_timestamp            DateTime                 @db.Timestamptz(6)
-  received_at              DateTime                 @default(now()) @db.Timestamptz(6)
-  created_at               DateTime                 @default(now()) @db.Timestamp(6)
-  updated_at               DateTime                 @default(now()) @db.Timestamp(6)
-  material_usage_details   material_usage_details[]
-  companies                companies                @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([id, trx_date])
-  @@unique([wms_id, trx_date], map: "uk_material_usage_headers_wms_id")
-  @@index([company_code, trx_date(sort: Desc)], map: "idx_material_usage_headers_company")
-  @@index([wms_id], map: "idx_material_usage_headers_wms_id")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model menus {
-  id                String              @id @default(dbgenerated("(gen_random_uuid())::text"))
-  name              String              @unique
-  route             String?
-  icon              String?
+model Menu {
+  id                String           @id @default(dbgenerated("gen_random_uuid()"))
   parent_id         String?
-  order             Int                 @default(0)
-  created_at        DateTime            @default(now()) @db.Timestamp(6)
-  updated_at        DateTime            @default(now()) @db.Timestamp(6)
-  menus             menus?              @relation("menusTomenus", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  other_menus       menus[]             @relation("menusTomenus")
-  user_access_menus user_access_menus[]
+  menu_name         String           @db.VarChar(100)
+  menu_path         String?          @db.VarChar(255)
+  menu_icon         String?          @db.VarChar(50)
+  menu_order        Int?
+  is_active         Boolean          @default(true)
+  created_at        DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime         @updatedAt @db.Timestamptz(6)
 
-  @@index([parent_id], map: "idx_menus_parent_id")
+  // Relations
+  parent            Menu?            @relation("MenuHierarchy", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children          Menu[]           @relation("MenuHierarchy")
+  user_access_menus UserAccessMenu[]
+
+  @@index([parent_id])
+  @@index([menu_order])
+  @@map("menus")
 }
 
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model outgoing_details {
-  id                                  BigInt                                @default(autoincrement())
-  header_id                           BigInt
-  wms_id                              String                                @db.VarChar(100)
-  company_code                        String                                @db.VarChar(50)
-  trx_date                            DateTime                              @db.Date
-  item_type_code                      String                                @db.VarChar(10)
-  item_code                           String                                @db.VarChar(50)
-  item_name                           String                                @db.VarChar(200)
-  hs_code                             String?                               @db.VarChar(20)
-  uom                                 String                                @db.VarChar(20)
-  qty                                 Decimal                               @db.Decimal(15, 3)
-  currency                            currency_code
-  amount                              Decimal                               @db.Decimal(15, 4)
-  created_at                          DateTime                              @default(now()) @db.Timestamp(6)
-  updated_at                          DateTime                              @default(now()) @db.Timestamp(6)
-  outgoing_headers                    outgoing_headers                      @relation(fields: [header_id, trx_date], references: [id, trx_date], onDelete: Cascade, onUpdate: NoAction, map: "fk_outgoing_details_header")
-  companies                           companies                             @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-  item_types                          item_types                            @relation(fields: [item_type_code], references: [item_type_code], onDelete: NoAction, onUpdate: NoAction)
-  outgoing_fg_production_traceability outgoing_fg_production_traceability[]
-
-  @@id([id, trx_date])
-  @@index([header_id, trx_date], map: "idx_outgoing_details_header")
-  @@index([company_code, item_code, trx_date(sort: Desc)], map: "idx_outgoing_details_item")
-  @@index([item_name(ops: raw("gin_trgm_ops"))], map: "idx_outgoing_details_item_name_trgm", type: Gin)
-  @@index([company_code, item_type_code, trx_date(sort: Desc)], map: "idx_outgoing_details_item_type")
-  @@index([company_code, item_code, item_type_code, trx_date(sort: Desc), qty, currency, amount], map: "idx_outgoing_details_stock_calc")
-  @@index([wms_id, company_code], map: "idx_outgoing_details_wms_id")
-}
-
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model outgoing_fg_production_traceability {
-  id                 BigInt           @default(autoincrement())
-  outgoing_detail_id BigInt
-  outgoing_wms_id    String           @db.VarChar(100)
-  production_wms_id  String           @db.VarChar(100)
-  company_code       String           @db.VarChar(50)
-  item_code          String           @db.VarChar(50)
-  trx_date           DateTime         @db.Date
-  allocated_qty      Decimal?         @db.Decimal(15, 3)
-  allocation_notes   String?
-  created_at         DateTime         @default(now()) @db.Timestamp(6)
-  updated_at         DateTime         @default(now()) @db.Timestamp(6)
-  outgoing_details   outgoing_details @relation(fields: [outgoing_detail_id, trx_date], references: [id, trx_date], onDelete: Cascade, onUpdate: NoAction, map: "fk_outgoing_fg_trace_detail")
-  companies          companies        @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([id, trx_date])
-  @@index([outgoing_detail_id, trx_date], map: "idx_outgoing_fg_trace_detail")
-  @@index([company_code, item_code, trx_date(sort: Desc)], map: "idx_outgoing_fg_trace_item")
-  @@index([outgoing_wms_id, company_code], map: "idx_outgoing_fg_trace_outgoing_wms")
-  @@index([production_wms_id, company_code, trx_date(sort: Desc)], map: "idx_outgoing_fg_trace_production")
-  @@index([production_wms_id, company_code, trx_date(sort: Desc), allocated_qty], map: "idx_outgoing_fg_trace_summary")
-}
-
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model outgoing_headers {
-  id                                                 BigInt                         @default(autoincrement())
-  wms_id                                             String                         @db.VarChar(100)
-  company_code                                       String                         @db.VarChar(50)
-  owner                                              String                         @db.VarChar(50)
-  customs_document_type                              customs_document_type_outgoing
-  ppkek_number                                       String                         @db.VarChar(50)
-  customs_registration_date                          DateTime                       @db.Date
-  outgoing_evidence_number                           String                         @db.VarChar(50)
-  outgoing_date                                      DateTime                       @db.Date
-  invoice_number                                     String                         @db.VarChar(50)
-  invoice_date                                       DateTime                       @db.Date
-  recipient_name                                     String                         @db.VarChar(200)
-  trx_date                                           DateTime                       @db.Date
-  wms_timestamp                                      DateTime                       @db.Timestamptz(6)
-  received_at                                        DateTime                       @default(now()) @db.Timestamptz(6)
-  created_at                                         DateTime                       @default(now()) @db.Timestamp(6)
-  updated_at                                         DateTime                       @default(now()) @db.Timestamp(6)
-  outgoing_details                                   outgoing_details[]
-  companies_outgoing_headers_company_codeTocompanies companies                      @relation("outgoing_headers_company_codeTocompanies", fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-  companies_outgoing_headers_ownerTocompanies        companies                      @relation("outgoing_headers_ownerTocompanies", fields: [owner], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([id, trx_date])
-  @@unique([wms_id, trx_date], map: "uk_outgoing_headers_wms_id")
-  @@index([company_code, trx_date(sort: Desc)], map: "idx_outgoing_headers_company")
-  @@index([company_code, outgoing_date, customs_registration_date], map: "idx_outgoing_headers_company_date_range")
-  @@index([customs_document_type, company_code], map: "idx_outgoing_headers_customs_doc")
-  @@index([outgoing_date, company_code], map: "idx_outgoing_headers_date")
-  @@index([owner, trx_date(sort: Desc)], map: "idx_outgoing_headers_owner")
-  @@index([ppkek_number, company_code], map: "idx_outgoing_headers_ppkek")
-  @@index([wms_id], map: "idx_outgoing_headers_wms_id")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model snapshot_recalc_queue {
-  id             BigInt        @id @default(autoincrement())
-  company_code   String        @db.VarChar(50)
-  item_type_code String?       @db.VarChar(10)
-  item_code      String?       @db.VarChar(50)
-  recalc_date    DateTime      @db.Date
-  status         recalc_status @default(PENDING)
-  priority       Int           @default(0)
-  reason         String?       @db.VarChar(500)
-  queued_at      DateTime      @default(now()) @db.Timestamptz(6)
-  started_at     DateTime?     @db.Timestamptz(6)
-  completed_at   DateTime?     @db.Timestamptz(6)
-  error_message  String?
-  companies      companies     @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([company_code, recalc_date], map: "idx_recalc_queue_company_date")
-  @@index([status, priority(sort: Desc), queued_at], map: "idx_recalc_queue_status")
-}
-
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model stock_daily_snapshot {
-  id                 BigInt             @default(autoincrement())
-  company_code       String             @db.VarChar(50)
-  item_type_code     String             @db.VarChar(10)
-  item_code          String             @db.VarChar(50)
-  item_name          String             @db.VarChar(200)
-  opening_balance    Decimal            @default(0) @db.Decimal(15, 3)
-  closing_balance    Decimal            @default(0) @db.Decimal(15, 3)
-  incoming_qty       Decimal            @default(0) @db.Decimal(15, 3)
-  outgoing_qty       Decimal            @default(0) @db.Decimal(15, 3)
-  production_qty     Decimal            @default(0) @db.Decimal(15, 3)
-  material_usage_qty Decimal            @default(0) @db.Decimal(15, 3)
-  adjustment_qty     Decimal            @default(0) @db.Decimal(15, 3)
-  wip_balance_qty    Decimal?           @db.Decimal(15, 3)
-  snapshot_date      DateTime           @db.Date
-  calculated_at      DateTime           @default(now()) @db.Timestamptz(6)
-  calculation_method calculation_method
-  created_at         DateTime           @default(now()) @db.Timestamp(6)
-  updated_at         DateTime           @default(now()) @db.Timestamp(6)
-  companies          companies          @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-  item_types         item_types         @relation(fields: [item_type_code], references: [item_type_code], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([id, snapshot_date])
-  @@unique([company_code, item_type_code, item_code, snapshot_date], map: "uk_stock_snapshot")
-  @@index([calculated_at], map: "idx_stock_snapshot_calculated")
-  @@index([company_code, snapshot_date(sort: Desc)], map: "idx_stock_snapshot_company_date")
-  @@index([company_code, item_code, snapshot_date(sort: Desc)], map: "idx_stock_snapshot_item")
-  @@index([item_code, snapshot_date(sort: Desc)], map: "idx_stock_snapshot_item_date_range")
-  @@index([company_code, item_type_code, snapshot_date(sort: Desc)], map: "idx_stock_snapshot_item_type")
-  @@index([calculation_method, company_code], map: "idx_stock_snapshot_method")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model user_access_menus {
-  id         String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+model UserAccessMenu {
+  id         String   @id @default(dbgenerated("gen_random_uuid()"))
   user_id    String
   menu_id    String
   can_view   Boolean  @default(true)
   can_create Boolean  @default(false)
   can_edit   Boolean  @default(false)
   can_delete Boolean  @default(false)
-  created_at DateTime @default(now()) @db.Timestamp(6)
-  updated_at DateTime @default(now()) @db.Timestamp(6)
-  menus      menus    @relation(fields: [menu_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  menu Menu @relation(fields: [menu_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([user_id, menu_id])
-  @@index([menu_id], map: "idx_user_access_menus_menu_id")
-  @@index([user_id], map: "idx_user_access_menus_user_id")
+  @@index([user_id])
+  @@index([menu_id])
+  @@map("user_access_menus")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model users {
-  id                String              @id @default(dbgenerated("(gen_random_uuid())::text"))
-  username          String              @unique
-  email             String              @unique
-  password          String
-  role              String              @default("USER")
-  company_code      String?             @db.VarChar(50)
-  created_at        DateTime            @default(now()) @db.Timestamp(6)
-  updated_at        DateTime            @default(now()) @db.Timestamp(6)
-  activity_logs     activity_logs[]
-  user_access_menus user_access_menus[]
-  companies         companies?          @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([email], map: "idx_users_email")
-  @@index([username], map: "idx_users_username")
+model BeginningBalance {
+  id           Int
+  company_code Int
+  item_code    String    @db.VarChar(50)
+  item_name    String    @db.VarChar(200)
+  item_type    String       @db.VarChar(10)
+  uom          String    @db.VarChar(20)
+  qty          Decimal   @db.Decimal(15, 3)
+  balance_date DateTime  @db.Date
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at   DateTime? @db.Timestamptz(6)
+
+  company Company @relation(fields: [company_code], references: [code])
+
+  @@unique([company_code, item_code, balance_date])
+  @@index([company_code])
+  @@index([item_code])
+  @@index([balance_date])
+  @@map("beginning_balances")
 }
 
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model wip_balance {
-  id             BigInt     @default(autoincrement())
-  wms_id         String     @db.VarChar(100)
-  company_code   String     @db.VarChar(50)
-  item_type_code String     @db.VarChar(10)
-  item_code      String     @db.VarChar(50)
-  item_name      String     @db.VarChar(200)
-  snapshot_date  DateTime   @db.Date
-  uom            String     @db.VarChar(20)
-  qty            Decimal    @db.Decimal(15, 3)
-  wms_timestamp  DateTime   @db.Timestamptz(6)
-  received_at    DateTime   @default(now()) @db.Timestamptz(6)
-  created_at     DateTime   @default(now()) @db.Timestamp(6)
-  updated_at     DateTime   @default(now()) @db.Timestamp(6)
-  companies      companies  @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-  item_types     item_types @relation(fields: [item_type_code], references: [item_type_code], onDelete: NoAction, onUpdate: NoAction)
+model AuditLog {
+  id            BigInt   @id @default(autoincrement())
+  table_name    String   @db.VarChar(100)
+  record_id     Int
+  action        String   @db.VarChar(20)
+  old_values    Json?
+  new_values    Json?
+  changed_by    String?  @db.VarChar(100)
+  changed_at    DateTime @default(now()) @db.Timestamptz(6)
+  ip_address    String?  @db.VarChar(50)
+  user_agent    String?  @db.VarChar(500)
 
-  @@id([id, snapshot_date])
-  @@unique([company_code, item_code, snapshot_date], map: "uk_wip_balance_item_date")
-  @@unique([wms_id, snapshot_date], map: "uk_wip_balance_wms_id")
-  @@index([company_code, snapshot_date(sort: Desc)], map: "idx_wip_balance_company")
-  @@index([company_code, item_code, snapshot_date(sort: Desc)], map: "idx_wip_balance_item")
-  @@index([wms_id], map: "idx_wip_balance_wms_id")
+  @@index([table_name])
+  @@index([record_id])
+  @@index([action])
+  @@index([changed_at])
+  @@map("audit_logs")
 }
 
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model work_order_fg_production {
-  id                   BigInt     @default(autoincrement())
-  production_header_id BigInt
-  production_detail_id BigInt
-  production_wms_id    String     @db.VarChar(100)
-  work_order_number    String     @db.VarChar(50)
-  company_code         String     @db.VarChar(50)
-  item_type_code       String     @db.VarChar(10)
-  item_code            String     @db.VarChar(50)
-  qty_produced         Decimal    @db.Decimal(15, 3)
-  trx_date             DateTime   @db.Date
-  created_at           DateTime   @default(now()) @db.Timestamp(6)
-  companies            companies  @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
-  item_types           item_types @relation(fields: [item_type_code], references: [item_type_code], onDelete: NoAction, onUpdate: NoAction)
+// ============================================================================
+// PARTITIONED TABLES
+// Note: Prisma will create these as regular tables first
+// Then setup_partitions.sql will convert them to partitioned tables
+// ============================================================================
 
-  @@id([id, trx_date])
-  @@index([company_code, item_code, trx_date(sort: Desc)], map: "idx_work_order_fg_production_item")
-  @@index([company_code, item_type_code, trx_date(sort: Desc)], map: "idx_work_order_fg_production_item_type")
-  @@index([production_wms_id, company_code], map: "idx_work_order_fg_production_production")
-  @@index([work_order_number, company_code], map: "idx_work_order_fg_production_wo")
+// ============================================================================
+// INCOMING GOODS - PARTITIONED TABLE
+// ============================================================================
+// IMPORTANT: FK relation removed because PostgreSQL doesn't support
+// foreign keys from regular tables to partitioned tables.
+// Referential integrity is maintained at application level.
+// ============================================================================
+
+model IncomingGood {
+  id                         Int                  @default(autoincrement())
+  wms_id                     String               @db.VarChar(100)
+  company_code               Int
+  owner                      Int
+  customs_document_type      CustomsDocumentType
+  ppkek_number               String               @db.VarChar(50)
+  customs_registration_date  DateTime             @db.Date
+  incoming_evidence_number   String               @db.VarChar(50)
+  incoming_date              DateTime             @db.Date
+  invoice_number             String               @db.VarChar(50)
+  invoice_date               DateTime             @db.Date
+  shipper_name               String               @db.VarChar(200)
+  timestamp                  DateTime             @db.Timestamptz(6)
+  created_at                 DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at                 DateTime             @updatedAt @db.Timestamptz(6)
+  deleted_at                 DateTime?            @db.Timestamptz(6)
+
+  company Company @relation(fields: [company_code], references: [code])
+  // NOTE: items relation removed - use manual joins in queries
+  // items   IncomingGoodItem[]
+
+  @@unique([company_code, wms_id, incoming_date])
+  @@unique([company_code, id, incoming_date])
+  @@index([wms_id])
+  @@index([company_code])
+  @@index([incoming_date])
+  @@index([ppkek_number])
+  @@index([customs_document_type])
+  @@index([incoming_evidence_number])
+  @@map("incoming_goods")
 }
 
-/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model work_order_material_consumption {
-  id                       BigInt    @default(autoincrement())
-  material_usage_header_id BigInt
-  material_usage_detail_id BigInt
-  material_usage_wms_id    String    @db.VarChar(100)
-  work_order_number        String    @db.VarChar(50)
-  company_code             String    @db.VarChar(50)
-  item_code                String    @db.VarChar(50)
-  ppkek_number             String?   @db.VarChar(50)
-  qty_consumed             Decimal   @db.Decimal(15, 3)
-  trx_date                 DateTime  @db.Date
-  created_at               DateTime  @default(now()) @db.Timestamp(6)
-  companies                companies @relation(fields: [company_code], references: [company_code], onDelete: NoAction, onUpdate: NoAction)
+model IncomingGoodItem {
+  id                          Int       @id @default(autoincrement())
+  incoming_good_id            Int
+  incoming_good_company       Int
+  incoming_good_date          DateTime  @db.Date
+  item_type                   String   @db.VarChar(10)
+  item_code                   String    @db.VarChar(50)
+  item_name                   String    @db.VarChar(200)
+  hs_code                     String?   @db.VarChar(20)
+  uom                         String    @db.VarChar(20)
+  qty                         Decimal   @db.Decimal(15, 3)
+  currency                    Currency
+  amount                      Decimal   @db.Decimal(18, 4)
+  created_at                  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at                  DateTime? @db.Timestamptz(6)
 
-  @@id([id, trx_date])
-  @@index([company_code, item_code, trx_date(sort: Desc)], map: "idx_work_order_material_consumption_item")
-  @@index([material_usage_wms_id, company_code], map: "idx_work_order_material_consumption_material")
-  @@index([work_order_number, company_code], map: "idx_work_order_material_consumption_wo")
+  // NOTE: incoming_good relation removed due to partitioning limitation
+  // PostgreSQL doesn't support FK from regular table to partitioned table
+  // Use manual joins: WHERE incoming_good_company = ? AND incoming_good_id = ? AND incoming_good_date = ?
+  // incoming_good IncomingGood @relation(fields: [incoming_good_company, incoming_good_id, incoming_good_date], references: [company_code, id, incoming_date], onDelete: Cascade)
+
+  @@index([incoming_good_id])
+  @@index([incoming_good_id, incoming_good_company, incoming_good_date])
+  @@index([item_code])
+  @@index([item_type])
+  @@map("incoming_good_items")
 }
 
-enum ActivityStatus {
-  SUCCESS
-  FAILED
-  WARNING
+model MaterialUsage {
+  id                       Int                 @default(autoincrement())
+  wms_id                   String              @db.VarChar(100)
+  company_code             Int
+  work_order_number        String?             @db.VarChar(50)
+  cost_center_number       String?
+  internal_evidence_number String              @db.VarChar(50)
+  transaction_date         DateTime            @db.Date
+  reversal                 String?             @db.VarChar(1)
+  timestamp                DateTime            @db.Timestamptz(6)
+  created_at               DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime            @updatedAt @db.Timestamptz(6)
+  deleted_at               DateTime?           @db.Timestamptz(6)
+
+  company Company            @relation(fields: [company_code], references: [code])
+  items   MaterialUsageItem[]
+
+  @@unique([company_code, wms_id, transaction_date])
+  @@unique([company_code, id, transaction_date])
+  @@index([wms_id])
+  @@index([company_code])
+  @@index([transaction_date])
+  @@index([work_order_number])
+  @@index([cost_center_number])
+  @@index([internal_evidence_number])
+  @@map("material_usages")
 }
 
-enum AdjustmentType {
-  GAIN
-  LOSS
+model MaterialUsageItem {
+  id                        Int       @id @default(autoincrement())
+  material_usage_id         Int
+  material_usage_company    Int
+  material_usage_date       DateTime  @db.Date
+  item_type                 String   @db.VarChar(10)
+  item_code                 String    @db.VarChar(50)
+  item_name                 String    @db.VarChar(200)
+  uom                       String    @db.VarChar(20)
+  qty                       Decimal   @db.Decimal(15, 3)
+  ppkek_number              String?   @db.VarChar(50)
+  created_at                DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at                DateTime? @db.Timestamptz(6)
+
+  material_usage MaterialUsage @relation(fields: [material_usage_company, material_usage_id, material_usage_date], references: [company_code, id, transaction_date], onDelete: Cascade)
+
+  @@index([material_usage_id])
+  @@index([material_usage_id, material_usage_company, material_usage_date])
+  @@index([item_code])
+  @@index([item_type])
+  @@index([ppkek_number])
+  @@map("material_usage_items")
 }
 
-enum CalculationMethod {
-  TRANSACTION
-  WIP_SNAPSHOT
+model WipBalance {
+  id           Int       @default(autoincrement())
+  wms_id       String    @db.VarChar(100)
+  company_code Int
+  item_type    String       @db.VarChar(10)
+  item_code    String    @db.VarChar(50)
+  item_name    String    @db.VarChar(200)
+  stock_date   DateTime  @db.Date
+  uom          String    @db.VarChar(20)
+  qty          Decimal   @db.Decimal(15, 3)
+  timestamp    DateTime  @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at   DateTime? @db.Timestamptz(6)
+
+  company Company @relation(fields: [company_code], references: [code])
+
+  @@unique([company_code, wms_id, stock_date])
+  @@index([wms_id])
+  @@index([company_code])
+  @@index([stock_date])
+  @@index([item_code])
+  @@index([item_type])
+  @@map("wip_balances")
 }
 
-enum CurrencyCode {
-  USD
-  IDR
-  CNY
-  EUR
-  JPY
+model ProductionOutput {
+  id                       Int                 @default(autoincrement())
+  wms_id                   String                 @db.VarChar(100)
+  company_code             Int
+  internal_evidence_number String                 @db.VarChar(50)
+  transaction_date         DateTime               @db.Date
+  reversal                 String?                @db.VarChar(1)
+  timestamp                DateTime               @db.Timestamptz(6)
+  created_at               DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime               @updatedAt @db.Timestamptz(6)
+  deleted_at               DateTime?              @db.Timestamptz(6)
+
+  company Company               @relation(fields: [company_code], references: [code])
+  items   ProductionOutputItem[]
+
+  @@unique([company_code, wms_id, transaction_date])
+  @@unique([company_code, id, transaction_date])
+  @@index([wms_id])
+  @@index([company_code])
+  @@index([transaction_date])
+  @@index([internal_evidence_number])
+  @@map("production_outputs")
 }
 
-enum CustomsDocumentTypeIncoming {
-  BC23
-  BC27
-  BC40
+model ProductionOutputItem {
+  id                          Int       @id @default(autoincrement())
+  production_output_id        Int
+  production_output_company   Int
+  production_output_date      DateTime  @db.Date
+  item_type                   String   @db.VarChar(10)
+  item_code                   String    @db.VarChar(50)
+  item_name                   String    @db.VarChar(200)
+  uom                         String    @db.VarChar(20)
+  qty                         Decimal   @db.Decimal(15, 3)
+  work_order_numbers          String[]
+  created_at                  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at                  DateTime? @db.Timestamptz(6)
+
+  production_output ProductionOutput @relation(fields: [production_output_company, production_output_id, production_output_date], references: [company_code, id, transaction_date], onDelete: Cascade)
+
+  @@index([production_output_id])
+  @@index([production_output_id, production_output_company, production_output_date])
+  @@index([item_code])
+  @@index([item_type])
+  @@map("production_output_items")
 }
 
-enum CustomsDocumentTypeOutgoing {
-  BC30
-  BC25
-  BC27
-  BC41
+model OutgoingGood {
+  id                         Int                  @default(autoincrement())
+  wms_id                    String               @db.VarChar(100)
+  company_code              Int
+  owner                     Int
+  customs_document_type     CustomsDocumentType
+  ppkek_number              String               @db.VarChar(50)
+  customs_registration_date DateTime             @db.Date
+  outgoing_evidence_number  String               @db.VarChar(50)
+  outgoing_date             DateTime             @db.Date
+  invoice_number            String               @db.VarChar(50)
+  invoice_date              DateTime             @db.Date
+  recipient_name            String               @db.VarChar(200)
+  timestamp                 DateTime             @db.Timestamptz(6)
+  created_at                DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime             @updatedAt @db.Timestamptz(6)
+  deleted_at                DateTime?            @db.Timestamptz(6)
+
+  company Company            @relation(fields: [company_code], references: [code])
+  items   OutgoingGoodItem[]
+
+  @@unique([company_code, wms_id, outgoing_date])
+  @@unique([company_code, id, outgoing_date])
+  @@index([wms_id])
+  @@index([company_code])
+  @@index([outgoing_date])
+  @@index([ppkek_number])
+  @@index([customs_document_type])
+  @@index([outgoing_evidence_number])
+  @@map("outgoing_goods")
 }
 
-enum ItemTypeCode {
-  ROH
-  HALB
-  FERT
-  HIBE_M
-  HIBE_E
-  HIBE_T
-  HIBE
-  SCRAP
-  DIEN
+model OutgoingGoodItem {
+  id                        Int       @id @default(autoincrement())
+  outgoing_good_id          Int
+  outgoing_good_company     Int
+  outgoing_good_date        DateTime  @db.Date
+  item_type                 String   @db.VarChar(10)
+  item_code                 String    @db.VarChar(50)
+  item_name                 String    @db.VarChar(200)
+  production_output_wms_ids String[]
+  hs_code                   String?   @db.VarChar(20)
+  uom                       String    @db.VarChar(20)
+  qty                       Decimal   @db.Decimal(15, 3)
+  currency                  Currency
+  amount                    Decimal   @db.Decimal(18, 4)
+  created_at                DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at                DateTime? @db.Timestamptz(6)
+
+  outgoing_good OutgoingGood @relation(fields: [outgoing_good_company, outgoing_good_id, outgoing_good_date], references: [company_code, id, outgoing_date], onDelete: Cascade)
+
+  @@index([outgoing_good_id])
+  @@index([outgoing_good_id, outgoing_good_company, outgoing_good_date])
+  @@index([item_code])
+  @@index([item_type])
+  @@map("outgoing_good_items")
 }
 
-enum JobStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-  CANCELLED
+model Adjustment {
+  id                       Int                 @default(autoincrement())
+  wms_id                   String           @db.VarChar(100)
+  company_code             Int
+  wms_doc_type             String?          @db.VarChar(100)
+  internal_evidence_number String           @db.VarChar(50)
+  transaction_date         DateTime         @db.Date
+  timestamp                DateTime         @db.Timestamptz(6)
+  created_at               DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime         @updatedAt @db.Timestamptz(6)
+  deleted_at               DateTime?        @db.Timestamptz(6)
+
+  company Company          @relation(fields: [company_code], references: [code])
+  items   AdjustmentItem[]
+
+  @@unique([company_code, wms_id, transaction_date])
+  @@unique([company_code, id, transaction_date])
+  @@index([wms_id])
+  @@index([company_code])
+  @@index([transaction_date])
+  @@index([internal_evidence_number])
+  @@map("adjustments")
 }
 
-enum JobType {
-  HOURLY_BATCH
-  EOD_SNAPSHOT
-  RECALC_QUEUE
-  MANUAL_TRIGGER
-}
+model AdjustmentItem {
+  id                  Int            @id @default(autoincrement())
+  adjustment_id       Int
+  adjustment_company  Int
+  adjustment_date     DateTime       @db.Date
+  adjustment_type     AdjustmentType
+  item_type           String   @db.VarChar(10)
+  item_code           String         @db.VarChar(50)
+  item_name           String         @db.VarChar(200)
+  uom                 String         @db.VarChar(20)
+  qty                 Decimal        @db.Decimal(15, 3)
+  reason              String?        @db.VarChar(500)
+  created_at          DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime       @updatedAt @db.Timestamptz(6)
+  deleted_at          DateTime?      @db.Timestamptz(6)
 
-enum RecalcStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
-}
+  adjustment Adjustment @relation(fields: [adjustment_company, adjustment_id, adjustment_date], references: [company_code, id, transaction_date], onDelete: Cascade)
 
-enum UserRole {
-  ADMIN
-  USER
-  VIEWER
-}
-
-/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-enum adjustment_type {
-  GAIN
-  LOSS
-}
-
-/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-enum calculation_method {
-  TRANSACTION
-  WIP_SNAPSHOT
-}
-
-/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-enum currency_code {
-  USD
-  IDR
-  CNY
-  EUR
-  JPY
-}
-
-/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-enum customs_document_type_incoming {
-  BC23
-  BC27
-  BC40
-}
-
-/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-enum customs_document_type_outgoing {
-  BC30
-  BC25
-  BC27
-  BC41
-}
-
-/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-enum recalc_status {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
+  @@index([adjustment_id])
+  @@index([adjustment_id, adjustment_company, adjustment_date])
+  @@index([item_code])
+  @@index([item_type])
+  @@index([adjustment_type])
+  @@map("adjustment_items")
 }
