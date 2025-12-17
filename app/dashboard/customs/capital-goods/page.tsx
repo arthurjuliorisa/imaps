@@ -4,7 +4,7 @@ import { MutationData } from '@/app/components/customs/MutationReportTable';
 
 const sampleData: MutationData[] = [
   {
-    id: 1,
+    id: '1',
     itemCode: 'CAP-001',
     itemName: 'Production Machinery A',
     unit: 'UNIT',
@@ -18,7 +18,7 @@ const sampleData: MutationData[] = [
     remarks: 'Capital goods - New machinery',
   },
   {
-    id: 2,
+    id: '2',
     itemCode: 'CAP-002',
     itemName: 'Industrial Equipment B',
     unit: 'UNIT',

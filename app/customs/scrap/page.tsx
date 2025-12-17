@@ -16,7 +16,7 @@ import dayjs from 'dayjs';
 // Sample data - Replace with actual API call
 const sampleData: MutationData[] = [
   {
-    id: 1,
+    id: '1',
     itemCode: 'SCRAP-001',
     itemName: 'Metal Scrap',
     unit: 'KG',
@@ -30,7 +30,7 @@ const sampleData: MutationData[] = [
     remarks: 'Sold to recycling company',
   },
   {
-    id: 2,
+    id: '2',
     itemCode: 'SCRAP-002',
     itemName: 'Plastic Scrap',
     unit: 'KG',

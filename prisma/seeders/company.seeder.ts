@@ -5,7 +5,11 @@ const prisma = new PrismaClient();
 export async function seedCompanies() {
   console.log('🏢 Seeding Companies...');
 
-  const companies = [
+  const companies: Array<{
+    company_code: string;
+    company_name: string;
+    is_active: boolean;
+  }> = [
     // ACME and XYZ companies removed
   ];
 

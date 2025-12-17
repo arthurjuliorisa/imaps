@@ -4,7 +4,7 @@ import { MutationData } from '@/app/components/customs/MutationReportTable';
 
 const sampleData: MutationData[] = [
   {
-    id: 1,
+    id: '',
     itemCode: 'FIN-001',
     itemName: 'Finished Product A',
     unit: 'PCS',
@@ -18,7 +18,7 @@ const sampleData: MutationData[] = [
     remarks: 'Export to Client XYZ',
   },
   {
-    id: 2,
+    id: '',
     itemCode: 'FIN-002',
     itemName: 'Finished Product B',
     unit: 'PCS',

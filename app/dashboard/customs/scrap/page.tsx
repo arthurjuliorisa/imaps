@@ -4,7 +4,7 @@ import { MutationData } from '@/app/components/customs/MutationReportTable';
 
 const sampleData: MutationData[] = [
   {
-    id: 1,
+    id: '',
     itemCode: 'SCR-001',
     itemName: 'Metal Scrap Type A',
     unit: 'KG',
@@ -18,7 +18,7 @@ const sampleData: MutationData[] = [
     remarks: 'Scrap from production line',
   },
   {
-    id: 2,
+    id: '',
     itemCode: 'SCR-002',
     itemName: 'Plastic Scrap Type B',
     unit: 'KG',
