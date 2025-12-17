@@ -92,27 +92,27 @@ export default function LoginPage() {
   const devCredentials = [
     {
       role: 'Admin',
-      email: 'admin@imaps.local',
+      email: 'admin@harmoni.co.id',
       password: 'admin123',
       icon: <AdminPanelSettings fontSize="small" />,
       color: 'error' as const,
       description: 'Full system access'
     },
     {
-      role: 'Operator',
-      email: 'operator@imaps.local',
-      password: 'operator123',
+      role: 'WMS API',
+      email: 'wms@harmoni.co.id',
+      password: 'wms123',
       icon: <Engineering fontSize="small" />,
       color: 'primary' as const,
-      description: 'Customs module (CRUD)'
+      description: 'WMS Integration User'
     },
     {
-      role: 'Viewer',
-      email: 'viewer@imaps.local',
-      password: 'viewer123',
+      role: 'User',
+      email: 'user@harmoni.co.id',
+      password: 'user123',
       icon: <ViewIcon fontSize="small" />,
       color: 'success' as const,
-      description: 'Dashboard & Reports (Read-only)'
+      description: 'Company 1310 User'
     },
   ];
 

@@ -19,11 +19,10 @@ import { useToast } from '@/app/components/ToastProvider';
 
 interface ItemType {
   item_type_code: string;
-  item_type_name: string;
-  item_type_name_local?: string;
+  name_en: string;
+  name_id?: string;
+  category: string;
   is_active: boolean;
-  is_inventory_item: boolean;
-  is_capital_goods: boolean;
 }
 
 export default function ItemTypesPage() {
@@ -114,14 +113,14 @@ export default function ItemTypesPage() {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>
-                        {itemType.item_type_name}
+                        {itemType.name_en}
                       </Typography>
                     </TableCell>
-                    <TableCell>{itemType.item_type_name_local || '-'}</TableCell>
+                    <TableCell>{itemType.name_id || '-'}</TableCell>
                     <TableCell>
-                      {itemType.is_capital_goods ? (
+                      {itemType.category === 'CAPITAL_GOODS' ? (
                         <Chip label="Capital Goods" color="info" size="small" />
-                      ) : itemType.is_inventory_item ? (
+                      ) : itemType.category === 'INVENTORY' ? (
                         <Chip label="Inventory" color="primary" size="small" />
                       ) : (
                         <Chip label="Non-Inventory" color="default" size="small" />

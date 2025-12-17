@@ -33,9 +33,18 @@ export default function RawMaterialMutationPage() {
       });
 
       const response = await fetch(`/api/customs/raw-material?${params}`);
-      if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
-      setData(result);
+
+      if (!response.ok) {
+        if (response.status === 503) {
+          toast.error(result.message || 'This feature is temporarily unavailable');
+        } else {
+          toast.error('Failed to load raw material mutation data');
+        }
+        setData([]);
+      } else {
+        setData(result.data || result);
+      }
     } catch (error) {
       console.error('Error fetching raw material mutation data:', error);
       toast.error('Failed to load raw material mutation data');
@@ -43,7 +52,7 @@ export default function RawMaterialMutationPage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, toast]);
+  }, [startDate, endDate]);
 
   useEffect(() => {
     fetchData();

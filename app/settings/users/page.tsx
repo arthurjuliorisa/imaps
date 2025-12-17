@@ -32,9 +32,10 @@ interface User {
 }
 
 interface Company {
-  company_code: string;
-  company_name: string;
-  is_active: boolean;
+  id: number;
+  code: number;
+  name: string;
+  status: 'ACTIVE' | 'INACTIVE';
 }
 
 const columns: Column[] = [
@@ -335,10 +336,10 @@ export default function UsersPage() {
             />
             <Autocomplete
               options={companies}
-              getOptionLabel={(option) => option.company_name}
-              value={companies.find(c => c.company_code === formData.company_code) || null}
+              getOptionLabel={(option) => `${option.code} - ${option.name}`}
+              value={companies.find(c => c.code.toString() === formData.company_code) || null}
               onChange={(event, newValue) => {
-                setFormData({ ...formData, company_code: newValue?.company_code || '' });
+                setFormData({ ...formData, company_code: newValue?.code.toString() || '' });
                 setCompanyError(false);
               }}
               loading={companiesLoading}
@@ -352,7 +353,7 @@ export default function UsersPage() {
                   helperText={companyError ? 'Please select a company' : ''}
                 />
               )}
-              isOptionEqualToValue={(option, value) => option.company_code === value.company_code}
+              isOptionEqualToValue={(option, value) => option.code === value.code}
             />
             <TextField
               label="Password"

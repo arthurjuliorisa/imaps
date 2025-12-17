@@ -18,9 +18,10 @@ import { Business } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
 
 interface Company {
-  company_code: string;
-  company_name: string;
-  is_active: boolean;
+  id: number;
+  code: number;
+  name: string;
+  status: 'ACTIVE' | 'INACTIVE';
   created_at: string;
   updated_at: string;
 }
@@ -92,17 +93,17 @@ export default function CompaniesPage() {
                 </TableRow>
               ) : (
                 companies.map((company) => (
-                  <TableRow key={company.company_code} hover>
+                  <TableRow key={company.id} hover>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>
-                        {company.company_code}
+                        {company.code}
                       </Typography>
                     </TableCell>
-                    <TableCell>{company.company_name}</TableCell>
+                    <TableCell>{company.name}</TableCell>
                     <TableCell>
                       <Chip
-                        label={company.is_active ? 'Active' : 'Inactive'}
-                        color={company.is_active ? 'success' : 'default'}
+                        label={company.status === 'ACTIVE' ? 'Active' : 'Inactive'}
+                        color={company.status === 'ACTIVE' ? 'success' : 'default'}
                         size="small"
                       />
                     </TableCell>
