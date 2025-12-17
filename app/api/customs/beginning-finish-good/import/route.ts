@@ -3,7 +3,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
-import * as XLSX from 'xlsx';
 import {
   parseAndNormalizeDate,
   validateDateNotFuture,

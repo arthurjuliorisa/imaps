@@ -13,19 +13,17 @@ interface WorkOrderSelectorProps {
 export function WorkOrderSelector({ control, disabled = false }: WorkOrderSelectorProps) {
   return (
     <Controller
-      name="header.workOrderNumber"
+      name="header.work_order_number"
       control={control}
-      rules={{ required: 'Work order number is required' }}
       render={({ field, fieldState: { error } }) => (
         <TextField
           {...field}
           fullWidth
           label="Work Order Number"
           placeholder="e.g., WO-2024-001"
-          required
           disabled={disabled}
           error={!!error}
-          helperText={error?.message || 'Enter the work order number for material consumption'}
+          helperText={error?.message || 'Enter the work order number for material consumption (optional)'}
           inputProps={{ maxLength: 50 }}
         />
       )}

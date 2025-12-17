@@ -16,7 +16,7 @@ import type {
   PaginatedResponse,
   BeginningBalance,
   BeginningBalanceRequest
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -62,18 +62,18 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('page_size') || '20');
     const companyCode = searchParams.get('company_code');
-    const itemTypeCode = searchParams.get('item_type_code');
+    const itemType = searchParams.get('item_type');
     const search = searchParams.get('search');
 
     // Build where clause
     const where: any = {};
 
     if (companyCode) {
-      where.company_code = companyCode;
+      where.company_code = parseInt(companyCode);
     }
 
-    if (itemTypeCode) {
-      where.item_type_code = itemTypeCode;
+    if (itemType) {
+      where.item_type = itemType;
     }
 
     if (search) {
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
     const body: BeginningBalanceRequest = await request.json();
 
     // Validate required fields
-    if (!body.company_code || !body.item_type_code || !body.item_code || !body.item_name) {
+    if (!body.company_code || !body.item_type || !body.item_code || !body.item_name) {
       return errorResponse('Missing required fields', 'VALIDATION_ERROR', 400);
     }
 
@@ -144,37 +144,46 @@ export async function POST(request: NextRequest) {
       return errorResponse('Missing uom or qty', 'VALIDATION_ERROR', 400);
     }
 
-    if (!body.effective_date) {
-      return errorResponse('effective_date is required', 'VALIDATION_ERROR', 400);
+    if (!body.balance_date) {
+      return errorResponse('balance_date is required', 'VALIDATION_ERROR', 400);
     }
 
-    // Check for duplicate
+    // Check for duplicate (based on unique constraint: company_code, item_code, balance_date)
     const existing = await prisma.beginning_balances.findFirst({
       where: {
         company_code: body.company_code,
-        item_type_code: body.item_type_code,
-        item_code: body.item_code
+        item_code: body.item_code,
+        balance_date: new Date(body.balance_date)
       }
     });
 
     if (existing) {
       return errorResponse(
-        `Beginning balance for ${body.item_code} already exists`,
+        `Beginning balance for ${body.item_code} on ${body.balance_date} already exists`,
         'DUPLICATE',
         409
       );
     }
 
+    // Get next available ID
+    const maxId = await prisma.beginning_balances.aggregate({
+      _max: {
+        id: true
+      }
+    });
+    const nextId = (maxId._max.id || 0) + 1;
+
     // Create beginning balance
     const balance = await prisma.beginning_balances.create({
       data: {
+        id: nextId,
         company_code: body.company_code,
-        item_type_code: body.item_type_code,
+        item_type: body.item_type,
         item_code: body.item_code,
         item_name: body.item_name,
         uom: body.uom,
-        balance_qty: body.qty,
-        balance_date: new Date(body.effective_date)
+        qty: body.qty,
+        balance_date: new Date(body.balance_date)
       }
     });
 
@@ -182,8 +191,7 @@ export async function POST(request: NextRequest) {
     await logActivity({
       userId: session.user?.id || '',
       action: 'CREATE',
-      description: `Created beginning balance for ${body.item_code}`,
-      status: 'SUCCESS'
+      description: `Created beginning balance for ${body.item_code}`
     });
 
     return successResponse(balance, 201);
@@ -196,8 +204,7 @@ export async function POST(request: NextRequest) {
       await logActivity({
         userId: session.user?.id || '',
         action: 'CREATE',
-        description: `Failed to create beginning balance: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        status: 'FAILED'
+        description: `Failed to create beginning balance: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
     }
 

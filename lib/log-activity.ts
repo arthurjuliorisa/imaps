@@ -1,5 +1,4 @@
 import { prisma } from './prisma';
-import { ActivityStatus } from '@prisma/client';
 import { headers } from 'next/headers';
 import { getServerSession } from 'next-auth';
 import { authOptions } from './auth';
@@ -10,7 +9,7 @@ import { authOptions } from './auth';
 interface LogActivityParams {
   action: string;
   description: string;
-  status?: ActivityStatus;
+  status?: string;
   metadata?: Record<string, any>;
   userId?: string | null;
 }
@@ -67,7 +66,6 @@ function getUserAgent(headersList: Headers): string | null {
  * await logActivity({
  *   action: 'CREATE_ITEM',
  *   description: 'Created new item: Widget A',
- *   status: 'SUCCESS',
  *   metadata: { itemId: '123', itemCode: 'WGT-001' },
  * });
  *
@@ -75,7 +73,6 @@ function getUserAgent(headersList: Headers): string | null {
  * await logActivity({
  *   action: 'DELETE_RECORD',
  *   description: 'Failed to delete record due to foreign key constraint',
- *   status: 'FAILED',
  *   metadata: { recordId: '456', error: 'Foreign key constraint' },
  * });
  */
@@ -84,39 +81,20 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
     const {
       action,
       description,
-      status = ActivityStatus.SUCCESS,
+      status,
       metadata = null,
       userId: providedUserId,
     } = params;
 
-    // Get request headers
-    const headersList = await headers();
-    const ipAddress = getIpAddress(headersList);
-    const userAgent = getUserAgent(headersList);
-
-    // Try to get user ID from session if not provided
-    let userId = providedUserId;
-    if (userId === undefined) {
-      try {
-        const session = await getServerSession(authOptions);
-        userId = session?.user?.id || null;
-      } catch (error) {
-        // If session retrieval fails, continue without user ID
-        userId = null;
-      }
-    }
-
-    // Create activity log entry
-    await prisma.activity_logs.create({
-      data: {
-        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        user_id: userId,
-        action,
-        description,
-        ip_address: ipAddress,
-        user_agent: userAgent,
-        status,
-      },
+    // TODO: Re-implement activity logging when activity_logs table is added to schema
+    // The current schema only has audit_logs which is for database record auditing
+    // For now, just log to console
+    console.log('[Activity Log]', {
+      action,
+      description,
+      status,
+      userId: providedUserId,
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     // Log the error but don't throw - we don't want logging failures to break the app
@@ -124,7 +102,6 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
     console.error('[logActivity] Activity details:', {
       action: params.action,
       description: params.description,
-      status: params.status,
     });
   }
 }

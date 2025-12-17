@@ -13,7 +13,7 @@ import type {
   ApiErrorResponse,
   IncomingHeader,
   IncomingDetail
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 /**
  * Build error response
@@ -61,14 +61,9 @@ export async function GET(
 
     const { wms_id } = await params;
 
-    // Get header with details
-    const header = await prisma.incoming_headers.findFirst({
-      where: { wms_id },
-      include: {
-        incoming_details: {
-          orderBy: { id: 'asc' }
-        }
-      }
+    // Get header
+    const header = await prisma.incoming_goods.findFirst({
+      where: { wms_id }
     });
 
     if (!header) {
@@ -79,34 +74,41 @@ export async function GET(
       );
     }
 
+    // Get details (manual join due to partitioning)
+    const items = await prisma.incoming_good_items.findMany({
+      where: {
+        incoming_good_id: header.id,
+        incoming_good_company: header.company_code,
+        incoming_good_date: header.incoming_date
+      },
+      orderBy: { id: 'asc' }
+    });
+
     // Map to API response format
     const response = {
       header: {
-        id: header.id.toString(),
+        id: header.id,
         wms_id: header.wms_id,
         company_code: header.company_code,
         owner: header.owner,
-        customs_doc_type: header.customs_document_type,
-        customs_doc_number: header.incoming_evidence_number,
-        customs_doc_date: header.customs_registration_date,
-        trx_date: header.trx_date,
-        wms_timestamp: header.wms_timestamp,
-        received_at: header.received_at,
+        customs_document_type: header.customs_document_type,
+        incoming_evidence_number: header.incoming_evidence_number,
+        customs_registration_date: header.customs_registration_date,
+        incoming_date: header.incoming_date,
+        timestamp: header.timestamp,
         ppkek_number: header.ppkek_number || '',
         invoice_number: header.invoice_number || '',
         invoice_date: header.invoice_date || undefined,
-        supplier_name: header.shipper_name || '',
-        remarks: undefined,
+        shipper_name: header.shipper_name || '',
         created_at: header.created_at,
         updated_at: header.updated_at
       } as IncomingHeader,
-      details: header.incoming_details.map((detail) => ({
-        id: detail.id.toString(),
-        header_id: detail.header_id.toString(),
-        wms_id: detail.wms_id,
-        company_code: detail.company_code,
-        trx_date: detail.trx_date,
-        item_type_code: detail.item_type_code,
+      details: items.map((detail) => ({
+        id: detail.id,
+        incoming_good_id: detail.incoming_good_id,
+        incoming_good_company: detail.incoming_good_company,
+        incoming_good_date: detail.incoming_good_date,
+        item_type: detail.item_type,
         item_code: detail.item_code,
         item_name: detail.item_name,
         uom: detail.uom,
@@ -114,8 +116,6 @@ export async function GET(
         currency: detail.currency,
         amount: Number(detail.amount),
         hs_code: detail.hs_code || undefined,
-        brand: undefined,
-        ppkek_number: undefined,
         created_at: detail.created_at,
         updated_at: detail.updated_at
       } as IncomingDetail))

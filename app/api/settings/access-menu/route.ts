@@ -8,11 +8,11 @@ import { serializeBigInt } from '@/lib/bigint-serializer';
  */
 interface MenuWithChildren {
   id: string;
-  name: string;
-  route: string | null;
-  icon: string | null;
+  menu_name: string;
+  menu_path: string | null;
+  menu_icon: string | null;
   parent_id: string | null;
-  order: number;
+  menu_order: number;
   created_at: Date;
   updated_at: Date;
   children: MenuWithChildren[];
@@ -48,9 +48,9 @@ function buildMenuHierarchy(menus: any[]): MenuWithChildren[] {
     }
   });
 
-  // Sort children by order at each level
+  // Sort children by menu_order at each level
   const sortChildren = (items: MenuWithChildren[]) => {
-    items.sort((a, b) => a.order - b.order);
+    items.sort((a, b) => (a.menu_order || 0) - (b.menu_order || 0));
     items.forEach((item) => {
       if (item.children.length > 0) {
         sortChildren(item.children);
@@ -72,7 +72,7 @@ export async function GET() {
   try {
     // Get all menus
     const menus = await prisma.menus.findMany({
-      orderBy: { order: 'asc' },
+      orderBy: { menu_order: 'asc' },
     });
 
     // Build hierarchical structure

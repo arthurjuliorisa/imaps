@@ -1,17 +1,19 @@
 export interface MaterialUsageHeaderData {
-  usageDate: Date;
-  workOrderNumber: string;
-  remarks?: string;
+  transaction_date: Date;
+  work_order_number?: string;
+  cost_center_number?: string;
+  internal_evidence_number: string;
+  reversal?: string;
 }
 
 export interface MaterialUsageItem {
   id: string;
-  itemCode: string;
-  itemName: string;
-  itemType: 'ROH' | 'HALB';
+  item_code: string;
+  item_name: string;
+  item_type: string;
   uom: string;
-  quantity: number;
-  ppkekNumber: string;
+  qty: number;
+  ppkek_number?: string;
 }
 
 export interface MaterialUsageFormData {

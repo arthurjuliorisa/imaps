@@ -49,7 +49,7 @@ export class IncomingGoodRepository {
     for (let i = 0; i < items.length; i += chunkSize) {
       const chunk = items.slice(i, i + chunkSize);
 
-      await tx.incomingGoodItem.createMany({
+      await tx.incoming_good_items.createMany({
         data: chunk.map((item) => ({
           incoming_good_id: recordId,
           incoming_good_company: company_code,
@@ -87,7 +87,7 @@ export class IncomingGoodRepository {
     try {
       const result = await prisma.$transaction(async (tx) => {
         // Step 1: Check if record exists
-        const existing = await tx.incomingGood.findUnique({
+        const existing = await tx.incoming_goods.findUnique({
           where: {
             company_code_wms_id_incoming_date: {
               company_code: data.company_code,
@@ -107,14 +107,14 @@ export class IncomingGoodRepository {
           recordId = existing.id;
 
           // Step 2a: Delete existing items
-          await tx.incomingGoodItem.deleteMany({
+          await tx.incoming_good_items.deleteMany({
             where: {
               incoming_good_id: recordId,
             },
           });
 
           // Step 2b: Update header
-          await tx.incomingGood.update({
+          await tx.incoming_goods.update({
             where: { id: recordId },
             data: {
               owner: data.owner,
@@ -143,8 +143,8 @@ export class IncomingGoodRepository {
           // Record doesn't exist - INSERT flow
           // IMPORTANT:
           // - We intentionally avoid Prisma relation field `items` (partitioning constraints/FK issues)
-          // - Therefore we must do header insert first, then insert detail rows via incomingGoodItem
-          const created = await tx.incomingGood.create({
+          // - Therefore we must do header insert first, then insert detail rows via incoming_good_items
+          const created = await tx.incoming_goods.create({
             data: {
               wms_id: data.wms_id,
               company_code: data.company_code,
@@ -211,7 +211,7 @@ export class IncomingGoodRepository {
     try {
       // NOTE: We avoid Prisma relation `items` due to partitioning constraints,
       // so we fetch header and items separately.
-      const header = await prisma.incomingGood.findFirst({
+      const header = await prisma.incoming_goods.findFirst({
         where: {
           company_code,
           wms_id,
@@ -224,7 +224,7 @@ export class IncomingGoodRepository {
 
       if (!header) return null;
 
-      const items = await prisma.incomingGoodItem.findMany({
+      const items = await prisma.incoming_good_items.findMany({
         where: {
           incoming_good_id: header.id,
           deleted_at: null,
@@ -255,13 +255,13 @@ export class IncomingGoodRepository {
 
       await prisma.$transaction(async (tx) => {
         // Soft delete header
-        await tx.incomingGood.update({
+        await tx.incoming_goods.update({
           where: { id },
           data: { deleted_at: now },
         });
 
         // Soft delete items
-        await tx.incomingGoodItem.updateMany({
+        await tx.incoming_good_items.updateMany({
           where: { incoming_good_id: id },
           data: { deleted_at: now },
         });
@@ -292,7 +292,7 @@ export class IncomingGoodRepository {
     total_amount_usd: number;
   }> {
     try {
-      const transactions = await prisma.incomingGood.count({
+      const transactions = await prisma.incoming_goods.count({
         where: {
           company_code,
           incoming_date: {
@@ -303,7 +303,7 @@ export class IncomingGoodRepository {
         },
       });
 
-      const items = await prisma.incomingGoodItem.findMany({
+      const items = await prisma.incoming_good_items.findMany({
         where: {
           incoming_good_company: company_code,
           incoming_good_date: {

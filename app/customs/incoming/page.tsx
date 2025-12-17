@@ -29,7 +29,7 @@ import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcel, exportToPDF, formatCurrency, formatDate } from '@/lib/exportUtils';
 import { getIncomingTransactions } from '@/lib/api';
-import type { IncomingHeader } from '@/types/v2.4.2';
+import type { IncomingHeader } from '@/types/core';
 
 export default function IncomingGoodsReportPage() {
   const theme = useTheme();
@@ -90,13 +90,13 @@ export default function IncomingGoodsReportPage() {
       No: (page - 1) * pageSize + index + 1,
       'WMS ID': row.wms_id,
       'Company': row.company_code,
-      'Doc Type': row.customs_doc_type,
-      'Doc Number': row.customs_doc_number,
-      'Doc Date': formatDate(row.customs_doc_date.toISOString()),
+      'Doc Type': row.customs_document_type,
+      'PPKEK Number': row.ppkek_number || '-',
+      'Customs Registration Date': formatDate(row.customs_registration_date.toISOString()),
       'Owner': row.owner,
-      'Transaction Date': formatDate(row.trx_date.toISOString()),
-      'PPKEK': row.ppkek_number || '-',
-      'Remarks': row.remarks || '-',
+      'Incoming Date': formatDate(row.incoming_date.toISOString()),
+      'Invoice Number': row.invoice_number || '-',
+      'Shipper': row.shipper_name || '-',
     }));
 
     exportToExcel(
@@ -111,11 +111,11 @@ export default function IncomingGoodsReportPage() {
       no: (page - 1) * pageSize + index + 1,
       wmsId: row.wms_id,
       company: row.company_code,
-      docType: row.customs_doc_type,
-      docNumber: row.customs_doc_number,
-      docDate: formatDate(row.customs_doc_date.toISOString()),
+      docType: row.customs_document_type,
+      ppkek: row.ppkek_number || '-',
+      regDate: formatDate(row.customs_registration_date.toISOString()),
       owner: row.owner,
-      transactionDate: formatDate(row.trx_date.toISOString()),
+      incomingDate: formatDate(row.incoming_date.toISOString()),
     }));
 
     const columns = [
@@ -123,10 +123,10 @@ export default function IncomingGoodsReportPage() {
       { header: 'WMS ID', dataKey: 'wmsId' },
       { header: 'Company', dataKey: 'company' },
       { header: 'Doc Type', dataKey: 'docType' },
-      { header: 'Doc Number', dataKey: 'docNumber' },
-      { header: 'Doc Date', dataKey: 'docDate' },
+      { header: 'PPKEK', dataKey: 'ppkek' },
+      { header: 'Reg Date', dataKey: 'regDate' },
       { header: 'Owner', dataKey: 'owner' },
-      { header: 'Transaction Date', dataKey: 'transactionDate' },
+      { header: 'Incoming Date', dataKey: 'incomingDate' },
     ];
 
     exportToPDF(
@@ -179,11 +179,11 @@ export default function IncomingGoodsReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Doc Type</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Doc Number</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Doc Date</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Owner</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Transaction Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>PPKEK</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Reg Date</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Owner</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Incoming Date</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Invoice</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -217,16 +217,12 @@ export default function IncomingGoodsReportPage() {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={row.customs_doc_type}
+                        label={row.customs_document_type}
                         size="small"
                         color="primary"
                         variant="outlined"
                       />
                     </TableCell>
-                    <TableCell>{row.customs_doc_number}</TableCell>
-                    <TableCell>{formatDate(row.customs_doc_date.toISOString())}</TableCell>
-                    <TableCell>{row.owner}</TableCell>
-                    <TableCell>{formatDate(row.trx_date.toISOString())}</TableCell>
                     <TableCell>
                       {row.ppkek_number ? (
                         <Chip label={row.ppkek_number} size="small" color="info" variant="outlined" />
@@ -234,6 +230,10 @@ export default function IncomingGoodsReportPage() {
                         <Typography variant="body2" color="text.secondary">-</Typography>
                       )}
                     </TableCell>
+                    <TableCell>{formatDate(row.customs_registration_date.toISOString())}</TableCell>
+                    <TableCell>{row.owner}</TableCell>
+                    <TableCell>{formatDate(row.incoming_date.toISOString())}</TableCell>
+                    <TableCell>{row.invoice_number || '-'}</TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', gap: 1 }}>
                         <Tooltip title="View Details">

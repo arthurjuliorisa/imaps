@@ -1,10 +1,7 @@
-// @ts-nocheck
-// TODO: Fix field names - total_amount doesn't exist in incoming_headers
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/bigint-serializer';
 
 /**
  * Transaction trend data for chart visualization
@@ -16,19 +13,16 @@ interface TransactionTrend {
   outgoingCount: number;
   incomingQuantity: number;
   outgoingQuantity: number;
-  incomingAmount: number;
-  outgoingAmount: number;
 }
 
 /**
  * GET /api/dashboard/transaction-trends
  * Returns transaction trends for the last 12 months
  *
- * Uses new schema with IncomingHeader and OutgoingHeader
+ * Note: Amount data is not available in current schema
  * Returns:
  * - Monthly incoming/outgoing document volume
  * - Document count and total quantity per month
- * - Total transaction amounts per month
  * - Data formatted for chart visualization
  */
 export async function GET(request: Request) {
@@ -38,46 +32,83 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Calculate date range for last 12 months
+    const now = new Date();
+    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+
     // Build where clause with company_code filter
     const whereClause: any = {
-      trx_date: {
-        gte: new Date(new Date().getFullYear(), new Date().getMonth() - 11, 1),
+      incoming_date: {
+        gte: twelveMonthsAgo,
       },
     };
     if (session.user.companyCode) {
       whereClause.company_code = session.user.companyCode;
     }
 
-    // Calculate date range for last 12 months
-    const now = new Date();
-    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
-
-    // Fetch incoming headers for last 12 months with their details
-    const incomingHeaders = await prisma.incoming_headers.findMany({
+    // Fetch incoming headers for last 12 months
+    const incomingHeaders = await prisma.incoming_goods.findMany({
       where: whereClause,
       select: {
-        trx_date: true,
-        total_amount: true,
-        incoming_details: {
-          select: {
-            qty: true,
-          },
-        },
+        id: true,
+        incoming_date: true,
       },
     });
 
-    // Fetch outgoing headers for last 12 months with their details
-    const outgoingHeaders = await prisma.outgoing_headers.findMany({
-      where: whereClause,
-      select: {
-        trx_date: true,
-        total_amount: true,
-        outgoing_details: {
-          select: {
-            qty: true,
-          },
-        },
+    // Fetch outgoing headers for last 12 months
+    const outgoingWhereClause: any = {
+      outgoing_date: {
+        gte: twelveMonthsAgo,
       },
+    };
+    if (session.user.companyCode) {
+      outgoingWhereClause.company_code = session.user.companyCode;
+    }
+
+    const outgoingHeaders = await prisma.outgoing_goods.findMany({
+      where: outgoingWhereClause,
+      select: {
+        id: true,
+        outgoing_date: true,
+      },
+    });
+
+    // Manually fetch items since relations are not available
+    const incomingHeaderIds = incomingHeaders.map(h => h.id);
+    const incomingItems = await prisma.incoming_good_items.findMany({
+      where: {
+        incoming_good_id: { in: incomingHeaderIds }
+      },
+      select: {
+        incoming_good_id: true,
+        qty: true,
+      },
+    });
+
+    const outgoingHeaderIds = outgoingHeaders.map(h => h.id);
+    const outgoingItems = await prisma.outgoing_good_items.findMany({
+      where: {
+        outgoing_good_id: { in: outgoingHeaderIds }
+      },
+      select: {
+        outgoing_good_id: true,
+        qty: true,
+      },
+    });
+
+    // Map items to headers
+    const incomingItemsByHeaderId = new Map<number, typeof incomingItems>();
+    incomingItems.forEach(item => {
+      const existing = incomingItemsByHeaderId.get(item.incoming_good_id) || [];
+      existing.push(item);
+      incomingItemsByHeaderId.set(item.incoming_good_id, existing);
+    });
+
+    const outgoingItemsByHeaderId = new Map<number, typeof outgoingItems>();
+    outgoingItems.forEach(item => {
+      const existing = outgoingItemsByHeaderId.get(item.outgoing_good_id) || [];
+      existing.push(item);
+      outgoingItemsByHeaderId.set(item.outgoing_good_id, existing);
     });
 
     // Initialize trends array for last 12 months
@@ -94,12 +125,12 @@ export async function GET(request: Request) {
 
       // Filter documents for this month
       const incomingForMonth = incomingHeaders.filter(doc => {
-        const docDate = new Date(doc.trx_date);
+        const docDate = new Date(doc.incoming_date);
         return docDate.getFullYear() === year && docDate.getMonth() === month;
       });
 
       const outgoingForMonth = outgoingHeaders.filter(doc => {
-        const docDate = new Date(doc.trx_date);
+        const docDate = new Date(doc.outgoing_date);
         return docDate.getFullYear() === year && docDate.getMonth() === month;
       });
 
@@ -109,17 +140,16 @@ export async function GET(request: Request) {
 
       // Sum quantities from details
       const incomingQuantity = incomingForMonth.reduce((sum, doc) => {
-        const docQty = doc.incoming_details.reduce((detailSum, detail) => detailSum + Number(detail.qty), 0);
+        const items = incomingItemsByHeaderId.get(doc.id) || [];
+        const docQty = items.reduce((detailSum, detail) => detailSum + Number(detail.qty), 0);
         return sum + docQty;
       }, 0);
 
       const outgoingQuantity = outgoingForMonth.reduce((sum, doc) => {
-        const docQty = doc.outgoing_details.reduce((detailSum, detail) => detailSum + Number(detail.qty), 0);
+        const items = outgoingItemsByHeaderId.get(doc.id) || [];
+        const docQty = items.reduce((detailSum, detail) => detailSum + Number(detail.qty), 0);
         return sum + docQty;
       }, 0);
-
-      const incomingAmount = incomingForMonth.reduce((sum, doc) => sum + Number(doc.total_amount), 0);
-      const outgoingAmount = outgoingForMonth.reduce((sum, doc) => sum + Number(doc.total_amount), 0);
 
       trends.push({
         month: monthKey,
@@ -128,8 +158,6 @@ export async function GET(request: Request) {
         outgoingCount,
         incomingQuantity: Number(incomingQuantity.toFixed(2)),
         outgoingQuantity: Number(outgoingQuantity.toFixed(2)),
-        incomingAmount: Number(incomingAmount.toFixed(2)),
-        outgoingAmount: Number(outgoingAmount.toFixed(2)),
       });
     }
 
@@ -138,8 +166,6 @@ export async function GET(request: Request) {
     const totalOutgoingCount = trends.reduce((sum, t) => sum + t.outgoingCount, 0);
     const totalIncomingQuantity = trends.reduce((sum, t) => sum + t.incomingQuantity, 0);
     const totalOutgoingQuantity = trends.reduce((sum, t) => sum + t.outgoingQuantity, 0);
-    const totalIncomingAmount = trends.reduce((sum, t) => sum + t.incomingAmount, 0);
-    const totalOutgoingAmount = trends.reduce((sum, t) => sum + t.outgoingAmount, 0);
 
     return NextResponse.json({
       trends,
@@ -148,10 +174,7 @@ export async function GET(request: Request) {
         totalOutgoingCount,
         totalIncomingQuantity: Number(totalIncomingQuantity.toFixed(2)),
         totalOutgoingQuantity: Number(totalOutgoingQuantity.toFixed(2)),
-        totalIncomingAmount: Number(totalIncomingAmount.toFixed(2)),
-        totalOutgoingAmount: Number(totalOutgoingAmount.toFixed(2)),
         netQuantity: Number((totalIncomingQuantity - totalOutgoingQuantity).toFixed(2)),
-        netAmount: Number((totalIncomingAmount - totalOutgoingAmount).toFixed(2)),
       },
     });
   } catch (error) {

@@ -1,71 +1,130 @@
-import { PrismaClient, ItemTypeCode } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 export async function seedItemTypes() {
-  console.log('📦 Seeding Item Types...');
+  console.log('🏷️  Seeding item types...');
 
-  const itemTypes = [
-    {
-      item_type_code: ItemTypeCode.ROH,
-      item_type_name: 'Bahan Baku / Raw Material',
-      is_capital_goods: false,
-    },
-    {
-      item_type_code: ItemTypeCode.HALB,
-      item_type_name: 'Barang Setengah Jadi / WIP',
-      is_capital_goods: false,
-    },
-    {
-      item_type_code: ItemTypeCode.FERT,
-      item_type_name: 'Barang Jadi / Finished Goods',
-      is_capital_goods: false,
-    },
-    {
-      item_type_code: ItemTypeCode.HIBE,
-      item_type_name: 'Barang Modal / Capital Goods (General)',
-      is_capital_goods: true,
-    },
-    {
-      item_type_code: ItemTypeCode.HIBE_M,
-      item_type_name: 'Mesin / Machinery',
-      is_capital_goods: true,
-    },
-    {
-      item_type_code: ItemTypeCode.HIBE_E,
-      item_type_name: 'Peralatan / Equipment',
-      is_capital_goods: true,
-    },
-    {
-      item_type_code: ItemTypeCode.HIBE_T,
-      item_type_name: 'Alat Produksi / Production Tools',
-      is_capital_goods: true,
-    },
-    {
-      item_type_code: ItemTypeCode.DIEN,
-      item_type_name: 'Jasa / Services',
-      is_capital_goods: false,
-    },
-    {
-      item_type_code: ItemTypeCode.SCRAP,
-      item_type_name: 'Sisa/Skrap / Scrap',
-      is_capital_goods: false,
-    },
-  ];
-
-  let createdCount = 0;
-  for (const itemType of itemTypes) {
-    await prisma.item_types.upsert({
-      where: { item_type_code: itemType.item_type_code },
-      update: {
-        item_type_name: itemType.item_type_name,
-        is_capital_goods: itemType.is_capital_goods,
+  const itemTypes = await Promise.all([
+    prisma.item_types.upsert({
+      where: { item_type_code: 'ROH' },
+      update: {},
+      create: {
+        item_type_code: 'ROH',
+        name_en: 'Raw Materials',
+        name_de: 'Rohstoffe',
+        name_id: 'Bahan Baku',
+        category: 'MATERIAL',
+        description: 'Raw materials directly consumed in production',
+        sort_order: 1,
       },
-      create: itemType,
-    });
-    console.log(`  ✓ Created/Updated Item Type: ${itemType.item_type_code} - ${itemType.item_type_name}`);
-    createdCount++;
-  }
+    }),
+    prisma.item_types.upsert({
+      where: { item_type_code: 'HALB' },
+      update: {},
+      create: {
+        item_type_code: 'HALB',
+        name_en: 'Semifinished Goods',
+        name_de: 'Halbfabrikat',
+        name_id: 'Barang Setengah Jadi',
+        category: 'MATERIAL',
+        description: 'Work-in-progress and semifinished goods',
+        sort_order: 2,
+      },
+    }),
+    prisma.item_types.upsert({
+      where: { item_type_code: 'FERT' },
+      update: {},
+      create: {
+        item_type_code: 'FERT',
+        name_en: 'Finished Goods',
+        name_de: 'Fertigerzeugnisse',
+        name_id: 'Barang Jadi',
+        category: 'MATERIAL',
+        description: 'Completed products ready for sale',
+        sort_order: 3,
+      },
+    }),
+    prisma.item_types.upsert({
+      where: { item_type_code: 'HIBE' },
+      update: {},
+      create: {
+        item_type_code: 'HIBE',
+        name_en: 'Operating Supplies',
+        name_de: 'Hilfsbetriebsstoffe',
+        name_id: 'Bahan Penolong',
+        category: 'MATERIAL',
+        description: 'General operating supplies for production support',
+        sort_order: 4,
+      },
+    }),
+    prisma.item_types.upsert({
+      where: { item_type_code: 'HIBE_M' },
+      update: {},
+      create: {
+        item_type_code: 'HIBE_M',
+        name_en: 'Capital Goods - Machine',
+        name_de: 'Hilfsbetriebsstoffe - Mesin',
+        name_id: 'Barang Modal - Mesin',
+        category: 'CAPITAL_GOODS',
+        description: 'Machinery and production equipment',
+        sort_order: 5,
+      },
+    }),
+    prisma.item_types.upsert({
+      where: { item_type_code: 'HIBE_E' },
+      update: {},
+      create: {
+        item_type_code: 'HIBE_E',
+        name_en: 'Capital Goods - Engineering',
+        name_de: 'Hilfsbetriebsstoffe - Teknik',
+        name_id: 'Barang Modal - Teknik',
+        category: 'CAPITAL_GOODS',
+        description: 'Engineering equipment and tools',
+        sort_order: 6,
+      },
+    }),
+    prisma.item_types.upsert({
+      where: { item_type_code: 'HIBE_T' },
+      update: {},
+      create: {
+        item_type_code: 'HIBE_T',
+        name_en: 'Capital Goods - Tools',
+        name_de: 'Hilfsbetriebsstoffe - Alat',
+        name_id: 'Barang Modal - Alat',
+        category: 'CAPITAL_GOODS',
+        description: 'Tools and instruments',
+        sort_order: 7,
+      },
+    }),
+    prisma.item_types.upsert({
+      where: { item_type_code: 'DIEN' },
+      update: {},
+      create: {
+        item_type_code: 'DIEN',
+        name_en: 'Services',
+        name_de: 'Dienstleistungen',
+        name_id: 'Jasa',
+        category: 'SERVICES',
+        description: 'Service items',
+        sort_order: 8,
+      },
+    }),
+    prisma.item_types.upsert({
+      where: { item_type_code: 'SCRAP' },
+      update: {},
+      create: {
+        item_type_code: 'SCRAP',
+        name_en: 'Scrap and Waste',
+        name_de: 'Schrott',
+        name_id: 'Limbah',
+        category: 'WASTE',
+        description: 'Production waste and rejected materials',
+        sort_order: 9,
+      },
+    }),
+  ]);
 
-  console.log(`Completed: ${createdCount} item types seeded\n`);
+  console.log(`✅ Created ${itemTypes.length} item types`);
+  return itemTypes;
 }

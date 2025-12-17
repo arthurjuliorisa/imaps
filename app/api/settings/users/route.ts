@@ -49,6 +49,9 @@ export async function GET(request: NextRequest) {
         id: true,
         username: true,
         email: true,
+        full_name: true,
+        role: true,
+        company_code: true,
         created_at: true,
         updated_at: true,
       },
@@ -77,13 +80,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // Validate required fields
-    validateRequiredFields(body, ['username', 'email', 'password']);
+    validateRequiredFields(body, ['username', 'email', 'password', 'full_name']);
 
     // Trim string fields
     const data = trimStringFields({
       username: body.username,
       email: body.email,
       password: body.password,
+      full_name: body.full_name,
     });
 
     // Validate username length
@@ -112,12 +116,14 @@ export async function POST(request: NextRequest) {
         username: data.username,
         email: data.email,
         password: hashedPassword,
+        full_name: data.full_name,
         updated_at: new Date(),
       },
       select: {
         id: true,
         username: true,
         email: true,
+        full_name: true,
         created_at: true,
         updated_at: true,
       },

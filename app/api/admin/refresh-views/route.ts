@@ -113,7 +113,6 @@ export async function POST(request: Request) {
       await logActivity({
         action: 'REFRESH_VIEWS_FAILED',
         description: 'Unauthorized attempt to refresh materialized views',
-        status: 'FAILED',
         metadata: {
           reason: 'Invalid admin secret',
         },
@@ -173,7 +172,6 @@ export async function POST(request: Request) {
     await logActivity({
       action: 'REFRESH_VIEWS',
       description: `Refreshed ${successCount} of ${results.length} materialized views successfully`,
-      status: errorCount > 0 ? 'WARNING' : 'SUCCESS',
       metadata: {
         viewsRefreshed: successCount,
         viewsFailed: errorCount,
@@ -226,7 +224,6 @@ export async function POST(request: Request) {
     await logActivity({
       action: 'REFRESH_VIEWS_FAILED',
       description: 'Failed to refresh materialized views',
-      status: 'FAILED',
       metadata: {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,

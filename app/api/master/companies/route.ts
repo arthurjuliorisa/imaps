@@ -13,7 +13,7 @@ import type {
   ApiSuccessResponse,
   ApiErrorResponse,
   Company
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -57,10 +57,10 @@ export async function GET(request: NextRequest) {
     // Get all active companies
     const companies = await prisma.companies.findMany({
       where: {
-        is_active: true
+        status: 'ACTIVE'
       },
       orderBy: {
-        company_name: 'asc'
+        name: 'asc'
       }
     });
 

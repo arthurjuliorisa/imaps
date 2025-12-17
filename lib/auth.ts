@@ -63,8 +63,9 @@ export const authOptions: NextAuthOptions = {
           id: user.id,
           email: user.email,
           username: user.username,
-          role: user.role as import('@prisma/client').UserRole,
-          companyCode: user.company_code ?? undefined,
+          full_name: user.full_name,
+          role: user.role,
+          companyCode: user.company_code?.toString() ?? undefined,
         };
       },
     }),

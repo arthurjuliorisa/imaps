@@ -18,8 +18,8 @@ import type {
   TransactionSubmissionResponse,
   PaginatedResponse,
   MaterialUsageHeader
-} from '@/types/v2.4.2';
-import { ItemTypeCode } from '@/types/v2.4.2';
+} from '@/types/core';
+import { ItemTypeCode } from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -32,8 +32,8 @@ function validateMaterialUsageTransaction(data: MaterialUsageRequest): void {
   const { header, details } = data;
 
   // Validate header
-  if (!header.wms_id || !header.company_code || !header.trx_date) {
-    throw new Error('Missing required header fields: wms_id, company_code, trx_date');
+  if (!header.wms_id || !header.company_code || !header.transaction_date) {
+    throw new Error('Missing required header fields: wms_id, company_code, transaction_date');
   }
 
   if (!header.work_order_number || header.work_order_number.trim() === '') {
@@ -46,16 +46,16 @@ function validateMaterialUsageTransaction(data: MaterialUsageRequest): void {
   }
 
   details.forEach((detail, index) => {
-    if (!detail.wms_id || !detail.item_code || !detail.item_name) {
+    if (!detail.item_code || !detail.item_name) {
       throw new Error(`Detail ${index + 1}: Missing required fields`);
     }
 
-    if (!detail.item_type_code || !detail.uom || detail.qty === undefined) {
-      throw new Error(`Detail ${index + 1}: Missing item_type_code, uom, or qty`);
+    if (!detail.item_type || !detail.uom || detail.qty === undefined) {
+      throw new Error(`Detail ${index + 1}: Missing item_type, uom, or qty`);
     }
 
     // v2.4.2: Only ROH and HALB can be consumed
-    if (detail.item_type_code !== ItemTypeCode.ROH && detail.item_type_code !== ItemTypeCode.HALB) {
+    if (detail.item_type !== ItemTypeCode.ROH && detail.item_type !== ItemTypeCode.HALB) {
       throw new Error(`Detail ${index + 1}: Only ROH and HALB items can be consumed in material usage`);
     }
 
@@ -66,11 +66,6 @@ function validateMaterialUsageTransaction(data: MaterialUsageRequest): void {
 
     if (detail.qty <= 0) {
       throw new Error(`Detail ${index + 1}: qty must be positive`);
-    }
-
-    // is_reversal must be boolean
-    if (detail.is_reversal === undefined) {
-      throw new Error(`Detail ${index + 1}: is_reversal field is required (v2.4.2)`);
     }
   });
 }
@@ -130,11 +125,11 @@ export async function GET(request: NextRequest) {
     const where: any = {};
 
     if (companyCode) {
-      where.company_code = companyCode;
+      where.company_code = parseInt(companyCode);
     }
 
     if (startDate && endDate) {
-      where.trx_date = {
+      where.transaction_date = {
         gte: new Date(startDate),
         lte: new Date(endDate)
       };
@@ -152,17 +147,17 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total count
-    const totalRecords = await prisma.material_usage_headers.count({ where });
+    const totalRecords = await prisma.material_usages.count({ where });
 
     // Get paginated data
     const skip = (page - 1) * pageSize;
-    const headers = await prisma.material_usage_headers.findMany({
+    const headers = await prisma.material_usages.findMany({
       where,
       skip,
       take: pageSize,
-      orderBy: { trx_date: 'desc' },
+      orderBy: { transaction_date: 'desc' },
       include: {
-        material_usage_details: true
+        items: true
       }
     });
 
@@ -207,7 +202,7 @@ export async function POST(request: NextRequest) {
     validateMaterialUsageTransaction(body);
 
     // Check for duplicate wms_id
-    const existing = await prisma.material_usage_headers.findFirst({
+    const existing = await prisma.material_usages.findFirst({
       where: {
         wms_id: body.header.wms_id,
         company_code: body.header.company_code
@@ -225,27 +220,28 @@ export async function POST(request: NextRequest) {
     // Create transaction
     const result = await prisma.$transaction(async (tx) => {
       // Create header
-      const header = await tx.material_usage_headers.create({
+      const header = await tx.material_usages.create({
         data: {
           wms_id: body.header.wms_id,
           company_code: body.header.company_code,
-          trx_date: new Date(body.header.trx_date),
-          wms_timestamp: new Date(body.header.wms_timestamp),
+          transaction_date: new Date(body.header.transaction_date),
+          timestamp: body.header.timestamp ? new Date(body.header.timestamp) : new Date(),
           work_order_number: body.header.work_order_number,
-          internal_evidence_number: body.header.wms_id
+          cost_center_number: body.header.cost_center_number,
+          internal_evidence_number: body.header.internal_evidence_number || body.header.wms_id,
+          reversal: body.header.reversal
         }
       });
 
       // Create details
       const details = await Promise.all(
         body.details.map((detail) =>
-          tx.material_usage_details.create({
+          tx.material_usage_items.create({
             data: {
-              header_id: BigInt(header.id),
-              wms_id: detail.wms_id,
-              company_code: body.header.company_code,
-              trx_date: new Date(body.header.trx_date),
-              item_type_code: detail.item_type_code,
+              material_usage_id: header.id,
+              material_usage_company: body.header.company_code,
+              material_usage_date: new Date(body.header.transaction_date),
+              item_type: detail.item_type,
               item_code: detail.item_code,
               item_name: detail.item_name,
               uom: detail.uom,
@@ -263,8 +259,7 @@ export async function POST(request: NextRequest) {
     await logActivity({
       userId: session.user?.id || '',
       action: 'CREATE',
-      description: `Created material usage transaction ${body.header.wms_id} for WO ${body.header.work_order_number}`,
-      status: 'SUCCESS'
+      description: `Created material usage transaction ${body.header.wms_id} for WO ${body.header.work_order_number}`
     });
 
     // Build response
@@ -287,8 +282,7 @@ export async function POST(request: NextRequest) {
       await logActivity({
         userId: session.user?.id || '',
         action: 'CREATE',
-        description: `Failed to create material usage transaction: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        status: 'FAILED'
+        description: `Failed to create material usage transaction: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
     }
 

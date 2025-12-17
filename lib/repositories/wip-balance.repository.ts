@@ -50,7 +50,7 @@ export class WipBalanceRepository {
   async upsertSingle(record: WipBalanceRecord): Promise<WipBalanceUpsertResult> {
     try {
       // Check if record exists first (to know if it's update or insert)
-      const existing = await prisma.wipBalance.findUnique({
+      const existing = await prisma.wip_balances.findUnique({
         where: {
           company_code_wms_id_stock_date: {
             company_code: record.company_code,
@@ -62,7 +62,7 @@ export class WipBalanceRepository {
       });
 
       // Perform upsert
-      const result = await prisma.wipBalance.upsert({
+      const result = await prisma.wip_balances.upsert({
         where: {
           company_code_wms_id_stock_date: {
             company_code: record.company_code,
@@ -179,7 +179,7 @@ export class WipBalanceRepository {
    */
   async findByWmsId(company_code: number, wms_id: string) {
     try {
-      const record = await prisma.wipBalance.findFirst({
+      const record = await prisma.wip_balances.findFirst({
         where: {
           company_code,
           wms_id,
@@ -206,7 +206,7 @@ export class WipBalanceRepository {
    */
   async findByDate(company_code: number, stock_date: Date) {
     try {
-      const records = await prisma.wipBalance.findMany({
+      const records = await prisma.wip_balances.findMany({
         where: {
           company_code,
           stock_date,
@@ -234,7 +234,7 @@ export class WipBalanceRepository {
    */
   async softDelete(id: number): Promise<boolean> {
     try {
-      await prisma.wipBalance.update({
+      await prisma.wip_balances.update({
         where: { id },
         data: { deleted_at: new Date() },
       });
@@ -257,7 +257,7 @@ export class WipBalanceRepository {
    */
   async softDeleteByDate(company_code: number, stock_date: Date): Promise<boolean> {
     try {
-      await prisma.wipBalance.updateMany({
+      await prisma.wip_balances.updateMany({
         where: {
           company_code,
           stock_date,
@@ -292,7 +292,7 @@ export class WipBalanceRepository {
     by_item_type: Record<string, number>;
   }> {
     try {
-      const records = await prisma.wipBalance.findMany({
+      const records = await prisma.wip_balances.findMany({
         where: {
           company_code,
           stock_date: {
@@ -345,7 +345,7 @@ export class WipBalanceRepository {
    */
   async countByDate(company_code: number, stock_date: Date): Promise<number> {
     try {
-      const count = await prisma.wipBalance.count({
+      const count = await prisma.wip_balances.count({
         where: {
           company_code,
           stock_date,

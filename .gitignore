@@ -47,10 +47,14 @@ next-env.d.ts
 # markdown files
 *.md
 
+# text files
+*.txt
+
 # playwright
 /.playwright-mcp
 /test-results
 /playwright-report
+playwright.config.ts
 
 # backup files
 *.backup

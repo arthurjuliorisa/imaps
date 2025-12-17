@@ -28,7 +28,7 @@ import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 import { getWIPBalanceTransactions } from '@/lib/api';
-import type { WIPBalanceHeader } from '@/types/v2.4.2';
+import type { WIPBalanceHeader } from '@/types/core';
 
 export default function WIPBalancePage() {
   const theme = useTheme();

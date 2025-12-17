@@ -5,7 +5,7 @@
  * Handles authentication, error handling, and response parsing.
  */
 
-import { ApiResponse, ApiErrorResponse } from '@/types/v2.4.2';
+import { ApiResponse, ApiErrorResponse } from '@/types/core';
 
 /**
  * Base API URL

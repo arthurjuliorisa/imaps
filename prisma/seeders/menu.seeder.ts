@@ -3,10 +3,10 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 interface MenuInput {
-  name: string;
-  route: string | null;
-  icon: string | null;
-  order: number;
+  menu_name: string;
+  menu_path: string | null;
+  menu_icon: string | null;
+  menu_order: number;
   children?: Omit<MenuInput, 'children'>[];
 }
 
@@ -16,64 +16,64 @@ interface MenuInput {
  */
 const menuStructure: MenuInput[] = [
   {
-    name: 'Dashboard',
-    route: '/dashboard',
-    icon: 'Dashboard',
-    order: 1,
+    menu_name: 'Dashboard',
+    menu_path: '/dashboard',
+    menu_icon: 'Dashboard',
+    menu_order: 1,
   },
   {
-    name: 'Master',
-    route: null,
-    icon: 'Storage',
-    order: 2,
+    menu_name: 'Master',
+    menu_path: null,
+    menu_icon: 'Storage',
+    menu_order: 2,
     children: [
-      { name: 'Company', route: '/master/companies', icon: 'Category', order: 1 },
-      { name: 'Item Type', route: '/master/item-types', icon: 'Category', order: 2 },
+      { menu_name: 'Company', menu_path: '/master/companies', menu_icon: 'Category', menu_order: 1 },
+      { menu_name: 'Item Type', menu_path: '/master/item-types', menu_icon: 'Category', menu_order: 2 },
     ],
   },
   {
-    name: 'Lap. per Dokumen',
-    route: null,
-    icon: 'Description',
-    order: 3,
+    menu_name: 'Lap. per Dokumen',
+    menu_path: null,
+    menu_icon: 'Description',
+    menu_order: 3,
     children: [
-      { name: 'Pemasukan Barang', route: '/customs/incoming', icon: 'Description', order: 1 },
-      { name: 'Pengeluaran Barang', route: '/customs/outgoing', icon: 'Description', order: 2 },
+      { menu_name: 'Pemasukan Barang', menu_path: '/customs/incoming', menu_icon: 'Description', menu_order: 1 },
+      { menu_name: 'Pengeluaran Barang', menu_path: '/customs/outgoing', menu_icon: 'Description', menu_order: 2 },
     ],
   },
   {
-    name: 'LPJ Mutasi',
-    route: null,
-    icon: 'Assessment',
-    order: 4,
+    menu_name: 'LPJ Mutasi',
+    menu_path: null,
+    menu_icon: 'Assessment',
+    menu_order: 4,
     children: [
-      { name: 'Work in Progress', route: '/customs/wip', icon: 'Description', order: 1 },
-      { name: 'Bahan Baku/Penolong', route: '/customs/raw-material', icon: 'Description', order: 2 },
-      { name: 'Hasil Produksi', route: '/customs/production', icon: 'Description', order: 3 },
-      { name: 'Barang Scrap/Reject', route: '/customs/scrap', icon: 'Description', order: 4 },
-      { name: 'Barang Modal', route: '/customs/capital-goods', icon: 'Description', order: 5 },
+      { menu_name: 'Work in Progress', menu_path: '/customs/wip', menu_icon: 'Description', menu_order: 1 },
+      { menu_name: 'Bahan Baku/Penolong', menu_path: '/customs/raw-material', menu_icon: 'Description', menu_order: 2 },
+      { menu_name: 'Hasil Produksi', menu_path: '/customs/production', menu_icon: 'Description', menu_order: 3 },
+      { menu_name: 'Barang Scrap/Reject', menu_path: '/customs/scrap', menu_icon: 'Description', menu_order: 4 },
+      { menu_name: 'Barang Modal', menu_path: '/customs/capital-goods', menu_icon: 'Description', menu_order: 5 },
     ],
   },
   {
-    name: 'Beginning Data',
-    route: null,
-    icon: 'PlaylistAdd',
-    order: 5,
+    menu_name: 'Beginning Data',
+    menu_path: null,
+    menu_icon: 'PlaylistAdd',
+    menu_order: 5,
     children: [
-      { name: 'Beginning Raw Material', route: '/customs/beginning-raw-material', icon: 'Description', order: 1 },
-      { name: 'Beginning Finish Good', route: '/customs/beginning-finish-good', icon: 'Description', order: 2 },
-      { name: 'Beginning Capital Goods', route: '/customs/beginning-capital-goods', icon: 'Description', order: 3 },
+      { menu_name: 'Beginning Raw Material', menu_path: '/customs/beginning-raw-material', menu_icon: 'Description', menu_order: 1 },
+      { menu_name: 'Beginning Finish Good', menu_path: '/customs/beginning-finish-good', menu_icon: 'Description', menu_order: 2 },
+      { menu_name: 'Beginning Capital Goods', menu_path: '/customs/beginning-capital-goods', menu_icon: 'Description', menu_order: 3 },
     ],
   },
   {
-    name: 'Settings',
-    route: null,
-    icon: 'Settings',
-    order: 6,
+    menu_name: 'Settings',
+    menu_path: null,
+    menu_icon: 'Settings',
+    menu_order: 6,
     children: [
-      { name: 'User Management', route: '/settings/users', icon: 'People', order: 1 },
-      { name: 'Access Menu', route: '/settings/access-menu', icon: 'Settings', order: 2 },
-      { name: 'Log Activity', route: '/settings/log-activity', icon: 'History', order: 3 },
+      { menu_name: 'User Management', menu_path: '/settings/users', menu_icon: 'People', menu_order: 1 },
+      { menu_name: 'Access Menu', menu_path: '/settings/access-menu', menu_icon: 'Settings', menu_order: 2 },
+      { menu_name: 'Log Activity', menu_path: '/settings/log-activity', menu_icon: 'History', menu_order: 3 },
     ],
   },
 ];
@@ -95,17 +95,17 @@ export async function seedMenus() {
     const parent = await prisma.menus.create({
       data: {
         id: parentId,
-        name: parentMenu.name,
-        route: parentMenu.route,
-        icon: parentMenu.icon,
-        order: parentMenu.order,
+        menu_name: parentMenu.menu_name,
+        menu_path: parentMenu.menu_path,
+        menu_icon: parentMenu.menu_icon,
+        menu_order: parentMenu.menu_order,
         parent_id: null,
       },
     });
 
-    menuIdMap.set(parentMenu.name, parent.id);
+    menuIdMap.set(parentMenu.menu_name, parent.id);
     totalCreated++;
-    console.log(`  ✓ Created parent menu: ${parent.name}`);
+    console.log(`  ✓ Created parent menu: ${parent.menu_name}`);
 
     if (parentMenu.children && parentMenu.children.length > 0) {
       for (const childMenu of parentMenu.children) {
@@ -114,17 +114,17 @@ export async function seedMenus() {
         const child = await prisma.menus.create({
           data: {
             id: childId,
-            name: childMenu.name,
-            route: childMenu.route,
-            icon: childMenu.icon,
-            order: childMenu.order,
+            menu_name: childMenu.menu_name,
+            menu_path: childMenu.menu_path,
+            menu_icon: childMenu.menu_icon,
+            menu_order: childMenu.menu_order,
             parent_id: parent.id,
           },
         });
 
-        menuIdMap.set(childMenu.name, child.id);
+        menuIdMap.set(childMenu.menu_name, child.id);
         totalCreated++;
-        console.log(`    └─ Created child menu: ${child.name} (${child.route})`);
+        console.log(`    └─ Created child menu: ${child.menu_name} (${child.menu_path})`);
 
         // Small delay to ensure unique IDs
         await new Promise(resolve => setTimeout(resolve, 10));

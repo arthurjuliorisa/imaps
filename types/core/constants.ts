@@ -6,8 +6,7 @@
 
 import {
   ItemTypeCode,
-  CustomsDocumentTypeIncoming,
-  CustomsDocumentTypeOutgoing,
+  CustomsDocumentType,
   CurrencyCode,
   AdjustmentType,
   QualityGrade
@@ -53,20 +52,20 @@ export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
 /**
  * Customs Document Type Labels (Incoming)
  */
-export const INCOMING_DOC_TYPE_LABELS: Record<CustomsDocumentTypeIncoming, string> = {
-  [CustomsDocumentTypeIncoming.BC23]: 'BC23 - Import Declaration (New Import)',
-  [CustomsDocumentTypeIncoming.BC27]: 'BC27 - Import Declaration (Return from Export)',
-  [CustomsDocumentTypeIncoming.BC40]: 'BC40 - Transfer In from Bonded Zone'
+export const INCOMING_DOC_TYPE_LABELS: Record<string, string> = {
+  [CustomsDocumentType.BC23]: 'BC23 - Import Declaration (New Import)',
+  [CustomsDocumentType.BC27]: 'BC27 - Import Declaration (Return from Export)',
+  [CustomsDocumentType.BC40]: 'BC40 - Transfer In from Bonded Zone'
 };
 
 /**
  * Customs Document Type Labels (Outgoing)
  */
-export const OUTGOING_DOC_TYPE_LABELS: Record<CustomsDocumentTypeOutgoing, string> = {
-  [CustomsDocumentTypeOutgoing.BC30]: 'BC30 - Export Declaration (Sales Export)',
-  [CustomsDocumentTypeOutgoing.BC25]: 'BC25 - Conversion to Free Zone',
-  [CustomsDocumentTypeOutgoing.BC27]: 'BC27 - Export Declaration (Return to Supplier)',
-  [CustomsDocumentTypeOutgoing.BC41]: 'BC41 - Transfer Out to Bonded Zone'
+export const OUTGOING_DOC_TYPE_LABELS: Record<string, string> = {
+  [CustomsDocumentType.BC30]: 'BC30 - Export Declaration (Sales Export)',
+  [CustomsDocumentType.BC25]: 'BC25 - Conversion to Free Zone',
+  [CustomsDocumentType.BC27]: 'BC27 - Export Declaration (Return to Supplier)',
+  [CustomsDocumentType.BC262]: 'BC262 - Subcontracting Outgoing'
 };
 
 /**

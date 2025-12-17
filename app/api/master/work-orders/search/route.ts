@@ -14,7 +14,7 @@ import { prisma } from '@/lib/prisma';
 import type {
   ApiSuccessResponse,
   ApiErrorResponse
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Search in material usage headers
-    const materialUsageOrders = await prisma.material_usage_headers.findMany({
+    const materialUsageOrders = await prisma.material_usages.findMany({
       where,
       select: {
         work_order_number: true,
@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Search in production headers
-    const productionOrders = await prisma.finished_goods_production_headers.findMany({
+    const productionOrders = await prisma.production_outputs.findMany({
       where,
       select: {
         work_order_number: true,

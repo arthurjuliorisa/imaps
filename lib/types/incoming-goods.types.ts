@@ -2,27 +2,26 @@
 
 /**
  * Incoming Goods Types
- * 
+ *
  * Purpose:
  * - Define TypeScript interfaces for incoming goods API
  * - Ensure type safety across service and repository layers
  * - Map to Prisma schema types
- * 
- * Version: 2.0 - Updated to use ItemType enum from Prisma
- * 
- * Changes from v1.0:
- * - item_type: string → ItemType (enum)
- * - Better type safety with Prisma-generated types
- * - Compile-time validation of item types
+ *
+ * Version: 2.1 - Fixed to use string for item_type (no enum in schema)
+ *
+ * Changes from v2.0:
+ * - item_type: ItemType → string (ItemType enum doesn't exist in schema)
+ * - item_type is stored as VARCHAR in database
  */
 
-import { Currency, CustomsDocumentType, ItemType } from '@prisma/client';
+import { Currency, CustomsDocumentType } from '@prisma/client';
 
 /**
  * Single item in incoming goods transaction
  */
 export interface IncomingGoodItemInput {
-  item_type: ItemType;  // UPDATED: Uses enum for type safety
+  item_type: string;  // String type (e.g., 'ROH', 'FERT', 'HALB', etc.)
   item_code: string;
   item_name: string;
   hs_code?: string | null;

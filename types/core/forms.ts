@@ -7,8 +7,7 @@
 
 import {
   ItemTypeCode,
-  CustomsDocumentTypeIncoming,
-  CustomsDocumentTypeOutgoing,
+  CustomsDocumentType,
   CurrencyCode,
   AdjustmentType,
   QualityGrade
@@ -59,7 +58,7 @@ export interface IncomingHeaderFormData {
   company_code: string;
   trx_date: Date | string;
   wms_timestamp: Date | string;
-  customs_doc_type: CustomsDocumentTypeIncoming;
+  customs_doc_type: CustomsDocumentType;
   customs_doc_number: string;
   customs_doc_date: Date | string;
   supplier_code?: string;
@@ -112,7 +111,7 @@ export interface OutgoingHeaderFormData {
   company_code: string;
   trx_date: Date | string;
   wms_timestamp: Date | string;
-  customs_doc_type: CustomsDocumentTypeOutgoing;
+  customs_doc_type: CustomsDocumentType;
   customs_doc_number: string;
   customs_doc_date: Date | string;
   ppkek_number: string;  // Required

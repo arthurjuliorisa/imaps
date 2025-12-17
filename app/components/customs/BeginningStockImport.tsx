@@ -23,7 +23,7 @@ import {
   useTheme,
 } from '@mui/material';
 import { UploadFile, Close, Save, CheckCircle, Error as ErrorIcon, Download } from '@mui/icons-material';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import dayjs from 'dayjs';
 import { useToast } from '../ToastProvider';
 
@@ -175,10 +175,34 @@ export function BeginningStockImport({ open, onClose, onSubmit, itemType }: Begi
 
     try {
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(data);
+      const worksheet = workbook.worksheets[0];
+
+      // Convert worksheet to JSON
+      const jsonData: any[] = [];
+      const headers: string[] = [];
+
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) {
+          // First row is headers
+          row.eachCell((cell) => {
+            headers.push(cell.value?.toString() || '');
+          });
+        } else {
+          // Data rows
+          const rowData: any = {};
+          row.eachCell((cell, colNumber) => {
+            const header = headers[colNumber - 1];
+            if (header) {
+              rowData[header] = cell.value;
+            }
+          });
+          if (Object.keys(rowData).length > 0) {
+            jsonData.push(rowData);
+          }
+        }
+      });
 
       if (jsonData.length === 0) {
         setParseError('The Excel file is empty. Please upload a file with data.');

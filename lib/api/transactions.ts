@@ -21,7 +21,7 @@ import type {
   TransactionSubmissionResponse,
   PaginatedResponse,
   TransactionListParams
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 // ============================================================================
 // INCOMING TRANSACTIONS

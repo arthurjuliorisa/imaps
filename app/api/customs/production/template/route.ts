@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 /**
  * GET /api/customs/production/template
@@ -14,11 +14,13 @@ import * as XLSX from 'xlsx';
 export async function GET() {
   try {
     // Create a new workbook
-    const workbook = XLSX.utils.book_new();
+    const workbook = new ExcelJS.Workbook();
 
     // ============================================
     // SHEET 1: Production Import Template (Main Sheet)
     // ============================================
+
+    const worksheet = workbook.addWorksheet('Production Import Template');
 
     // Define headers
     const headers = ['Date', 'Item Code', 'Incoming', 'Remarks'];
@@ -28,67 +30,48 @@ export async function GET() {
 
     // Define sample data (rows 3-5)
     const sampleData = [
-      ['2025-01-15', 'PROD-001', 50, 'New scrap received'],
-      ['2025-01-16', 'PROD-002', 75, 'Additional scrap'],
-      ['2025-01-17', 'PROD-001', 30, 'Daily intake'],
+      [new Date('2025-01-15'), 'PROD-001', 50, 'New scrap received'],
+      [new Date('2025-01-16'), 'PROD-002', 75, 'Additional scrap'],
+      [new Date('2025-01-17'), 'PROD-001', 30, 'Daily intake'],
     ];
 
-    // Combine all data into a single array of arrays
-    const worksheetData = [
-      headers,
-      formatHints,
-      ...sampleData,
+    // Add rows
+    worksheet.addRow(headers);
+    worksheet.addRow(formatHints);
+    sampleData.forEach(row => worksheet.addRow(row));
+
+    // Set column widths
+    worksheet.columns = [
+      { width: 15 },  // Date column
+      { width: 20 },  // Item Code column
+      { width: 15 },  // Incoming column
+      { width: 30 },  // Remarks column
     ];
 
-    // Create worksheet from the data
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFADD8E6' },
+    };
+    worksheet.getRow(1).alignment = { horizontal: 'center', vertical: 'middle' };
 
-    // Set column widths for better readability
-    worksheet['!cols'] = [
-      { wch: 15 },  // Date column
-      { wch: 20 },  // Item Code column
-      { wch: 15 },  // Incoming column
-      { wch: 30 },  // Remarks column
-    ];
-
-    // Apply styling to headers (Row 1)
-    // Note: Basic XLSX library has limited styling support
-    // For advanced styling, consider using exceljs instead
-    const headerCellAddresses = ['A1', 'B1', 'C1', 'D1'];
-    headerCellAddresses.forEach(address => {
-      if (!worksheet[address]) return;
-
-      // Set cell style (limited in basic XLSX)
-      worksheet[address].s = {
-        font: { bold: true },
-        fill: { fgColor: { rgb: 'ADD8E6' } }, // Light blue background
-        alignment: { horizontal: 'center', vertical: 'center' },
-      };
-    });
-
-    // Set number format for Incoming column (C3:C5)
-    // Format as number with 2 decimal places
+    // Format Date column (A3:A5)
     for (let row = 3; row <= 5; row++) {
-      const cellAddress = `C${row}`;
-      if (worksheet[cellAddress]) {
-        worksheet[cellAddress].z = '0.00';
-      }
+      worksheet.getCell(`A${row}`).numFmt = 'yyyy-mm-dd';
     }
 
-    // Set date format for Date column (A3:A5)
+    // Format Incoming column (C3:C5)
     for (let row = 3; row <= 5; row++) {
-      const cellAddress = `A${row}`;
-      if (worksheet[cellAddress]) {
-        worksheet[cellAddress].z = 'yyyy-mm-dd';
-      }
+      worksheet.getCell(`C${row}`).numFmt = '0.00';
     }
-
-    // Append the main worksheet to the workbook
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Production Import Template');
 
     // ============================================
     // SHEET 2: Instructions
     // ============================================
+
+    const instructionsWorksheet = workbook.addWorksheet('Instructions');
 
     const instructionsData = [
       ['Production Mutation Import Template - Instructions'],
@@ -145,45 +128,27 @@ export async function GET() {
       ['For assistance, please contact the system administrator.'],
     ];
 
-    // Create instructions worksheet
-    const instructionsWorksheet = XLSX.utils.aoa_to_sheet(instructionsData);
+    // Add instructions data
+    instructionsData.forEach(row => instructionsWorksheet.addRow(row));
 
-    // Set column width for instructions sheet
-    instructionsWorksheet['!cols'] = [
-      { wch: 80 },  // Wide column for instructions
-    ];
+    // Set column width
+    instructionsWorksheet.getColumn(1).width = 80;
 
-    // Make the title bold (Row 1)
-    if (instructionsWorksheet['A1']) {
-      instructionsWorksheet['A1'].s = {
-        font: { bold: true, sz: 14 },
-        alignment: { horizontal: 'left' },
-      };
-    }
+    // Style title (Row 1)
+    instructionsWorksheet.getCell('A1').font = { bold: true, size: 14 };
 
-    // Make section headers bold
-    const sectionHeaderRows = ['A3', 'A9', 'A11', 'A17', 'A23', 'A29', 'A33', 'A42'];
-    sectionHeaderRows.forEach(address => {
-      if (instructionsWorksheet[address]) {
-        instructionsWorksheet[address].s = {
-          font: { bold: true },
-        };
-      }
+    // Style section headers
+    const sectionHeaderRows = [3, 9, 11, 17, 23, 29, 33, 42];
+    sectionHeaderRows.forEach(rowNumber => {
+      instructionsWorksheet.getRow(rowNumber).font = { bold: true };
     });
-
-    // Append the instructions worksheet to the workbook
-    XLSX.utils.book_append_sheet(workbook, instructionsWorksheet, 'Instructions');
 
     // ============================================
     // Generate and Send Excel File
     // ============================================
 
     // Generate buffer from workbook
-    const buffer = XLSX.write(workbook, {
-      type: 'buffer',
-      bookType: 'xlsx',
-      cellStyles: true, // Enable cell styling (limited support)
-    });
+    const buffer = await workbook.xlsx.writeBuffer();
 
     // Create filename with timestamp
     const timestamp = new Date().toISOString().split('T')[0];
@@ -195,7 +160,7 @@ export async function GET() {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename=${filename}`,
-        'Content-Length': buffer.length.toString(),
+        'Content-Length': buffer.byteLength.toString(),
       },
     });
 

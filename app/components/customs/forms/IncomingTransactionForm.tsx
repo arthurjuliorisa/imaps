@@ -45,38 +45,38 @@ import dayjs, { Dayjs } from 'dayjs';
 import { useToast } from '@/app/components/ToastProvider';
 import { createIncomingTransaction } from '@/lib/api';
 import {
-  CustomsDocumentTypeIncoming,
+  CustomsDocumentType,
   ItemTypeCode,
-  CurrencyCode,
-} from '@/types/v2.4.2';
+  Currency,
+} from '@/types/core';
 import type {
   IncomingTransactionRequest,
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 interface FormHeaderData {
   wms_id: string;
   company_code: string;
-  customs_doc_type: CustomsDocumentTypeIncoming;
-  customs_doc_number: string;
-  customs_doc_date: Dayjs | null;
+  customs_document_type: CustomsDocumentType;
+  incoming_evidence_number: string;
+  customs_registration_date: Dayjs | null;
   owner: string;
-  transaction_date: Dayjs | null;
+  incoming_date: Dayjs | null;
   ppkek_number: string;
-  remarks: string;
+  invoice_number: string;
+  invoice_date: Dayjs | null;
+  shipper_name: string;
 }
 
 interface FormDetailData {
   id: string;
-  item_type_code: ItemTypeCode;
+  item_type: ItemTypeCode;
   item_code: string;
   item_name: string;
   uom: string;
   qty: number;
-  currency: CurrencyCode;
+  currency: Currency;
   amount: number;
-  ppkek_number: string;
   hs_code: string;
-  origin_country: string;
 }
 
 const steps = [
@@ -85,10 +85,10 @@ const steps = [
   { label: 'Review & Submit', icon: <CheckCircle /> },
 ];
 
-const CUSTOMS_DOC_TYPES: CustomsDocumentTypeIncoming[] = [
-  CustomsDocumentTypeIncoming.BC23,
-  CustomsDocumentTypeIncoming.BC27,
-  CustomsDocumentTypeIncoming.BC40
+const CUSTOMS_DOC_TYPES: CustomsDocumentType[] = [
+  CustomsDocumentType.BC23,
+  CustomsDocumentType.BC27,
+  CustomsDocumentType.BC40
 ];
 const ITEM_TYPES: ItemTypeCode[] = [
   ItemTypeCode.ROH,
@@ -100,12 +100,12 @@ const ITEM_TYPES: ItemTypeCode[] = [
   ItemTypeCode.HIBE_T,
   ItemTypeCode.SCRAP
 ];
-const CURRENCIES: CurrencyCode[] = [
-  CurrencyCode.IDR,
-  CurrencyCode.USD,
-  CurrencyCode.EUR,
-  CurrencyCode.JPY,
-  CurrencyCode.CNY
+const CURRENCIES: Currency[] = [
+  Currency.IDR,
+  Currency.USD,
+  Currency.EUR,
+  Currency.JPY,
+  Currency.CNY
 ];
 
 export function IncomingTransactionForm() {
@@ -118,13 +118,15 @@ export function IncomingTransactionForm() {
   const [header, setHeader] = useState<FormHeaderData>({
     wms_id: '',
     company_code: '',
-    customs_doc_type: CustomsDocumentTypeIncoming.BC23,
-    customs_doc_number: '',
-    customs_doc_date: null,
+    customs_document_type: CustomsDocumentType.BC23,
+    incoming_evidence_number: '',
+    customs_registration_date: null,
     owner: '',
-    transaction_date: dayjs(),
+    incoming_date: dayjs(),
     ppkek_number: '',
-    remarks: '',
+    invoice_number: '',
+    invoice_date: dayjs(),
+    shipper_name: '',
   });
 
   const [details, setDetails] = useState<FormDetailData[]>([]);
@@ -160,20 +162,32 @@ export function IncomingTransactionForm() {
       toast.error('Company Code is required');
       return false;
     }
-    if (!header.customs_doc_number.trim()) {
-      toast.error('Customs Document Number is required');
+    if (!header.incoming_evidence_number.trim()) {
+      toast.error('Incoming Evidence Number is required');
       return false;
     }
-    if (!header.customs_doc_date) {
-      toast.error('Customs Document Date is required');
+    if (!header.customs_registration_date) {
+      toast.error('Customs Registration Date is required');
       return false;
     }
     if (!header.owner.trim()) {
-      toast.error('Owner is required (v2.4.2 requirement)');
+      toast.error('Owner is required');
       return false;
     }
-    if (!header.transaction_date) {
-      toast.error('Transaction Date is required');
+    if (!header.incoming_date) {
+      toast.error('Incoming Date is required');
+      return false;
+    }
+    if (!header.invoice_number.trim()) {
+      toast.error('Invoice Number is required');
+      return false;
+    }
+    if (!header.invoice_date) {
+      toast.error('Invoice Date is required');
+      return false;
+    }
+    if (!header.shipper_name.trim()) {
+      toast.error('Shipper Name is required');
       return false;
     }
     return true;
@@ -212,28 +226,29 @@ export function IncomingTransactionForm() {
       const requestData: IncomingTransactionRequest = {
         header: {
           wms_id: header.wms_id,
-          company_code: header.company_code,
-          trx_date: header.transaction_date!.toDate(),
-          wms_timestamp: new Date(),
-          customs_doc_type: header.customs_doc_type,
-          customs_doc_number: header.customs_doc_number,
-          customs_doc_date: header.customs_doc_date!.toDate(),
-          owner: header.owner,
-          ppkek_number: header.ppkek_number || undefined,
-          remarks: header.remarks || undefined,
+          company_code: parseInt(header.company_code),
+          owner: parseInt(header.owner),
+          customs_document_type: header.customs_document_type,
+          ppkek_number: header.ppkek_number,
+          customs_registration_date: header.customs_registration_date!.toDate(),
+          incoming_evidence_number: header.incoming_evidence_number,
+          incoming_date: header.incoming_date!.toDate(),
+          invoice_number: header.invoice_number,
+          invoice_date: header.invoice_date!.toDate(),
+          shipper_name: header.shipper_name,
+          timestamp: new Date(),
         },
         details: details.map((detail) => ({
-          wms_id: `${header.wms_id}-${detail.id}`,
-          company_code: header.company_code,
-          trx_date: header.transaction_date!.toDate(),
-          item_type_code: detail.item_type_code,
+          incoming_good_id: 0,
+          incoming_good_company: parseInt(header.company_code),
+          incoming_good_date: header.incoming_date!.toDate(),
+          item_type: detail.item_type,
           item_code: detail.item_code,
           item_name: detail.item_name,
           uom: detail.uom,
           qty: detail.qty,
           currency: detail.currency,
           amount: detail.amount,
-          ppkek_number: detail.ppkek_number || undefined,
           hs_code: detail.hs_code || undefined,
         })),
       };
@@ -254,16 +269,14 @@ export function IncomingTransactionForm() {
       ...details,
       {
         id: `temp-${Date.now()}`,
-        item_type_code: ItemTypeCode.ROH,
+        item_type: ItemTypeCode.ROH,
         item_code: '',
         item_name: '',
         uom: '',
         qty: 0,
-        currency: CurrencyCode.IDR,
+        currency: Currency.IDR,
         amount: 0,
-        ppkek_number: '',
         hs_code: '',
-        origin_country: '',
       },
     ]);
   };
@@ -310,9 +323,9 @@ export function IncomingTransactionForm() {
                   required
                   select
                   label="Customs Document Type"
-                  value={header.customs_doc_type}
+                  value={header.customs_document_type}
                   onChange={(e) =>
-                    setHeader({ ...header, customs_doc_type: e.target.value as CustomsDocumentTypeIncoming })
+                    setHeader({ ...header, customs_document_type: e.target.value as CustomsDocumentType })
                   }
                 >
                   {CUSTOMS_DOC_TYPES.map((type) => (
@@ -326,17 +339,18 @@ export function IncomingTransactionForm() {
                 <TextField
                   fullWidth
                   required
-                  label="Customs Document Number"
-                  value={header.customs_doc_number}
-                  onChange={(e) => setHeader({ ...header, customs_doc_number: e.target.value })}
+                  label="Incoming Evidence Number"
+                  value={header.incoming_evidence_number}
+                  onChange={(e) => setHeader({ ...header, incoming_evidence_number: e.target.value })}
+                  helperText="Document number for incoming goods"
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <LocalizationProvider dateAdapter={AdapterDayjs}>
                   <DatePicker
-                    label="Customs Document Date *"
-                    value={header.customs_doc_date}
-                    onChange={(date) => setHeader({ ...header, customs_doc_date: date })}
+                    label="Customs Registration Date *"
+                    value={header.customs_registration_date}
+                    onChange={(date) => setHeader({ ...header, customs_registration_date: date })}
                     slotProps={{
                       textField: {
                         fullWidth: true,
@@ -353,15 +367,15 @@ export function IncomingTransactionForm() {
                   label="Owner"
                   value={header.owner}
                   onChange={(e) => setHeader({ ...header, owner: e.target.value })}
-                  helperText="Required in v2.4.2 for consignment tracking"
+                  helperText="Owner company code"
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <LocalizationProvider dateAdapter={AdapterDayjs}>
                   <DatePicker
-                    label="Transaction Date *"
-                    value={header.transaction_date}
-                    onChange={(date) => setHeader({ ...header, transaction_date: date })}
+                    label="Incoming Date *"
+                    value={header.incoming_date}
+                    onChange={(date) => setHeader({ ...header, incoming_date: date })}
                     slotProps={{
                       textField: {
                         fullWidth: true,
@@ -374,20 +388,43 @@ export function IncomingTransactionForm() {
               <Grid size={{ xs: 12, md: 6 }}>
                 <TextField
                   fullWidth
+                  required
+                  label="Invoice Number"
+                  value={header.invoice_number}
+                  onChange={(e) => setHeader({ ...header, invoice_number: e.target.value })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <LocalizationProvider dateAdapter={AdapterDayjs}>
+                  <DatePicker
+                    label="Invoice Date *"
+                    value={header.invoice_date}
+                    onChange={(date) => setHeader({ ...header, invoice_date: date })}
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                        required: true,
+                      },
+                    }}
+                  />
+                </LocalizationProvider>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  required
+                  label="Shipper Name"
+                  value={header.shipper_name}
+                  onChange={(e) => setHeader({ ...header, shipper_name: e.target.value })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
                   label="PPKEK Number"
                   value={header.ppkek_number}
                   onChange={(e) => setHeader({ ...header, ppkek_number: e.target.value })}
                   helperText="Optional"
-                />
-              </Grid>
-              <Grid size={12}>
-                <TextField
-                  fullWidth
-                  multiline
-                  rows={3}
-                  label="Remarks"
-                  value={header.remarks}
-                  onChange={(e) => setHeader({ ...header, remarks: e.target.value })}
                 />
               </Grid>
             </Grid>
@@ -433,7 +470,7 @@ export function IncomingTransactionForm() {
                       <TableCell sx={{ fontWeight: 600 }}>Qty*</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Currency*</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Amount*</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>PPKEK</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>HS Code</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Action</TableCell>
                     </TableRow>
                   </TableHead>
@@ -445,9 +482,9 @@ export function IncomingTransactionForm() {
                           <TextField
                             select
                             size="small"
-                            value={detail.item_type_code}
+                            value={detail.item_type}
                             onChange={(e) =>
-                              updateDetail(detail.id, 'item_type_code', e.target.value as ItemTypeCode)
+                              updateDetail(detail.id, 'item_type', e.target.value as ItemTypeCode)
                             }
                             sx={{ minWidth: 100 }}
                           >
@@ -496,7 +533,7 @@ export function IncomingTransactionForm() {
                             select
                             size="small"
                             value={detail.currency}
-                            onChange={(e) => updateDetail(detail.id, 'currency', e.target.value as CurrencyCode)}
+                            onChange={(e) => updateDetail(detail.id, 'currency', e.target.value as Currency)}
                             sx={{ minWidth: 80 }}
                           >
                             {CURRENCIES.map((curr) => (
@@ -518,8 +555,8 @@ export function IncomingTransactionForm() {
                         <TableCell>
                           <TextField
                             size="small"
-                            value={detail.ppkek_number}
-                            onChange={(e) => updateDetail(detail.id, 'ppkek_number', e.target.value)}
+                            value={detail.hs_code}
+                            onChange={(e) => updateDetail(detail.id, 'hs_code', e.target.value)}
                             sx={{ minWidth: 120 }}
                           />
                         </TableCell>
@@ -559,17 +596,17 @@ export function IncomingTransactionForm() {
                   <Typography variant="body1" fontWeight={500}>{header.company_code}</Typography>
                 </Grid>
                 <Grid size={6}>
-                  <Typography variant="body2" color="text.secondary">Customs Doc Type</Typography>
-                  <Chip label={header.customs_doc_type} size="small" color="primary" />
+                  <Typography variant="body2" color="text.secondary">Customs Document Type</Typography>
+                  <Chip label={header.customs_document_type} size="small" color="primary" />
                 </Grid>
                 <Grid size={6}>
-                  <Typography variant="body2" color="text.secondary">Customs Doc Number</Typography>
-                  <Typography variant="body1" fontWeight={500}>{header.customs_doc_number}</Typography>
+                  <Typography variant="body2" color="text.secondary">Incoming Evidence Number</Typography>
+                  <Typography variant="body1" fontWeight={500}>{header.incoming_evidence_number}</Typography>
                 </Grid>
                 <Grid size={6}>
-                  <Typography variant="body2" color="text.secondary">Customs Doc Date</Typography>
+                  <Typography variant="body2" color="text.secondary">Customs Registration Date</Typography>
                   <Typography variant="body1" fontWeight={500}>
-                    {header.customs_doc_date?.format('DD/MM/YYYY')}
+                    {header.customs_registration_date?.format('DD/MM/YYYY')}
                   </Typography>
                 </Grid>
                 <Grid size={6}>
@@ -577,21 +614,29 @@ export function IncomingTransactionForm() {
                   <Typography variant="body1" fontWeight={500}>{header.owner}</Typography>
                 </Grid>
                 <Grid size={6}>
-                  <Typography variant="body2" color="text.secondary">Transaction Date</Typography>
+                  <Typography variant="body2" color="text.secondary">Incoming Date</Typography>
                   <Typography variant="body1" fontWeight={500}>
-                    {header.transaction_date?.format('DD/MM/YYYY')}
+                    {header.incoming_date?.format('DD/MM/YYYY')}
                   </Typography>
+                </Grid>
+                <Grid size={6}>
+                  <Typography variant="body2" color="text.secondary">Invoice Number</Typography>
+                  <Typography variant="body1" fontWeight={500}>{header.invoice_number}</Typography>
+                </Grid>
+                <Grid size={6}>
+                  <Typography variant="body2" color="text.secondary">Invoice Date</Typography>
+                  <Typography variant="body1" fontWeight={500}>
+                    {header.invoice_date?.format('DD/MM/YYYY')}
+                  </Typography>
+                </Grid>
+                <Grid size={6}>
+                  <Typography variant="body2" color="text.secondary">Shipper Name</Typography>
+                  <Typography variant="body1" fontWeight={500}>{header.shipper_name}</Typography>
                 </Grid>
                 {header.ppkek_number && (
                   <Grid size={6}>
                     <Typography variant="body2" color="text.secondary">PPKEK Number</Typography>
                     <Typography variant="body1" fontWeight={500}>{header.ppkek_number}</Typography>
-                  </Grid>
-                )}
-                {header.remarks && (
-                  <Grid size={12}>
-                    <Typography variant="body2" color="text.secondary">Remarks</Typography>
-                    <Typography variant="body1">{header.remarks}</Typography>
                   </Grid>
                 )}
               </Grid>
@@ -620,7 +665,7 @@ export function IncomingTransactionForm() {
                       <TableRow key={detail.id}>
                         <TableCell>{index + 1}</TableCell>
                         <TableCell>
-                          <Chip label={detail.item_type_code} size="small" />
+                          <Chip label={detail.item_type} size="small" />
                         </TableCell>
                         <TableCell>{detail.item_code}</TableCell>
                         <TableCell>{detail.item_name}</TableCell>

@@ -1,20 +1,45 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-export function exportToExcel(data: any[], fileName: string, sheetName: string = 'Sheet1') {
-  const worksheet = XLSX.utils.json_to_sheet(data);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+export async function exportToExcel(data: any[], fileName: string, sheetName: string = 'Sheet1') {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet(sheetName);
 
-  // Auto-adjust column widths
-  const maxWidth = 50;
-  const wscols = data.length > 0
-    ? Object.keys(data[0]).map(() => ({ wch: maxWidth }))
-    : [];
-  worksheet['!cols'] = wscols;
+  if (data.length > 0) {
+    // Add headers
+    const headers = Object.keys(data[0]);
+    worksheet.addRow(headers);
 
-  XLSX.writeFile(workbook, `${fileName}.xlsx`);
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE2E8F0' },
+    };
+
+    // Add data rows
+    data.forEach((row) => {
+      worksheet.addRow(Object.values(row));
+    });
+
+    // Auto-adjust column widths
+    const maxWidth = 50;
+    headers.forEach((_, index) => {
+      worksheet.getColumn(index + 1).width = Math.min(maxWidth, 15);
+    });
+  }
+
+  // Generate and download file
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${fileName}.xlsx`;
+  link.click();
+  window.URL.revokeObjectURL(url);
 }
 
 export function exportToPDF(

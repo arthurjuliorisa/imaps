@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -9,24 +9,30 @@ export async function seedUsers() {
   const users = [
     {
       username: 'admin',
-      email: 'admin@imaps.local',
+      email: 'admin@harmoni.co.id',
       password: await bcrypt.hash('admin123', 10),
-      role: UserRole.ADMIN,
-      company_code: 'ACME',
+      full_name: 'System Administrator',
+      role: 'ADMIN',
+      company_code: null, // Super admin - all companies
+      is_active: true,
     },
     {
-      username: 'viewer',
-      email: 'viewer@imaps.local',
-      password: await bcrypt.hash('viewer123', 10),
-      role: UserRole.VIEWER,
-      company_code: 'ACME',
+      username: 'wms_integration',
+      email: 'wms@harmoni.co.id',
+      password: await bcrypt.hash('wms123', 10),
+      full_name: 'WMS Integration User',
+      role: 'API',
+      company_code: null, // API user - all companies
+      is_active: true,
     },
     {
-      username: 'operator',
-      email: 'operator@imaps.local',
-      password: await bcrypt.hash('operator123', 10),
-      role: UserRole.USER,
-      company_code: 'ACME',
+      username: 'user_1310',
+      email: 'user@harmoni.co.id',
+      password: await bcrypt.hash('user123', 10),
+      full_name: 'Company 1310 User',
+      role: 'USER',
+      company_code: 1310,
+      is_active: true,
     },
   ];
 
@@ -37,8 +43,10 @@ export async function seedUsers() {
       update: {
         username: user.username,
         password: user.password,
+        full_name: user.full_name,
         role: user.role,
         company_code: user.company_code,
+        is_active: user.is_active,
       },
       create: user,
     });

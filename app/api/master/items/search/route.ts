@@ -12,7 +12,7 @@ import { prisma } from '@/lib/prisma';
 import type {
   ApiSuccessResponse,
   ApiErrorResponse
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || searchParams.get('q') || '';
     const companyCode = searchParams.get('company_code');
-    const itemTypeCode = searchParams.get('item_type_code');
+    const itemType = searchParams.get('item_type');
     const limit = parseInt(searchParams.get('limit') || '20');
 
     if (!search || search.length < 2) {
@@ -73,11 +73,11 @@ export async function GET(request: NextRequest) {
     };
 
     if (companyCode) {
-      where.company_code = companyCode;
+      where.company_code = parseInt(companyCode);
     }
 
-    if (itemTypeCode) {
-      where.item_type_code = itemTypeCode;
+    if (itemType) {
+      where.item_type = itemType;
     }
 
     // Search in beginning balances
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
       select: {
         item_code: true,
         item_name: true,
-        item_type_code: true,
+        item_type: true,
         uom: true
       },
       distinct: ['item_code'],

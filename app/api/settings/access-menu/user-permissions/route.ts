@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
 
     // Get all menus with user's permissions
     const menus = await prisma.menus.findMany({
-      orderBy: { order: 'asc' },
+      orderBy: { menu_order: 'asc' },
       include: {
         user_access_menus: {
           where: { user_id: userId },
@@ -58,11 +58,11 @@ export async function GET(request: NextRequest) {
     // Transform to include permission info
     const permissions = menus.map((menu) => ({
       menuId: menu.id,
-      menuName: menu.name,
-      route: menu.route,
-      icon: menu.icon,
+      menuName: menu.menu_name,
+      route: menu.menu_path,
+      icon: menu.menu_icon,
       parentId: menu.parent_id,
-      order: menu.order,
+      order: menu.menu_order,
       canView: menu.user_access_menus[0]?.can_view ?? false,
       canCreate: menu.user_access_menus[0]?.can_create ?? false,
       canEdit: menu.user_access_menus[0]?.can_edit ?? false,

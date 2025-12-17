@@ -18,8 +18,8 @@ import type {
   TransactionSubmissionResponse,
   PaginatedResponse,
   FinishedGoodsProductionHeader
-} from '@/types/v2.4.2';
-import { ItemTypeCode, ReversalStatus } from '@/types/v2.4.2';
+} from '@/types/core';
+import { ItemTypeCode, ReversalStatus } from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -32,12 +32,12 @@ function validateProductionOutputTransaction(data: ProductionOutputRequest): voi
   const { header, details } = data;
 
   // Validate header
-  if (!header.wms_id || !header.company_code || !header.trx_date) {
-    throw new Error('Missing required header fields: wms_id, company_code, trx_date');
+  if (!header.wms_id || !header.company_code || !header.transaction_date) {
+    throw new Error('Missing required header fields: wms_id, company_code, transaction_date');
   }
 
-  if (!header.work_order_number || header.work_order_number.trim() === '') {
-    throw new Error('work_order_number is required');
+  if (!header.internal_evidence_number || header.internal_evidence_number.trim() === '') {
+    throw new Error('internal_evidence_number is required');
   }
 
   // Validate details
@@ -46,47 +46,21 @@ function validateProductionOutputTransaction(data: ProductionOutputRequest): voi
   }
 
   details.forEach((detail, index) => {
-    if (!detail.wms_id || !detail.item_code || !detail.item_name) {
+    if (!detail.item_code || !detail.item_name) {
       throw new Error(`Detail ${index + 1}: Missing required fields`);
     }
 
-    if (!detail.item_type_code || !detail.uom || detail.qty === undefined) {
-      throw new Error(`Detail ${index + 1}: Missing item_type_code, uom, or qty`);
-    }
-
-    // v2.4.2: Only FERT and SCRAP can be produced
-    if (detail.item_type_code !== ItemTypeCode.FERT && detail.item_type_code !== ItemTypeCode.SCRAP) {
-      throw new Error(`Detail ${index + 1}: Only FERT and SCRAP items can be produced`);
-    }
-
-    // v2.4.2: quality_grade required for FERT items
-    if (detail.item_type_code === ItemTypeCode.FERT) {
-      if (!detail.quality_grade) {
-        throw new Error(`Detail ${index + 1}: quality_grade is required for FERT items`);
-      }
-      const validGrades = ['A', 'B', 'C', 'REJECT'];
-      if (!validGrades.includes(detail.quality_grade)) {
-        throw new Error(`Detail ${index + 1}: quality_grade must be one of: ${validGrades.join(', ')}`);
-      }
+    if (!detail.item_type || !detail.uom || detail.qty === undefined) {
+      throw new Error(`Detail ${index + 1}: Missing item_type, uom, or qty`);
     }
 
     if (detail.qty <= 0) {
       throw new Error(`Detail ${index + 1}: qty must be positive`);
     }
 
-    // v2.4.2: work_order_numbers is required (array of work orders)
+    // work_order_numbers is required (array of work orders at detail level)
     if (!detail.work_order_numbers || detail.work_order_numbers.length === 0) {
-      throw new Error(`Detail ${index + 1}: work_order_numbers array is required (v2.4.2)`);
-    }
-
-    // v2.4.2: reversal_status is required
-    if (!detail.reversal_status) {
-      throw new Error(`Detail ${index + 1}: reversal_status is required (v2.4.2)`);
-    }
-
-    const validReversalStatus = [ReversalStatus.NORMAL, ReversalStatus.REVERSED, ReversalStatus.PARTIAL_REVERSAL];
-    if (!validReversalStatus.includes(detail.reversal_status as ReversalStatus)) {
-      throw new Error(`Detail ${index + 1}: reversal_status must be one of: ${validReversalStatus.join(', ')}`);
+      throw new Error(`Detail ${index + 1}: work_order_numbers array is required`);
     }
   });
 }
@@ -146,39 +120,38 @@ export async function GET(request: NextRequest) {
     const where: any = {};
 
     if (companyCode) {
-      where.company_code = companyCode;
+      where.company_code = parseInt(companyCode);
     }
 
     if (startDate && endDate) {
-      where.trx_date = {
+      where.transaction_date = {
         gte: new Date(startDate),
         lte: new Date(endDate)
       };
     }
 
-    if (workOrderNumber) {
-      where.work_order_number = { contains: workOrderNumber, mode: 'insensitive' };
-    }
+    // Note: work_order_number is at item level, not header level
+    // For search by work order, we would need to join with items
 
     if (search) {
       where.OR = [
         { wms_id: { contains: search, mode: 'insensitive' } },
-        { work_order_number: { contains: search, mode: 'insensitive' } }
+        { internal_evidence_number: { contains: search, mode: 'insensitive' } }
       ];
     }
 
     // Get total count
-    const totalRecords = await prisma.finished_goods_production_headers.count({ where });
+    const totalRecords = await prisma.production_outputs.count({ where });
 
     // Get paginated data
     const skip = (page - 1) * pageSize;
-    const headers = await prisma.finished_goods_production_headers.findMany({
+    const headers = await prisma.production_outputs.findMany({
       where,
       skip,
       take: pageSize,
-      orderBy: { trx_date: 'desc' },
+      orderBy: { transaction_date: 'desc' },
       include: {
-        finished_goods_production_details: true
+        items: true
       }
     });
 
@@ -223,7 +196,7 @@ export async function POST(request: NextRequest) {
     validateProductionOutputTransaction(body);
 
     // Check for duplicate wms_id
-    const existing = await prisma.finished_goods_production_headers.findFirst({
+    const existing = await prisma.production_outputs.findFirst({
       where: {
         wms_id: body.header.wms_id,
         company_code: body.header.company_code
@@ -241,31 +214,31 @@ export async function POST(request: NextRequest) {
     // Create transaction
     const result = await prisma.$transaction(async (tx) => {
       // Create header
-      const header = await tx.finished_goods_production_headers.create({
+      const header = await tx.production_outputs.create({
         data: {
           wms_id: body.header.wms_id,
           company_code: body.header.company_code,
-          trx_date: new Date(body.header.trx_date),
-          wms_timestamp: new Date(body.header.wms_timestamp),
-          internal_evidence_number: body.header.wms_id
+          transaction_date: new Date(body.header.transaction_date),
+          timestamp: body.header.timestamp ? new Date(body.header.timestamp) : new Date(),
+          internal_evidence_number: body.header.internal_evidence_number || body.header.wms_id,
+          reversal: body.header.reversal
         }
       });
 
       // Create details
       const details = await Promise.all(
         body.details.map((detail) =>
-          tx.finished_goods_production_details.create({
+          tx.production_output_items.create({
             data: {
-              header_id: BigInt(header.id),
-              wms_id: detail.wms_id,
-              company_code: body.header.company_code,
-              trx_date: new Date(body.header.trx_date),
-              item_type_code: detail.item_type_code,
+              production_output_id: header.id,
+              production_output_company: body.header.company_code,
+              production_output_date: new Date(body.header.transaction_date),
+              item_type: detail.item_type,
               item_code: detail.item_code,
               item_name: detail.item_name,
               uom: detail.uom,
               qty: detail.qty,
-              work_order_numbers: detail.work_order_numbers // v2.4.2: Array at item level
+              work_order_numbers: detail.work_order_numbers
             }
           })
         )
@@ -278,7 +251,7 @@ export async function POST(request: NextRequest) {
     await logActivity({
       userId: session.user?.id || '',
       action: 'CREATE',
-      description: `Created production transaction ${body.header.wms_id} for WO ${body.header.work_order_number}`,
+      description: `Created production transaction ${body.header.wms_id}`,
       status: 'SUCCESS'
     });
 

@@ -18,8 +18,8 @@ import type {
   TransactionSubmissionResponse,
   PaginatedResponse,
   WIPBalanceHeader
-} from '@/types/v2.4.2';
-import { ItemTypeCode } from '@/types/v2.4.2';
+} from '@/types/core';
+import { ItemTypeCode } from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -32,8 +32,8 @@ function validateWIPBalanceTransaction(data: WIPBalanceRequest): void {
   const { header, details } = data;
 
   // Validate header
-  if (!header.wms_id || !header.company_code || !header.trx_date) {
-    throw new Error('Missing required header fields: wms_id, company_code, trx_date');
+  if (!header.wms_id || !header.company_code || !header.stock_date) {
+    throw new Error('Missing required header fields: wms_id, company_code, stock_date');
   }
 
   // Validate details
@@ -42,21 +42,12 @@ function validateWIPBalanceTransaction(data: WIPBalanceRequest): void {
   }
 
   details.forEach((detail, index) => {
-    if (!detail.wms_id || !detail.item_code || !detail.item_name) {
+    if (!detail.item_code || !detail.item_name) {
       throw new Error(`Detail ${index + 1}: Missing required fields`);
     }
 
-    if (!detail.item_type_code || !detail.uom || detail.qty === undefined) {
-      throw new Error(`Detail ${index + 1}: Missing item_type_code, uom, or qty`);
-    }
-
-    // v2.4.2: Only HALB items allowed in WIP balance
-    if (detail.item_type_code !== ItemTypeCode.HALB) {
-      throw new Error(`Detail ${index + 1}: Only HALB items are allowed in WIP balance snapshots`);
-    }
-
-    if (!detail.work_order_number || detail.work_order_number.trim() === '') {
-      throw new Error(`Detail ${index + 1}: work_order_number is required`);
+    if (!detail.item_type || !detail.uom || detail.qty === undefined) {
+      throw new Error(`Detail ${index + 1}: Missing item_type, uom, or qty`);
     }
 
     if (detail.qty < 0) {
@@ -119,11 +110,11 @@ export async function GET(request: NextRequest) {
     const where: any = {};
 
     if (companyCode) {
-      where.company_code = companyCode;
+      where.company_code = parseInt(companyCode);
     }
 
     if (startDate && endDate) {
-      where.snapshot_date = {
+      where.stock_date = {
         gte: new Date(startDate),
         lte: new Date(endDate)
       };
@@ -136,15 +127,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total count
-    const totalRecords = await prisma.wip_balance.count({ where });
+    const totalRecords = await prisma.wip_balances.count({ where });
 
     // Get paginated data
     const skip = (page - 1) * pageSize;
-    const wipBalances = await prisma.wip_balance.findMany({
+    const wipBalances = await prisma.wip_balances.findMany({
       where,
       skip,
       take: pageSize,
-      orderBy: { snapshot_date: 'desc' }
+      orderBy: { stock_date: 'desc' }
     });
 
     // Build response
@@ -188,12 +179,12 @@ export async function POST(request: NextRequest) {
     validateWIPBalanceTransaction(body);
 
     // Check for duplicate wms_id on the same snapshot date
-    const snapshotDate = new Date(body.header.trx_date);
-    const existing = await prisma.wip_balance.findFirst({
+    const stockDate = new Date(body.header.stock_date);
+    const existing = await prisma.wip_balances.findFirst({
       where: {
         wms_id: body.header.wms_id,
         company_code: body.header.company_code,
-        snapshot_date: snapshotDate
+        stock_date: stockDate
       }
     });
 
@@ -210,17 +201,17 @@ export async function POST(request: NextRequest) {
       // Create wip_balance records for each detail
       const wipBalances = await Promise.all(
         body.details.map((detail) =>
-          tx.wip_balance.create({
+          tx.wip_balances.create({
             data: {
-              wms_id: detail.wms_id,
+              wms_id: body.header.wms_id,
               company_code: body.header.company_code,
-              item_type_code: detail.item_type_code, // Always HALB
+              item_type: detail.item_type,
               item_code: detail.item_code,
               item_name: detail.item_name,
-              snapshot_date: snapshotDate,
+              stock_date: stockDate,
               uom: detail.uom,
               qty: detail.qty,
-              wms_timestamp: new Date(body.header.wms_timestamp)
+              timestamp: body.header.timestamp ? new Date(body.header.timestamp) : new Date()
             }
           })
         )

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 /**
  * GET /api/customs/beginning-raw-material/template
@@ -14,11 +14,13 @@ import * as XLSX from 'xlsx';
 export async function GET() {
   try {
     // Create a new workbook
-    const workbook = XLSX.utils.book_new();
+    const workbook = new ExcelJS.Workbook();
 
     // ============================================
     // SHEET 1: Beginning Stock Import Template (Main Sheet)
     // ============================================
+
+    const worksheet = workbook.addWorksheet('Beginning Stock Template');
 
     // Define headers
     const headers = ['Item Code*', 'Item Name', 'UOM Code*', 'Beginning Balance*', 'Beginning Date*', 'Remarks'];
@@ -33,52 +35,40 @@ export async function GET() {
       ['RM-003', 'Raw Material C', 'LTR', 50, '15/01/2025', 'Beginning inventory'],
     ];
 
-    // Combine all data into a single array of arrays
-    const worksheetData = [
-      headers,
-      formatHints,
-      ...sampleData,
+    // Add rows
+    worksheet.addRow(headers);
+    worksheet.addRow(formatHints);
+    sampleData.forEach(row => worksheet.addRow(row));
+
+    // Set column widths
+    worksheet.columns = [
+      { width: 15 },  // Item Code column
+      { width: 25 },  // Item Name column
+      { width: 12 },  // UOM Code column
+      { width: 18 },  // Beginning Balance column
+      { width: 18 },  // Beginning Date column
+      { width: 30 },  // Remarks column
     ];
 
-    // Create worksheet from the data
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFADD8E6' },
+    };
+    worksheet.getRow(1).alignment = { horizontal: 'center', vertical: 'middle' };
 
-    // Set column widths for better readability
-    worksheet['!cols'] = [
-      { wch: 15 },  // Item Code column
-      { wch: 25 },  // Item Name column
-      { wch: 12 },  // UOM Code column
-      { wch: 18 },  // Beginning Balance column
-      { wch: 18 },  // Beginning Date column
-      { wch: 30 },  // Remarks column
-    ];
-
-    // Apply styling to headers (Row 1)
-    const headerCellAddresses = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1'];
-    headerCellAddresses.forEach(address => {
-      if (!worksheet[address]) return;
-
-      worksheet[address].s = {
-        font: { bold: true },
-        fill: { fgColor: { rgb: 'ADD8E6' } }, // Light blue background
-        alignment: { horizontal: 'center', vertical: 'center' },
-      };
-    });
-
-    // Set number format for Beginning Balance column (D3:D5)
+    // Format Beginning Balance column (D3:D5)
     for (let row = 3; row <= 5; row++) {
-      const cellAddress = `D${row}`;
-      if (worksheet[cellAddress]) {
-        worksheet[cellAddress].z = '0.00';
-      }
+      worksheet.getCell(`D${row}`).numFmt = '0.00';
     }
-
-    // Append the main worksheet to the workbook
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Beginning Stock Template');
 
     // ============================================
     // SHEET 2: Instructions
     // ============================================
+
+    const instructionsWorksheet = workbook.addWorksheet('Instructions');
 
     const instructionsData = [
       ['Beginning Stock (Raw Material) Import Template - Instructions'],
@@ -155,45 +145,27 @@ export async function GET() {
       ['For assistance, please contact the system administrator.'],
     ];
 
-    // Create instructions worksheet
-    const instructionsWorksheet = XLSX.utils.aoa_to_sheet(instructionsData);
+    // Add instructions data
+    instructionsData.forEach(row => instructionsWorksheet.addRow(row));
 
-    // Set column width for instructions sheet
-    instructionsWorksheet['!cols'] = [
-      { wch: 90 },  // Wide column for instructions
-    ];
+    // Set column width
+    instructionsWorksheet.getColumn(1).width = 90;
 
-    // Make the title bold (Row 1)
-    if (instructionsWorksheet['A1']) {
-      instructionsWorksheet['A1'].s = {
-        font: { bold: true, sz: 14 },
-        alignment: { horizontal: 'left' },
-      };
-    }
+    // Style title (Row 1)
+    instructionsWorksheet.getCell('A1').font = { bold: true, size: 14 };
 
-    // Make section headers bold
-    const sectionHeaderRows = ['A3', 'A9', 'A11', 'A17', 'A23', 'A29', 'A35', 'A41', 'A47', 'A54', 'A62'];
-    sectionHeaderRows.forEach(address => {
-      if (instructionsWorksheet[address]) {
-        instructionsWorksheet[address].s = {
-          font: { bold: true },
-        };
-      }
+    // Style section headers
+    const sectionHeaderRows = [3, 9, 11, 17, 23, 29, 35, 41, 47, 54, 62];
+    sectionHeaderRows.forEach(rowNumber => {
+      instructionsWorksheet.getRow(rowNumber).font = { bold: true };
     });
-
-    // Append the instructions worksheet to the workbook
-    XLSX.utils.book_append_sheet(workbook, instructionsWorksheet, 'Instructions');
 
     // ============================================
     // Generate and Send Excel File
     // ============================================
 
     // Generate buffer from workbook
-    const buffer = XLSX.write(workbook, {
-      type: 'buffer',
-      bookType: 'xlsx',
-      cellStyles: true,
-    });
+    const buffer = await workbook.xlsx.writeBuffer();
 
     // Create filename with timestamp
     const timestamp = new Date().toISOString().split('T')[0];
@@ -205,7 +177,7 @@ export async function GET() {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length': buffer.length.toString(),
+        'Content-Length': buffer.byteLength.toString(),
       },
     });
 

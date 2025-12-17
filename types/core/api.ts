@@ -15,7 +15,6 @@ import {
   FinishedGoodsProductionHeader,
   FinishedGoodsProductionDetail,
   WIPBalanceHeader,
-  WIPBalanceDetail,
   AdjustmentHeader,
   AdjustmentDetail,
   BeginningBalance
@@ -117,10 +116,12 @@ export interface ProductionOutputRequest {
 
 /**
  * WIP Balance Request
+ * Note: WIP Balance is a flat table (no header-detail pattern in DB)
+ * But API still uses header-detail structure for consistency
  */
 export interface WIPBalanceRequest {
-  header: Omit<WIPBalanceHeader, 'id' | 'received_at' | 'created_at' | 'updated_at'>;
-  details: Omit<WIPBalanceDetail, 'id' | 'header_id' | 'created_at' | 'updated_at'>[];
+  header: Omit<WIPBalanceHeader, 'id' | 'created_at' | 'updated_at'>;
+  details: any[];  // WIP items
 }
 
 /**
@@ -189,13 +190,13 @@ export interface TransactionListParams extends ListQueryParams {
  * Beginning Balance Create/Update Request
  */
 export interface BeginningBalanceRequest {
-  company_code: string;
-  item_type_code: string;
+  company_code: number;
+  item_type: string;
   item_code: string;
   item_name: string;
   uom: string;
   qty: number;
-  effective_date: string;  // ISO date string
+  balance_date: string;  // ISO date string
   remarks?: string;
 }
 
@@ -327,35 +328,6 @@ export interface WorkOrderSummary {
   grade_b_qty: number;
   grade_c_qty: number;
   reject_qty: number;
-}
-
-// ============================================================================
-// BATCH PROCESSING & JOBS
-// ============================================================================
-
-/**
- * Batch Job Status
- */
-export interface BatchJobStatus {
-  id: string;
-  job_type: string;
-  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
-  started_at: string;
-  completed_at?: string;
-  total_records?: number;
-  successful_records?: number;
-  failed_records?: number;
-  error_message?: string;
-}
-
-/**
- * Materialized View Refresh Response
- */
-export interface MaterializedViewRefreshResponse {
-  views_refreshed: string[];
-  total_time_ms: number;
-  success: boolean;
-  errors?: string[];
 }
 
 // ============================================================================

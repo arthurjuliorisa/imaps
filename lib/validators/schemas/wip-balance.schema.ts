@@ -40,14 +40,14 @@ const dateStringSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Stock date must be in YYYY-MM-DD format')
   .refine(
-    (dateStr) => {
+    (dateStr: string) => {
       const date = new Date(dateStr);
       return !isNaN(date.getTime());
     },
     { message: 'Invalid stock date' }
   )
   .refine(
-    (dateStr) => {
+    (dateStr: string) => {
       const date = new Date(dateStr);
       // Stock date should not be too far in the future (allow max 1 day ahead for timezone differences)
       const tomorrow = new Date();

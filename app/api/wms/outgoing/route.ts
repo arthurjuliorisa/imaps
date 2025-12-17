@@ -17,7 +17,7 @@ import type {
   TransactionSubmissionResponse,
   PaginatedResponse,
   OutgoingHeader
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -30,11 +30,11 @@ function validateOutgoingTransaction(data: OutgoingTransactionRequest): void {
   const { header, details } = data;
 
   // Validate header
-  if (!header.wms_id || !header.company_code || !header.trx_date) {
-    throw new Error('Missing required header fields: wms_id, company_code, trx_date');
+  if (!header.wms_id || !header.company_code || !header.outgoing_date) {
+    throw new Error('Missing required header fields: wms_id, company_code, outgoing_date');
   }
 
-  if (!header.customs_doc_type || !header.customs_doc_number || !header.customs_doc_date) {
+  if (!header.customs_document_type || !header.customs_registration_date) {
     throw new Error('Missing required customs document fields');
   }
 
@@ -49,12 +49,12 @@ function validateOutgoingTransaction(data: OutgoingTransactionRequest): void {
   }
 
   details.forEach((detail, index) => {
-    if (!detail.wms_id || !detail.item_code || !detail.item_name) {
+    if (!detail.item_code || !detail.item_name) {
       throw new Error(`Detail ${index + 1}: Missing required fields`);
     }
 
-    if (!detail.item_type_code || !detail.uom || detail.qty === undefined) {
-      throw new Error(`Detail ${index + 1}: Missing item_type_code, uom, or qty`);
+    if (!detail.item_type || !detail.uom || detail.qty === undefined) {
+      throw new Error(`Detail ${index + 1}: Missing item_type, uom, or qty`);
     }
 
     // v2.4.2: Currency and amount at detail level
@@ -124,18 +124,18 @@ export async function GET(request: NextRequest) {
     const where: any = {};
 
     if (companyCode) {
-      where.company_code = companyCode;
+      where.company_code = parseInt(companyCode);
     }
 
     if (startDate && endDate) {
-      where.trx_date = {
+      where.outgoing_date = {
         gte: new Date(startDate),
         lte: new Date(endDate)
       };
     }
 
     if (customsDocType) {
-      where.customs_doc_type = customsDocType;
+      where.customs_document_type = customsDocType;
     }
 
     if (ppkekNumber) {
@@ -145,24 +145,24 @@ export async function GET(request: NextRequest) {
     if (search) {
       where.OR = [
         { wms_id: { contains: search, mode: 'insensitive' } },
-        { customs_doc_number: { contains: search, mode: 'insensitive' } },
-        { buyer_name: { contains: search, mode: 'insensitive' } },
+        { outgoing_evidence_number: { contains: search, mode: 'insensitive' } },
+        { recipient_name: { contains: search, mode: 'insensitive' } },
         { ppkek_number: { contains: search, mode: 'insensitive' } }
       ];
     }
 
     // Get total count
-    const totalRecords = await prisma.outgoing_headers.count({ where });
+    const totalRecords = await prisma.outgoing_goods.count({ where });
 
     // Get paginated data
     const skip = (page - 1) * pageSize;
-    const headers = await prisma.outgoing_headers.findMany({
+    const headers = await prisma.outgoing_goods.findMany({
       where,
       skip,
       take: pageSize,
-      orderBy: { trx_date: 'desc' },
+      orderBy: { outgoing_date: 'desc' },
       include: {
-        outgoing_details: true
+        items: true
       }
     });
 
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
     validateOutgoingTransaction(body);
 
     // Check for duplicate wms_id
-    const existing = await prisma.outgoing_headers.findFirst({
+    const existing = await prisma.outgoing_goods.findFirst({
       where: {
         wms_id: body.header.wms_id,
         company_code: body.header.company_code
@@ -225,40 +225,39 @@ export async function POST(request: NextRequest) {
     // Create transaction
     const result = await prisma.$transaction(async (tx) => {
       // Create header
-      const header = await tx.outgoing_headers.create({
+      const header = await tx.outgoing_goods.create({
         data: {
           wms_id: body.header.wms_id,
           company_code: body.header.company_code,
-          trx_date: new Date(body.header.trx_date),
-          wms_timestamp: new Date(body.header.wms_timestamp),
-          customs_document_type: body.header.customs_doc_type,
-          outgoing_evidence_number: body.header.customs_doc_number,
-          customs_registration_date: new Date(body.header.customs_doc_date),
-          ppkek_number: body.header.ppkek_number || '', // v2.4.2: MANDATORY
-          outgoing_date: new Date(body.header.trx_date),
-          recipient_name: body.header.buyer_name || '',
-          owner: body.header.company_code,
+          customs_document_type: body.header.customs_document_type,
+          outgoing_evidence_number: body.header.outgoing_evidence_number || body.header.wms_id,
+          customs_registration_date: new Date(body.header.customs_registration_date),
+          ppkek_number: body.header.ppkek_number,
+          outgoing_date: new Date(body.header.outgoing_date),
+          recipient_name: body.header.recipient_name || '',
+          owner: body.header.owner || body.header.company_code,
           invoice_number: body.header.invoice_number || '',
-          invoice_date: body.header.invoice_date ? new Date(body.header.invoice_date) : new Date()
+          invoice_date: body.header.invoice_date ? new Date(body.header.invoice_date) : new Date(),
+          timestamp: body.header.timestamp ? new Date(body.header.timestamp) : new Date()
         }
       });
 
       // Create details
       const details = await Promise.all(
         body.details.map((detail) =>
-          tx.outgoing_details.create({
+          tx.outgoing_good_items.create({
             data: {
-              header_id: BigInt(header.id),
-              wms_id: detail.wms_id,
-              company_code: body.header.company_code,
-              trx_date: new Date(body.header.trx_date),
-              item_type_code: detail.item_type_code,
+              outgoing_good_id: header.id,
+              outgoing_good_company: body.header.company_code,
+              outgoing_good_date: new Date(body.header.outgoing_date),
+              item_type: detail.item_type,
               item_code: detail.item_code,
               item_name: detail.item_name,
+              production_output_wms_ids: detail.production_output_wms_ids || [],
               uom: detail.uom,
               qty: detail.qty,
-              currency: detail.currency, // v2.4.2: Item-level
-              amount: detail.amount,     // v2.4.2: Item-level
+              currency: detail.currency,
+              amount: detail.amount,
               hs_code: detail.hs_code
             }
           })

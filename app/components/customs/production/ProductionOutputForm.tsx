@@ -28,9 +28,9 @@ export function ProductionOutputForm() {
   const { control, handleSubmit, formState: { errors } } = useForm<ProductionOutputFormData>({
     defaultValues: {
       header: {
-        productionDate: new Date(),
-        batchNumber: '',
-        remarks: '',
+        transaction_date: new Date(),
+        internal_evidence_number: '',
+        reversal: '',
       },
       items: [],
     },
@@ -47,16 +47,16 @@ export function ProductionOutputForm() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          trxDate: data.header.productionDate.toISOString().split('T')[0],
-          wmsId: data.header.batchNumber,
-          remarks: data.header.remarks || null,
+          transaction_date: data.header.transaction_date.toISOString().split('T')[0],
+          internal_evidence_number: data.header.internal_evidence_number,
+          reversal: data.header.reversal || null,
           items: data.items.map((item) => ({
-            itemCode: item.itemCode,
-            itemName: item.itemName,
+            item_code: item.item_code,
+            item_name: item.item_name,
+            item_type: item.item_type,
             uom: item.uom,
-            qty: item.quantity,
-            qualityGrade: item.qualityGrade,
-            workOrderNumbers: item.workOrderNumbers,
+            qty: item.qty,
+            work_order_numbers: item.work_order_numbers,
           })),
         }),
       });

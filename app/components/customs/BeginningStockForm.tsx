@@ -23,14 +23,12 @@ import dayjs, { Dayjs } from 'dayjs';
 import { Save, Close } from '@mui/icons-material';
 
 export interface BeginningStockFormData {
-  itemId: string;
-  itemCode: string;
-  itemName: string;
-  uomId: string;
+  item_code: string;
+  item_name: string;
+  item_type: string;
   uom: string;
-  beginningBalance: number;
-  beginningDate: Dayjs | null;
-  remarks: string;
+  qty: number;
+  balance_date: Dayjs | null;
 }
 
 interface Item {
@@ -74,14 +72,12 @@ export function BeginningStockForm({
   const [uoms, setUoms] = useState<UOM[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
   const [formData, setFormData] = useState<BeginningStockFormData>({
-    itemId: '',
-    itemCode: '',
-    itemName: '',
-    uomId: '',
+    item_code: '',
+    item_name: '',
+    item_type: '',
     uom: '',
-    beginningBalance: 0,
-    beginningDate: dayjs(),
-    remarks: '',
+    qty: 0,
+    balance_date: dayjs(),
   });
 
   // Reset form when dialog opens or initialData changes
@@ -95,14 +91,12 @@ export function BeginningStockForm({
           setFormData(initialData);
         } else {
           setFormData({
-            itemId: '',
-            itemCode: '',
-            itemName: '',
-            uomId: '',
+            item_code: '',
+            item_name: '',
+            item_type: '',
             uom: '',
-            beginningBalance: 0,
-            beginningDate: dayjs(),
-            remarks: '',
+            qty: 0,
+            balance_date: dayjs(),
           });
         }
       };
@@ -141,30 +135,27 @@ export function BeginningStockForm({
     if (item) {
       setFormData((prev) => ({
         ...prev,
-        itemId: item.id,
-        itemCode: item.code,
-        itemName: item.name,
-        uomId: item.uom?.id || '',
+        item_code: item.code,
+        item_name: item.name,
+        item_type: item.type,
         uom: item.uom?.code || '',
       }));
     } else {
       setFormData((prev) => ({
         ...prev,
-        itemId: '',
-        itemCode: '',
-        itemName: '',
-        uomId: '',
+        item_code: '',
+        item_name: '',
+        item_type: '',
         uom: '',
       }));
     }
   };
 
   const handleNumberChange = (value: string) => {
-    // Fix Bug #8: Don't convert empty to 0, keep it as is for proper validation feedback
     if (value === '') {
       setFormData((prev) => ({
         ...prev,
-        beginningBalance: 0,
+        qty: 0,
       }));
       return;
     }
@@ -173,7 +164,7 @@ export function BeginningStockForm({
     if (!isNaN(numValue) && numValue >= 0) {
       setFormData((prev) => ({
         ...prev,
-        beginningBalance: numValue,
+        qty: numValue,
       }));
     }
   };
@@ -193,11 +184,11 @@ export function BeginningStockForm({
   };
 
   const isFormValid =
-    formData.beginningDate !== null &&
-    formData.itemId !== '' &&
-    formData.uomId !== '' &&
-    formData.beginningBalance > 0 &&
-    (formData.beginningDate.isBefore(dayjs()) || formData.beginningDate.isSame(dayjs(), 'day'));
+    formData.balance_date !== null &&
+    formData.item_code !== '' &&
+    formData.uom !== '' &&
+    formData.qty > 0 &&
+    (formData.balance_date.isBefore(dayjs()) || formData.balance_date.isSame(dayjs(), 'day'));
 
   const getItemTypeLabel = () => {
     switch (itemType) {
@@ -249,7 +240,7 @@ export function BeginningStockForm({
               loading={loadingItems}
               getOptionLabel={(option) => `${option.code} - ${option.name}`}
               onChange={(_event, newValue) => handleItemSelect(newValue)}
-              value={items.find((item) => item.id === formData.itemId) || null}
+              value={items.find((item) => item.code === formData.item_code) || null}
               disabled={mode === 'edit'}
               renderInput={(params) => (
                 <TextField
@@ -272,26 +263,13 @@ export function BeginningStockForm({
             />
 
             {/* UOM - Auto-filled from selected item */}
-            <Autocomplete
-              options={uoms}
-              value={uoms.find((u) => u.id === formData.uomId) || null}
-              onChange={(_event, newValue) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  uomId: newValue?.id || '',
-                  uom: newValue?.code || '',
-                }))
-              }
-              getOptionLabel={(option) => `${option.code} - ${option.name}`}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Unit of Measure (UOM)"
-                  required
-                  helperText="Auto-filled from selected item"
-                />
-              )}
+            <TextField
+              fullWidth
+              label="Unit of Measure (UOM)"
+              value={formData.uom}
               disabled={true}
+              required
+              helperText="Auto-filled from selected item"
             />
 
             {/* Beginning Balance */}
@@ -299,7 +277,7 @@ export function BeginningStockForm({
               fullWidth
               label="Beginning Balance"
               type="number"
-              value={formData.beginningBalance}
+              value={formData.qty}
               onChange={(e) => handleNumberChange(e.target.value)}
               inputProps={{ min: 0.01, step: 0.01 }}
               required
@@ -308,30 +286,17 @@ export function BeginningStockForm({
 
             {/* Beginning Date */}
             <DatePicker
-              label="Beginning Date"
-              value={formData.beginningDate}
-              onChange={(newValue) => setFormData((prev) => ({ ...prev, beginningDate: newValue }))}
+              label="Balance Date"
+              value={formData.balance_date}
+              onChange={(newValue) => setFormData((prev) => ({ ...prev, balance_date: newValue }))}
               maxDate={dayjs()}
               slotProps={{
                 textField: {
                   fullWidth: true,
                   required: true,
-                  helperText: 'Beginning date cannot be in the future',
+                  helperText: 'Balance date cannot be in the future',
                 },
               }}
-            />
-
-            {/* Remarks */}
-            <TextField
-              fullWidth
-              label="Remarks"
-              multiline
-              rows={3}
-              value={formData.remarks}
-              onChange={(e) => setFormData((prev) => ({ ...prev, remarks: e.target.value }))}
-              placeholder="Enter any additional notes (optional)"
-              inputProps={{ maxLength: 1000 }}
-              helperText={`${formData.remarks.length}/1000 characters`}
             />
 
             {/* Info Box */}

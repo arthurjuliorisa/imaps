@@ -26,34 +26,45 @@ export enum ItemTypeCode {
 }
 
 /**
- * Customs Document Types for Incoming Goods
+ * Customs Document Types
+ * Used for both incoming and outgoing goods
+ * Matches: CustomsDocumentType enum in Prisma schema
  */
-export enum CustomsDocumentTypeIncoming {
-  BC23 = 'BC23',  // Import Declaration - New Import
-  BC27 = 'BC27',  // Import Declaration - Return from Export
-  BC40 = 'BC40'   // Import Declaration - Transfer In from Another Bonded Zone
+export enum CustomsDocumentType {
+  BC23 = 'BC23',   // Import Declaration
+  BC27 = 'BC27',   // Other Bonded Zone Release (Incoming & Outgoing)
+  BC40 = 'BC40',   // Local Purchase from Non-Bonded Zone
+  BC30 = 'BC30',   // Export Declaration
+  BC25 = 'BC25',   // Local Sales to Non-Bonded Zone
+  BC261 = 'BC261', // Subcontracting - Incoming
+  BC262 = 'BC262'  // Subcontracting - Outgoing
 }
 
 /**
- * Customs Document Types for Outgoing Goods
+ * Legacy aliases for backward compatibility
+ * @deprecated Use CustomsDocumentType instead
  */
-export enum CustomsDocumentTypeOutgoing {
-  BC30 = 'BC30',  // Export Declaration - Sales Export
-  BC25 = 'BC25',  // Conversion to Free Zone (Non-Export)
-  BC27 = 'BC27',  // Export Declaration - Return to Supplier
-  BC41 = 'BC41'   // Transfer Out to Another Bonded Zone
-}
+export const CustomsDocumentTypeIncoming = CustomsDocumentType;
+export const CustomsDocumentTypeOutgoing = CustomsDocumentType;
 
 /**
  * Currency Codes - ISO 4217
+ * Matches: Currency enum in Prisma schema
  */
-export enum CurrencyCode {
+export enum Currency {
   USD = 'USD',    // US Dollar
   IDR = 'IDR',    // Indonesian Rupiah
   CNY = 'CNY',    // Chinese Yuan
   EUR = 'EUR',    // Euro
   JPY = 'JPY'     // Japanese Yen
 }
+
+/**
+ * Legacy alias for backward compatibility
+ * @deprecated Use Currency instead
+ */
+export const CurrencyCode = Currency;
+export type CurrencyCode = Currency;
 
 /**
  * Adjustment Types - v2.4.2
@@ -125,26 +136,6 @@ export enum ReversalStatus {
   NORMAL = 'NORMAL',             // Normal production
   REVERSED = 'REVERSED',         // Reversed (returned to warehouse)
   PARTIAL_REVERSAL = 'PARTIAL_REVERSAL' // Partially reversed
-}
-
-/**
- * Job Types for Batch Processing
- */
-export enum JobType {
-  REFRESH_MATERIALIZED_VIEWS = 'REFRESH_MATERIALIZED_VIEWS',
-  STOCK_CALCULATION = 'STOCK_CALCULATION',
-  PARTITION_MAINTENANCE = 'PARTITION_MAINTENANCE',
-  DATA_CLEANUP = 'DATA_CLEANUP'
-}
-
-/**
- * Job Status
- */
-export enum JobStatus {
-  PENDING = 'PENDING',
-  RUNNING = 'RUNNING',
-  COMPLETED = 'COMPLETED',
-  FAILED = 'FAILED'
 }
 
 // ============================================================================

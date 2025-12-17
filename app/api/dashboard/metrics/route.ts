@@ -57,15 +57,15 @@ export async function GET(request: Request) {
       prisma.users.count(),
 
       // Transaction counts (total all time)
-      prisma.incoming_headers.count({ where: whereClause }),
-      prisma.outgoing_headers.count({ where: whereClause }),
-      prisma.material_usage_headers.count({ where: whereClause }),
-      prisma.finished_goods_production_headers.count({ where: whereClause }),
-      prisma.wip_balance.count({ where: whereClause }),
+      prisma.incoming_goods.count({ where: whereClause }),
+      prisma.outgoing_goods.count({ where: whereClause }),
+      prisma.material_usages.count({ where: whereClause }),
+      prisma.production_outputs.count({ where: whereClause }),
+      prisma.wip_balances.count({ where: whereClause }),
       prisma.adjustments.count({ where: whereClause }),
 
       // Incoming documents this month
-      prisma.incoming_headers.count({
+      prisma.incoming_goods.count({
         where: {
           ...whereClause,
           created_at: {
@@ -75,7 +75,7 @@ export async function GET(request: Request) {
       }),
 
       // Incoming documents last month
-      prisma.incoming_headers.count({
+      prisma.incoming_goods.count({
         where: {
           ...whereClause,
           created_at: {
@@ -86,7 +86,7 @@ export async function GET(request: Request) {
       }),
 
       // Outgoing documents this month
-      prisma.outgoing_headers.count({
+      prisma.outgoing_goods.count({
         where: {
           ...whereClause,
           created_at: {
@@ -96,7 +96,7 @@ export async function GET(request: Request) {
       }),
 
       // Outgoing documents last month
-      prisma.outgoing_headers.count({
+      prisma.outgoing_goods.count({
         where: {
           ...whereClause,
           created_at: {
@@ -108,44 +108,38 @@ export async function GET(request: Request) {
 
       // Total transactions this month (all types)
       Promise.all([
-        prisma.incoming_headers.count({
+        prisma.incoming_goods.count({
           where: { ...whereClause, created_at: { gte: startOfThisMonth } },
         }),
-        prisma.outgoing_headers.count({
+        prisma.outgoing_goods.count({
           where: { ...whereClause, created_at: { gte: startOfThisMonth } },
         }),
-        prisma.material_usage_headers.count({
+        prisma.material_usages.count({
           where: { ...whereClause, created_at: { gte: startOfThisMonth } },
         }),
-        prisma.finished_goods_production_headers.count({
+        prisma.production_outputs.count({
           where: { ...whereClause, created_at: { gte: startOfThisMonth } },
         }),
       ]).then(counts => counts.reduce((sum, count) => sum + count, 0)),
 
       // Total transactions last month (all types)
       Promise.all([
-        prisma.incoming_headers.count({
+        prisma.incoming_goods.count({
           where: { ...whereClause, created_at: { gte: startOfLastMonth, lte: endOfLastMonth } },
         }),
-        prisma.outgoing_headers.count({
+        prisma.outgoing_goods.count({
           where: { ...whereClause, created_at: { gte: startOfLastMonth, lte: endOfLastMonth } },
         }),
-        prisma.material_usage_headers.count({
+        prisma.material_usages.count({
           where: { ...whereClause, created_at: { gte: startOfLastMonth, lte: endOfLastMonth } },
         }),
-        prisma.finished_goods_production_headers.count({
+        prisma.production_outputs.count({
           where: { ...whereClause, created_at: { gte: startOfLastMonth, lte: endOfLastMonth } },
         }),
       ]).then(counts => counts.reduce((sum, count) => sum + count, 0)),
 
-      // Get latest stock snapshot data
-      prisma.stock_daily_snapshot.findFirst({
-        where: whereClause,
-        orderBy: { snapshot_date: 'desc' },
-        select: {
-          snapshot_date: true,
-        },
-      }),
+      // Get latest stock snapshot data - DISABLED: stock_daily_snapshot table removed
+      Promise.resolve(null),
     ]);
 
     // Calculate total documents

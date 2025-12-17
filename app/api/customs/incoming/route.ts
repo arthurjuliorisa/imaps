@@ -26,29 +26,43 @@ export async function GET(request: Request) {
       }
     }
 
-    const incomingHeaders = await prisma.incoming_headers.findMany({
+    const incomingHeaders = await prisma.incoming_goods.findMany({
       where,
-      include: {
-        incoming_details: {
-          select: {
-            item_code: true,
-            item_name: true,
-            uom: true,
-            qty: true,
-            currency: true,
-            amount: true,
-            hs_code: true,
-          },
-        },
-      },
       orderBy: [
         { incoming_date: 'desc' },
         { customs_registration_date: 'desc' },
       ],
     });
 
-    const transformedData = incomingHeaders.flatMap((header) =>
-      header.incoming_details.map((detail) => ({
+    // Manually join with incoming_good_items since the relation is removed from schema
+    const headerIds = incomingHeaders.map(h => h.id);
+    const allItems = await prisma.incoming_good_items.findMany({
+      where: {
+        incoming_good_id: { in: headerIds }
+      },
+      select: {
+        incoming_good_id: true,
+        item_code: true,
+        item_name: true,
+        uom: true,
+        qty: true,
+        currency: true,
+        amount: true,
+        hs_code: true,
+      },
+    });
+
+    // Group items by header ID
+    const itemsByHeaderId = new Map<number, typeof allItems>();
+    allItems.forEach(item => {
+      const existing = itemsByHeaderId.get(item.incoming_good_id) || [];
+      existing.push(item);
+      itemsByHeaderId.set(item.incoming_good_id, existing);
+    });
+
+    const transformedData = incomingHeaders.flatMap((header) => {
+      const items = itemsByHeaderId.get(header.id) || [];
+      return items.map((detail) => ({
         id: header.wms_id + '-' + detail.item_code,
         wmsId: header.wms_id,
         companyCode: header.company_code,
@@ -67,8 +81,8 @@ export async function GET(request: Request) {
         currency: detail.currency,
         amount: Number(detail.amount),
         hsCode: detail.hs_code,
-      }))
-    );
+      }));
+    });
 
     return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {

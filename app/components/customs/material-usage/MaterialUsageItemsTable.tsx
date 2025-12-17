@@ -37,12 +37,12 @@ export function MaterialUsageItemsTable({ control }: MaterialUsageItemsTableProp
   const addNewItem = () => {
     append({
       id: `temp-${Date.now()}`,
-      itemCode: '',
-      itemName: '',
-      itemType: 'ROH',
+      item_code: '',
+      item_name: '',
+      item_type: 'ROH',
       uom: '',
-      quantity: 0,
-      ppkekNumber: '',
+      qty: 0,
+      ppkek_number: '',
     });
   };
 
@@ -95,7 +95,7 @@ export function MaterialUsageItemsTable({ control }: MaterialUsageItemsTableProp
                 <TableRow key={field.id}>
                   <TableCell>
                     <Controller
-                      name={`items.${index}.itemCode`}
+                      name={`items.${index}.item_code`}
                       control={control}
                       rules={{ required: 'Item code is required' }}
                       render={({ field: controllerField, fieldState: { error } }) => (
@@ -113,11 +113,11 @@ export function MaterialUsageItemsTable({ control }: MaterialUsageItemsTableProp
 
                   <TableCell>
                     <Controller
-                      name={`items.${index}.itemType`}
+                      name={`items.${index}.item_type`}
                       control={control}
                       render={({ field: controllerField }) => (
                         <Chip
-                          label={controllerField.value}
+                          label={String(controllerField.value)}
                           size="small"
                           color={controllerField.value === 'ROH' ? 'primary' : 'secondary'}
                         />
@@ -137,7 +137,7 @@ export function MaterialUsageItemsTable({ control }: MaterialUsageItemsTableProp
 
                   <TableCell>
                     <Controller
-                      name={`items.${index}.quantity`}
+                      name={`items.${index}.qty`}
                       control={control}
                       rules={{
                         required: 'Quantity is required',
@@ -163,9 +163,8 @@ export function MaterialUsageItemsTable({ control }: MaterialUsageItemsTableProp
 
                   <TableCell>
                     <Controller
-                      name={`items.${index}.ppkekNumber`}
+                      name={`items.${index}.ppkek_number`}
                       control={control}
-                      rules={{ required: 'PPKEK number is required' }}
                       render={({ field: controllerField, fieldState: { error } }) => (
                         <TextField
                           {...controllerField}
@@ -173,7 +172,7 @@ export function MaterialUsageItemsTable({ control }: MaterialUsageItemsTableProp
                           fullWidth
                           error={!!error}
                           helperText={error?.message}
-                          placeholder="Enter PPKEK number"
+                          placeholder="Enter PPKEK number (optional)"
                         />
                       )}
                     />

@@ -2,63 +2,19 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 
+// TODO: Re-enable when activity_logs table is added back to schema
+// Currently the schema only has audit_logs which has a different structure
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '10');
-    const search = searchParams.get('search') || '';
-    const status = searchParams.get('status') || '';
     const exportData = searchParams.get('export') === 'true';
 
-    const skip = (page - 1) * pageSize;
-
-    // Build where clause
-    const where: any = {};
-
-    if (search) {
-      where.OR = [
-        { action: { contains: search } },
-        { description: { contains: search } },
-        { users: { username: { contains: search } } },
-      ];
-    }
-
-    if (status && status !== 'ALL') {
-      where.status = status;
-    }
-
-    // If export, get all data
+    // If export, return empty CSV
     if (exportData) {
-      const logs = await prisma.activity_logs.findMany({
-        where,
-        orderBy: { created_at: 'desc' },
-        include: {
-          users: {
-            select: {
-              username: true,
-              email: true,
-            },
-          },
-        },
-      });
-
-      // Convert to CSV
       const headers = ['Date & Time', 'User', 'Email', 'Action', 'Description', 'Status', 'IP Address'];
-      const csvData = logs.map(log => [
-        new Date(log.created_at).toLocaleString(),
-        log.users?.username || 'Unknown',
-        log.users?.email || '-',
-        log.action,
-        log.description,
-        log.status,
-        log.ip_address || '-',
-      ]);
-
-      const csv = [
-        headers.join(','),
-        ...csvData.map(row => row.map(cell => `"${cell}"`).join(',')),
-      ].join('\n');
+      const csv = headers.join(',');
 
       return new Response(csv, {
         headers: {
@@ -68,31 +24,14 @@ export async function GET(request: Request) {
       });
     }
 
-    // Get paginated data
-    const [logs, total] = await Promise.all([
-      prisma.activity_logs.findMany({
-        where,
-        skip,
-        take: pageSize,
-        orderBy: { created_at: 'desc' },
-        include: {
-          users: {
-            select: {
-              username: true,
-              email: true,
-            },
-          },
-        },
-      }),
-      prisma.activity_logs.count({ where }),
-    ]);
-
+    // Return empty data - activity_logs table doesn't exist in current schema
     return NextResponse.json({
-      data: logs,
-      total,
+      data: [],
+      total: 0,
       page,
       pageSize,
-      totalPages: Math.ceil(total / pageSize),
+      totalPages: 0,
+      message: 'Activity logs feature is currently disabled. Please add activity_logs table to schema.',
     });
   } catch (error) {
     console.error('[API Error] Failed to fetch activity logs:', error);

@@ -18,8 +18,8 @@ import type {
   TransactionSubmissionResponse,
   PaginatedResponse,
   AdjustmentHeader
-} from '@/types/v2.4.2';
-import { AdjustmentType } from '@/types/v2.4.2';
+} from '@/types/core';
+import { AdjustmentType } from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -32,8 +32,8 @@ function validateAdjustmentTransaction(data: AdjustmentRequest): void {
   const { header, details } = data;
 
   // Validate header
-  if (!header.wms_id || !header.company_code || !header.trx_date) {
-    throw new Error('Missing required header fields: wms_id, company_code, trx_date');
+  if (!header.wms_id || !header.company_code || !header.transaction_date) {
+    throw new Error('Missing required header fields: wms_id, company_code, transaction_date');
   }
 
   if (!header.internal_evidence_number || header.internal_evidence_number.trim() === '') {
@@ -46,12 +46,12 @@ function validateAdjustmentTransaction(data: AdjustmentRequest): void {
   }
 
   details.forEach((detail, index) => {
-    if (!detail.wms_id || !detail.item_code || !detail.item_name) {
+    if (!detail.item_code || !detail.item_name) {
       throw new Error(`Detail ${index + 1}: Missing required fields`);
     }
 
-    if (!detail.item_type_code || !detail.uom || detail.qty === undefined) {
-      throw new Error(`Detail ${index + 1}: Missing item_type_code, uom, or qty`);
+    if (!detail.item_type || !detail.uom || detail.qty === undefined) {
+      throw new Error(`Detail ${index + 1}: Missing item_type, uom, or qty`);
     }
 
     // v2.4.2: qty must always be positive (direction determined by adjustment_type)
@@ -124,11 +124,11 @@ export async function GET(request: NextRequest) {
     const where: any = {};
 
     if (companyCode) {
-      where.company_code = companyCode;
+      where.company_code = parseInt(companyCode);
     }
 
     if (startDate && endDate) {
-      where.trx_date = {
+      where.transaction_date = {
         gte: new Date(startDate),
         lte: new Date(endDate)
       };
@@ -150,9 +150,9 @@ export async function GET(request: NextRequest) {
       where,
       skip,
       take: pageSize,
-      orderBy: { trx_date: 'desc' },
+      orderBy: { transaction_date: 'desc' },
       include: {
-        adjustment_details: true
+        items: true
       }
     });
 
@@ -219,8 +219,8 @@ export async function POST(request: NextRequest) {
         data: {
           wms_id: body.header.wms_id,
           company_code: body.header.company_code,
-          trx_date: new Date(body.header.trx_date),
-          wms_timestamp: new Date(body.header.wms_timestamp),
+          transaction_date: new Date(body.header.transaction_date),
+          timestamp: body.header.timestamp ? new Date(body.header.timestamp) : new Date(),
           wms_doc_type: body.header.wms_doc_type,
           internal_evidence_number: body.header.internal_evidence_number
         }
@@ -229,14 +229,13 @@ export async function POST(request: NextRequest) {
       // Create details
       const details = await Promise.all(
         body.details.map((detail) =>
-          tx.adjustment_details.create({
+          tx.adjustment_items.create({
             data: {
-              header_id: BigInt(header.id),
-              wms_id: detail.wms_id,
-              company_code: body.header.company_code,
-              trx_date: new Date(body.header.trx_date),
+              adjustment_id: header.id,
+              adjustment_company: body.header.company_code,
+              adjustment_date: new Date(body.header.transaction_date),
               adjustment_type: detail.adjustment_type, // v2.4.2: At detail level
-              item_type_code: detail.item_type_code,
+              item_type: detail.item_type,
               item_code: detail.item_code,
               item_name: detail.item_name,
               uom: detail.uom,
@@ -254,8 +253,7 @@ export async function POST(request: NextRequest) {
     await logActivity({
       userId: session.user?.id || '',
       action: 'CREATE',
-      description: `Created adjustment transaction ${body.header.wms_id}`,
-      status: 'SUCCESS'
+      description: `Created adjustment transaction ${body.header.wms_id}`
     });
 
     // Build response
@@ -278,8 +276,7 @@ export async function POST(request: NextRequest) {
       await logActivity({
         userId: session.user?.id || '',
         action: 'CREATE',
-        description: `Failed to create adjustment transaction: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        status: 'FAILED'
+        description: `Failed to create adjustment transaction: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
     }
 

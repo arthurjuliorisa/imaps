@@ -29,7 +29,7 @@ import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcel, exportToPDF, formatCurrency, formatDate } from '@/lib/exportUtils';
 import { getOutgoingTransactions } from '@/lib/api';
-import type { OutgoingHeader } from '@/types/v2.4.2';
+import type { OutgoingHeader } from '@/types/core';
 
 export default function OutgoingGoodsReportPage() {
   const theme = useTheme();
@@ -90,13 +90,12 @@ export default function OutgoingGoodsReportPage() {
       No: (page - 1) * pageSize + index + 1,
       'WMS ID': row.wms_id,
       'Company': row.company_code,
-      'Doc Type': row.customs_doc_type,
-      'Doc Number': row.customs_doc_number,
-      'Doc Date': formatDate(row.customs_doc_date.toISOString()),
+      'Doc Type': row.customs_document_type,
       'PPKEK': row.ppkek_number,
-      'Transaction Date': formatDate(row.trx_date.toISOString()),
-      'Buyer': row.buyer_name || '-',
-      'Remarks': row.remarks || '-',
+      'Reg Date': formatDate(row.customs_registration_date.toISOString()),
+      'Outgoing Date': formatDate(row.outgoing_date.toISOString()),
+      'Recipient': row.recipient_name || '-',
+      'Invoice': row.invoice_number || '-',
     }));
 
     exportToExcel(
@@ -111,11 +110,10 @@ export default function OutgoingGoodsReportPage() {
       no: (page - 1) * pageSize + index + 1,
       wmsId: row.wms_id,
       company: row.company_code,
-      docType: row.customs_doc_type,
-      docNumber: row.customs_doc_number,
-      docDate: formatDate(row.customs_doc_date.toISOString()),
+      docType: row.customs_document_type,
       ppkek: row.ppkek_number,
-      transactionDate: formatDate(row.trx_date.toISOString()),
+      regDate: formatDate(row.customs_registration_date.toISOString()),
+      outgoingDate: formatDate(row.outgoing_date.toISOString()),
     }));
 
     const columns = [
@@ -123,10 +121,9 @@ export default function OutgoingGoodsReportPage() {
       { header: 'WMS ID', dataKey: 'wmsId' },
       { header: 'Company', dataKey: 'company' },
       { header: 'Doc Type', dataKey: 'docType' },
-      { header: 'Doc Number', dataKey: 'docNumber' },
-      { header: 'Doc Date', dataKey: 'docDate' },
       { header: 'PPKEK', dataKey: 'ppkek' },
-      { header: 'Transaction Date', dataKey: 'transactionDate' },
+      { header: 'Reg Date', dataKey: 'regDate' },
+      { header: 'Outgoing Date', dataKey: 'outgoingDate' },
     ];
 
     exportToPDF(
@@ -179,11 +176,11 @@ export default function OutgoingGoodsReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Doc Type</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Doc Number</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Doc Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>PPKEK</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Transaction Date</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Buyer</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Reg Date</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Outgoing Date</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Recipient</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Invoice</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -223,13 +220,13 @@ export default function OutgoingGoodsReportPage() {
                         variant="outlined"
                       />
                     </TableCell>
-                    <TableCell>{row.customs_doc_number}</TableCell>
-                    <TableCell>{formatDate(row.customs_doc_date.toISOString())}</TableCell>
                     <TableCell>
                       <Chip label={row.ppkek_number} size="small" color="info" variant="outlined" />
                     </TableCell>
-                    <TableCell>{formatDate(row.trx_date.toISOString())}</TableCell>
-                    <TableCell>{row.buyer_name || '-'}</TableCell>
+                    <TableCell>{formatDate(row.customs_registration_date.toISOString())}</TableCell>
+                    <TableCell>{formatDate(row.outgoing_date.toISOString())}</TableCell>
+                    <TableCell>{row.recipient_name || '-'}</TableCell>
+                    <TableCell>{row.invoice_number || '-'}</TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', gap: 1 }}>
                         <Tooltip title="View Details">

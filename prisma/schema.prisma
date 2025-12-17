@@ -15,20 +15,20 @@ datasource db {
 // ============================================================================
 
 enum CustomsDocumentType {
-  BC23   // Import Declaration
-  BC27   // Other Bonded Zone Release (Incoming & Outgoing)
-  BC40   // Local Purchase from Non-Bonded Zone
-  BC30   // Export Declaration
-  BC25   // Local Sales to Non-Bonded Zone
-  BC261  // Subcontracting - Incoming
-  BC262  // Subcontracting - Outgoing
+  BC23 // Import Declaration
+  BC27 // Other Bonded Zone Release (Incoming & Outgoing)
+  BC40 // Local Purchase from Non-Bonded Zone
+  BC30 // Export Declaration
+  BC25 // Local Sales to Non-Bonded Zone
+  BC261 // Subcontracting - Incoming
+  BC262 // Subcontracting - Outgoing
 }
 
 // ============================================================================
 // ITEM TYPE MASTER TABLE (Replaced ENUM for extensibility)
 // ============================================================================
 
-model ItemType {
+model item_types {
   item_type_code String   @id @db.VarChar(10)
   name_en        String   @db.VarChar(100)
   name_de        String?  @db.VarChar(100)
@@ -39,13 +39,11 @@ model ItemType {
   sort_order     Int?
   created_at     DateTime @default(now()) @db.Timestamptz(6)
   updated_at     DateTime @updatedAt @db.Timestamptz(6)
-
-  @@map("item_types")
 }
 
 enum AdjustmentType {
-  GAIN  // Inventory increase
-  LOSS  // Inventory decrease
+  GAIN // Inventory increase
+  LOSS // Inventory decrease
 }
 
 enum Currency {
@@ -65,37 +63,36 @@ enum CompanyStatus {
 // MASTER DATA TABLES
 // ============================================================================
 
-model Company {
-  id           Int           @id @default(autoincrement())
-  code         Int           @unique
-  name         String        @db.VarChar(200)
-  status       CompanyStatus @default(ACTIVE)
-  created_at   DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at   DateTime      @updatedAt @db.Timestamptz(6)
-  deleted_at   DateTime?     @db.Timestamptz(6)
+model companies {
+  id         Int           @id @default(autoincrement())
+  code       Int           @unique
+  name       String        @db.VarChar(200)
+  status     CompanyStatus @default(ACTIVE)
+  created_at DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at DateTime      @updatedAt @db.Timestamptz(6)
+  deleted_at DateTime?     @db.Timestamptz(6)
 
   // Relations
-  incoming_goods       IncomingGood[]
-  material_usages      MaterialUsage[]
-  wip_balances         WipBalance[]
-  production_outputs   ProductionOutput[]
-  outgoing_goods       OutgoingGood[]
-  adjustments          Adjustment[]
-  beginning_balances   BeginningBalance[]
-  items                Item[]
-  users                User[]
+  incoming_goods     incoming_goods[]
+  material_usages    material_usages[]
+  wip_balances       wip_balances[]
+  production_outputs production_outputs[]
+  outgoing_goods     outgoing_goods[]
+  adjustments        adjustments[]
+  beginning_balances beginning_balances[]
+  items              items[]
+  users              users[]
 
   @@index([code])
   @@index([status])
-  @@map("companies")
 }
 
-model Item {
+model items {
   id           Int       @id @default(autoincrement())
   company_code Int
   item_code    String    @db.VarChar(50)
   item_name    String    @db.VarChar(200)
-  item_type    String       @db.VarChar(10)
+  item_type    String    @db.VarChar(10)
   hs_code      String?   @db.VarChar(20)
   uom          String    @db.VarChar(20)
   currency     Currency  @default(USD)
@@ -104,61 +101,58 @@ model Item {
   updated_at   DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at   DateTime? @db.Timestamptz(6)
 
-  company Company @relation(fields: [company_code], references: [code])
+  company companies @relation(fields: [company_code], references: [code])
 
   @@unique([company_code, item_code])
   @@index([company_code])
   @@index([item_code])
   @@index([item_type])
   @@index([is_active])
-  @@map("items")
 }
 
-model User {
-  id                String              @id @default(dbgenerated("gen_random_uuid()"))
-  username          String              @unique @db.VarChar(100)
-  email             String              @unique @db.VarChar(200)
-  password          String              @db.VarChar(255)
-  full_name         String              @db.VarChar(200)
-  role              String              @default("USER") @db.VarChar(50)
-  company_code      Int?
-  is_active         Boolean             @default(true)
-  created_at        DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime            @updatedAt @db.Timestamptz(6)
-  deleted_at        DateTime?           @db.Timestamptz(6)
+model users {
+  id           String    @id @default(dbgenerated("gen_random_uuid()"))
+  username     String    @unique @db.VarChar(100)
+  email        String    @unique @db.VarChar(200)
+  password     String    @db.VarChar(255)
+  full_name    String    @db.VarChar(200)
+  role         String    @default("USER") @db.VarChar(50)
+  company_code Int?
+  is_active    Boolean   @default(true)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at   DateTime? @db.Timestamptz(6)
 
   // Relations
-  company           Company?            @relation(fields: [company_code], references: [code], onDelete: NoAction, onUpdate: NoAction)
-  user_access_menus UserAccessMenu[]
+  company           companies?          @relation(fields: [company_code], references: [code], onDelete: NoAction, onUpdate: NoAction)
+  user_access_menus user_access_menus[]
 
   @@index([username])
   @@index([email])
   @@index([company_code])
-  @@map("users")
 }
 
-model Menu {
-  id                String           @id @default(dbgenerated("gen_random_uuid()"))
-  parent_id         String?
-  menu_name         String           @db.VarChar(100)
-  menu_path         String?          @db.VarChar(255)
-  menu_icon         String?          @db.VarChar(50)
-  menu_order        Int?
-  is_active         Boolean          @default(true)
-  created_at        DateTime         @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime         @updatedAt @db.Timestamptz(6)
+model menus {
+  id         String   @id @default(dbgenerated("gen_random_uuid()"))
+  parent_id  String?
+  menu_name  String   @db.VarChar(100)
+  menu_path  String?  @db.VarChar(255)
+  menu_icon  String?  @db.VarChar(50)
+  menu_order Int?
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
 
   // Relations
-  parent            Menu?            @relation("MenuHierarchy", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  children          Menu[]           @relation("MenuHierarchy")
-  user_access_menus UserAccessMenu[]
+  parent            menus?              @relation("MenuHierarchy", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children          menus[]             @relation("MenuHierarchy")
+  user_access_menus user_access_menus[]
 
   @@index([parent_id])
   @@index([menu_order])
-  @@map("menus")
 }
 
-model UserAccessMenu {
+model user_access_menus {
   id         String   @id @default(dbgenerated("gen_random_uuid()"))
   user_id    String
   menu_id    String
@@ -170,22 +164,20 @@ model UserAccessMenu {
   updated_at DateTime @updatedAt @db.Timestamptz(6)
 
   // Relations
-  user User @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  menu Menu @relation(fields: [menu_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  menu menus @relation(fields: [menu_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([user_id, menu_id])
   @@index([user_id])
   @@index([menu_id])
-  @@map("user_access_menus")
 }
 
-
-model BeginningBalance {
+model beginning_balances {
   id           Int
   company_code Int
   item_code    String    @db.VarChar(50)
   item_name    String    @db.VarChar(200)
-  item_type    String       @db.VarChar(10)
+  item_type    String    @db.VarChar(10)
   uom          String    @db.VarChar(20)
   qty          Decimal   @db.Decimal(15, 3)
   balance_date DateTime  @db.Date
@@ -193,32 +185,30 @@ model BeginningBalance {
   updated_at   DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at   DateTime? @db.Timestamptz(6)
 
-  company Company @relation(fields: [company_code], references: [code])
+  company companies @relation(fields: [company_code], references: [code])
 
   @@unique([company_code, item_code, balance_date])
   @@index([company_code])
   @@index([item_code])
   @@index([balance_date])
-  @@map("beginning_balances")
 }
 
-model AuditLog {
-  id            BigInt   @id @default(autoincrement())
-  table_name    String   @db.VarChar(100)
-  record_id     Int
-  action        String   @db.VarChar(20)
-  old_values    Json?
-  new_values    Json?
-  changed_by    String?  @db.VarChar(100)
-  changed_at    DateTime @default(now()) @db.Timestamptz(6)
-  ip_address    String?  @db.VarChar(50)
-  user_agent    String?  @db.VarChar(500)
+model audit_logs {
+  id         BigInt   @id @default(autoincrement())
+  table_name String   @db.VarChar(100)
+  record_id  Int
+  action     String   @db.VarChar(20)
+  old_values Json?
+  new_values Json?
+  changed_by String?  @db.VarChar(100)
+  changed_at DateTime @default(now()) @db.Timestamptz(6)
+  ip_address String?  @db.VarChar(50)
+  user_agent String?  @db.VarChar(500)
 
   @@index([table_name])
   @@index([record_id])
   @@index([action])
   @@index([changed_at])
-  @@map("audit_logs")
 }
 
 // ============================================================================
@@ -235,27 +225,27 @@ model AuditLog {
 // Referential integrity is maintained at application level.
 // ============================================================================
 
-model IncomingGood {
-  id                         Int                  @default(autoincrement())
-  wms_id                     String               @db.VarChar(100)
-  company_code               Int
-  owner                      Int
-  customs_document_type      CustomsDocumentType
-  ppkek_number               String               @db.VarChar(50)
-  customs_registration_date  DateTime             @db.Date
-  incoming_evidence_number   String               @db.VarChar(50)
-  incoming_date              DateTime             @db.Date
-  invoice_number             String               @db.VarChar(50)
-  invoice_date               DateTime             @db.Date
-  shipper_name               String               @db.VarChar(200)
-  timestamp                  DateTime             @db.Timestamptz(6)
-  created_at                 DateTime             @default(now()) @db.Timestamptz(6)
-  updated_at                 DateTime             @updatedAt @db.Timestamptz(6)
-  deleted_at                 DateTime?            @db.Timestamptz(6)
+model incoming_goods {
+  id                        Int                 @id @default(autoincrement())
+  wms_id                    String              @db.VarChar(100)
+  company_code              Int
+  owner                     Int
+  customs_document_type     CustomsDocumentType
+  ppkek_number              String              @db.VarChar(50)
+  customs_registration_date DateTime            @db.Date
+  incoming_evidence_number  String              @db.VarChar(50)
+  incoming_date             DateTime            @db.Date
+  invoice_number            String              @db.VarChar(50)
+  invoice_date              DateTime            @db.Date
+  shipper_name              String              @db.VarChar(200)
+  timestamp                 DateTime            @db.Timestamptz(6)
+  created_at                DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime            @updatedAt @db.Timestamptz(6)
+  deleted_at                DateTime?           @db.Timestamptz(6)
 
-  company Company @relation(fields: [company_code], references: [code])
+  company companies @relation(fields: [company_code], references: [code])
   // NOTE: items relation removed - use manual joins in queries
-  // items   IncomingGoodItem[]
+  // items   incoming_good_items[]
 
   @@unique([company_code, wms_id, incoming_date])
   @@unique([company_code, id, incoming_date])
@@ -265,54 +255,52 @@ model IncomingGood {
   @@index([ppkek_number])
   @@index([customs_document_type])
   @@index([incoming_evidence_number])
-  @@map("incoming_goods")
 }
 
-model IncomingGoodItem {
-  id                          Int       @id @default(autoincrement())
-  incoming_good_id            Int
-  incoming_good_company       Int
-  incoming_good_date          DateTime  @db.Date
-  item_type                   String   @db.VarChar(10)
-  item_code                   String    @db.VarChar(50)
-  item_name                   String    @db.VarChar(200)
-  hs_code                     String?   @db.VarChar(20)
-  uom                         String    @db.VarChar(20)
-  qty                         Decimal   @db.Decimal(15, 3)
-  currency                    Currency
-  amount                      Decimal   @db.Decimal(18, 4)
-  created_at                  DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at                  DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at                  DateTime? @db.Timestamptz(6)
+model incoming_good_items {
+  id                    Int       @id @default(autoincrement())
+  incoming_good_id      Int
+  incoming_good_company Int
+  incoming_good_date    DateTime  @db.Date
+  item_type             String    @db.VarChar(10)
+  item_code             String    @db.VarChar(50)
+  item_name             String    @db.VarChar(200)
+  hs_code               String?   @db.VarChar(20)
+  uom                   String    @db.VarChar(20)
+  qty                   Decimal   @db.Decimal(15, 3)
+  currency              Currency
+  amount                Decimal   @db.Decimal(18, 4)
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at            DateTime? @db.Timestamptz(6)
 
   // NOTE: incoming_good relation removed due to partitioning limitation
   // PostgreSQL doesn't support FK from regular table to partitioned table
   // Use manual joins: WHERE incoming_good_company = ? AND incoming_good_id = ? AND incoming_good_date = ?
-  // incoming_good IncomingGood @relation(fields: [incoming_good_company, incoming_good_id, incoming_good_date], references: [company_code, id, incoming_date], onDelete: Cascade)
+  // incoming_good incoming_goods @relation(fields: [incoming_good_company, incoming_good_id, incoming_good_date], references: [company_code, id, incoming_date], onDelete: Cascade)
 
   @@index([incoming_good_id])
   @@index([incoming_good_id, incoming_good_company, incoming_good_date])
   @@index([item_code])
   @@index([item_type])
-  @@map("incoming_good_items")
 }
 
-model MaterialUsage {
-  id                       Int                 @default(autoincrement())
-  wms_id                   String              @db.VarChar(100)
+model material_usages {
+  id                       Int       @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
   company_code             Int
-  work_order_number        String?             @db.VarChar(50)
+  work_order_number        String?   @db.VarChar(50)
   cost_center_number       String?
-  internal_evidence_number String              @db.VarChar(50)
-  transaction_date         DateTime            @db.Date
-  reversal                 String?             @db.VarChar(1)
-  timestamp                DateTime            @db.Timestamptz(6)
-  created_at               DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at               DateTime            @updatedAt @db.Timestamptz(6)
-  deleted_at               DateTime?           @db.Timestamptz(6)
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  reversal                 String?   @db.VarChar(1)
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
 
-  company Company            @relation(fields: [company_code], references: [code])
-  items   MaterialUsageItem[]
+  company companies              @relation(fields: [company_code], references: [code])
+  items   material_usage_items[]
 
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
@@ -322,39 +310,37 @@ model MaterialUsage {
   @@index([work_order_number])
   @@index([cost_center_number])
   @@index([internal_evidence_number])
-  @@map("material_usages")
 }
 
-model MaterialUsageItem {
-  id                        Int       @id @default(autoincrement())
-  material_usage_id         Int
-  material_usage_company    Int
-  material_usage_date       DateTime  @db.Date
-  item_type                 String   @db.VarChar(10)
-  item_code                 String    @db.VarChar(50)
-  item_name                 String    @db.VarChar(200)
-  uom                       String    @db.VarChar(20)
-  qty                       Decimal   @db.Decimal(15, 3)
-  ppkek_number              String?   @db.VarChar(50)
-  created_at                DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at                DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at                DateTime? @db.Timestamptz(6)
+model material_usage_items {
+  id                     Int       @id @default(autoincrement())
+  material_usage_id      Int
+  material_usage_company Int
+  material_usage_date    DateTime  @db.Date
+  item_type              String    @db.VarChar(10)
+  item_code              String    @db.VarChar(50)
+  item_name              String    @db.VarChar(200)
+  uom                    String    @db.VarChar(20)
+  qty                    Decimal   @db.Decimal(15, 3)
+  ppkek_number           String?   @db.VarChar(50)
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at             DateTime? @db.Timestamptz(6)
 
-  material_usage MaterialUsage @relation(fields: [material_usage_company, material_usage_id, material_usage_date], references: [company_code, id, transaction_date], onDelete: Cascade)
+  material_usage material_usages @relation(fields: [material_usage_company, material_usage_id, material_usage_date], references: [company_code, id, transaction_date], onDelete: Cascade)
 
   @@index([material_usage_id])
   @@index([material_usage_id, material_usage_company, material_usage_date])
   @@index([item_code])
   @@index([item_type])
   @@index([ppkek_number])
-  @@map("material_usage_items")
 }
 
-model WipBalance {
-  id           Int       @default(autoincrement())
+model wip_balances {
+  id           Int       @id @default(autoincrement())
   wms_id       String    @db.VarChar(100)
   company_code Int
-  item_type    String       @db.VarChar(10)
+  item_type    String    @db.VarChar(10)
   item_code    String    @db.VarChar(50)
   item_name    String    @db.VarChar(200)
   stock_date   DateTime  @db.Date
@@ -365,7 +351,7 @@ model WipBalance {
   updated_at   DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at   DateTime? @db.Timestamptz(6)
 
-  company Company @relation(fields: [company_code], references: [code])
+  company companies @relation(fields: [company_code], references: [code])
 
   @@unique([company_code, wms_id, stock_date])
   @@index([wms_id])
@@ -373,23 +359,22 @@ model WipBalance {
   @@index([stock_date])
   @@index([item_code])
   @@index([item_type])
-  @@map("wip_balances")
 }
 
-model ProductionOutput {
-  id                       Int                 @default(autoincrement())
-  wms_id                   String                 @db.VarChar(100)
+model production_outputs {
+  id                       Int       @id @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
   company_code             Int
-  internal_evidence_number String                 @db.VarChar(50)
-  transaction_date         DateTime               @db.Date
-  reversal                 String?                @db.VarChar(1)
-  timestamp                DateTime               @db.Timestamptz(6)
-  created_at               DateTime               @default(now()) @db.Timestamptz(6)
-  updated_at               DateTime               @updatedAt @db.Timestamptz(6)
-  deleted_at               DateTime?              @db.Timestamptz(6)
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  reversal                 String?   @db.VarChar(1)
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
 
-  company Company               @relation(fields: [company_code], references: [code])
-  items   ProductionOutputItem[]
+  company companies                 @relation(fields: [company_code], references: [code])
+  items   production_output_items[]
 
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
@@ -397,53 +382,51 @@ model ProductionOutput {
   @@index([company_code])
   @@index([transaction_date])
   @@index([internal_evidence_number])
-  @@map("production_outputs")
 }
 
-model ProductionOutputItem {
-  id                          Int       @id @default(autoincrement())
-  production_output_id        Int
-  production_output_company   Int
-  production_output_date      DateTime  @db.Date
-  item_type                   String   @db.VarChar(10)
-  item_code                   String    @db.VarChar(50)
-  item_name                   String    @db.VarChar(200)
-  uom                         String    @db.VarChar(20)
-  qty                         Decimal   @db.Decimal(15, 3)
-  work_order_numbers          String[]
-  created_at                  DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at                  DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at                  DateTime? @db.Timestamptz(6)
+model production_output_items {
+  id                        Int       @id @default(autoincrement())
+  production_output_id      Int
+  production_output_company Int
+  production_output_date    DateTime  @db.Date
+  item_type                 String    @db.VarChar(10)
+  item_code                 String    @db.VarChar(50)
+  item_name                 String    @db.VarChar(200)
+  uom                       String    @db.VarChar(20)
+  qty                       Decimal   @db.Decimal(15, 3)
+  work_order_numbers        String[]
+  created_at                DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at                DateTime? @db.Timestamptz(6)
 
-  production_output ProductionOutput @relation(fields: [production_output_company, production_output_id, production_output_date], references: [company_code, id, transaction_date], onDelete: Cascade)
+  production_output production_outputs @relation(fields: [production_output_company, production_output_id, production_output_date], references: [company_code, id, transaction_date], onDelete: Cascade)
 
   @@index([production_output_id])
   @@index([production_output_id, production_output_company, production_output_date])
   @@index([item_code])
   @@index([item_type])
-  @@map("production_output_items")
 }
 
-model OutgoingGood {
-  id                         Int                  @default(autoincrement())
-  wms_id                    String               @db.VarChar(100)
+model outgoing_goods {
+  id                        Int                 @id @default(autoincrement())
+  wms_id                    String              @db.VarChar(100)
   company_code              Int
   owner                     Int
   customs_document_type     CustomsDocumentType
-  ppkek_number              String               @db.VarChar(50)
-  customs_registration_date DateTime             @db.Date
-  outgoing_evidence_number  String               @db.VarChar(50)
-  outgoing_date             DateTime             @db.Date
-  invoice_number            String               @db.VarChar(50)
-  invoice_date              DateTime             @db.Date
-  recipient_name            String               @db.VarChar(200)
-  timestamp                 DateTime             @db.Timestamptz(6)
-  created_at                DateTime             @default(now()) @db.Timestamptz(6)
-  updated_at                DateTime             @updatedAt @db.Timestamptz(6)
-  deleted_at                DateTime?            @db.Timestamptz(6)
+  ppkek_number              String              @db.VarChar(50)
+  customs_registration_date DateTime            @db.Date
+  outgoing_evidence_number  String              @db.VarChar(50)
+  outgoing_date             DateTime            @db.Date
+  invoice_number            String              @db.VarChar(50)
+  invoice_date              DateTime            @db.Date
+  recipient_name            String              @db.VarChar(200)
+  timestamp                 DateTime            @db.Timestamptz(6)
+  created_at                DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime            @updatedAt @db.Timestamptz(6)
+  deleted_at                DateTime?           @db.Timestamptz(6)
 
-  company Company            @relation(fields: [company_code], references: [code])
-  items   OutgoingGoodItem[]
+  company companies             @relation(fields: [company_code], references: [code])
+  items   outgoing_good_items[]
 
   @@unique([company_code, wms_id, outgoing_date])
   @@unique([company_code, id, outgoing_date])
@@ -453,15 +436,14 @@ model OutgoingGood {
   @@index([ppkek_number])
   @@index([customs_document_type])
   @@index([outgoing_evidence_number])
-  @@map("outgoing_goods")
 }
 
-model OutgoingGoodItem {
+model outgoing_good_items {
   id                        Int       @id @default(autoincrement())
   outgoing_good_id          Int
   outgoing_good_company     Int
   outgoing_good_date        DateTime  @db.Date
-  item_type                 String   @db.VarChar(10)
+  item_type                 String    @db.VarChar(10)
   item_code                 String    @db.VarChar(50)
   item_name                 String    @db.VarChar(200)
   production_output_wms_ids String[]
@@ -474,29 +456,28 @@ model OutgoingGoodItem {
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime? @db.Timestamptz(6)
 
-  outgoing_good OutgoingGood @relation(fields: [outgoing_good_company, outgoing_good_id, outgoing_good_date], references: [company_code, id, outgoing_date], onDelete: Cascade)
+  outgoing_good outgoing_goods @relation(fields: [outgoing_good_company, outgoing_good_id, outgoing_good_date], references: [company_code, id, outgoing_date], onDelete: Cascade)
 
   @@index([outgoing_good_id])
   @@index([outgoing_good_id, outgoing_good_company, outgoing_good_date])
   @@index([item_code])
   @@index([item_type])
-  @@map("outgoing_good_items")
 }
 
-model Adjustment {
-  id                       Int                 @default(autoincrement())
-  wms_id                   String           @db.VarChar(100)
+model adjustments {
+  id                       Int       @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
   company_code             Int
-  wms_doc_type             String?          @db.VarChar(100)
-  internal_evidence_number String           @db.VarChar(50)
-  transaction_date         DateTime         @db.Date
-  timestamp                DateTime         @db.Timestamptz(6)
-  created_at               DateTime         @default(now()) @db.Timestamptz(6)
-  updated_at               DateTime         @updatedAt @db.Timestamptz(6)
-  deleted_at               DateTime?        @db.Timestamptz(6)
+  wms_doc_type             String?   @db.VarChar(100)
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
 
-  company Company          @relation(fields: [company_code], references: [code])
-  items   AdjustmentItem[]
+  company companies          @relation(fields: [company_code], references: [code])
+  items   adjustment_items[]
 
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
@@ -504,31 +485,29 @@ model Adjustment {
   @@index([company_code])
   @@index([transaction_date])
   @@index([internal_evidence_number])
-  @@map("adjustments")
 }
 
-model AdjustmentItem {
-  id                  Int            @id @default(autoincrement())
-  adjustment_id       Int
-  adjustment_company  Int
-  adjustment_date     DateTime       @db.Date
-  adjustment_type     AdjustmentType
-  item_type           String   @db.VarChar(10)
-  item_code           String         @db.VarChar(50)
-  item_name           String         @db.VarChar(200)
-  uom                 String         @db.VarChar(20)
-  qty                 Decimal        @db.Decimal(15, 3)
-  reason              String?        @db.VarChar(500)
-  created_at          DateTime       @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime       @updatedAt @db.Timestamptz(6)
-  deleted_at          DateTime?      @db.Timestamptz(6)
+model adjustment_items {
+  id                 Int            @id @default(autoincrement())
+  adjustment_id      Int
+  adjustment_company Int
+  adjustment_date    DateTime       @db.Date
+  adjustment_type    AdjustmentType
+  item_type          String         @db.VarChar(10)
+  item_code          String         @db.VarChar(50)
+  item_name          String         @db.VarChar(200)
+  uom                String         @db.VarChar(20)
+  qty                Decimal        @db.Decimal(15, 3)
+  reason             String?        @db.VarChar(500)
+  created_at         DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime       @updatedAt @db.Timestamptz(6)
+  deleted_at         DateTime?      @db.Timestamptz(6)
 
-  adjustment Adjustment @relation(fields: [adjustment_company, adjustment_id, adjustment_date], references: [company_code, id, transaction_date], onDelete: Cascade)
+  adjustment adjustments @relation(fields: [adjustment_company, adjustment_id, adjustment_date], references: [company_code, id, transaction_date], onDelete: Cascade)
 
   @@index([adjustment_id])
   @@index([adjustment_id, adjustment_company, adjustment_date])
   @@index([item_code])
   @@index([item_type])
   @@index([adjustment_type])
-  @@map("adjustment_items")
 }

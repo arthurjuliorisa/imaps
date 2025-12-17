@@ -28,7 +28,7 @@ import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 import { getMaterialUsageTransactions } from '@/lib/api';
-import type { MaterialUsageHeader } from '@/types/v2.4.2';
+import type { MaterialUsageHeader } from '@/types/core';
 
 export default function MaterialUsagePage() {
   const theme = useTheme();

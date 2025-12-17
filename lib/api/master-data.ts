@@ -12,7 +12,7 @@ import type {
   BeginningBalanceRequest,
   PaginatedResponse,
   ListQueryParams
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 // ============================================================================
 // COMPANIES

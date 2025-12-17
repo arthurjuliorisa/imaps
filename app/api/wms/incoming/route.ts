@@ -18,7 +18,7 @@ import type {
   PaginatedResponse,
   IncomingHeader,
   IncomingDetail
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -31,11 +31,11 @@ function validateIncomingTransaction(data: IncomingTransactionRequest): void {
   const { header, details } = data;
 
   // Validate header
-  if (!header.wms_id || !header.company_code || !header.trx_date) {
-    throw new Error('Missing required header fields: wms_id, company_code, trx_date');
+  if (!header.wms_id || !header.company_code || !header.incoming_date) {
+    throw new Error('Missing required header fields: wms_id, company_code, incoming_date');
   }
 
-  if (!header.customs_doc_type || !header.customs_doc_number || !header.customs_doc_date) {
+  if (!header.customs_document_type || !header.customs_registration_date) {
     throw new Error('Missing required customs document fields');
   }
 
@@ -49,12 +49,12 @@ function validateIncomingTransaction(data: IncomingTransactionRequest): void {
   }
 
   details.forEach((detail, index) => {
-    if (!detail.wms_id || !detail.item_code || !detail.item_name) {
+    if (!detail.item_code || !detail.item_name) {
       throw new Error(`Detail ${index + 1}: Missing required fields`);
     }
 
-    if (!detail.item_type_code || !detail.uom || detail.qty === undefined) {
-      throw new Error(`Detail ${index + 1}: Missing item_type_code, uom, or qty`);
+    if (!detail.item_type || !detail.uom || detail.qty === undefined) {
+      throw new Error(`Detail ${index + 1}: Missing item_type, uom, or qty`);
     }
 
     if (!detail.currency || detail.amount === undefined) {
@@ -122,11 +122,11 @@ export async function GET(request: NextRequest) {
     const where: any = {};
 
     if (companyCode) {
-      where.company_code = companyCode;
+      where.company_code = parseInt(companyCode);
     }
 
     if (startDate && endDate) {
-      where.trx_date = {
+      where.incoming_date = {
         gte: new Date(startDate),
         lte: new Date(endDate)
       };
@@ -145,15 +145,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total count
-    const totalRecords = await prisma.incoming_headers.count({ where });
+    const totalRecords = await prisma.incoming_goods.count({ where });
 
     // Get paginated data
     const skip = (page - 1) * pageSize;
-    const headers = await prisma.incoming_headers.findMany({
+    const headers = await prisma.incoming_goods.findMany({
       where,
       skip,
       take: pageSize,
-      orderBy: { trx_date: 'desc' }
+      orderBy: { incoming_date: 'desc' }
     });
 
     // Build response
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
     validateIncomingTransaction(body);
 
     // Check for duplicate wms_id
-    const existing = await prisma.incoming_headers.findFirst({
+    const existing = await prisma.incoming_goods.findFirst({
       where: {
         wms_id: body.header.wms_id,
         company_code: body.header.company_code
@@ -214,18 +214,17 @@ export async function POST(request: NextRequest) {
 
     // Create transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Create header (mapping v2.4.2 API fields to Prisma schema fields)
-      const header = await tx.incoming_headers.create({
+      // Create header (mapping API fields to Prisma schema fields)
+      const header = await tx.incoming_goods.create({
         data: {
           wms_id: body.header.wms_id,
           company_code: body.header.company_code,
-          trx_date: new Date(body.header.trx_date),
-          wms_timestamp: body.header.wms_timestamp ? new Date(body.header.wms_timestamp) : new Date(),
-          customs_document_type: body.header.customs_doc_type,  // mapped
-          incoming_evidence_number: body.header.customs_doc_number,  // mapped
-          customs_registration_date: new Date(body.header.customs_doc_date),  // mapped
-          incoming_date: new Date(body.header.trx_date),  // use trx_date as incoming_date
-          shipper_name: body.header.supplier_name || '',  // mapped
+          timestamp: body.header.timestamp ? new Date(body.header.timestamp) : new Date(),
+          customs_document_type: body.header.customs_document_type,
+          incoming_evidence_number: body.header.incoming_evidence_number || body.header.wms_id,
+          customs_registration_date: new Date(body.header.customs_registration_date),
+          incoming_date: new Date(body.header.incoming_date),
+          shipper_name: body.header.shipper_name || '',
           owner: body.header.owner,
           ppkek_number: body.header.ppkek_number || '',
           invoice_number: body.header.invoice_number || '',
@@ -236,13 +235,12 @@ export async function POST(request: NextRequest) {
       // Create details
       const details = await Promise.all(
         body.details.map((detail) =>
-          tx.incoming_details.create({
+          tx.incoming_good_items.create({
             data: {
-              header_id: BigInt(header.id),
-              wms_id: detail.wms_id,
-              company_code: body.header.company_code,
-              trx_date: new Date(body.header.trx_date),
-              item_type_code: detail.item_type_code,
+              incoming_good_id: header.id,
+              incoming_good_company: body.header.company_code,
+              incoming_good_date: new Date(body.header.incoming_date),
+              item_type: detail.item_type,
               item_code: detail.item_code,
               item_name: detail.item_name,
               uom: detail.uom,
@@ -262,8 +260,7 @@ export async function POST(request: NextRequest) {
     await logActivity({
       userId: session.user?.id || '',
       action: 'CREATE',
-      description: `Created incoming transaction ${body.header.wms_id}`,
-      status: 'SUCCESS'
+      description: `Created incoming transaction ${body.header.wms_id}`
     });
 
     // Build response
@@ -286,8 +283,7 @@ export async function POST(request: NextRequest) {
       await logActivity({
         userId: session.user?.id || '',
         action: 'CREATE',
-        description: `Failed to create incoming transaction: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        status: 'FAILED'
+        description: `Failed to create incoming transaction: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
     }
 

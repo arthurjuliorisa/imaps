@@ -67,7 +67,7 @@ export async function GET(request: Request) {
       uom: {
         code: balance.uom,
       },
-      beginningBalance: Number(balance.balance_qty),
+      beginningBalance: Number(balance.qty),
       beginningDate: balance.balance_date,
       remarks: null,
       itemId: balance.item_code,

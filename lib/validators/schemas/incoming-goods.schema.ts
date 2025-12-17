@@ -22,7 +22,7 @@
  */
 
 import { z } from 'zod';
-import { CustomsDocumentType, Currency, ItemType } from '@prisma/client';
+import { CustomsDocumentType, Currency } from '@prisma/client';
 
 // =============================================================================
 // CONSTANTS
@@ -61,7 +61,7 @@ const dateStringSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format')
   .refine(
-    (dateStr) => {
+    (dateStr: string) => {
       const date = new Date(dateStr);
       return !isNaN(date.getTime());
     },
@@ -74,7 +74,7 @@ const dateStringSchema = z
 const iso8601Schema = z
   .string()
   .refine(
-    (dateStr) => {
+    (dateStr: string) => {
       const date = new Date(dateStr);
       return !isNaN(date.getTime());
     },
@@ -88,7 +88,7 @@ const companyCodeSchema = z
   .number()
   .int('Company code must be an integer')
   .refine(
-    (code) => VALID_COMPANY_CODES.includes(code as any),
+    (code: number) => VALID_COMPANY_CODES.includes(code as any),
     {
       message: `Company code must be one of: ${VALID_COMPANY_CODES.join(', ')}`,
     }
@@ -99,7 +99,7 @@ const companyCodeSchema = z
 // =============================================================================
 
 /**
- * Single item schema with ItemType enum validation
+ * Single item schema with item_type string validation
  */
 export const incomingGoodItemSchema = z.object({
   item_type: z.enum(
@@ -107,7 +107,7 @@ export const incomingGoodItemSchema = z.object({
     {
       message: `Item type must be one of: ${VALID_ITEM_TYPES.join(', ')}`,
     }
-  ).transform(val => val as ItemType), // Type assertion for TypeScript
+  ), // Returns string type (e.g., 'ROH', 'FERT', etc.)
   
   item_code: z
     .string()
@@ -139,7 +139,7 @@ export const incomingGoodItemSchema = z.object({
     .positive('Quantity must be greater than 0')
     .finite('Quantity must be a finite number')
     .refine(
-      (val) => {
+      (val: number) => {
         const decimalPlaces = val.toString().split('.')[1]?.length || 0;
         return decimalPlaces <= 3;
       },
@@ -151,14 +151,14 @@ export const incomingGoodItemSchema = z.object({
     {
       message: `Currency must be one of: ${VALID_CURRENCIES.join(', ')}`,
     }
-  ).transform(val => val as Currency),
+  ) as z.ZodType<Currency>, // Type assertion for Currency enum
   
   amount: z
     .number()
     .nonnegative('Amount must be greater than or equal to 0')
     .finite('Amount must be a finite number')
     .refine(
-      (val) => {
+      (val: number) => {
         const decimalPlaces = val.toString().split('.')[1]?.length || 0;
         return decimalPlaces <= 4;
       },
@@ -232,10 +232,10 @@ export const incomingGoodRequestSchema = z
   })
   // Business rule: customs_registration_date <= incoming_date
   .refine(
-    (data) => {
+    (data: any) => {
       const customsDate = new Date(data.customs_registration_date);
       const incomingDate = new Date(data.incoming_date);
-      
+
       return customsDate <= incomingDate;
     },
     {
@@ -245,7 +245,7 @@ export const incomingGoodRequestSchema = z
   )
   // Business rule: incoming_date cannot be in the future (environment-based)
   .refine(
-    (data) => {
+    (data: any) => {
       // Skip validation in development/staging for testing purposes
       const isDevelopment = process.env.NODE_ENV === 'development' || 
                            process.env.ALLOW_FUTURE_DATES === 'true';
@@ -310,7 +310,7 @@ export function validateIncomingGoodRequest(data: unknown): ValidationResult {
   }
   
   // Transform Zod errors to API error format
-  const errors: ValidationErrorDetail[] = result.error.issues.map((err) => {
+  const errors: ValidationErrorDetail[] = result.error.issues.map((err: any) => {
     const path = err.path.join('.');
     const isItemError = path.startsWith('items.');
     

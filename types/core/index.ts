@@ -11,7 +11,7 @@
  *   IncomingHeader,
  *   IncomingTransactionFormData,
  *   ApiResponse
- * } from '@/types/v2.4.2';
+ * } from '@/types/core';
  * ```
  */
 
@@ -20,8 +20,10 @@
 // ============================================================================
 import {
   ItemTypeCode,
+  CustomsDocumentType,
   CustomsDocumentTypeIncoming,
   CustomsDocumentTypeOutgoing,
+  Currency,
   CurrencyCode,
   AdjustmentType,
   UserRole,
@@ -30,8 +32,6 @@ import {
   TransactionType,
   DocumentStatus,
   ReversalStatus,
-  JobType,
-  JobStatus,
   // Type guards and utilities
   isCapitalGoods,
   usesTransactionCalculation,
@@ -42,8 +42,10 @@ import {
 // Re-export for consumers
 export {
   ItemTypeCode,
+  CustomsDocumentType,
   CustomsDocumentTypeIncoming,
   CustomsDocumentTypeOutgoing,
+  Currency,
   CurrencyCode,
   AdjustmentType,
   UserRole,
@@ -52,8 +54,6 @@ export {
   TransactionType,
   DocumentStatus,
   ReversalStatus,
-  JobType,
-  JobStatus,
   isCapitalGoods,
   usesTransactionCalculation,
   usesWIPSnapshotCalculation,
@@ -86,7 +86,6 @@ export type {
 
   // WIP Balance
   WIPBalanceHeader,
-  WIPBalanceDetail,
 
   // Adjustments
   AdjustmentHeader,
@@ -96,11 +95,6 @@ export type {
   BeginningBalance,
   Company,
   ItemType,
-
-  // Traceability
-  WorkOrderItemLinkage,
-  OutgoingItemLinkage,
-  FinishedGoodsWorkOrderLinkage,
 
   // Union types
   AnyHeader,
@@ -144,10 +138,6 @@ export type {
   StockDailySnapshot,
   PPKEKTraceability,
   WorkOrderSummary,
-
-  // Batch processing
-  BatchJobStatus,
-  MaterializedViewRefreshResponse,
 
   // User & Access
   UserProfile,

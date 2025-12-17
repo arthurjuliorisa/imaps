@@ -26,12 +26,12 @@ export function ProductionOutputHeader({ control }: ProductionOutputHeaderProps)
       <LocalizationProvider dateAdapter={AdapterDayjs}>
         <Stack spacing={3}>
           <Controller
-            name="header.productionDate"
+            name="header.transaction_date"
             control={control}
-            rules={{ required: 'Production date is required' }}
+            rules={{ required: 'Transaction date is required' }}
             render={({ field: { onChange, value }, fieldState: { error } }) => (
               <DatePicker
-                label="Production Date"
+                label="Transaction Date"
                 value={value ? dayjs(value) : null}
                 onChange={(newValue) => {
                   onChange(newValue ? newValue.toDate() : null);
@@ -50,33 +50,31 @@ export function ProductionOutputHeader({ control }: ProductionOutputHeaderProps)
           />
 
           <Controller
-            name="header.batchNumber"
+            name="header.internal_evidence_number"
             control={control}
-            rules={{ required: 'Batch number is required' }}
+            rules={{ required: 'Internal evidence number is required' }}
             render={({ field, fieldState: { error } }) => (
               <TextField
                 {...field}
-                label="Batch Number"
-                placeholder="Enter production batch number"
+                label="Internal Evidence Number"
+                placeholder="Enter internal evidence number"
                 required
                 error={!!error}
-                helperText={error?.message || 'Unique identifier for this production batch'}
+                helperText={error?.message || 'Unique document number for this production output'}
               />
             )}
           />
 
           <Controller
-            name="header.remarks"
+            name="header.reversal"
             control={control}
             render={({ field }) => (
               <TextField
                 {...field}
-                label="Remarks"
-                multiline
-                rows={3}
-                placeholder="Enter any additional notes (optional)"
-                helperText={`${(field.value || '').length}/500 characters`}
-                inputProps={{ maxLength: 500 }}
+                label="Reversal"
+                placeholder="Enter reversal indicator (optional)"
+                helperText="Optional reversal indicator (max 1 character)"
+                inputProps={{ maxLength: 1 }}
               />
             )}
           />

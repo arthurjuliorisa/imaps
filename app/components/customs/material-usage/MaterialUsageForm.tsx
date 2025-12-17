@@ -28,9 +28,11 @@ export function MaterialUsageForm() {
   const { control, handleSubmit, formState: { errors } } = useForm<MaterialUsageFormData>({
     defaultValues: {
       header: {
-        usageDate: new Date(),
-        workOrderNumber: '',
-        remarks: '',
+        transaction_date: new Date(),
+        work_order_number: '',
+        internal_evidence_number: '',
+        cost_center_number: '',
+        reversal: '',
       },
       items: [],
     },
@@ -47,16 +49,20 @@ export function MaterialUsageForm() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          trxDate: data.header.usageDate.toISOString().split('T')[0],
-          workOrderNumber: data.header.workOrderNumber,
-          remarks: data.header.remarks || null,
-          items: data.items.map((item) => ({
-            itemCode: item.itemCode,
-            itemName: item.itemName,
-            itemTypeCode: item.itemType,
+          header: {
+            transaction_date: data.header.transaction_date,
+            work_order_number: data.header.work_order_number,
+            cost_center_number: data.header.cost_center_number,
+            internal_evidence_number: data.header.internal_evidence_number,
+            reversal: data.header.reversal,
+          },
+          details: data.items.map((item) => ({
+            item_code: item.item_code,
+            item_name: item.item_name,
+            item_type: item.item_type,
             uom: item.uom,
-            qty: item.quantity,
-            ppkekNumber: item.ppkekNumber,
+            qty: item.qty,
+            ppkek_number: item.ppkek_number,
           })),
         }),
       });

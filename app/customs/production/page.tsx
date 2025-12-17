@@ -28,7 +28,7 @@ import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 import { getProductionTransactions } from '@/lib/api';
-import type { FinishedGoodsProductionHeader } from '@/types/v2.4.2';
+import type { FinishedGoodsProductionHeader } from '@/types/core';
 
 export default function ProductionPage() {
   const theme = useTheme();
@@ -91,8 +91,9 @@ export default function ProductionPage() {
       No: (page - 1) * pageSize + index + 1,
       'WMS ID': row.wms_id,
       'Company': row.company_code,
-      'Work Order': row.work_order_number,
-      'Transaction Date': formatDate(row.trx_date.toISOString()),
+      'Internal Evidence': row.internal_evidence_number,
+      'Transaction Date': formatDate(row.transaction_date.toISOString()),
+      'Reversal': row.reversal || '-',
     }));
 
     exportToExcel(
@@ -107,15 +108,15 @@ export default function ProductionPage() {
       no: (page - 1) * pageSize + index + 1,
       wmsId: row.wms_id,
       company: row.company_code,
-      workOrder: row.work_order_number,
-      transactionDate: formatDate(row.trx_date.toISOString()),
+      internalEvidence: row.internal_evidence_number,
+      transactionDate: formatDate(row.transaction_date.toISOString()),
     }));
 
     const columns = [
       { header: 'No', dataKey: 'no' },
       { header: 'WMS ID', dataKey: 'wmsId' },
       { header: 'Company', dataKey: 'company' },
-      { header: 'Work Order', dataKey: 'workOrder' },
+      { header: 'Internal Evidence', dataKey: 'internalEvidence' },
       { header: 'Transaction Date', dataKey: 'transactionDate' },
     ];
 
@@ -172,15 +173,16 @@ export default function ProductionPage() {
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Work Order</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Internal Evidence</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Transaction Date</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Reversal</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={7} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -202,9 +204,16 @@ export default function ProductionPage() {
                       <Chip label={row.company_code} size="small" />
                     </TableCell>
                     <TableCell>
-                      <Chip label={row.work_order_number} size="small" color="info" variant="outlined" />
+                      {row.internal_evidence_number}
                     </TableCell>
-                    <TableCell>{formatDate(row.trx_date.toISOString())}</TableCell>
+                    <TableCell>{formatDate(row.transaction_date.toISOString())}</TableCell>
+                    <TableCell>
+                      {row.reversal ? (
+                        <Chip label={row.reversal} size="small" color="warning" />
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">-</Typography>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Tooltip title="View Details">
                         <IconButton

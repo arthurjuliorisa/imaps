@@ -13,7 +13,7 @@ import type {
   ApiSuccessResponse,
   ApiErrorResponse,
   ItemType
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS

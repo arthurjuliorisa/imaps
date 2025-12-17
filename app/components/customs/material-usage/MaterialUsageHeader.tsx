@@ -27,12 +27,12 @@ export function MaterialUsageHeader({ control }: MaterialUsageHeaderProps) {
       <LocalizationProvider dateAdapter={AdapterDayjs}>
         <Stack spacing={3}>
           <Controller
-            name="header.usageDate"
+            name="header.transaction_date"
             control={control}
-            rules={{ required: 'Usage date is required' }}
+            rules={{ required: 'Transaction date is required' }}
             render={({ field: { onChange, value }, fieldState: { error } }) => (
               <DatePicker
-                label="Usage Date"
+                label="Transaction Date"
                 value={value ? dayjs(value) : null}
                 onChange={(newValue) => {
                   onChange(newValue ? newValue.toDate() : null);
@@ -53,17 +53,17 @@ export function MaterialUsageHeader({ control }: MaterialUsageHeaderProps) {
           <WorkOrderSelector control={control} />
 
           <Controller
-            name="header.remarks"
+            name="header.internal_evidence_number"
             control={control}
-            render={({ field }) => (
+            rules={{ required: 'Internal evidence number is required' }}
+            render={({ field, fieldState: { error } }) => (
               <TextField
                 {...field}
-                label="Remarks"
-                multiline
-                rows={3}
-                placeholder="Enter any additional notes (optional)"
-                helperText={`${(field.value || '').length}/500 characters`}
-                inputProps={{ maxLength: 500 }}
+                label="Internal Evidence Number"
+                placeholder="Enter internal evidence number"
+                required
+                error={!!error}
+                helperText={error?.message || 'Internal document reference number'}
               />
             )}
           />

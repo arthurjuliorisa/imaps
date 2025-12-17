@@ -27,7 +27,7 @@ import {
 } from '@mui/material';
 import { NavigateNext, Home, Receipt, ArrowBack } from '@mui/icons-material';
 import { formatDate, formatCurrency } from '@/lib/exportUtils';
-import type { IncomingHeader, IncomingDetail } from '@/types/v2.4.2';
+import type { IncomingHeader, IncomingDetail } from '@/types/core';
 
 interface IncomingTransactionDetail {
   header: IncomingHeader;
@@ -191,23 +191,23 @@ export default function IncomingDetailPage() {
                 Customs Document Type
               </Typography>
               <Box sx={{ mt: 0.5 }}>
-                <Chip label={data.header.customs_doc_type} color="primary" size="small" />
+                <Chip label={data.header.customs_document_type} color="primary" size="small" />
               </Box>
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Customs Document Number
+                PPKEK Number
               </Typography>
               <Typography variant="body1">
-                {data.header.customs_doc_number}
+                {data.header.ppkek_number}
               </Typography>
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Customs Document Date
+                Customs Registration Date
               </Typography>
               <Typography variant="body1">
-                {formatDate(data.header.customs_doc_date.toISOString())}
+                {formatDate(data.header.customs_registration_date.toISOString())}
               </Typography>
             </Box>
           </Grid>
@@ -223,26 +223,26 @@ export default function IncomingDetailPage() {
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Transaction Date
+                Incoming Date
               </Typography>
               <Typography variant="body1">
-                {formatDate(data.header.trx_date.toISOString())}
+                {formatDate(data.header.incoming_date.toISOString())}
               </Typography>
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Supplier Name
+                Shipper Name
               </Typography>
               <Typography variant="body1">
-                {data.header.supplier_name || '-'}
+                {data.header.shipper_name || '-'}
               </Typography>
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                PPKEK Number
+                Incoming Evidence Number
               </Typography>
               <Typography variant="body1">
-                {data.header.ppkek_number || '-'}
+                {data.header.incoming_evidence_number || '-'}
               </Typography>
             </Box>
             <Box sx={{ mb: 2 }}>
@@ -251,6 +251,14 @@ export default function IncomingDetailPage() {
               </Typography>
               <Typography variant="body1">
                 {data.header.invoice_number || '-'}
+              </Typography>
+            </Box>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                Invoice Date
+              </Typography>
+              <Typography variant="body1">
+                {formatDate(data.header.invoice_date.toISOString())}
               </Typography>
             </Box>
           </Grid>
@@ -277,8 +285,6 @@ export default function IncomingDetailPage() {
                 <TableCell sx={{ fontWeight: 600 }}>UOM</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Amount</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Brand</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>PPKEK</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -292,7 +298,7 @@ export default function IncomingDetailPage() {
                   </TableCell>
                   <TableCell>{detail.item_name}</TableCell>
                   <TableCell>
-                    <Chip label={detail.item_type_code} size="small" variant="outlined" />
+                    <Chip label={detail.item_type} size="small" variant="outlined" />
                   </TableCell>
                   <TableCell>{detail.hs_code || '-'}</TableCell>
                   <TableCell align="right">
@@ -307,8 +313,6 @@ export default function IncomingDetailPage() {
                   <TableCell>
                     <Chip label={detail.currency} size="small" />
                   </TableCell>
-                  <TableCell>{detail.brand || '-'}</TableCell>
-                  <TableCell>{detail.ppkek_number || '-'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

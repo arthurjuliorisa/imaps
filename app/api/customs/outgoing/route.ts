@@ -26,10 +26,10 @@ export async function GET(request: Request) {
       }
     }
 
-    const outgoingHeaders = await prisma.outgoing_headers.findMany({
+    const outgoingHeaders = await prisma.outgoing_goods.findMany({
       where,
       include: {
-        outgoing_details: {
+        items: {
           select: {
             item_code: true,
             item_name: true,
@@ -48,7 +48,7 @@ export async function GET(request: Request) {
     });
 
     const transformedData = outgoingHeaders.flatMap((header) =>
-      header.outgoing_details.map((detail) => ({
+      header.items.map((detail) => ({
         id: header.wms_id + '-' + detail.item_code,
         wmsId: header.wms_id,
         companyCode: header.company_code,

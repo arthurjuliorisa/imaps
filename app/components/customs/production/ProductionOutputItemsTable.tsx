@@ -27,11 +27,12 @@ interface ProductionOutputItemsTableProps {
   control: Control<ProductionOutputFormData>;
 }
 
-const qualityGrades = [
-  { value: 'A', label: 'Grade A', color: 'success' as const },
-  { value: 'B', label: 'Grade B', color: 'info' as const },
-  { value: 'C', label: 'Grade C', color: 'warning' as const },
-  { value: 'REJECT', label: 'Reject', color: 'error' as const },
+const itemTypes = [
+  { value: 'ROH', label: 'Raw Material (ROH)' },
+  { value: 'HALB', label: 'Semi-Finished (HALB)' },
+  { value: 'FERT', label: 'Finished Goods (FERT)' },
+  { value: 'HIBE', label: 'Capital Goods (HIBE)' },
+  { value: 'SCRAP', label: 'Scrap (SCRAP)' },
 ];
 
 export function ProductionOutputItemsTable({ control }: ProductionOutputItemsTableProps) {
@@ -46,12 +47,12 @@ export function ProductionOutputItemsTable({ control }: ProductionOutputItemsTab
   const addNewItem = () => {
     append({
       id: `temp-${Date.now()}`,
-      itemCode: '',
-      itemName: '',
+      item_code: '',
+      item_name: '',
+      item_type: 'FERT',
       uom: '',
-      quantity: 0,
-      qualityGrade: 'A',
-      workOrderNumbers: [],
+      qty: 0,
+      work_order_numbers: [],
     });
   };
 
@@ -59,7 +60,7 @@ export function ProductionOutputItemsTable({ control }: ProductionOutputItemsTab
     const currentItem = fields[index];
     update(index, {
       ...currentItem,
-      workOrderNumbers: workOrders,
+      work_order_numbers: workOrders,
     });
   };
 
@@ -88,12 +89,13 @@ export function ProductionOutputItemsTable({ control }: ProductionOutputItemsTab
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Finished Good Item</TableCell>
-              <TableCell sx={{ fontWeight: 'bold', width: '10%' }}>UOM</TableCell>
-              <TableCell sx={{ fontWeight: 'bold', width: '12%' }}>Quantity</TableCell>
-              <TableCell sx={{ fontWeight: 'bold', width: '15%' }}>Quality Grade</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', width: '20%' }}>Item Code</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', width: '20%' }}>Item Name</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', width: '12%' }}>Item Type</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', width: '8%' }}>UOM</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', width: '10%' }}>Quantity</TableCell>
               <TableCell sx={{ fontWeight: 'bold', width: '20%' }}>Work Orders</TableCell>
-              <TableCell sx={{ fontWeight: 'bold', width: '8%', textAlign: 'center' }}>
+              <TableCell sx={{ fontWeight: 'bold', width: '10%', textAlign: 'center' }}>
                 Action
               </TableCell>
             </TableRow>
@@ -101,7 +103,7 @@ export function ProductionOutputItemsTable({ control }: ProductionOutputItemsTab
           <TableBody>
             {fields.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
                   <Typography variant="body2" color="text.secondary">
                     No items added. Click "Add Item" to start.
                   </Typography>
@@ -112,7 +114,7 @@ export function ProductionOutputItemsTable({ control }: ProductionOutputItemsTab
                 <TableRow key={field.id}>
                   <TableCell>
                     <Controller
-                      name={`items.${index}.itemCode`}
+                      name={`items.${index}.item_code`}
                       control={control}
                       rules={{ required: 'Item code is required' }}
                       render={({ field: controllerField, fieldState: { error } }) => (
@@ -130,17 +132,67 @@ export function ProductionOutputItemsTable({ control }: ProductionOutputItemsTab
 
                   <TableCell>
                     <Controller
-                      name={`items.${index}.uom`}
+                      name={`items.${index}.item_name`}
                       control={control}
-                      render={({ field: controllerField }) => (
-                        <Typography variant="body2">{controllerField.value}</Typography>
+                      rules={{ required: 'Item name is required' }}
+                      render={({ field: controllerField, fieldState: { error } }) => (
+                        <TextField
+                          {...controllerField}
+                          size="small"
+                          fullWidth
+                          error={!!error}
+                          helperText={error?.message}
+                          placeholder="Enter item name"
+                        />
                       )}
                     />
                   </TableCell>
 
                   <TableCell>
                     <Controller
-                      name={`items.${index}.quantity`}
+                      name={`items.${index}.item_type`}
+                      control={control}
+                      rules={{ required: 'Item type is required' }}
+                      render={({ field: controllerField, fieldState: { error } }) => (
+                        <TextField
+                          {...controllerField}
+                          select
+                          size="small"
+                          fullWidth
+                          error={!!error}
+                          helperText={error?.message}
+                        >
+                          {itemTypes.map((type) => (
+                            <MenuItem key={type.value} value={type.value}>
+                              {type.label}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      )}
+                    />
+                  </TableCell>
+
+                  <TableCell>
+                    <Controller
+                      name={`items.${index}.uom`}
+                      control={control}
+                      rules={{ required: 'UOM is required' }}
+                      render={({ field: controllerField, fieldState: { error } }) => (
+                        <TextField
+                          {...controllerField}
+                          size="small"
+                          fullWidth
+                          error={!!error}
+                          helperText={error?.message}
+                          placeholder="UOM"
+                        />
+                      )}
+                    />
+                  </TableCell>
+
+                  <TableCell>
+                    <Controller
+                      name={`items.${index}.qty`}
                       control={control}
                       rules={{
                         required: 'Quantity is required',
@@ -165,44 +217,15 @@ export function ProductionOutputItemsTable({ control }: ProductionOutputItemsTab
                   </TableCell>
 
                   <TableCell>
-                    <Controller
-                      name={`items.${index}.qualityGrade`}
-                      control={control}
-                      rules={{ required: 'Quality grade is required' }}
-                      render={({ field: controllerField, fieldState: { error } }) => (
-                        <TextField
-                          {...controllerField}
-                          select
-                          size="small"
-                          fullWidth
-                          error={!!error}
-                          helperText={error?.message}
-                        >
-                          {qualityGrades.map((grade) => (
-                            <MenuItem key={grade.value} value={grade.value}>
-                              <Chip
-                                label={grade.label}
-                                size="small"
-                                color={grade.color}
-                                sx={{ minWidth: 80 }}
-                              />
-                            </MenuItem>
-                          ))}
-                        </TextField>
-                      )}
-                    />
-                  </TableCell>
-
-                  <TableCell>
                     <Stack direction="row" spacing={1} alignItems="center">
                       <WorkOrderLinkingTable
                         itemIndex={index}
-                        linkedWorkOrders={field.workOrderNumbers}
+                        linkedWorkOrders={field.work_order_numbers}
                         onWorkOrdersChange={(workOrders) => handleWorkOrdersChange(index, workOrders)}
                       />
-                      {field.workOrderNumbers.length > 0 && (
+                      {field.work_order_numbers.length > 0 && (
                         <Typography variant="caption" color="text.secondary">
-                          {field.workOrderNumbers.length} linked
+                          {field.work_order_numbers.length} linked
                         </Typography>
                       )}
                     </Stack>

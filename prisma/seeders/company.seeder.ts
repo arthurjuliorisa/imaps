@@ -3,29 +3,38 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 export async function seedCompanies() {
-  console.log('🏢 Seeding Companies...');
+  console.log('📦 Seeding companies...');
 
-  const companies: Array<{
-    company_code: string;
-    company_name: string;
-    is_active: boolean;
-  }> = [
-    // ACME and XYZ companies removed
-  ];
-
-  let createdCount = 0;
-  for (const company of companies) {
-    await prisma.companies.upsert({
-      where: { company_code: company.company_code },
-      update: {
-        company_name: company.company_name,
-        is_active: company.is_active,
+  const companies = await Promise.all([
+    prisma.companies.upsert({
+      where: { code: 1370 },
+      update: {},
+      create: {
+        code: 1370,
+        name: 'PT. Polygroup Manufaktur Indonesia',
+        status: 'ACTIVE',
       },
-      create: company,
-    });
-    console.log(`  ✓ Created/Updated Company: ${company.company_code} - ${company.company_name}`);
-    createdCount++;
-  }
+    }),
+    prisma.companies.upsert({
+      where: { code: 1310 },
+      update: {},
+      create: {
+        code: 1310,
+        name: 'PT. Harmoni Cahaya Indonesia',
+        status: 'ACTIVE',
+      },
+    }),
+    prisma.companies.upsert({
+      where: { code: 1380 },
+      update: {},
+      create: {
+        code: 1380,
+        name: 'PT. Sino Berkat Indonesia',
+        status: 'ACTIVE',
+      },
+    }),
+  ]);
 
-  console.log(`Completed: ${createdCount} companies seeded\n`);
+  console.log(`✅ Created ${companies.length} companies`);
+  return companies;
 }

@@ -1,5 +1,5 @@
 // @ts-nocheck
-// TODO: Fix field names - ppkek_number doesn't exist in incoming_details
+// TODO: Fix field names - ppkek_number doesn't exist in items
 /**
  * Master Data API - PPKEK Search (v2.4.2)
  *
@@ -14,7 +14,7 @@ import { prisma } from '@/lib/prisma';
 import type {
   ApiSuccessResponse,
   ApiErrorResponse
-} from '@/types/v2.4.2';
+} from '@/types/core';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Search in incoming details to find PPKEK numbers
-    const ppkekList = await prisma.incoming_details.findMany({
+    const ppkekList = await prisma.incoming_good_items.findMany({
       where,
       select: {
         ppkek_number: true,
