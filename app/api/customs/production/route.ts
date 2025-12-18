@@ -1,16 +1,8 @@
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
+import { serializeBigInt } from '@/lib/bigint-serializer';
 
-/**
- * GET /api/customs/production
- *
- * This endpoint is temporarily disabled because it depends on the stock_daily_snapshot table
- * which has been removed from the schema.
- *
- * To re-enable this endpoint, either:
- * 1. Add the stock_daily_snapshot table back to the schema
- * 2. Implement real-time stock calculation from transaction tables
- */
 export async function GET(request: Request) {
   try {
     const authCheck = await checkAuth();
@@ -18,11 +10,49 @@ export async function GET(request: Request) {
       return authCheck.response;
     }
 
-    return NextResponse.json({
-      success: false,
-      message: 'This endpoint is temporarily disabled. The stock_daily_snapshot table has been removed from the schema.',
-      data: []
-    }, { status: 503 });
+    const { searchParams } = new URL(request.url);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+
+    const where: any = {
+      item_type_code: 'FERT',
+    };
+
+    if (startDate || endDate) {
+      where.snapshot_date = {};
+      if (startDate) {
+        where.snapshot_date.gte = new Date(startDate);
+      }
+      if (endDate) {
+        where.snapshot_date.lte = new Date(endDate);
+      }
+    }
+
+    const snapshots = await prisma.stock_daily_snapshot.findMany({
+      where,
+      orderBy: [
+        { snapshot_date: 'desc' },
+        { item_code: 'asc' },
+      ],
+    });
+
+    const transformedData = snapshots.map((snapshot) => ({
+      id: snapshot.item_code + '-' + snapshot.snapshot_date.toISOString(),
+      itemCode: snapshot.item_code,
+      itemName: snapshot.item_name,
+      unit: 'N/A',
+      date: snapshot.snapshot_date,
+      beginning: Number(snapshot.opening_balance),
+      in: Number(snapshot.production_qty),
+      out: Number(snapshot.outgoing_qty),
+      adjustment: Number(snapshot.adjustment_qty),
+      ending: Number(snapshot.closing_balance),
+      stockOpname: 0,
+      variant: 0,
+      remarks: null,
+    }));
+
+    return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {
     console.error('[API Error] Failed to fetch production mutations:', error);
     return NextResponse.json(
