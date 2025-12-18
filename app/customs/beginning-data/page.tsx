@@ -35,7 +35,7 @@ export default function BeginningDataPage() {
   const [filterDate, setFilterDate] = useState<string | null>(null);
 
   // Item Type Management
-  const [selectedItemType, setSelectedItemType] = useState<string>('ROH');
+  const [selectedItemType, setSelectedItemType] = useState<string>('ALL');
   const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
   const [itemTypesLoading, setItemTypesLoading] = useState(true);
 
@@ -54,11 +54,12 @@ export default function BeginningDataPage() {
           code: it.item_type_code,
           name: it.name_id || it.name_en,
         }));
-        setItemTypes(types);
+        // Add "All" option at the beginning
+        setItemTypes([{ code: 'ALL', name: 'All Item Types' }, ...types]);
       } catch (error) {
         console.error('Error fetching item types:', error);
         toast.error('Failed to load item types');
-        setItemTypes([]);
+        setItemTypes([{ code: 'ALL', name: 'All Item Types' }]);
       } finally {
         setItemTypesLoading(false);
       }
@@ -71,7 +72,10 @@ export default function BeginningDataPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.append('itemType', selectedItemType);
+      // Only filter by itemType if not "All"
+      if (selectedItemType && selectedItemType !== 'ALL') {
+        params.append('itemType', selectedItemType);
+      }
 
       if (searchTerm) {
         params.append('itemCode', searchTerm);
@@ -132,6 +136,10 @@ export default function BeginningDataPage() {
 
   // Handle add button click
   const handleAddClick = () => {
+    if (selectedItemType === 'ALL') {
+      toast.error('Please select a specific item type to add data');
+      return;
+    }
     setSelectedItem(null);
     setFormMode('add');
     setFormOpen(true);
@@ -266,6 +274,9 @@ export default function BeginningDataPage() {
 
   // Get dynamic page title
   const getPageTitle = () => {
+    if (selectedItemType === 'ALL') {
+      return 'Beginning Data - All Item Types';
+    }
     const itemType = itemTypes.find((it) => it.code === selectedItemType);
     return itemType ? `Beginning Data - ${itemType.name}` : 'Beginning Data';
   };
@@ -310,25 +321,46 @@ export default function BeginningDataPage() {
       }
     >
       {/* Item Type Dropdown */}
-      <Box sx={{ mb: 3 }}>
+      <Box
+        sx={{
+          mb: 3,
+          p: 2.5,
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+        }}
+      >
         <Autocomplete
           value={itemTypes.find((it) => it.code === selectedItemType) || undefined}
           onChange={handleItemTypeChange}
           options={itemTypes}
-          getOptionLabel={(option) => `${option.code} - ${option.name}`}
+          getOptionLabel={(option) => option.code === 'ALL' ? option.name : `${option.code} - ${option.name}`}
           loading={itemTypesLoading}
           renderInput={(params) => (
             <TextField
               {...params}
-              label="Item Type"
+              label="Filter by Item Type"
               placeholder="Select item type..."
+              size="medium"
               sx={{
-                maxWidth: 400,
-                bgcolor: 'background.paper',
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: 'background.default',
+                  '& fieldset': {
+                    borderColor: 'divider',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'primary.main',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: 'primary.main',
+                  },
+                },
               }}
             />
           )}
           disableClearable
+          sx={{ maxWidth: 500 }}
         />
       </Box>
 
