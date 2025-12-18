@@ -11,9 +11,12 @@ export async function GET(request: Request) {
     }
 
     const { user } = authCheck;
+    const { searchParams } = new URL(request.url);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
 
-    // Query from vw_lpj_barang_sisa view (scrap/waste mutation)
-    const result = await prisma.$queryRaw<any[]>`
+    // Query from vw_lpj_barang_sisa view with date filtering
+    let query = `
       SELECT
         no,
         company_code,
@@ -22,6 +25,7 @@ export async function GET(request: Request) {
         item_name,
         item_type,
         unit_quantity as unit,
+        snapshot_date,
         opening_balance as beginning,
         quantity_received as "in",
         quantity_issued_outgoing as "out",
@@ -31,17 +35,34 @@ export async function GET(request: Request) {
         quantity_difference as variant,
         remarks
       FROM vw_lpj_barang_sisa
-      WHERE company_code = ${user.companyCode}
-      ORDER BY item_code
+      WHERE company_code = $1
     `;
+
+    const params: any[] = [user.companyCode];
+    let paramIndex = 2;
+
+    if (startDate) {
+      query += ` AND snapshot_date >= $${paramIndex}`;
+      params.push(new Date(startDate));
+      paramIndex++;
+    }
+    if (endDate) {
+      query += ` AND snapshot_date <= $${paramIndex}`;
+      params.push(new Date(endDate));
+      paramIndex++;
+    }
+
+    query += ` ORDER BY snapshot_date DESC, item_code`;
+
+    const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
     // Transform to expected format
     const transformedData = result.map((row: any) => ({
-      id: `${row.item_code}-lpj`,
+      id: `${row.item_code}-${row.snapshot_date}`,
       itemCode: row.item_code,
       itemName: row.item_name,
       unit: row.unit || 'N/A',
-      date: new Date(),
+      date: row.snapshot_date,
       beginning: Number(row.beginning || 0),
       in: Number(row.in || 0),
       out: Number(row.out || 0),

@@ -10,79 +10,70 @@ export async function GET(request: Request) {
       return authCheck.response;
     }
 
+    const { user } = authCheck;
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    const where: any = {};
+    // Query from vw_laporan_pemasukan view with date filtering
+    let query = `
+      SELECT
+        id,
+        company_code,
+        company_name,
+        customs_document_type,
+        cust_doc_registration_no as ppkek_number,
+        reg_date as registration_date,
+        doc_number,
+        doc_date,
+        shipper_name,
+        type_code,
+        item_code,
+        item_name,
+        unit,
+        quantity,
+        currency,
+        value_amount
+      FROM vw_laporan_pemasukan
+      WHERE company_code = $1
+    `;
 
-    if (startDate || endDate) {
-      where.incoming_date = {};
-      if (startDate) {
-        where.incoming_date.gte = new Date(startDate);
-      }
-      if (endDate) {
-        where.incoming_date.lte = new Date(endDate);
-      }
+    const params: any[] = [user.companyCode];
+    let paramIndex = 2;
+
+    if (startDate) {
+      query += ` AND doc_date >= $${paramIndex}`;
+      params.push(new Date(startDate));
+      paramIndex++;
+    }
+    if (endDate) {
+      query += ` AND doc_date <= $${paramIndex}`;
+      params.push(new Date(endDate));
+      paramIndex++;
     }
 
-    const incomingHeaders = await prisma.incoming_goods.findMany({
-      where,
-      orderBy: [
-        { incoming_date: 'desc' },
-        { customs_registration_date: 'desc' },
-      ],
-    });
+    query += ` ORDER BY doc_date DESC, id`;
 
-    // Manually join with incoming_good_items since the relation is removed from schema
-    const headerIds = incomingHeaders.map(h => h.id);
-    const allItems = await prisma.incoming_good_items.findMany({
-      where: {
-        incoming_good_id: { in: headerIds }
-      },
-      select: {
-        incoming_good_id: true,
-        item_code: true,
-        item_name: true,
-        uom: true,
-        qty: true,
-        currency: true,
-        amount: true,
-        hs_code: true,
-      },
-    });
+    const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
-    // Group items by header ID
-    const itemsByHeaderId = new Map<number, typeof allItems>();
-    allItems.forEach(item => {
-      const existing = itemsByHeaderId.get(item.incoming_good_id) || [];
-      existing.push(item);
-      itemsByHeaderId.set(item.incoming_good_id, existing);
-    });
-
-    const transformedData = incomingHeaders.flatMap((header) => {
-      const items = itemsByHeaderId.get(header.id) || [];
-      return items.map((detail) => ({
-        id: header.wms_id + '-' + detail.item_code,
-        wmsId: header.wms_id,
-        companyCode: header.company_code,
-        documentType: header.customs_document_type,
-        ppkekNumber: header.ppkek_number,
-        registrationDate: header.customs_registration_date,
-        documentNumber: header.incoming_evidence_number,
-        date: header.incoming_date,
-        invoiceNumber: header.invoice_number,
-        invoiceDate: header.invoice_date,
-        shipperName: header.shipper_name,
-        itemCode: detail.item_code,
-        itemName: detail.item_name,
-        unit: detail.uom,
-        qty: Number(detail.qty),
-        currency: detail.currency,
-        amount: Number(detail.amount),
-        hsCode: detail.hs_code,
-      }));
-    });
+    // Transform to expected format
+    const transformedData = result.map((row: any) => ({
+      id: `${row.id}-${row.item_code}`,
+      wmsId: row.id,
+      companyCode: row.company_code,
+      documentType: row.customs_document_type,
+      ppkekNumber: row.ppkek_number,
+      registrationDate: row.registration_date,
+      documentNumber: row.doc_number,
+      date: row.doc_date,
+      shipperName: row.shipper_name,
+      itemCode: row.item_code,
+      itemName: row.item_name,
+      unit: row.unit,
+      qty: Number(row.quantity || 0),
+      currency: row.currency,
+      amount: Number(row.value_amount || 0),
+    }));
 
     return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {
