@@ -101,14 +101,37 @@ export function BeginningStockTable({
   return (
     <Box>
       {/* Search and Filter Section */}
-      <Box sx={{ mb: 3 }}>
+      <Box
+        sx={{
+          mb: 3,
+          p: 2.5,
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+        }}
+      >
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField
             placeholder="Search by item code or name..."
             value={searchTerm}
             onChange={handleSearchChange}
-            size="small"
-            sx={{ flexGrow: 1 }}
+            size="medium"
+            sx={{
+              flexGrow: 1,
+              '& .MuiOutlinedInput-root': {
+                bgcolor: 'background.default',
+                '& fieldset': {
+                  borderColor: 'divider',
+                },
+                '&:hover fieldset': {
+                  borderColor: 'primary.main',
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: 'primary.main',
+                },
+              },
+            }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -124,8 +147,22 @@ export function BeginningStockTable({
               onChange={handleDateChange}
               slotProps={{
                 textField: {
-                  size: 'small',
-                  sx: { minWidth: 220 },
+                  size: 'medium',
+                  sx: {
+                    minWidth: 250,
+                    '& .MuiOutlinedInput-root': {
+                      bgcolor: 'background.default',
+                      '& fieldset': {
+                        borderColor: 'divider',
+                      },
+                      '&:hover fieldset': {
+                        borderColor: 'primary.main',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: 'primary.main',
+                      },
+                    },
+                  },
                 },
                 actionBar: {
                   actions: ['clear', 'today'],
