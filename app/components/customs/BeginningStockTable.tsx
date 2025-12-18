@@ -107,8 +107,8 @@ export function BeginningStockTable({
           p: 2.5,
           borderRadius: 2,
           border: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
+          borderColor: 'grey.300',
+          bgcolor: 'grey.50',
         }}
       >
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -120,15 +120,16 @@ export function BeginningStockTable({
             sx={{
               flexGrow: 1,
               '& .MuiOutlinedInput-root': {
-                bgcolor: 'background.default',
+                bgcolor: 'white',
                 '& fieldset': {
-                  borderColor: 'divider',
+                  borderColor: 'grey.300',
                 },
                 '&:hover fieldset': {
                   borderColor: 'primary.main',
                 },
                 '&.Mui-focused fieldset': {
                   borderColor: 'primary.main',
+                  borderWidth: 2,
                 },
               },
             }}
@@ -151,15 +152,16 @@ export function BeginningStockTable({
                   sx: {
                     minWidth: 250,
                     '& .MuiOutlinedInput-root': {
-                      bgcolor: 'background.default',
+                      bgcolor: 'white',
                       '& fieldset': {
-                        borderColor: 'divider',
+                        borderColor: 'grey.300',
                       },
                       '&:hover fieldset': {
                         borderColor: 'primary.main',
                       },
                       '&.Mui-focused fieldset': {
                         borderColor: 'primary.main',
+                        borderWidth: 2,
                       },
                     },
                   },
