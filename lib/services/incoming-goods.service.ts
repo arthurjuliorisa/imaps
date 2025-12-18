@@ -1,202 +1,119 @@
-// lib/services/incoming-goods.service.ts
+import { IncomingGoodsRepository } from '../repositories/incoming-goods.repository';
+import { validateIncomingGoods } from '../validators/incoming-goods.validator';
+import type { IncomingGoodsValidated } from '../validators/incoming-goods.validator';
+import type { ErrorDetail, SuccessResponse } from '../types/api-response';
+import { logger } from '../utils/logger';
+import { ValidationError } from '../utils/error.util';
 
-/**
- * Incoming Goods Service
- * 
- * Purpose:
- * - Orchestrate business logic for incoming goods
- * - Coordinate validation and database operations
- * - Transform request data to database format
- * - Handle error scenarios
- * 
- * Flow:
- * Request → Validation → Transform → Repository → Response
- */
+export class IncomingGoodsService {
+  private repository: IncomingGoodsRepository;
 
-import { validateIncomingGoodRequest } from '@/lib/validators/schemas/incoming-goods.schema';
-import { incomingGoodRepository } from '@/lib/repositories/incoming-goods.repository';
-import {
-  IncomingGoodData,
-  IncomingGoodSuccessResponse,
-  IncomingGoodErrorResponse,
-} from '@/lib/types/incoming-goods.types';
+  constructor() {
+    this.repository = new IncomingGoodsRepository();
+  }
 
-/**
- * Service result type
- */
-export type IncomingGoodServiceResult =
-  | { success: true; data: IncomingGoodSuccessResponse }
-  | { success: false; data: IncomingGoodErrorResponse };
-
-/**
- * Service class for incoming goods operations
- */
-export class IncomingGoodService {
   /**
-   * Process incoming good request from WMS
-   * 
-   * Steps:
-   * 1. Validate request payload (schema + business rules)
-   * 2. Transform to database format
-   * 3. Upsert to database (idempotent)
-   * 4. Return success/error response
-   * 
-   * @param requestData - Raw request from WMS
-   * @returns Service result with success/error response
+   * Process incoming goods request
    */
-  async processIncomingGood(
-    requestData: unknown
-  ): Promise<IncomingGoodServiceResult> {
-    // ========================================================================
-    // STEP 1: VALIDATION
-    // ========================================================================
-    
-    const validation = validateIncomingGoodRequest(requestData);
+  async processIncomingGoods(
+    payload: unknown
+  ): Promise<{ success: true; data: SuccessResponse } | { success: false; errors: ErrorDetail[] }> {
+    const requestLogger = logger.child({
+      service: 'IncomingGoodsService',
+      method: 'processIncomingGoods',
+    });
 
-    if (!validation.success) {
-      // Validation failed - return error response
-      const wmsId = 
-        typeof requestData === 'object' && 
-        requestData !== null && 
-        'wms_id' in requestData
-          ? String(requestData.wms_id)
-          : 'unknown';
+    try {
+      // 1. Validate payload
+      const validationResult = validateIncomingGoods(payload);
 
+      if (!validationResult.success) {
+        requestLogger.warn(
+          { errors: validationResult.errors },
+          'Validation failed'
+        );
+        return { success: false, errors: validationResult.errors };
+      }
+
+      const data = validationResult.data;
+      requestLogger.info({ wmsId: data.wms_id }, 'Validation passed');
+
+      // 2. Business validations (database checks)
+      const businessErrors = await this.validateBusiness(data);
+      if (businessErrors.length > 0) {
+        requestLogger.warn(
+          { errors: businessErrors, wmsId: data.wms_id },
+          'Business validation failed'
+        );
+        return { success: false, errors: businessErrors };
+      }
+
+      // 3. Save to database
+      const result = await this.repository.createOrUpdate(data);
+
+      requestLogger.info(
+        {
+          wmsId: result.wms_id,
+          incomingGoodId: result.id,
+          itemsCount: result.items_count,
+        },
+        'Incoming goods processed successfully'
+      );
+
+      // 4. Return success response
       return {
-        success: false,
+        success: true,
         data: {
-          status: 'failed',
-          message: 'Validation failed',
-          wms_id: wmsId,
-          errors: validation.errors || [],
+          status: 'success',
+          message: 'Transaction validated and queued for processing',
+          wms_id: result.wms_id,
+          queued_items_count: result.items_count,
+          validated_at: new Date().toISOString(),
         },
       };
+    } catch (error) {
+      requestLogger.error({ error }, 'Failed to process incoming goods');
+      throw error;
+    }
+  }
+
+  /**
+   * Business validations (database checks)
+   * 
+   * Note: Based on API Contract v2.4:
+   * - Only company_code needs to be validated
+   * - Item_code validation is NOT required (WMS is source of truth)
+   * - Item_type validation is handled by WMS
+   */
+  private async validateBusiness(data: IncomingGoodsValidated): Promise<ErrorDetail[]> {
+    const errors: ErrorDetail[] = [];
+
+    // Check if company exists and is active
+    const companyExists = await this.repository.companyExists(data.company_code);
+    if (!companyExists) {
+      errors.push({
+        location: 'header',
+        field: 'company_code',
+        code: 'INVALID_COMPANY_CODE',
+        message: `Company code ${data.company_code} is not active or does not exist`,
+      });
     }
 
-    const validatedData = validation.data!;
-
-    // ========================================================================
-    // STEP 2: TRANSFORM TO DATABASE FORMAT
-    // ========================================================================
-
-    const dbData = this.transformToDbFormat(validatedData);
-
-    // ========================================================================
-    // STEP 3: UPSERT TO DATABASE
-    // ========================================================================
-
-    const upsertResult = await incomingGoodRepository.upsert(dbData);
-
-    if (!upsertResult.success) {
-      // Database error
-      return {
-        success: false,
-        data: {
-          status: 'failed',
-          message: 'Database operation failed',
-          wms_id: validatedData.wms_id,
-          errors: [
-            {
-              location: 'header',
-              field: 'database',
-              code: 'DATABASE_ERROR',
-              message: upsertResult.error || 'Unknown database error',
-            },
-          ],
-        },
-      };
+    // Check if owner exists and is active
+    const ownerExists = await this.repository.companyExists(data.owner);
+    if (!ownerExists) {
+      errors.push({
+        location: 'header',
+        field: 'owner',
+        code: 'INVALID_COMPANY_CODE',
+        message: `Owner ${data.owner} is not active or does not exist`,
+      });
     }
 
-    // ========================================================================
-    // STEP 4: RETURN SUCCESS RESPONSE
-    // ========================================================================
+    // NOTE: Item code validation removed as per API Contract v2.4
+    // WMS is the source of truth for item data
+    // iMAPS will accept any item_code sent by WMS
 
-    return {
-      success: true,
-      data: {
-        status: 'success',
-        message: 'Transaction validated and queued for processing',
-        wms_id: validatedData.wms_id,
-        queued_items_count: validatedData.items.length,
-        validated_at: new Date().toISOString(),
-      },
-    };
-  }
-
-  /**
-   * Transform validated request to database format
-   *
-   * Conversions:
-   * - Date strings (YYYY-MM-DD) → Date objects
-   * - ISO datetime string → Date object
-   * - Add partition key fields to items
-   *
-   * @param data - Validated request data
-   * @returns Database-ready format
-   */
-  private transformToDbFormat(data: any): IncomingGoodData {
-    const incomingDate = new Date(data.incoming_date);
-    
-    return {
-      wms_id: data.wms_id,
-      company_code: data.company_code,
-      owner: data.owner,
-      customs_document_type: data.customs_document_type,
-      ppkek_number: data.ppkek_number,
-      customs_registration_date: new Date(data.customs_registration_date),
-      incoming_evidence_number: data.incoming_evidence_number,
-      incoming_date: incomingDate,
-      invoice_number: data.invoice_number,
-      invoice_date: new Date(data.invoice_date),
-      shipper_name: data.shipper_name,
-      timestamp: new Date(data.timestamp),
-      items: data.items.map((item: any) => ({
-        item_type: item.item_type,
-        item_code: item.item_code,
-        item_name: item.item_name,
-        hs_code: item.hs_code || null,
-        uom: item.uom,
-        qty: item.qty,
-        currency: item.currency,
-        amount: item.amount,
-        // Partition key fields (required for partitioned child table)
-        incoming_good_company: data.company_code,
-        incoming_good_date: incomingDate,
-      })),
-    };
-  }
-
-  /**
-   * Get incoming good by WMS ID (for verification/debugging)
-   * 
-   * @param company_code - Company code
-   * @param wms_id - WMS transaction ID
-   * @returns Incoming good record or null
-   */
-  async getByWmsId(company_code: number, wms_id: string) {
-    return await incomingGoodRepository.findByWmsId(company_code, wms_id);
-  }
-
-  /**
-   * Get statistics for monitoring
-   * 
-   * @param company_code - Company code
-   * @param from_date - Start date
-   * @param to_date - End date
-   * @returns Statistics
-   */
-  async getStatistics(
-    company_code: number,
-    from_date: Date,
-    to_date: Date
-  ) {
-    return await incomingGoodRepository.getStatistics(
-      company_code,
-      from_date,
-      to_date
-    );
+    return errors;
   }
 }
-
-// Export singleton instance
-export const incomingGoodService = new IncomingGoodService();

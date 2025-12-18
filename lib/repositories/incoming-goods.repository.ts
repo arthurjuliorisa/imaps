@@ -1,345 +1,162 @@
-// lib/repositories/incoming-goods.repository.ts
+import { PrismaClient, Prisma } from '@prisma/client';
+import { BaseTransactionRepository } from './base-transaction.repository';
+import { logger } from '../utils/logger';
+import type { IncomingGoodsValidated } from '../validators/incoming-goods.validator';
 
-/**
- * Incoming Goods Repository
- * 
- * Purpose:
- * - Handle all database operations for incoming goods
- * - Implement idempotency via upsert
- * - Manage transactions for header-detail pattern
- * 
- * Database Schema:
- * - incoming_goods (header table - partitioned)
- * - incoming_good_items (detail table - partitioned)
- * - Unique constraint: [company_code, wms_id, incoming_date]
- */
+const prisma = new PrismaClient();
 
-import { Prisma } from '@prisma/client';
-import prisma from '@/lib/utils/prisma';
-import { IncomingGoodData } from '@/lib/types/incoming-goods.types';
-
-/**
- * Result of upsert operation
- */
-export interface UpsertResult {
-  success: boolean;
-  record_id: number;
-  was_updated: boolean;
-  error?: string;
+export interface IncomingGoodsCreateResult {
+  id: number;
+  wms_id: string;
+  company_code: number;
+  incoming_date: Date;
+  items_count: number;
 }
 
-/**
- * Repository for incoming goods operations
- */
-export class IncomingGoodRepository {
+export class IncomingGoodsRepository extends BaseTransactionRepository {
   /**
-   * Create incoming_good_items in chunks to avoid exceeding query/parameter limits
-   * when item count is very large (e.g., thousands of rows).
+   * Create or update incoming goods with items (Upsert pattern for idempotency)
    */
-  private async createItemsInChunks(
-    tx: any,
-    recordId: number,
-    company_code: number,
-    incoming_date: Date,
-    items: IncomingGoodData['items'],
-    chunkSize = 1000
-  ) {
-    if (!items?.length) return;
+  async createOrUpdate(data: IncomingGoodsValidated): Promise<IncomingGoodsCreateResult> {
+    const requestLogger = logger.child({ wmsId: data.wms_id });
 
-    for (let i = 0; i < items.length; i += chunkSize) {
-      const chunk = items.slice(i, i + chunkSize);
-
-      await tx.incoming_good_items.createMany({
-        data: chunk.map((item) => ({
-          incoming_good_id: recordId,
-          incoming_good_company: company_code,
-          incoming_good_date: incoming_date,
-          item_type: item.item_type,
-          item_code: item.item_code,
-          item_name: item.item_name,
-          hs_code: item.hs_code,
-          uom: item.uom,
-          qty: new Prisma.Decimal(item.qty),
-          currency: item.currency,
-          amount: new Prisma.Decimal(item.amount),
-        })),
-      });
-    }
-  }
-
-  /**
-   * Upsert incoming good with items (idempotent operation)
-   * 
-   * How it works:
-   * 1. Check if record exists using unique constraint
-   * 2. If exists: DELETE old items, UPDATE header, INSERT new items
-   * 3. If not exists: INSERT header and items
-   * 
-   * Why this approach:
-   * - Prisma doesn't support nested upsert with array of children
-   * - We need to replace all items (WMS is single source of truth)
-   * - All operations wrapped in transaction for atomicity
-   * 
-   * @param data - Incoming good data with items
-   * @returns Upsert result with record ID
-   */
-  async upsert(data: IncomingGoodData): Promise<UpsertResult> {
     try {
       const result = await prisma.$transaction(async (tx) => {
-        // Step 1: Check if record exists
-        const existing = await tx.incoming_goods.findUnique({
+        // Parse dates
+        const incomingDate = new Date(data.incoming_date);
+        const customsRegDate = new Date(data.customs_registration_date);
+        const invoiceDate = new Date(data.invoice_date);
+        const timestamp = new Date(data.timestamp);
+
+        // Upsert incoming goods header
+        const incomingGood = await tx.incoming_goods.upsert({
           where: {
             company_code_wms_id_incoming_date: {
               company_code: data.company_code,
               wms_id: data.wms_id,
-              incoming_date: data.incoming_date,
+              incoming_date: incomingDate,
             },
           },
-          select: { id: true },
+          update: {
+            owner: data.owner,
+            customs_document_type: data.customs_document_type as any,
+            ppkek_number: data.ppkek_number,
+            customs_registration_date: customsRegDate,
+            incoming_evidence_number: data.incoming_evidence_number,
+            invoice_number: data.invoice_number,
+            invoice_date: invoiceDate,
+            shipper_name: data.shipper_name,
+            timestamp: timestamp,
+            updated_at: new Date(),
+            deleted_at: null, // Undelete if was deleted
+          },
+          create: {
+            wms_id: data.wms_id,
+            company_code: data.company_code,
+            owner: data.owner,
+            customs_document_type: data.customs_document_type as any,
+            ppkek_number: data.ppkek_number,
+            customs_registration_date: customsRegDate,
+            incoming_evidence_number: data.incoming_evidence_number,
+            incoming_date: incomingDate,
+            invoice_number: data.invoice_number,
+            invoice_date: invoiceDate,
+            shipper_name: data.shipper_name,
+            timestamp: timestamp,
+          },
         });
 
-        let recordId: number;
-        let wasUpdated = false;
+        // Delete existing items (for update case)
+        await tx.incoming_good_items.deleteMany({
+          where: {
+            incoming_good_id: incomingGood.id,
+            incoming_good_company: data.company_code,
+            incoming_good_date: incomingDate,
+          },
+        });
 
-        if (existing) {
-          // Record exists - UPDATE flow
-          wasUpdated = true;
-          recordId = existing.id;
+        // Create items
+        const itemsData = data.items.map((item) => ({
+          incoming_good_id: incomingGood.id,
+          incoming_good_company: data.company_code,
+          incoming_good_date: incomingDate,
+          item_type: item.item_type,
+          item_code: item.item_code,
+          item_name: item.item_name,
+          hs_code: item.hs_code || null,
+          uom: item.uom,
+          qty: new Prisma.Decimal(item.qty),
+          currency: item.currency as any,
+          amount: new Prisma.Decimal(item.amount),
+        }));
 
-          // Step 2a: Delete existing items
-          await tx.incoming_good_items.deleteMany({
-            where: {
-              incoming_good_id: recordId,
-            },
-          });
+        await tx.incoming_good_items.createMany({
+          data: itemsData,
+        });
 
-          // Step 2b: Update header
-          await tx.incoming_goods.update({
-            where: { id: recordId },
-            data: {
-              owner: data.owner,
-              customs_document_type: data.customs_document_type,
-              ppkek_number: data.ppkek_number,
-              customs_registration_date: data.customs_registration_date,
-              incoming_evidence_number: data.incoming_evidence_number,
-              incoming_date: data.incoming_date,
-              invoice_number: data.invoice_number,
-              invoice_date: data.invoice_date,
-              shipper_name: data.shipper_name,
-              timestamp: data.timestamp,
-              updated_at: new Date(),
-            },
-          });
+        requestLogger.info(
+          {
+            incomingGoodId: incomingGood.id,
+            itemsCount: data.items.length,
+            companyCode: data.company_code,
+            incomingDate: incomingDate,
+          },
+          'Incoming goods saved successfully'
+        );
 
-          // Step 2c: Insert new items
-          await this.createItemsInChunks(
-            tx,
-            recordId,
-            data.company_code,
-            data.incoming_date,
-            data.items
-          );
-        } else {
-          // Record doesn't exist - INSERT flow
-          // IMPORTANT:
-          // - We intentionally avoid Prisma relation field `items` (partitioning constraints/FK issues)
-          // - Therefore we must do header insert first, then insert detail rows via incoming_good_items
-          const created = await tx.incoming_goods.create({
-            data: {
-              wms_id: data.wms_id,
-              company_code: data.company_code,
-              owner: data.owner,
-              customs_document_type: data.customs_document_type,
-              ppkek_number: data.ppkek_number,
-              customs_registration_date: data.customs_registration_date,
-              incoming_evidence_number: data.incoming_evidence_number,
-              incoming_date: data.incoming_date,
-              invoice_number: data.invoice_number,
-              invoice_date: data.invoice_date,
-              shipper_name: data.shipper_name,
-              timestamp: data.timestamp,
-            },
-            select: { id: true },
-          });
-
-          recordId = created.id;
-
-          await this.createItemsInChunks(
-            tx,
-            recordId,
-            data.company_code,
-            data.incoming_date,
-            data.items
-          );
-        }
-
-        return { recordId, wasUpdated };
+        return {
+          id: incomingGood.id,
+          wms_id: incomingGood.wms_id,
+          company_code: incomingGood.company_code,
+          incoming_date: incomingGood.incoming_date,
+          items_count: data.items.length,
+        };
       });
 
-      return {
-        success: true,
-        record_id: result.recordId,
-        was_updated: result.wasUpdated,
-      };
+      // Handle backdated transaction (non-blocking)
+      await this.handleBackdatedTransaction(
+        data.company_code,
+        result.incoming_date,
+        data.wms_id,
+        'incoming_goods'
+      );
+
+      return result;
     } catch (error) {
-      console.error('Error in IncomingGoodRepository.upsert:', error);
-
-      let errorMessage = 'Unknown database error';
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        errorMessage = `Database error: ${error.code} - ${error.message}`;
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-
-      return {
-        success: false,
-        record_id: 0,
-        was_updated: false,
-        error: errorMessage,
-      };
+      requestLogger.error({ error }, 'Failed to save incoming goods');
+      throw error;
     }
   }
 
   /**
-   * Find incoming good by WMS ID (for debugging/verification)
-   * 
-   * @param company_code - Company code
-   * @param wms_id - WMS transaction ID
-   * @returns Incoming good with items or null
+   * Find incoming goods by wms_id
    */
-  async findByWmsId(company_code: number, wms_id: string) {
-    try {
-      // NOTE: We avoid Prisma relation `items` due to partitioning constraints,
-      // so we fetch header and items separately.
-      const header = await prisma.incoming_goods.findFirst({
-        where: {
+  async findByWmsId(
+    company_code: number,
+    wms_id: string,
+    incoming_date: Date
+  ): Promise<any | null> {
+    return await prisma.incoming_goods.findUnique({
+      where: {
+        company_code_wms_id_incoming_date: {
           company_code,
           wms_id,
-          deleted_at: null,
+          incoming_date,
         },
-        orderBy: {
-          created_at: 'desc',
-        },
-      });
-
-      if (!header) return null;
-
-      const items = await prisma.incoming_good_items.findMany({
-        where: {
-          incoming_good_id: header.id,
-          deleted_at: null,
-        },
-        orderBy: {
-          id: 'asc',
-        },
-      });
-
-      return { ...header, items };
-    } catch (error) {
-      console.error('Error in IncomingGoodRepository.findByWmsId:', error);
-      return null;
-    }
+      },
+      include: {
+        company: true,
+      },
+    });
   }
 
   /**
-   * Soft delete incoming good and its items
-   * 
-   * Note: This is for future use (not part of current API contract)
-   * 
-   * @param id - Record ID
-   * @returns Success status
+   * Check if company exists and is active
    */
-  async softDelete(id: number): Promise<boolean> {
-    try {
-      const now = new Date();
-
-      await prisma.$transaction(async (tx) => {
-        // Soft delete header
-        await tx.incoming_goods.update({
-          where: { id },
-          data: { deleted_at: now },
-        });
-
-        // Soft delete items
-        await tx.incoming_good_items.updateMany({
-          where: { incoming_good_id: id },
-          data: { deleted_at: now },
-        });
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error in IncomingGoodRepository.softDelete:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Get statistics for monitoring
-   * 
-   * @param company_code - Company code
-   * @param from_date - Start date
-   * @param to_date - End date
-   * @returns Statistics object
-   */
-  async getStatistics(
-    company_code: number,
-    from_date: Date,
-    to_date: Date
-  ): Promise<{
-    total_transactions: number;
-    total_items: number;
-    total_amount_usd: number;
-  }> {
-    try {
-      const transactions = await prisma.incoming_goods.count({
-        where: {
-          company_code,
-          incoming_date: {
-            gte: from_date,
-            lte: to_date,
-          },
-          deleted_at: null,
-        },
-      });
-
-      const items = await prisma.incoming_good_items.findMany({
-        where: {
-          incoming_good_company: company_code,
-          incoming_good_date: {
-            gte: from_date,
-            lte: to_date,
-          },
-          deleted_at: null,
-        },
-        select: {
-          currency: true,
-          amount: true,
-        },
-      });
-
-      const totalItems = items.length;
-      
-      // Simple total (you may want to add currency conversion logic)
-      const totalAmountUsd = items
-        .filter(item => item.currency === 'USD')
-        .reduce((sum, item) => sum + Number(item.amount), 0);
-
-      return {
-        total_transactions: transactions,
-        total_items: totalItems,
-        total_amount_usd: totalAmountUsd,
-      };
-    } catch (error) {
-      console.error('Error in IncomingGoodRepository.getStatistics:', error);
-      return {
-        total_transactions: 0,
-        total_items: 0,
-        total_amount_usd: 0,
-      };
-    }
+  async companyExists(company_code: number): Promise<boolean> {
+    const company = await prisma.companies.findUnique({
+      where: { code: company_code },
+    });
+    return company !== null && company.status === 'ACTIVE';
   }
 }
-
-// Export singleton instance
-export const incomingGoodRepository = new IncomingGoodRepository();
