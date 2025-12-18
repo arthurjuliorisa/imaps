@@ -59,6 +59,11 @@ enum CompanyStatus {
   INACTIVE
 }
 
+enum CalculationMethod {
+  TRANSACTION
+  WIP_SNAPSHOT
+}
+
 // ============================================================================
 // MASTER DATA TABLES
 // ============================================================================
@@ -510,4 +515,34 @@ model adjustment_items {
   @@index([item_code])
   @@index([item_type])
   @@index([adjustment_type])
+}
+
+// ============================================================================
+// STOCK CALCULATION TABLES (Created by SQL scripts)
+// ============================================================================
+
+model stock_daily_snapshot {
+  id                  BigInt             @id @default(autoincrement())
+  company_code        Int
+  item_type_code      String             @db.VarChar(10) @map("item_type")
+  item_code           String             @db.VarChar(50)
+  item_name           String             @db.VarChar(200)
+  opening_balance     Decimal            @default(0) @db.Decimal(15, 3)
+  closing_balance     Decimal            @default(0) @db.Decimal(15, 3)
+  incoming_qty        Decimal            @default(0) @db.Decimal(15, 3)
+  outgoing_qty        Decimal            @default(0) @db.Decimal(15, 3)
+  production_qty      Decimal            @default(0) @db.Decimal(15, 3)
+  material_usage_qty  Decimal            @default(0) @db.Decimal(15, 3)
+  adjustment_qty      Decimal            @default(0) @db.Decimal(15, 3)
+  wip_balance_qty     Decimal?           @db.Decimal(15, 3)
+  snapshot_date       DateTime           @db.Date
+  calculated_at       DateTime           @default(now()) @db.Timestamptz(6)
+  calculation_method  CalculationMethod
+  created_at          DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime           @updatedAt @db.Timestamptz(6)
+
+  @@unique([company_code, item_type_code, item_code, snapshot_date], name: "uk_stock_snapshot")
+  @@index([company_code, snapshot_date])
+  @@index([item_type_code, snapshot_date])
+  @@index([item_code, snapshot_date])
 }
