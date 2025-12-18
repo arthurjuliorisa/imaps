@@ -75,13 +75,9 @@ main() {
     # Step 2: Run Prisma migrations
     run_prisma_migrate
 
-    # Step 3: Run custom SQL (only for first-time setup)
-    if [ "$VERCEL_ENV" != "production" ]; then
-        echo "Checking if custom SQL needed..."
-        run_custom_sql || echo "Custom SQL skipped or already applied"
-    else
-        echo "Production: Skipping automatic custom SQL (run manually for safety)"
-    fi
+    # Step 3: Run custom SQL (with safety check for all environments)
+    echo "Checking if custom SQL needed..."
+    run_custom_sql || echo "Custom SQL skipped or already applied"
 
     echo "========================================"
     echo "Vercel Auto-Migration Completed!"
