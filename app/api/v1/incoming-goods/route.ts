@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateRequest } from '@/lib/middleware/auth.middleware';
-import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter.middleware';
-import { handleError } from '@/lib/middleware/error-handler.middleware';
+import { authenticate } from '@/lib/middleware/auth.middleware';
+import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware';
+import { errorHandler } from '@/lib/middleware/error-handler.middleware';
 import { IncomingGoodsService } from '@/lib/services/incoming-goods.service';
 import { createRequestLogger, logRequest, logResponse } from '@/lib/utils/logger';
 
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
     // Middleware chain
     // 1. Authentication
-    const authResult = await authenticateRequest(request);
+    const authResult = await authenticate(request);
     if (!authResult.authenticated) {
       logResponse(requestLogger, 401, startTime);
       return NextResponse.json(
@@ -35,14 +35,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Rate limiting
-    const rateLimitResult = rateLimitMiddleware(request);
-    if (rateLimitResult.limited) {
+    const rateLimitResult = rateLimiterMiddleware(request);
+    if (!rateLimitResult.success) {
       logResponse(requestLogger, 429, startTime);
       return NextResponse.json(
         {
           status: 'failed',
           message: 'Rate limit exceeded',
-          error: rateLimitResult.error,
         },
         { status: 429 }
       );
@@ -74,9 +73,9 @@ export async function POST(request: NextRequest) {
     logResponse(requestLogger, 200, startTime);
     return NextResponse.json(result.data, { status: 200 });
   } catch (error) {
-    requestLogger.error({ error, wmsId }, 'Failed to process incoming goods');
+    requestLogger.error('Failed to process incoming goods', { error, wmsId });
 
-    const errorResponse = handleError(error, wmsId);
+    const errorResponse = errorHandler(error, wmsId);
     logResponse(requestLogger, errorResponse.status, startTime);
 
     return NextResponse.json(errorResponse.body, { status: errorResponse.status });

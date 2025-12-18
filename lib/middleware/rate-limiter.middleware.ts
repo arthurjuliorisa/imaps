@@ -79,13 +79,13 @@ export const rateLimiterMiddleware = (request: NextRequest) => {
   // Check if exceeded (with burst allowance)
   if (stored.count > maxRequests + burst) {
     logger.warn(
+      'Rate limit exceeded',
       {
         clientIp,
         count: stored.count,
         maxRequests,
         burst,
-      },
-      'Rate limit exceeded'
+      }
     );
 
     throw new RateLimitError('Rate limit exceeded. Please try again later.');
@@ -94,14 +94,14 @@ export const rateLimiterMiddleware = (request: NextRequest) => {
   // Log warning if approaching limit
   if (stored.count > maxRequests) {
     logger.warn(
+      'Rate limit burst capacity used',
       {
         clientIp,
         count: stored.count,
         maxRequests,
         burst,
         remaining: maxRequests + burst - stored.count,
-      },
-      'Rate limit burst capacity used'
+      }
     );
   }
 
@@ -123,6 +123,6 @@ export const cleanupRateLimitStore = () => {
   }
 
   if (cleaned > 0) {
-    logger.info({ cleaned }, 'Rate limit store cleaned');
+    logger.info('Rate limit store cleaned', { cleaned });
   }
 };

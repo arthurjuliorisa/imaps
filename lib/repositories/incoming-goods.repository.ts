@@ -1,9 +1,8 @@
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { prisma } from '../db/prisma';
 import { BaseTransactionRepository } from './base-transaction.repository';
 import { logger } from '../utils/logger';
 import type { IncomingGoodsValidated } from '../validators/incoming-goods.validator';
-
-const prisma = new PrismaClient();
 
 export interface IncomingGoodsCreateResult {
   id: number;
@@ -48,7 +47,7 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
             shipper_name: data.shipper_name,
             timestamp: timestamp,
             updated_at: new Date(),
-            deleted_at: null, // Undelete if was deleted
+            deleted_at: null,
           },
           create: {
             wms_id: data.wms_id,
@@ -95,13 +94,13 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
         });
 
         requestLogger.info(
+          'Incoming goods saved successfully',
           {
             incomingGoodId: incomingGood.id,
             itemsCount: data.items.length,
             companyCode: data.company_code,
             incomingDate: incomingDate,
-          },
-          'Incoming goods saved successfully'
+          }
         );
 
         return {
@@ -123,7 +122,7 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
 
       return result;
     } catch (error) {
-      requestLogger.error({ error }, 'Failed to save incoming goods');
+      requestLogger.error('Failed to save incoming goods', { error });
       throw error;
     }
   }
@@ -145,7 +144,7 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
         },
       },
       include: {
-        company: true,
+        // companies: true, // Removed as it does not exist in the model
       },
     });
   }
@@ -154,9 +153,14 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
    * Check if company exists and is active
    */
   async companyExists(company_code: number): Promise<boolean> {
-    const company = await prisma.companies.findUnique({
-      where: { code: company_code },
-    });
-    return company !== null && company.status === 'ACTIVE';
+    try {
+      const company = await prisma.companies.findUnique({ // Change 'company' to 'companies'
+        where: { code: company_code },
+      });
+      return company !== null && company.status === 'ACTIVE';
+    } catch (error) {
+      logger.error({ error, company_code });
+      return false;
+    }
   }
 }

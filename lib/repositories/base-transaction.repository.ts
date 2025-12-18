@@ -1,6 +1,7 @@
 import { SnapshotRecalcRepository } from './snapshot-recalc.repository';
 import { isBackdated } from '../utils/date.util';
 import { logger } from '../utils/logger';
+import { prisma } from '../db/prisma';
 
 /**
  * Base repository for transaction tables
@@ -20,18 +21,47 @@ export abstract class BaseTransactionRepository {
     company_code: number,
     transaction_date: Date,
     wms_id: string,
-    transaction_type: string
+    transaction_type: 'incoming_goods' | 'outgoing_goods' // typed for safety
   ): Promise<void> {
     try {
       // Check if backdated
-      if (!isBackdated(transaction_date)) {
-        logger.debug(
+      const isBackdatedTx = isBackdated(transaction_date);
+
+      if (!isBackdatedTx) {
+        // Same-day transaction: queue for end-of-day processing if not already queued
+        const alreadyQueuedToday = await this.snapshotRecalcRepo.isAlreadyQueued(
+          company_code,
+          transaction_date
+        );
+
+        if (alreadyQueuedToday) {
+          logger.debug(
+            'Same-day recalculation already queued',
+            {
+              wmsId: wms_id,
+              companyCode: company_code,
+              transactionDate: transaction_date,
+              transactionType: transaction_type,
+            },
+          );
+          return;
+        }
+
+        await this.snapshotRecalcRepo.queueRecalculation({
+          company_code,
+          recalc_date: transaction_date,
+          reason: `Same-day ${transaction_type}: ${wms_id}`,
+          priority: -1, // lower priority, processed at end-of-day by worker
+        });
+
+        logger.info(
+          'Same-day transaction queued for end-of-day recalculation',
           {
             wmsId: wms_id,
+            companyCode: company_code,
             transactionDate: transaction_date,
             transactionType: transaction_type,
           },
-          'Transaction is not backdated, no recalc needed'
         );
         return;
       }
@@ -44,18 +74,20 @@ export abstract class BaseTransactionRepository {
 
       if (alreadyQueued) {
         logger.debug(
+          'Recalculation already queued for this date',
           {
             wmsId: wms_id,
             companyCode: company_code,
             transactionDate: transaction_date,
           },
-          'Recalculation already queued for this date'
         );
+        // Optionally still ensure partitions
+        await this.ensureBackdatedMaintenance(company_code, transaction_date, wms_id, transaction_type);
         return;
       }
 
       // Queue recalculation
-      await this.snapshotRecalcRepo.queueRecalculation({
+      const queueId = await this.snapshotRecalcRepo.queueRecalculation({
         company_code,
         recalc_date: transaction_date,
         reason: `Backdated ${transaction_type}: ${wms_id}`,
@@ -63,24 +95,89 @@ export abstract class BaseTransactionRepository {
       });
 
       logger.info(
+        'Backdated transaction detected, recalculation queued',
         {
           wmsId: wms_id,
           companyCode: company_code,
           transactionDate: transaction_date,
           transactionType: transaction_type,
         },
-        'Backdated transaction detected, recalculation queued'
       );
-    } catch (error) {
+
+      // Run snapshot recalculation immediately for backdated changes
+      await this.snapshotRecalcRepo.processImmediately(
+        queueId,
+        company_code,
+        transaction_date,
+      );
+
+      // Ensure partition/maintenance for backdated data (non-blocking)
+      await this.ensureBackdatedMaintenance(company_code, transaction_date, wms_id, transaction_type);
+    } catch (error: any) {
       // Log error but don't fail the transaction
       logger.error(
+        'Failed to queue snapshot recalculation',
         {
-          error,
+          errorName: error?.name,
+          errorMessage: error?.message,
+          errorCode: error?.code,
+          errorMeta: error?.meta,
+          errorStack: error?.stack,
           wmsId: wms_id,
           companyCode: company_code,
           transactionDate: transaction_date,
         },
-        'Failed to queue snapshot recalculation'
+      );
+    }
+  }
+
+  /**
+   * Ensure any backdated maintenance (partitions, summaries, etc).
+   * Non-blocking: never throws, only logs.
+   */
+  protected async ensureBackdatedMaintenance(
+    companyCode: number,
+    transactionDate: Date,
+    wmsId: string,
+    tableName: 'incoming_goods' | 'outgoing_goods'
+  ): Promise<void> {
+    const log = logger.child({
+      scope: 'BaseTransactionRepository.ensureBackdatedMaintenance',
+      wmsId,
+      companyCode,
+      transactionDate,
+      tableName,
+    });
+
+    // Call ensure_<table>_partition if it exists; function name is trusted from union type
+    const funcName = tableName === 'incoming_goods'
+      ? 'ensure_incoming_goods_partition'
+      : 'ensure_outgoing_goods_partition';
+
+    try {
+      await prisma.$executeRawUnsafe(
+        `SELECT ${funcName}($1, $2::date)`,
+        companyCode,
+        transactionDate,
+      );
+
+      log.info('Backdated maintenance executed');
+    } catch (err: any) {
+      const pgCode = err?.meta?.code ?? err?.code;
+      if (pgCode === '42883') { // function does not exist; skip quietly
+        log.warn('Backdated maintenance function not found (skipped)', { funcName });
+        return;
+      }
+      log.warn(
+        'Backdated maintenance failed (non-blocking)',
+        {
+          errName: err?.name,
+          errMessage: err?.message,
+          errCode: err?.code,
+          errMeta: err?.meta,
+          errStack: err?.stack,
+          clientVersion: err?.clientVersion,
+        },
       );
     }
   }

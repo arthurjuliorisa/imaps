@@ -29,21 +29,21 @@ export class IncomingGoodsService {
 
       if (!validationResult.success) {
         requestLogger.warn(
-          { errors: validationResult.errors },
-          'Validation failed'
+          'Validation failed',
+          { errors: validationResult.errors }
         );
         return { success: false, errors: validationResult.errors };
       }
 
       const data = validationResult.data;
-      requestLogger.info({ wmsId: data.wms_id }, 'Validation passed');
+      requestLogger.info('Validation passed', { wmsId: data.wms_id });
 
       // 2. Business validations (database checks)
       const businessErrors = await this.validateBusiness(data);
       if (businessErrors.length > 0) {
         requestLogger.warn(
-          { errors: businessErrors, wmsId: data.wms_id },
-          'Business validation failed'
+          'Business validation failed',
+          { errors: businessErrors, wmsId: data.wms_id }
         );
         return { success: false, errors: businessErrors };
       }
@@ -52,12 +52,12 @@ export class IncomingGoodsService {
       const result = await this.repository.createOrUpdate(data);
 
       requestLogger.info(
+        'Incoming goods processed successfully',
         {
           wmsId: result.wms_id,
           incomingGoodId: result.id,
           itemsCount: result.items_count,
-        },
-        'Incoming goods processed successfully'
+        }
       );
 
       // 4. Return success response
@@ -72,7 +72,7 @@ export class IncomingGoodsService {
         },
       };
     } catch (error) {
-      requestLogger.error({ error }, 'Failed to process incoming goods');
+      requestLogger.error('Failed to process incoming goods', { error });
       throw error;
     }
   }

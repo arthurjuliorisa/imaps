@@ -94,7 +94,7 @@ export const authMiddleware = (request: NextRequest) => {
     // 2. Validate IP Whitelist
     if (!validateIpWhitelist(request)) {
       const clientIp = getClientIp(request);
-      requestLogger.warn({ clientIp }, 'IP not whitelisted');
+      requestLogger.warn('IP not whitelisted',{ clientIp });
       throw new ForbiddenError('Access denied', 'IP_NOT_WHITELISTED');
     }
 
@@ -104,7 +104,22 @@ export const authMiddleware = (request: NextRequest) => {
     if (error instanceof AuthenticationError || error instanceof ForbiddenError) {
       throw error;
     }
-    requestLogger.error({ error }, 'Authentication error');
+    requestLogger.error( 'Authentication error',{ error });
     throw new AuthenticationError('Authentication failed');
+  }
+};
+
+/**
+ * Authenticate request - wrapper for route handlers
+ */
+export const authenticate = async (
+  request: NextRequest
+): Promise<{ authenticated: boolean; error?: string }> => {
+  try {
+    authMiddleware(request);
+    return { authenticated: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Authentication failed';
+    return { authenticated: false, error: message };
   }
 };

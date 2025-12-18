@@ -522,6 +522,8 @@ enum RecalcStatus {
   IN_PROGRESS
   COMPLETED
   FAILED
+
+  @@map("recalc_status")
 }
 
 model snapshot_recalc_queue {
@@ -540,6 +542,7 @@ model snapshot_recalc_queue {
 
   company companies @relation(fields: [company_code], references: [code], onDelete: Cascade)
 
+  @@unique([company_code, recalc_date, item_type, item_code])
   @@index([status, priority, queued_at])
   @@index([company_code, recalc_date])
 }

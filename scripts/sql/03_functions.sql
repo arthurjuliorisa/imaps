@@ -1,22 +1,47 @@
 -- =============================================================================
--- iMAPS Database Schema - Core Functions (Simplified)
+-- iMAPS Database Schema - Core Functions (Fixed)
 -- File: 08_functions.sql
 -- Purpose: Stock calculation and traceability population functions
 -- Compatible with: schema.prisma v2.4 + setup_partitions.sql + 05_traceability_tables.sql
--- Version: Simplified - Core functions only
+-- Version: Fixed - Dollar-quoting corrected
 -- =============================================================================
 
 -- =============================================================================
 -- 1. CALCULATE STOCK SNAPSHOT (Main Function)
 -- =============================================================================
--- Calculates daily stock balance for a company on a specific date
--- Handles all item types: ROH, HALB, FERT, HIBE*, SCRAP
+
+-- Ensure yearly partition for stock_daily_snapshot exists
+CREATE OR REPLACE FUNCTION ensure_stock_daily_snapshot_partition(
+    p_snapshot_date DATE
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_year TEXT := to_char(p_snapshot_date, 'YYYY');
+    v_start DATE := date_trunc('year', p_snapshot_date)::date;
+    v_end   DATE := (date_trunc('year', p_snapshot_date) + INTERVAL '1 year')::date;
+    v_partition REGCLASS := to_regclass(format('stock_daily_snapshot_%s', v_year));
+    v_partition_name TEXT := format('stock_daily_snapshot_%s', v_year);
+BEGIN
+    IF v_partition IS NULL THEN
+        EXECUTE format(
+            'CREATE TABLE %I PARTITION OF stock_daily_snapshot FOR VALUES FROM (%L) TO (%L)',
+            v_partition_name,
+            v_start,
+            v_end
+        );
+    END IF;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION calculate_stock_snapshot(
     p_company_code INTEGER,
     p_snapshot_date DATE
 )
-RETURNS void AS $$
+RETURNS void 
+LANGUAGE plpgsql
+AS $$
 DECLARE
     v_start_time TIMESTAMP;
     v_rows_inserted INTEGER := 0;
@@ -309,21 +334,22 @@ BEGIN
     RAISE NOTICE 'Stock snapshot calculation completed in % seconds. Rows inserted: %', 
         EXTRACT(EPOCH FROM (clock_timestamp() - v_start_time)), v_rows_inserted;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 COMMENT ON FUNCTION calculate_stock_snapshot IS 'Calculate daily stock snapshot for a company on a specific date';
 
 -- =============================================================================
 -- 2. CALCULATE STOCK SNAPSHOT RANGE
 -- =============================================================================
--- Calculates stock snapshots for a date range
 
 CREATE OR REPLACE FUNCTION calculate_stock_snapshot_range(
     p_company_code INTEGER,
     p_start_date DATE,
     p_end_date DATE
 )
-RETURNS void AS $$
+RETURNS void 
+LANGUAGE plpgsql
+AS $$
 DECLARE
     v_current_date DATE;
     v_total_days INTEGER;
@@ -343,19 +369,20 @@ BEGIN
     
     RAISE NOTICE 'Stock snapshot range calculation completed. Days processed: %', v_days_processed;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 COMMENT ON FUNCTION calculate_stock_snapshot_range IS 'Calculate stock snapshots for a date range';
 
 -- =============================================================================
 -- 3. POPULATE WORK ORDER MATERIAL CONSUMPTION
 -- =============================================================================
--- Populates traceability table linking materials to work orders
 
 CREATE OR REPLACE FUNCTION populate_work_order_material_consumption(
     p_material_usage_wms_id VARCHAR(100)
 )
-RETURNS void AS $$
+RETURNS void 
+LANGUAGE plpgsql
+AS $$
 DECLARE
     v_rows_inserted INTEGER := 0;
 BEGIN
@@ -397,22 +424,22 @@ BEGIN
     RAISE NOTICE 'Populated work order material consumption for %: % rows', 
         p_material_usage_wms_id, v_rows_inserted;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 COMMENT ON FUNCTION populate_work_order_material_consumption IS 'Populate traceability linking materials to work orders';
 
 -- =============================================================================
 -- 4. POPULATE WORK ORDER FG PRODUCTION
 -- =============================================================================
--- Populates traceability table linking work orders to finished/semifinished goods
 
 CREATE OR REPLACE FUNCTION populate_work_order_fg_production(
     p_production_wms_id VARCHAR(100)
 )
-RETURNS void AS $$
+RETURNS void 
+LANGUAGE plpgsql
+AS $func$
 DECLARE
     v_rows_inserted INTEGER := 0;
-    v_work_order VARCHAR(50);
 BEGIN
     -- Delete existing traceability for this production output
     DELETE FROM work_order_fg_production 
@@ -452,14 +479,13 @@ BEGIN
     RAISE NOTICE 'Populated work order FG production for %: % rows', 
         p_production_wms_id, v_rows_inserted;
 END;
-$$ LANGUAGE plpgsql;
+$func$;
 
 COMMENT ON FUNCTION populate_work_order_fg_production IS 'Populate traceability linking work orders to finished/semifinished goods';
 
 -- =============================================================================
 -- 5. QUEUE SNAPSHOT RECALCULATION
 -- =============================================================================
--- Queues snapshot recalculation (for backdated transactions)
 
 CREATE OR REPLACE FUNCTION queue_snapshot_recalculation(
     p_company_code INTEGER,
@@ -469,7 +495,9 @@ CREATE OR REPLACE FUNCTION queue_snapshot_recalculation(
     p_reason VARCHAR(500) DEFAULT NULL,
     p_priority INTEGER DEFAULT 0
 )
-RETURNS BIGINT AS $$
+RETURNS BIGINT 
+LANGUAGE plpgsql
+AS $$
 DECLARE
     v_queue_id BIGINT;
 BEGIN
@@ -496,19 +524,20 @@ BEGIN
     
     RETURN v_queue_id;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 COMMENT ON FUNCTION queue_snapshot_recalculation IS 'Queue snapshot recalculation for backdated transactions';
 
 -- =============================================================================
 -- 6. PROCESS RECALC QUEUE (Worker Function)
 -- =============================================================================
--- Processes pending recalculation queue items
 
 CREATE OR REPLACE FUNCTION process_recalc_queue(
     p_batch_size INTEGER DEFAULT 10
 )
-RETURNS INTEGER AS $$
+RETURNS INTEGER 
+LANGUAGE plpgsql
+AS $$
 DECLARE
     v_queue_record RECORD;
     v_processed_count INTEGER := 0;
@@ -558,7 +587,7 @@ BEGIN
     RAISE NOTICE 'Processed % recalc queue items', v_processed_count;
     RETURN v_processed_count;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 COMMENT ON FUNCTION process_recalc_queue IS 'Process pending snapshot recalculation queue (worker function)';
 

@@ -33,6 +33,7 @@ export const errorHandler = (error: unknown, wmsId?: string) => {
  */
 const handleAppError = (error: AppError, wmsId?: string) => {
   logger.error(
+    'Application error',
     {
       error: {
         name: error.name,
@@ -42,8 +43,7 @@ const handleAppError = (error: AppError, wmsId?: string) => {
         details: error.details,
       },
       wmsId,
-    },
-    'Application error'
+    }
   );
 
   return NextResponse.json(
@@ -64,6 +64,7 @@ const handleAppError = (error: AppError, wmsId?: string) => {
  */
 const handlePrismaError = (error: Prisma.PrismaClientKnownRequestError, wmsId?: string) => {
   logger.error(
+    'Database error',
     {
       error: {
         code: error.code,
@@ -71,8 +72,7 @@ const handlePrismaError = (error: Prisma.PrismaClientKnownRequestError, wmsId?: 
         meta: error.meta,
       },
       wmsId,
-    },
-    'Database error'
+    }
   );
 
   // Handle specific Prisma error codes
@@ -136,12 +136,12 @@ const handlePrismaError = (error: Prisma.PrismaClientKnownRequestError, wmsId?: 
  */
 const handleUnknownError = (error: unknown, wmsId?: string) => {
   logger.error(
+    'Unexpected error',
     {
       error: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : undefined,
       wmsId,
-    },
-    'Unexpected error'
+    }
   );
 
   return NextResponse.json(
