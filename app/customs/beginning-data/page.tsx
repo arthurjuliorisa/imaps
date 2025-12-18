@@ -312,7 +312,7 @@ export default function BeginningDataPage() {
       {/* Item Type Dropdown */}
       <Box sx={{ mb: 3 }}>
         <Autocomplete
-          value={itemTypes.find((it) => it.code === selectedItemType) || null}
+          value={itemTypes.find((it) => it.code === selectedItemType) || undefined}
           onChange={handleItemTypeChange}
           options={itemTypes}
           getOptionLabel={(option) => `${option.code} - ${option.name}`}
