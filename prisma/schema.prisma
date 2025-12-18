@@ -173,7 +173,7 @@ model user_access_menus {
 }
 
 model beginning_balances {
-  id           Int
+  id           Int       @id @default(autoincrement())
   company_code Int
   item_code    String    @db.VarChar(50)
   item_name    String    @db.VarChar(200)
