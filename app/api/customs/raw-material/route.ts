@@ -10,7 +10,7 @@ export async function GET(request: Request) {
       return authCheck.response;
     }
 
-    const { user } = authCheck;
+    const { session } = authCheck as { authenticated: true; session: any };
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
       WHERE company_code = $1
     `;
 
-    const params: any[] = [user.companyCode];
+    const params: any[] = [session.user.companyCode];
     let paramIndex = 2;
 
     // Add date filtering (mandatory)
