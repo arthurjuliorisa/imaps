@@ -39,7 +39,11 @@ npm run build
 if [ -n "$DATABASE_URL" ]; then
     echo ""
     echo "Seeding database..."
-    npm run seed || echo "Seeding skipped or already completed"
+    npm run seed || {
+        echo "Seeding failed with exit code $?"
+        echo "This is expected if data already exists (upsert will handle it)"
+        echo "Continuing deployment..."
+    }
 else
     echo ""
     echo "Skipping database seeding (no DATABASE_URL)"

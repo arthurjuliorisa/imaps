@@ -41,10 +41,9 @@ interface BeginningStockImportProps {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: ImportedRecord[]) => Promise<void>;
-  itemType: 'RAW_MATERIAL' | 'FINISH_GOOD' | 'CAPITAL_GOODS';
 }
 
-export function BeginningStockImport({ open, onClose, onSubmit, itemType }: BeginningStockImportProps) {
+export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStockImportProps) {
   const theme = useTheme();
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -60,29 +59,7 @@ export function BeginningStockImport({ open, onClose, onSubmit, itemType }: Begi
   };
 
   const getApiEndpoint = () => {
-    switch (itemType) {
-      case 'RAW_MATERIAL':
-        return '/api/customs/beginning-raw-material';
-      case 'FINISH_GOOD':
-        return '/api/customs/beginning-finish-good';
-      case 'CAPITAL_GOODS':
-        return '/api/customs/beginning-capital-goods';
-      default:
-        return '/api/customs/beginning-raw-material';
-    }
-  };
-
-  const getItemTypeLabel = () => {
-    switch (itemType) {
-      case 'RAW_MATERIAL':
-        return 'Raw Material';
-      case 'FINISH_GOOD':
-        return 'Finish Good';
-      case 'CAPITAL_GOODS':
-        return 'Capital Goods';
-      default:
-        return 'Item';
-    }
+    return '/api/customs/beginning-data';
   };
 
   const handleDownloadTemplate = async () => {
@@ -98,7 +75,7 @@ export function BeginningStockImport({ open, onClose, onSubmit, itemType }: Begi
 
       // Get filename from Content-Disposition header or use default
       const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = `Beginning_Stock_${getItemTypeLabel().replace(/\s+/g, '_')}_Template.xlsx`;
+      let filename = 'Beginning_Data_Template.xlsx';
 
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
@@ -292,10 +269,10 @@ export function BeginningStockImport({ open, onClose, onSubmit, itemType }: Begi
       >
         <Box>
           <Typography component="div" fontWeight="600" color="primary" sx={{ fontSize: '1.125rem' }}>
-            Import from Excel - {getItemTypeLabel()}
+            Import from Excel
           </Typography>
           <Typography component="div" color="text.secondary" sx={{ fontSize: '0.75rem', mt: 0.25 }}>
-            Upload beginning stock data for {getItemTypeLabel().toLowerCase()}
+            Upload beginning stock data from Excel template
           </Typography>
         </Box>
       </DialogTitle>
