@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     const endDate = searchParams.get('endDate');
 
     const where: any = {
-      item_type_code: {
+      item_type: {
         startsWith: 'HIBE',
       },
     };
