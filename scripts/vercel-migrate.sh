@@ -27,16 +27,9 @@ echo "Environment: $VERCEL_ENV"
 run_prisma_migrate() {
     echo "Running Prisma schema sync..."
 
-    # Drop existing ENUMs to avoid conflicts
+    # Drop existing ENUMs to avoid conflicts (using Node.js script instead of psql)
     echo "Dropping existing ENUM types..."
-    psql "$DATABASE_URL" <<-EOSQL || echo "Note: Some ENUMs may not exist (this is ok)"
-        DROP TYPE IF EXISTS "Currency" CASCADE;
-        DROP TYPE IF EXISTS "ItemCategory" CASCADE;
-        DROP TYPE IF EXISTS "TransactionType" CASCADE;
-        DROP TYPE IF EXISTS "UserRole" CASCADE;
-        DROP TYPE IF EXISTS "calculation_method" CASCADE;
-        DROP TYPE IF EXISTS "recalc_status" CASCADE;
-EOSQL
+    tsx scripts/drop-enums.ts || echo "ENUM cleanup completed (some may not exist)"
 
     # Use db push for all environments since we don't have migration files yet
     echo "Using prisma db push to sync schema"
