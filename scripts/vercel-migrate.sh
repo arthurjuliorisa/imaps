@@ -27,13 +27,9 @@ echo "Environment: $VERCEL_ENV"
 run_prisma_migrate() {
     echo "Running Prisma schema sync..."
 
-    # Drop existing ENUMs to avoid conflicts (using Node.js script instead of psql)
-    echo "Dropping existing ENUM types..."
-    tsx scripts/drop-enums.ts || echo "ENUM cleanup completed (some may not exist)"
-
-    # Use db push for all environments since we don't have migration files yet
-    echo "Using prisma db push to sync schema"
-    npx prisma db push --skip-generate --accept-data-loss
+    # Use db push with force-reset for clean schema sync
+    echo "Using prisma db push to sync schema (with force reset)"
+    npx prisma db push --force-reset --skip-generate --accept-data-loss
 }
 
 # Function to check if custom SQL needs to run
