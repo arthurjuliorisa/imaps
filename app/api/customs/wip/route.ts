@@ -10,46 +10,62 @@ export async function GET(request: Request) {
       return authCheck.response;
     }
 
+    const { user } = authCheck;
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    const where: any = {
-      item_type_code: 'HALB',
-    };
+    // Query from vw_lpj_wip view (WIP balances with stock_date)
+    let query = `
+      SELECT
+        no,
+        company_code,
+        company_name,
+        item_code,
+        item_name,
+        item_type,
+        unit_quantity as unit,
+        quantity,
+        stock_date,
+        remarks
+      FROM vw_lpj_wip
+      WHERE company_code = $1
+    `;
 
-    if (startDate || endDate) {
-      where.snapshot_date = {};
-      if (startDate) {
-        where.snapshot_date.gte = new Date(startDate);
-      }
-      if (endDate) {
-        where.snapshot_date.lte = new Date(endDate);
-      }
+    const params: any[] = [user.companyCode];
+    let paramIndex = 2;
+
+    // Add date filtering if provided
+    if (startDate) {
+      query += ` AND stock_date >= $${paramIndex}`;
+      params.push(new Date(startDate));
+      paramIndex++;
+    }
+    if (endDate) {
+      query += ` AND stock_date <= $${paramIndex}`;
+      params.push(new Date(endDate));
+      paramIndex++;
     }
 
-    const snapshots = await prisma.stock_daily_snapshot.findMany({
-      where,
-      orderBy: [
-        { snapshot_date: 'desc' },
-        { item_code: 'asc' },
-      ],
-    });
+    query += ` ORDER BY stock_date DESC, item_code`;
 
-    const transformedData = snapshots.map((snapshot) => ({
-      id: snapshot.item_code + '-' + snapshot.snapshot_date.toISOString(),
-      itemCode: snapshot.item_code,
-      itemName: snapshot.item_name,
-      unit: 'N/A',
-      date: snapshot.snapshot_date,
-      beginning: Number(snapshot.opening_balance),
-      in: Number(snapshot.incoming_qty),
-      out: Number(snapshot.outgoing_qty),
-      adjustment: Number(snapshot.adjustment_qty),
-      ending: Number(snapshot.closing_balance),
+    const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+
+    // Transform to expected format
+    const transformedData = result.map((row: any) => ({
+      id: `${row.item_code}-${row.stock_date}`,
+      itemCode: row.item_code,
+      itemName: row.item_name,
+      unit: row.unit || 'N/A',
+      date: row.stock_date,
+      beginning: 0, // WIP doesn't have opening/closing - just quantity at date
+      in: 0,
+      out: 0,
+      adjustment: 0,
+      ending: Number(row.quantity || 0),
       stockOpname: 0,
       variant: 0,
-      remarks: null,
+      remarks: row.remarks,
     }));
 
     return NextResponse.json(serializeBigInt(transformedData));
