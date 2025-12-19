@@ -155,11 +155,15 @@ export abstract class BaseTransactionRepository {
       : 'ensure_outgoing_goods_partition';
 
     try {
-      await prisma.$executeRawUnsafe(
-        `SELECT ${funcName}($1, $2::date)`,
-        companyCode,
-        transactionDate,
-      );
+      if (tableName === 'incoming_goods') {
+        await prisma.$executeRaw`
+          SELECT ensure_incoming_goods_partition(${companyCode}, ${transactionDate}::date)
+        `;
+      } else {
+        await prisma.$executeRaw`
+          SELECT ensure_outgoing_goods_partition(${companyCode}, ${transactionDate}::date)
+        `;
+      }
 
       log.info('Backdated maintenance executed');
     } catch (err: any) {
