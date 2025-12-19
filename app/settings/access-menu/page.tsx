@@ -122,8 +122,8 @@ export default function AccessMenuPage() {
           return false;
         }
 
-        if (typeof item.name !== 'string' || !item.name) {
-          console.warn('Skipping menu item with invalid name:', item);
+        if (typeof item.menu_name !== 'string' || !item.menu_name) {
+          console.warn('Skipping menu item with invalid menu_name:', item);
           return false;
         }
 
@@ -142,7 +142,7 @@ export default function AccessMenuPage() {
 
         return {
           id: item.id,
-          label: item.name,
+          label: item.menu_name,
           children: item.children && Array.isArray(item.children) && item.children.length > 0
             ? mapMenuItems(item.children, depth + 1, newVisited)
             : undefined,

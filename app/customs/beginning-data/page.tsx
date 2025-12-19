@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Stack, Button } from '@mui/material';
+import { Box, Stack, Button, Autocomplete, TextField } from '@mui/material';
 import { Add as AddIcon, UploadFile as UploadFileIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import {
@@ -17,7 +17,12 @@ import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { useToast } from '@/app/components/ToastProvider';
 import dayjs from 'dayjs';
 
-export default function BeginningRawMaterialPage() {
+interface ItemType {
+  code: string;
+  name: string;
+}
+
+export default function BeginningDataPage() {
   const toast = useToast();
   const [data, setData] = useState<BeginningStockData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,12 +34,49 @@ export default function BeginningRawMaterialPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState<string | null>(null);
 
+  // Item Type Management
+  const [selectedItemType, setSelectedItemType] = useState<string>('ALL');
+  const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
+  const [itemTypesLoading, setItemTypesLoading] = useState(true);
+
+  // Load item types on mount
+  useEffect(() => {
+    const fetchItemTypes = async () => {
+      setItemTypesLoading(true);
+      try {
+        const response = await fetch('/api/master/item-types');
+        if (!response.ok) {
+          throw new Error('Failed to fetch item types');
+        }
+        const result = await response.json();
+        const itemTypesData = result.data || result;
+        const types = itemTypesData.map((it: any) => ({
+          code: it.item_type_code,
+          name: it.name_id || it.name_en,
+        }));
+        // Add "All" option at the beginning
+        setItemTypes([{ code: 'ALL', name: 'All Item Types' }, ...types]);
+      } catch (error) {
+        console.error('Error fetching item types:', error);
+        toast.error('Failed to load item types');
+        setItemTypes([{ code: 'ALL', name: 'All Item Types' }]);
+      } finally {
+        setItemTypesLoading(false);
+      }
+    };
+    fetchItemTypes();
+  }, []);
+
   // Fetch data from API
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      // Fix Bug #4: Use correct API query parameters
+      // Only filter by itemType if not "All"
+      if (selectedItemType && selectedItemType !== 'ALL') {
+        params.append('itemType', selectedItemType);
+      }
+
       if (searchTerm) {
         params.append('itemCode', searchTerm);
         params.append('itemName', searchTerm);
@@ -45,14 +87,14 @@ export default function BeginningRawMaterialPage() {
       }
 
       const response = await fetch(
-        `/api/customs/beginning-raw-material${params.toString() ? `?${params.toString()}` : ''}`
+        `/api/customs/beginning-data${params.toString() ? `?${params.toString()}` : ''}`
       );
       if (!response.ok) {
         throw new Error('Failed to fetch data');
       }
       const result = await response.json();
 
-      // Fix Bug #2: Transform API response to match BeginningStockData interface
+      // Transform API response to match BeginningStockData interface
       const transformed = Array.isArray(result) ? result.map((item: any) => ({
         id: item.id,
         itemCode: item.item.code,
@@ -74,15 +116,30 @@ export default function BeginningRawMaterialPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, filterDate]);
+  }, [selectedItemType, searchTerm, filterDate]);
 
-  // Load data on mount and when filters change
+  // Load data when item type or filters change
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!itemTypesLoading) {
+      fetchData();
+    }
+  }, [fetchData, itemTypesLoading]);
+
+  // Handle item type change
+  const handleItemTypeChange = (_event: any, newValue: ItemType | null) => {
+    if (newValue) {
+      setSelectedItemType(newValue.code);
+      setSearchTerm('');
+      setFilterDate(null);
+    }
+  };
 
   // Handle add button click
   const handleAddClick = () => {
+    if (selectedItemType === 'ALL') {
+      toast.error('Please select a specific item type to add data');
+      return;
+    }
     setSelectedItem(null);
     setFormMode('add');
     setFormOpen(true);
@@ -106,7 +163,7 @@ export default function BeginningRawMaterialPage() {
     if (!selectedItem) return;
 
     try {
-      const response = await fetch(`/api/customs/beginning-raw-material/${selectedItem.id}`, {
+      const response = await fetch(`/api/customs/beginning-data/${selectedItem.id}`, {
         method: 'DELETE',
       });
 
@@ -128,8 +185,8 @@ export default function BeginningRawMaterialPage() {
   const handleFormSubmit = async (formData: BeginningStockFormData) => {
     try {
       const endpoint = formMode === 'add'
-        ? '/api/customs/beginning-raw-material'
-        : `/api/customs/beginning-raw-material/${selectedItem?.id}`;
+        ? '/api/customs/beginning-data'
+        : `/api/customs/beginning-data/${selectedItem?.id}`;
 
       const method = formMode === 'add' ? 'POST' : 'PUT';
 
@@ -139,6 +196,7 @@ export default function BeginningRawMaterialPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          itemType: selectedItemType,
           itemId: formData.itemId,
           uomId: formData.uomId,
           beginningBalance: formData.beginningBalance,
@@ -161,14 +219,13 @@ export default function BeginningRawMaterialPage() {
     } catch (error: any) {
       console.error(`Error ${formMode}ing data:`, error);
       toast.error(error.message || `Failed to ${formMode} beginning stock data. Please try again.`);
-      // Fix Bug #7: Don't re-throw, let form handle the error
     }
   };
 
   // Handle Excel import submission
   const handleImportSubmit = async (records: any[]) => {
     try {
-      const response = await fetch('/api/customs/beginning-raw-material/import', {
+      const response = await fetch('/api/customs/beginning-data/import', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -200,7 +257,6 @@ export default function BeginningRawMaterialPage() {
   const getFormInitialData = (): BeginningStockFormData | null => {
     if (!selectedItem || formMode === 'add') return null;
 
-    // Fix Bug #3: Include itemId and uomId from transformed data
     return {
       itemId: (selectedItem as any).itemId || '',
       item_code: selectedItem.itemCode,
@@ -216,10 +272,19 @@ export default function BeginningRawMaterialPage() {
     };
   };
 
+  // Get dynamic page title
+  const getPageTitle = () => {
+    if (selectedItemType === 'ALL') {
+      return 'Beginning Data - All Item Types';
+    }
+    const itemType = itemTypes.find((it) => it.code === selectedItemType);
+    return itemType ? `Beginning Data - ${itemType.name}` : 'Beginning Data';
+  };
+
   return (
     <ReportLayout
-      title="Beginning Stock - Raw Material"
-      subtitle="Manage beginning balance data for raw material mutations"
+      title={getPageTitle()}
+      subtitle="Manage beginning balance data for stock mutations"
       actions={
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, flexWrap: 'wrap' }}>
           <Button
@@ -255,6 +320,50 @@ export default function BeginningRawMaterialPage() {
         </Box>
       }
     >
+      {/* Item Type Dropdown */}
+      <Box
+        sx={{
+          mb: 3,
+          p: 2.5,
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+        }}
+      >
+        <Autocomplete
+          value={itemTypes.find((it) => it.code === selectedItemType) || undefined}
+          onChange={handleItemTypeChange}
+          options={itemTypes}
+          getOptionLabel={(option) => option.code === 'ALL' ? option.name : `${option.code} - ${option.name}`}
+          loading={itemTypesLoading}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Filter by Item Type"
+              placeholder="Select item type..."
+              size="medium"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: 'background.default',
+                  '& fieldset': {
+                    borderColor: 'divider',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'primary.main',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: 'primary.main',
+                  },
+                },
+              }}
+            />
+          )}
+          disableClearable
+          sx={{ maxWidth: 500 }}
+        />
+      </Box>
+
       <BeginningStockTable
         data={data}
         loading={loading}
@@ -272,7 +381,7 @@ export default function BeginningRawMaterialPage() {
           setSelectedItem(null);
         }}
         onSubmit={handleFormSubmit}
-        itemType="RAW_MATERIAL"
+        itemType={selectedItemType}
         initialData={getFormInitialData()}
         mode={formMode}
       />
@@ -282,7 +391,6 @@ export default function BeginningRawMaterialPage() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onSubmit={handleImportSubmit}
-        itemType="RAW_MATERIAL"
       />
 
       {/* Delete Confirmation Dialog */}

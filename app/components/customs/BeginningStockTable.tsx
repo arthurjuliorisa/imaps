@@ -101,14 +101,38 @@ export function BeginningStockTable({
   return (
     <Box>
       {/* Search and Filter Section */}
-      <Box sx={{ mb: 3 }}>
+      <Box
+        sx={{
+          mb: 3,
+          p: 2.5,
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'grey.300',
+          bgcolor: 'grey.50',
+        }}
+      >
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField
             placeholder="Search by item code or name..."
             value={searchTerm}
             onChange={handleSearchChange}
-            size="small"
-            sx={{ flexGrow: 1 }}
+            size="medium"
+            sx={{
+              flexGrow: 1,
+              '& .MuiOutlinedInput-root': {
+                bgcolor: 'white',
+                '& fieldset': {
+                  borderColor: 'grey.300',
+                },
+                '&:hover fieldset': {
+                  borderColor: 'primary.main',
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: 'primary.main',
+                  borderWidth: 2,
+                },
+              },
+            }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -124,8 +148,23 @@ export function BeginningStockTable({
               onChange={handleDateChange}
               slotProps={{
                 textField: {
-                  size: 'small',
-                  sx: { minWidth: 220 },
+                  size: 'medium',
+                  sx: {
+                    minWidth: 250,
+                    '& .MuiOutlinedInput-root': {
+                      bgcolor: 'white',
+                      '& fieldset': {
+                        borderColor: 'grey.300',
+                      },
+                      '&:hover fieldset': {
+                        borderColor: 'primary.main',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: 'primary.main',
+                        borderWidth: 2,
+                      },
+                    },
+                  },
                 },
                 actionBar: {
                   actions: ['clear', 'today'],
