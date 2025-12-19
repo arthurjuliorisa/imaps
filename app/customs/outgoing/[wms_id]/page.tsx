@@ -27,27 +27,27 @@ import {
 } from '@mui/material';
 import { NavigateNext, Home, Receipt, ArrowBack } from '@mui/icons-material';
 import { formatDate, formatCurrency } from '@/lib/exportUtils';
-import type { IncomingHeader, IncomingDetail } from '@/types/core';
+import type { OutgoingHeader, OutgoingDetail } from '@/types/core';
 
-interface IncomingTransactionDetail {
-  header: IncomingHeader;
-  details: IncomingDetail[];
+interface OutgoingTransactionDetail {
+  header: OutgoingHeader;
+  details: OutgoingDetail[];
 }
 
-export default function IncomingDetailPage() {
+export default function OutgoingDetailPage() {
   const theme = useTheme();
   const toast = useToast();
   const router = useRouter();
   const params = useParams();
   const wms_id = params.wms_id as string;
 
-  const [data, setData] = useState<IncomingTransactionDetail | null>(null);
+  const [data, setData] = useState<OutgoingTransactionDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const response = await fetch(`/api/wms/incoming/${wms_id}`);
+        const response = await fetch(`/api/wms/outgoing/${wms_id}`);
         if (!response.ok) {
           throw new Error('Failed to fetch transaction');
         }
@@ -117,10 +117,10 @@ export default function IncomingDetailPage() {
             '&:hover': { color: 'primary.main' },
             cursor: 'pointer'
           }}
-          onClick={() => router.push('/customs/incoming')}
+          onClick={() => router.push('/customs/outgoing')}
         >
           <Receipt sx={{ mr: 0.5 }} fontSize="small" />
-          Incoming Documents
+          Outgoing Documents
         </Link>
         <Typography
           sx={{ display: 'flex', alignItems: 'center' }}
@@ -145,16 +145,16 @@ export default function IncomingDetailPage() {
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Box>
             <Typography variant="h4" fontWeight={700} color="primary" gutterBottom>
-              Incoming Transaction Detail
+              Outgoing Transaction Detail
             </Typography>
             <Typography variant="body1" color="text.secondary">
-              View complete information for incoming customs transaction
+              View complete information for outgoing customs transaction
             </Typography>
           </Box>
           <Button
             variant="outlined"
             startIcon={<ArrowBack />}
-            onClick={() => router.push('/customs/incoming')}
+            onClick={() => router.push('/customs/outgoing')}
           >
             Back to List
           </Button>
@@ -223,26 +223,26 @@ export default function IncomingDetailPage() {
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Incoming Date
+                Outgoing Date
               </Typography>
               <Typography variant="body1">
-                {formatDate(data.header.incoming_date)}
+                {formatDate(data.header.outgoing_date)}
               </Typography>
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Shipper Name
+                Recipient Name
               </Typography>
               <Typography variant="body1">
-                {data.header.shipper_name || '-'}
+                {data.header.recipient_name || '-'}
               </Typography>
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Incoming Evidence Number
+                Outgoing Evidence Number
               </Typography>
               <Typography variant="body1">
-                {data.header.incoming_evidence_number || '-'}
+                {data.header.outgoing_evidence_number || '-'}
               </Typography>
             </Box>
             <Box sx={{ mb: 2 }}>
@@ -285,6 +285,7 @@ export default function IncomingDetailPage() {
                 <TableCell sx={{ fontWeight: 600 }}>UOM</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Amount</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Production Output WMS IDs</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -312,6 +313,15 @@ export default function IncomingDetailPage() {
                   </TableCell>
                   <TableCell>
                     <Chip label={detail.currency} size="small" />
+                  </TableCell>
+                  <TableCell>
+                    {detail.production_output_wms_ids.length > 0 ? (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {detail.production_output_wms_ids.map((id, idx) => (
+                          <Chip key={idx} label={id} size="small" variant="outlined" />
+                        ))}
+                      </Box>
+                    ) : '-'}
                   </TableCell>
                 </TableRow>
               ))}

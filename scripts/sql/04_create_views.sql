@@ -58,14 +58,14 @@ BEGIN
     ),
     -- Historical data: FROM stock_daily_snapshot (fast)
     historical_data AS (
-        SELECT 
+        SELECT
             ROW_NUMBER() OVER (PARTITION BY sds.company_code ORDER BY sds.snapshot_date, sds.item_code) as row_no,
             sds.company_code,
             c.name as company_name,
             sds.item_code,
             sds.item_name,
             sds.item_type,
-            sds.uom as unit_quantity,
+            COALESCE(i.uom, 'UNIT') as unit_quantity,
             sds.snapshot_date,
             sds.opening_balance,
             sds.incoming_qty as quantity_received,
@@ -79,8 +79,8 @@ BEGIN
             NULL::TEXT as remarks
         FROM stock_daily_snapshot sds
         JOIN companies c ON sds.company_code = c.code
+        LEFT JOIN items i ON sds.company_code = i.company_code AND sds.item_code = i.item_code
         WHERE sds.item_type = ANY(p_item_types)
-          AND sds.deleted_at IS NULL
     ),
     -- Recent data: Calculate from transactions (real-time)
     recent_data AS (
@@ -134,11 +134,14 @@ BEGIN
             FROM items i
             JOIN companies co ON i.company_code = co.code
             JOIN last_snapshot ls ON i.company_code = ls.company_code
-            CROSS JOIN GENERATE_SERIES(
-                ls.last_date + INTERVAL '1 day',
-                CURRENT_DATE,
-                '1 day'
-            ) AS dates(snapshot_date)
+            CROSS JOIN LATERAL (
+                SELECT generate_series::DATE as snapshot_date
+                FROM generate_series(
+                    ls.last_date + 1,
+                    CURRENT_DATE,
+                    '1 day'::INTERVAL
+                )
+            ) AS dates
             -- Opening balance (from last snapshot)
             LEFT JOIN stock_daily_snapshot opening ON 
                 i.company_code = opening.company_code AND
@@ -510,8 +513,8 @@ CREATE INDEX IF NOT EXISTS idx_adjustment_items_type
 ON adjustment_items (item_type, adjustment_type, deleted_at);
 
 -- Index for stock_daily_snapshot (critical for hybrid approach)
-CREATE INDEX IF NOT EXISTS idx_stock_snapshot_item_type_date 
-ON stock_daily_snapshot (company_code, item_type, snapshot_date, deleted_at);
+CREATE INDEX IF NOT EXISTS idx_stock_snapshot_item_type_date
+ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 
 -- ============================================================================
 -- VERIFICATION QUERIES

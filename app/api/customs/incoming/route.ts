@@ -15,6 +15,15 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
+    // Parse companyCode as integer
+    const companyCode = parseInt(session.user.companyCode);
+    if (!companyCode || isNaN(companyCode)) {
+      return NextResponse.json(
+        { message: 'Invalid company code' },
+        { status: 400 }
+      );
+    }
+
     // Query from vw_laporan_pemasukan view with date filtering
     let query = `
       SELECT
@@ -33,12 +42,13 @@ export async function GET(request: Request) {
         unit,
         quantity,
         currency,
-        value_amount
+        value_amount,
+        created_at
       FROM vw_laporan_pemasukan
       WHERE company_code = $1
     `;
 
-    const params: any[] = [session.user.companyCode];
+    const params: any[] = [companyCode];
     let paramIndex = 2;
 
     if (startDate) {
@@ -61,18 +71,21 @@ export async function GET(request: Request) {
       id: `${row.id}-${row.item_code}`,
       wmsId: row.id,
       companyCode: row.company_code,
+      companyName: row.company_name,
       documentType: row.customs_document_type,
       ppkekNumber: row.ppkek_number,
       registrationDate: row.registration_date,
       documentNumber: row.doc_number,
       date: row.doc_date,
       shipperName: row.shipper_name,
+      typeCode: row.type_code,
       itemCode: row.item_code,
       itemName: row.item_name,
       unit: row.unit,
       qty: Number(row.quantity || 0),
       currency: row.currency,
       amount: Number(row.value_amount || 0),
+      createdAt: row.created_at,
     }));
 
     return NextResponse.json(serializeBigInt(transformedData));

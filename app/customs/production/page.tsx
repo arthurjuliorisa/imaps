@@ -92,7 +92,7 @@ export default function ProductionPage() {
       'WMS ID': row.wms_id,
       'Company': row.company_code,
       'Internal Evidence': row.internal_evidence_number,
-      'Transaction Date': formatDate(row.transaction_date.toISOString()),
+      'Transaction Date': formatDate(row.transaction_date),
       'Reversal': row.reversal || '-',
     }));
 
@@ -109,7 +109,7 @@ export default function ProductionPage() {
       wmsId: row.wms_id,
       company: row.company_code,
       internalEvidence: row.internal_evidence_number,
-      transactionDate: formatDate(row.transaction_date.toISOString()),
+      transactionDate: formatDate(row.transaction_date),
     }));
 
     const columns = [
@@ -206,7 +206,7 @@ export default function ProductionPage() {
                     <TableCell>
                       {row.internal_evidence_number}
                     </TableCell>
-                    <TableCell>{formatDate(row.transaction_date.toISOString())}</TableCell>
+                    <TableCell>{formatDate(row.transaction_date)}</TableCell>
                     <TableCell>
                       {row.reversal ? (
                         <Chip label={row.reversal} size="small" color="warning" />

@@ -15,6 +15,15 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
+    // Parse companyCode as integer
+    const companyCode = parseInt(session.user.companyCode);
+    if (!companyCode || isNaN(companyCode)) {
+      return NextResponse.json(
+        { message: 'Invalid company code' },
+        { status: 400 }
+      );
+    }
+
     // Query from vw_lpj_hasil_produksi view with date filtering
     let query = `
       SELECT
@@ -33,12 +42,14 @@ export async function GET(request: Request) {
         closing_balance as ending,
         stock_count_result as "stockOpname",
         quantity_difference as variant,
+        value_amount,
+        currency,
         remarks
       FROM vw_lpj_hasil_produksi
       WHERE company_code = $1
     `;
 
-    const params: any[] = [session.user.companyCode];
+    const params: any[] = [companyCode];
     let paramIndex = 2;
 
     if (startDate) {
@@ -59,8 +70,12 @@ export async function GET(request: Request) {
     // Transform to expected format
     const transformedData = result.map((row: any) => ({
       id: `${row.item_code}-${row.snapshot_date}`,
+      rowNumber: row.no,
+      companyCode: row.company_code,
+      companyName: row.company_name,
       itemCode: row.item_code,
       itemName: row.item_name,
+      itemType: row.item_type,
       unit: row.unit || 'N/A',
       date: row.snapshot_date,
       beginning: Number(row.beginning || 0),
@@ -70,6 +85,8 @@ export async function GET(request: Request) {
       ending: Number(row.ending || 0),
       stockOpname: Number(row.stockOpname || 0),
       variant: Number(row.variant || 0),
+      valueAmount: Number(row.value_amount || 0),
+      currency: row.currency,
       remarks: row.remarks,
     }));
 

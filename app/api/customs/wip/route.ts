@@ -10,10 +10,20 @@ export async function GET(request: Request) {
       return authCheck.response;
     }
 
-    const { user } = authCheck;
+    const { session } = authCheck as { authenticated: true; session: any };
+    const user = session.user;
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+
+    // Parse companyCode as integer
+    const companyCode = parseInt(user.companyCode);
+    if (!companyCode || isNaN(companyCode)) {
+      return NextResponse.json(
+        { message: 'Invalid company code' },
+        { status: 400 }
+      );
+    }
 
     // Query from vw_lpj_wip view (WIP balances with stock_date)
     let query = `
@@ -27,12 +37,14 @@ export async function GET(request: Request) {
         unit_quantity as unit,
         quantity,
         stock_date,
+        value_amount,
+        currency,
         remarks
       FROM vw_lpj_wip
       WHERE company_code = $1
     `;
 
-    const params: any[] = [user.companyCode];
+    const params: any[] = [companyCode];
     let paramIndex = 2;
 
     // Add date filtering if provided
@@ -54,8 +66,12 @@ export async function GET(request: Request) {
     // Transform to expected format
     const transformedData = result.map((row: any) => ({
       id: `${row.item_code}-${row.stock_date}`,
+      rowNumber: row.no,
+      companyCode: row.company_code,
+      companyName: row.company_name,
       itemCode: row.item_code,
       itemName: row.item_name,
+      itemType: row.item_type,
       unit: row.unit || 'N/A',
       date: row.stock_date,
       beginning: 0, // WIP doesn't have opening/closing - just quantity at date
@@ -65,6 +81,8 @@ export async function GET(request: Request) {
       ending: Number(row.quantity || 0),
       stockOpname: 0,
       variant: 0,
+      valueAmount: Number(row.value_amount || 0),
+      currency: row.currency,
       remarks: row.remarks,
     }));
 

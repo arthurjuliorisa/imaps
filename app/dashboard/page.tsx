@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Paper,
@@ -9,18 +9,11 @@ import {
   CardContent,
   CardActionArea,
   Container,
-  Stack,
-  alpha,
   useTheme,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import {
   Business,
-  Email,
-  Language,
-  Phone,
-  LocationOn,
-  Description,
   ImportExport,
   Inventory2,
   Category,
@@ -29,6 +22,7 @@ import {
   Assessment,
 } from '@mui/icons-material';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 
 interface QuickLinkCardProps {
   title: string;
@@ -93,6 +87,29 @@ function QuickLinkCard({ title, description, icon, href, gradient }: QuickLinkCa
 
 export default function DashboardPage() {
   const theme = useTheme();
+  const { data: session } = useSession();
+  const [companyName, setCompanyName] = useState<string>('PT. Polygroup Manufaktur Indonesia');
+
+  useEffect(() => {
+    const fetchCompanyName = async () => {
+      if (session?.user?.companyCode) {
+        try {
+          const response = await fetch(`/api/master/companies?code=${session.user.companyCode}`);
+          if (response.ok) {
+            const result = await response.json();
+            if (result.success && result.data && result.data.length > 0 && result.data[0].name) {
+              setCompanyName(result.data[0].name);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching company:', error);
+          // Keep default company name on error
+        }
+      }
+    };
+
+    fetchCompanyName();
+  }, [session?.user?.companyCode]);
 
   const quickLinks: QuickLinkCardProps[] = [
     {
@@ -166,7 +183,7 @@ export default function DashboardPage() {
                 WELCOME TO
               </Typography>
               <Typography variant="h4" fontWeight="bold" gutterBottom>
-                PT. Ventora Innovations Indonesia
+                {companyName}
               </Typography>
               <Typography variant="body1" sx={{ opacity: 0.9, mt: 2 }}>
                 Integrated Material Administration and Planning System
@@ -186,126 +203,6 @@ export default function DashboardPage() {
             </Grid>
           </Grid>
         </Container>
-      </Paper>
-
-      {/* Company Information */}
-      <Paper
-        elevation={2}
-        sx={{
-          p: 3,
-          mb: 4,
-          borderRadius: 2,
-        }}
-      >
-        <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ mb: 3 }}>
-          Informasi Perusahaan
-        </Typography>
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Box
-                sx={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 2,
-                  bgcolor: alpha(theme.palette.primary.main, 0.1),
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: theme.palette.primary.main,
-                }}
-              >
-                <LocationOn />
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary" display="block">
-                  Alamat
-                </Typography>
-                <Typography variant="body2" fontWeight={500}>
-                  Jakarta, Indonesia
-                </Typography>
-              </Box>
-            </Stack>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Box
-                sx={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 2,
-                  bgcolor: alpha(theme.palette.success.main, 0.1),
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: theme.palette.success.main,
-                }}
-              >
-                <Phone />
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary" display="block">
-                  Telepon
-                </Typography>
-                <Typography variant="body2" fontWeight={500}>
-                  +62 21 1234 5678
-                </Typography>
-              </Box>
-            </Stack>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Box
-                sx={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 2,
-                  bgcolor: alpha(theme.palette.warning.main, 0.1),
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: theme.palette.warning.main,
-                }}
-              >
-                <Email />
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary" display="block">
-                  Email
-                </Typography>
-                <Typography variant="body2" fontWeight={500}>
-                  info@ventora.co.id
-                </Typography>
-              </Box>
-            </Stack>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Box
-                sx={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 2,
-                  bgcolor: alpha(theme.palette.info.main, 0.1),
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: theme.palette.info.main,
-                }}
-              >
-                <Language />
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary" display="block">
-                  Website
-                </Typography>
-                <Typography variant="body2" fontWeight={500}>
-                  www.ventora.co.id
-                </Typography>
-              </Box>
-            </Stack>
-          </Grid>
-        </Grid>
       </Paper>
 
       {/* Quick Links Section */}

@@ -35,12 +35,18 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    const where: any = {};
-
-    // Filter by company code
-    if (session.user?.companyCode) {
-      where.company_code = session.user.companyCode;
+    // Parse companyCode as integer
+    const companyCode = parseInt(session.user.companyCode);
+    if (!companyCode || isNaN(companyCode)) {
+      return NextResponse.json(
+        { message: 'Invalid company code' },
+        { status: 400 }
+      );
     }
+
+    const where: any = {
+      company_code: companyCode
+    };
 
     // Filter by item type
     if (itemType) {
@@ -191,11 +197,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get company code from session
-    const companyCode = session.user?.companyCode;
-    if (!companyCode) {
+    // Parse companyCode as integer
+    const companyCode = parseInt(session.user?.companyCode);
+    if (!companyCode || isNaN(companyCode)) {
       return NextResponse.json(
-        { message: 'Company code not found in session' },
+        { message: 'Invalid company code' },
         { status: 400 }
       );
     }

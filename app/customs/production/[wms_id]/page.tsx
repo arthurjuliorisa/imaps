@@ -25,29 +25,29 @@ import {
   Button,
   Stack
 } from '@mui/material';
-import { NavigateNext, Home, Receipt, ArrowBack } from '@mui/icons-material';
-import { formatDate, formatCurrency } from '@/lib/exportUtils';
-import type { IncomingHeader, IncomingDetail } from '@/types/core';
+import { NavigateNext, Home, Precision, ArrowBack } from '@mui/icons-material';
+import { formatDate } from '@/lib/exportUtils';
+import type { ProductionOutputHeader, ProductionOutputDetail } from '@/types/core';
 
-interface IncomingTransactionDetail {
-  header: IncomingHeader;
-  details: IncomingDetail[];
+interface ProductionTransactionDetail {
+  header: ProductionOutputHeader;
+  details: ProductionOutputDetail[];
 }
 
-export default function IncomingDetailPage() {
+export default function ProductionDetailPage() {
   const theme = useTheme();
   const toast = useToast();
   const router = useRouter();
   const params = useParams();
   const wms_id = params.wms_id as string;
 
-  const [data, setData] = useState<IncomingTransactionDetail | null>(null);
+  const [data, setData] = useState<ProductionTransactionDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const response = await fetch(`/api/wms/incoming/${wms_id}`);
+        const response = await fetch(`/api/wms/production/${wms_id}`);
         if (!response.ok) {
           throw new Error('Failed to fetch transaction');
         }
@@ -117,10 +117,10 @@ export default function IncomingDetailPage() {
             '&:hover': { color: 'primary.main' },
             cursor: 'pointer'
           }}
-          onClick={() => router.push('/customs/incoming')}
+          onClick={() => router.push('/customs/production')}
         >
-          <Receipt sx={{ mr: 0.5 }} fontSize="small" />
-          Incoming Documents
+          <Precision sx={{ mr: 0.5 }} fontSize="small" />
+          Production Output
         </Link>
         <Typography
           sx={{ display: 'flex', alignItems: 'center' }}
@@ -145,16 +145,16 @@ export default function IncomingDetailPage() {
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Box>
             <Typography variant="h4" fontWeight={700} color="primary" gutterBottom>
-              Incoming Transaction Detail
+              Production Output Detail
             </Typography>
             <Typography variant="body1" color="text.secondary">
-              View complete information for incoming customs transaction
+              View complete information for production output transaction
             </Typography>
           </Box>
           <Button
             variant="outlined"
             startIcon={<ArrowBack />}
-            onClick={() => router.push('/customs/incoming')}
+            onClick={() => router.push('/customs/production')}
           >
             Back to List
           </Button>
@@ -188,26 +188,10 @@ export default function IncomingDetailPage() {
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Customs Document Type
-              </Typography>
-              <Box sx={{ mt: 0.5 }}>
-                <Chip label={data.header.customs_document_type} color="primary" size="small" />
-              </Box>
-            </Box>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" color="text.secondary">
-                PPKEK Number
+                Internal Evidence Number
               </Typography>
               <Typography variant="body1">
-                {data.header.ppkek_number}
-              </Typography>
-            </Box>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" color="text.secondary">
-                Customs Registration Date
-              </Typography>
-              <Typography variant="body1">
-                {formatDate(data.header.customs_registration_date)}
+                {data.header.internal_evidence_number}
               </Typography>
             </Box>
           </Grid>
@@ -215,52 +199,22 @@ export default function IncomingDetailPage() {
           <Grid size={{ xs: 12, md: 6 }}>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Owner
-              </Typography>
-              <Typography variant="body1" fontWeight={600}>
-                {data.header.owner}
-              </Typography>
-            </Box>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" color="text.secondary">
-                Incoming Date
+                Transaction Date
               </Typography>
               <Typography variant="body1">
-                {formatDate(data.header.incoming_date)}
+                {formatDate(data.header.transaction_date)}
               </Typography>
             </Box>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" color="text.secondary">
-                Shipper Name
-              </Typography>
-              <Typography variant="body1">
-                {data.header.shipper_name || '-'}
-              </Typography>
-            </Box>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" color="text.secondary">
-                Incoming Evidence Number
-              </Typography>
-              <Typography variant="body1">
-                {data.header.incoming_evidence_number || '-'}
-              </Typography>
-            </Box>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" color="text.secondary">
-                Invoice Number
-              </Typography>
-              <Typography variant="body1">
-                {data.header.invoice_number || '-'}
-              </Typography>
-            </Box>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" color="text.secondary">
-                Invoice Date
-              </Typography>
-              <Typography variant="body1">
-                {formatDate(data.header.invoice_date)}
-              </Typography>
-            </Box>
+            {data.header.reversal && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Reversal
+                </Typography>
+                <Box sx={{ mt: 0.5 }}>
+                  <Chip label={data.header.reversal} color="warning" size="small" />
+                </Box>
+              </Box>
+            )}
           </Grid>
         </Grid>
       </Paper>
@@ -280,11 +234,9 @@ export default function IncomingDetailPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>HS Code</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Qty</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>UOM</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Amount</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Qty</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Work Order Numbers</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -300,18 +252,20 @@ export default function IncomingDetailPage() {
                   <TableCell>
                     <Chip label={detail.item_type} size="small" variant="outlined" />
                   </TableCell>
-                  <TableCell>{detail.hs_code || '-'}</TableCell>
+                  <TableCell>{detail.uom}</TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" fontWeight={600}>
                       {detail.qty.toLocaleString()}
                     </Typography>
                   </TableCell>
-                  <TableCell>{detail.uom}</TableCell>
-                  <TableCell align="right">
-                    {formatCurrency(detail.amount)}
-                  </TableCell>
                   <TableCell>
-                    <Chip label={detail.currency} size="small" />
+                    {detail.work_order_numbers.length > 0 ? (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {detail.work_order_numbers.map((wo, idx) => (
+                          <Chip key={idx} label={wo} size="small" variant="outlined" />
+                        ))}
+                      </Box>
+                    ) : '-'}
                   </TableCell>
                 </TableRow>
               ))}

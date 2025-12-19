@@ -89,14 +89,16 @@ export default function IncomingGoodsReportPage() {
     const exportData = data.map((row, index) => ({
       No: (page - 1) * pageSize + index + 1,
       'WMS ID': row.wms_id,
-      'Company': row.company_code,
+      'Company Code': row.company_code,
+      'Company Name': (row as any).company_name || '-',
       'Doc Type': row.customs_document_type,
       'PPKEK Number': row.ppkek_number || '-',
-      'Customs Registration Date': formatDate(row.customs_registration_date.toISOString()),
+      'Customs Registration Date': formatDate(row.customs_registration_date),
       'Owner': row.owner,
-      'Incoming Date': formatDate(row.incoming_date.toISOString()),
+      'Incoming Date': formatDate(row.incoming_date),
       'Invoice Number': row.invoice_number || '-',
       'Shipper': row.shipper_name || '-',
+      'Created Date': formatDate(row.created_at),
     }));
 
     exportToExcel(
@@ -110,23 +112,27 @@ export default function IncomingGoodsReportPage() {
     const exportData = data.map((row, index) => ({
       no: (page - 1) * pageSize + index + 1,
       wmsId: row.wms_id,
-      company: row.company_code,
+      companyCode: row.company_code,
+      companyName: (row as any).company_name || '-',
       docType: row.customs_document_type,
       ppkek: row.ppkek_number || '-',
-      regDate: formatDate(row.customs_registration_date.toISOString()),
+      regDate: formatDate(row.customs_registration_date),
       owner: row.owner,
-      incomingDate: formatDate(row.incoming_date.toISOString()),
+      incomingDate: formatDate(row.incoming_date),
+      createdDate: formatDate(row.created_at),
     }));
 
     const columns = [
       { header: 'No', dataKey: 'no' },
       { header: 'WMS ID', dataKey: 'wmsId' },
-      { header: 'Company', dataKey: 'company' },
+      { header: 'Company Code', dataKey: 'companyCode' },
+      { header: 'Company Name', dataKey: 'companyName' },
       { header: 'Doc Type', dataKey: 'docType' },
       { header: 'PPKEK', dataKey: 'ppkek' },
       { header: 'Reg Date', dataKey: 'regDate' },
       { header: 'Owner', dataKey: 'owner' },
       { header: 'Incoming Date', dataKey: 'incomingDate' },
+      { header: 'Created Date', dataKey: 'createdDate' },
     ];
 
     exportToPDF(
@@ -177,20 +183,22 @@ export default function IncomingGoodsReportPage() {
               >
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Company Code</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Doc Type</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>PPKEK</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Reg Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Owner</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Incoming Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Invoice</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Created Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={12} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -216,6 +224,9 @@ export default function IncomingGoodsReportPage() {
                       <Chip label={row.company_code} size="small" />
                     </TableCell>
                     <TableCell>
+                      {(row as any).company_name || '-'}
+                    </TableCell>
+                    <TableCell>
                       <Chip
                         label={row.customs_document_type}
                         size="small"
@@ -230,10 +241,13 @@ export default function IncomingGoodsReportPage() {
                         <Typography variant="body2" color="text.secondary">-</Typography>
                       )}
                     </TableCell>
-                    <TableCell>{formatDate(row.customs_registration_date.toISOString())}</TableCell>
+                    <TableCell>{formatDate(row.customs_registration_date)}</TableCell>
                     <TableCell>{row.owner}</TableCell>
-                    <TableCell>{formatDate(row.incoming_date.toISOString())}</TableCell>
+                    <TableCell>{formatDate(row.incoming_date)}</TableCell>
                     <TableCell>{row.invoice_number || '-'}</TableCell>
+                    <TableCell>
+                      {formatDate(row.created_at)}
+                    </TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', gap: 1 }}>
                         <Tooltip title="View Details">

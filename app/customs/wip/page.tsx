@@ -91,7 +91,7 @@ export default function WIPBalancePage() {
       No: (page - 1) * pageSize + index + 1,
       'WMS ID': row.wms_id,
       'Company': row.company_code,
-      'Stock Date': formatDate(row.stock_date.toISOString()),
+      'Stock Date': formatDate(row.stock_date),
     }));
 
     exportToExcel(
@@ -106,7 +106,7 @@ export default function WIPBalancePage() {
       no: (page - 1) * pageSize + index + 1,
       wmsId: row.wms_id,
       company: row.company_code,
-      stockDate: formatDate(row.stock_date.toISOString()),
+      stockDate: formatDate(row.stock_date),
     }));
 
     const columns = [
@@ -197,7 +197,7 @@ export default function WIPBalancePage() {
                     <TableCell>
                       <Chip label={row.company_code} size="small" />
                     </TableCell>
-                    <TableCell>{formatDate(row.stock_date.toISOString())}</TableCell>
+                    <TableCell>{formatDate(row.stock_date)}</TableCell>
                     <TableCell>
                       <Tooltip title="View Details">
                         <IconButton

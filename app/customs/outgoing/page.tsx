@@ -22,6 +22,7 @@ import {
   Button,
   IconButton,
   Tooltip,
+  Badge,
 } from '@mui/material';
 import { Add, Visibility } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
@@ -30,6 +31,58 @@ import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcel, exportToPDF, formatCurrency, formatDate } from '@/lib/exportUtils';
 import { getOutgoingTransactions } from '@/lib/api';
 import type { OutgoingHeader } from '@/types/core';
+
+interface ProductionOutputIdsCellProps {
+  ids: string[];
+}
+
+function ProductionOutputIdsCell({ ids }: ProductionOutputIdsCellProps) {
+  if (!ids || ids.length === 0) {
+    return <Typography variant="body2" color="text.secondary">-</Typography>;
+  }
+
+  const displayIds = ids.slice(0, 2);
+  const remainingCount = ids.length - 2;
+
+  return (
+    <Tooltip
+      title={
+        <Box>
+          <Typography variant="caption" fontWeight={600} sx={{ mb: 0.5 }}>
+            All Production Output IDs:
+          </Typography>
+          {ids.map((id, index) => (
+            <Typography key={index} variant="caption" display="block">
+              {id}
+            </Typography>
+          ))}
+        </Box>
+      }
+      arrow
+    >
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+        {displayIds.map((id, index) => (
+          <Chip
+            key={index}
+            label={id}
+            size="small"
+            variant="outlined"
+            color="secondary"
+            sx={{ fontSize: '0.7rem' }}
+          />
+        ))}
+        {remainingCount > 0 && (
+          <Chip
+            label={`+${remainingCount} more`}
+            size="small"
+            color="info"
+            sx={{ fontSize: '0.7rem', fontWeight: 600 }}
+          />
+        )}
+      </Box>
+    </Tooltip>
+  );
+}
 
 export default function OutgoingGoodsReportPage() {
   const theme = useTheme();
@@ -89,13 +142,16 @@ export default function OutgoingGoodsReportPage() {
     const exportData = data.map((row, index) => ({
       No: (page - 1) * pageSize + index + 1,
       'WMS ID': row.wms_id,
-      'Company': row.company_code,
+      'Company Code': row.company_code,
+      'Company Name': (row as any).company_name || '-',
       'Doc Type': row.customs_document_type,
       'PPKEK': row.ppkek_number,
-      'Reg Date': formatDate(row.customs_registration_date.toISOString()),
-      'Outgoing Date': formatDate(row.outgoing_date.toISOString()),
+      'Reg Date': formatDate(row.customs_registration_date),
+      'Outgoing Date': formatDate(row.outgoing_date),
       'Recipient': row.recipient_name || '-',
       'Invoice': row.invoice_number || '-',
+      'Production Output IDs': ((row as any).production_output_wms_ids || []).join(', ') || '-',
+      'Created Date': formatDate(row.created_at),
     }));
 
     exportToExcel(
@@ -109,21 +165,27 @@ export default function OutgoingGoodsReportPage() {
     const exportData = data.map((row, index) => ({
       no: (page - 1) * pageSize + index + 1,
       wmsId: row.wms_id,
-      company: row.company_code,
+      companyCode: row.company_code,
+      companyName: (row as any).company_name || '-',
       docType: row.customs_document_type,
       ppkek: row.ppkek_number,
-      regDate: formatDate(row.customs_registration_date.toISOString()),
-      outgoingDate: formatDate(row.outgoing_date.toISOString()),
+      regDate: formatDate(row.customs_registration_date),
+      outgoingDate: formatDate(row.outgoing_date),
+      productionIds: ((row as any).production_output_wms_ids || []).slice(0, 3).join(', ') + (((row as any).production_output_wms_ids || []).length > 3 ? '...' : ''),
+      createdDate: formatDate(row.created_at),
     }));
 
     const columns = [
       { header: 'No', dataKey: 'no' },
       { header: 'WMS ID', dataKey: 'wmsId' },
-      { header: 'Company', dataKey: 'company' },
+      { header: 'Company Code', dataKey: 'companyCode' },
+      { header: 'Company Name', dataKey: 'companyName' },
       { header: 'Doc Type', dataKey: 'docType' },
       { header: 'PPKEK', dataKey: 'ppkek' },
       { header: 'Reg Date', dataKey: 'regDate' },
       { header: 'Outgoing Date', dataKey: 'outgoingDate' },
+      { header: 'Production IDs', dataKey: 'productionIds' },
+      { header: 'Created Date', dataKey: 'createdDate' },
     ];
 
     exportToPDF(
@@ -174,20 +236,23 @@ export default function OutgoingGoodsReportPage() {
               >
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Company Code</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Doc Type</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>PPKEK</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Reg Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Outgoing Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Recipient</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Invoice</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Production Output IDs</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Created Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={13} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -213,6 +278,9 @@ export default function OutgoingGoodsReportPage() {
                       <Chip label={row.company_code} size="small" />
                     </TableCell>
                     <TableCell>
+                      {(row as any).company_name || '-'}
+                    </TableCell>
+                    <TableCell>
                       <Chip
                         label={row.customs_document_type}
                         size="small"
@@ -223,10 +291,16 @@ export default function OutgoingGoodsReportPage() {
                     <TableCell>
                       <Chip label={row.ppkek_number} size="small" color="info" variant="outlined" />
                     </TableCell>
-                    <TableCell>{formatDate(row.customs_registration_date.toISOString())}</TableCell>
-                    <TableCell>{formatDate(row.outgoing_date.toISOString())}</TableCell>
+                    <TableCell>{formatDate(row.customs_registration_date)}</TableCell>
+                    <TableCell>{formatDate(row.outgoing_date)}</TableCell>
                     <TableCell>{row.recipient_name || '-'}</TableCell>
                     <TableCell>{row.invoice_number || '-'}</TableCell>
+                    <TableCell>
+                      <ProductionOutputIdsCell ids={(row as any).production_output_wms_ids || []} />
+                    </TableCell>
+                    <TableCell>
+                      {formatDate(row.created_at)}
+                    </TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', gap: 1 }}>
                         <Tooltip title="View Details">
