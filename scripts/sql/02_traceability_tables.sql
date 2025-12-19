@@ -38,7 +38,12 @@ $$ LANGUAGE plpgsql;
 -- =============================================================================
 -- Links outgoing FERT/HALB items to their production batches for PPKEK traceability
 
-DROP TABLE IF EXISTS outgoing_fg_production_traceability CASCADE;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'outgoing_fg_production_traceability') THEN
+        DROP TABLE outgoing_fg_production_traceability CASCADE;
+    END IF;
+END $$;
 
 CREATE TABLE outgoing_fg_production_traceability (
     id BIGSERIAL NOT NULL,
@@ -65,7 +70,12 @@ COMMENT ON COLUMN outgoing_fg_production_traceability.outgoing_good_item_id IS '
 -- =============================================================================
 -- Tracks which materials (with PPKEK) were used in which work orders
 
-DROP TABLE IF EXISTS work_order_material_consumption CASCADE;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'work_order_material_consumption') THEN
+        DROP TABLE work_order_material_consumption CASCADE;
+    END IF;
+END $$;
 
 CREATE TABLE work_order_material_consumption (
     id BIGSERIAL NOT NULL,
@@ -92,7 +102,12 @@ COMMENT ON COLUMN work_order_material_consumption.material_usage_item_id IS 'FK 
 -- =============================================================================
 -- Tracks which work orders produced which FERT/HALB items
 
-DROP TABLE IF EXISTS work_order_fg_production CASCADE;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'work_order_fg_production') THEN
+        DROP TABLE work_order_fg_production CASCADE;
+    END IF;
+END $$;
 
 CREATE TABLE work_order_fg_production (
     id BIGSERIAL NOT NULL,
@@ -120,7 +135,12 @@ COMMENT ON COLUMN work_order_fg_production.production_output_item_id IS 'FK to p
 -- =============================================================================
 -- Calculated daily stock balance for all inventory items
 
-DROP TABLE IF EXISTS stock_daily_snapshot CASCADE;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stock_daily_snapshot') THEN
+        DROP TABLE stock_daily_snapshot CASCADE;
+    END IF;
+END $$;
 
 CREATE TABLE stock_daily_snapshot (
     id BIGSERIAL NOT NULL,
@@ -161,7 +181,12 @@ COMMENT ON COLUMN stock_daily_snapshot.calculation_method IS 'TRANSACTION or WIP
 -- =============================================================================
 -- Queue for recalculating stock snapshots (backdated transactions)
 
-DROP TABLE IF EXISTS snapshot_recalc_queue CASCADE;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'snapshot_recalc_queue') THEN
+        DROP TABLE snapshot_recalc_queue CASCADE;
+    END IF;
+END $$;
 
 CREATE TABLE snapshot_recalc_queue (
     id BIGSERIAL PRIMARY KEY,
@@ -274,6 +299,29 @@ CREATE TABLE stock_daily_snapshot_2026_q3 PARTITION OF stock_daily_snapshot
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
 CREATE TABLE stock_daily_snapshot_2026_q4 PARTITION OF stock_daily_snapshot
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+
+-- =============================================================================
+-- GRANT PERMISSIONS TO APPUSER
+-- =============================================================================
+
+-- Grant permissions on all traceability tables to appuser
+GRANT SELECT, INSERT, UPDATE, DELETE ON outgoing_fg_production_traceability TO appuser;
+GRANT SELECT, INSERT, UPDATE, DELETE ON work_order_material_consumption TO appuser;
+GRANT SELECT, INSERT, UPDATE, DELETE ON work_order_fg_production TO appuser;
+
+-- Grant permissions on stock_daily_snapshot table and all its partitions
+GRANT SELECT, INSERT, UPDATE, DELETE ON stock_daily_snapshot TO appuser;
+GRANT SELECT, INSERT, UPDATE, DELETE ON snapshot_recalc_queue TO appuser;
+
+-- Grant permissions on all tables in public schema (covers all partitions)
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO appuser;
+
+-- Grant sequence permissions for BIGSERIAL columns
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO appuser;
+
+-- Grant ownership of all public schema objects to appuser
+-- This prevents "must be owner of table" errors when executing functions
+REASSIGN OWNED BY postgres TO appuser;
 
 -- =============================================================================
 -- VERIFICATION QUERIES

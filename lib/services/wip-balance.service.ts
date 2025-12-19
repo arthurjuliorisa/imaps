@@ -1,267 +1,303 @@
-// lib/services/wip-balance.service.ts
-
 /**
  * WIP Balance Service
  * 
- * Purpose:
- * - Orchestrate validation and database operations
- * - Implement batch processing with partial success
- * - Handle business logic and error aggregation
+ * Pattern aligned with Incoming Goods Service
+ * - Validates payload (schema + business logic)
+ * - Processes valid records batch
+ * - Returns comprehensive response
  * 
- * Flow:
- * 1. Validate all records (schema validation)
- * 2. Separate valid and invalid records
- * 3. Process valid records via repository (with error handling)
- * 4. Aggregate results for comprehensive response
- * 
- * Key Features:
- * - Partial success support (some records can fail)
- * - Detailed error tracking per record
- * - Comprehensive response with summary
- * 
- * Version: 2.0 - Updated to use new validation pattern
+ * Key differences from Incoming Goods:
+ * - Batch processing (multiple independent records)
+ * - Partial success allowed (some records can fail)
+ * - No transaction grouping (flat records)
  */
 
-import { wipBalanceRepository } from '@/lib/repositories/wip-balance.repository';
+import { WipBalanceRepository } from '../repositories/wip-balance.repository';
 import {
-  validateWipBalanceBatch,
-  validateWipBalanceRecord,
-  type WipBalanceBatchRequestInput,
-  type WipBalanceRecordInput,
-} from '@/lib/validators/schemas/wip-balance.schema';
-import {
-  WipBalanceRecord,
-  WipBalanceRecordError,
-  WipBalanceBatchValidationResult,
-  WipBalanceApiResponse,
-} from '@/lib/types/wip-balance.types';
+  validateWIPBalanceBatch,
+  type WIPBalanceRecordValidated,
+  type BatchValidationError,
+} from '../validators/wip-balance.validator';
+import type {
+  BatchSuccessResponse,
+  BatchFailedRecord,
+  ErrorDetail,
+} from '../types/api-response';
+import { logger } from '../utils/logger';
 
-/**
- * Service class for WIP Balance operations
- */
-export class WipBalanceService {
-  /**
-   * Transform validated record to repository format
-   * Converts string dates to Date objects as expected by repository
-   */
-  private transformRecord(record: WipBalanceRecordInput): WipBalanceRecord {
-    return {
-      ...record,
-      stock_date: new Date(record.stock_date),
-      timestamp: new Date(record.timestamp),
-    };
+export class WIPBalanceService {
+  private repository: WipBalanceRepository;
+
+  constructor() {
+    this.repository = new WipBalanceRepository();
   }
 
   /**
-   * Validate batch of records
-   * 
-   * Strategy:
-   * - Use the standardized validation function
-   * - Transform validation result to service format
-   * - Separate valid and invalid records
-   * 
-   * @param payload - Raw batch request payload
-   * @returns Validation result with valid/invalid records separated
-   */
-  validateBatch(payload: unknown): WipBalanceBatchValidationResult {
-    const result = validateWipBalanceBatch(payload);
-
-    // Handle validation failure
-    if (!result.success) {
-      const invalidRecords: WipBalanceRecordError[] = result.errors!.map((err) => {
-        // Check if this is a record-level error
-        const isRecordError = err.location === 'record' && err.record_index !== undefined;
-        
-        return {
-          wms_id: err.wms_id || (isRecordError ? `RECORD_${err.record_index}` : 'BATCH_ERROR'),
-          row_index: isRecordError ? err.record_index! + 1 : 0, // 1-indexed for user-friendly reporting
-          errors: [
-            {
-              field: err.field,
-              code: err.code,
-              message: err.message,
-            },
-          ],
-        };
-      });
-
-      // Group errors by wms_id/row_index to combine multiple field errors
-      const groupedErrors = new Map<string, WipBalanceRecordError>();
-      
-      invalidRecords.forEach((record) => {
-        const key = `${record.wms_id}_${record.row_index}`;
-        
-        if (groupedErrors.has(key)) {
-          const existing = groupedErrors.get(key)!;
-          existing.errors.push(...record.errors);
-        } else {
-          groupedErrors.set(key, record);
-        }
-      });
-
-      const totalRecords = Array.isArray((payload as any)?.records) 
-        ? (payload as any).records.length 
-        : 0;
-
-      return {
-        valid_records: [],
-        invalid_records: Array.from(groupedErrors.values()),
-        summary: {
-          total_records: totalRecords,
-          valid_count: 0,
-          invalid_count: groupedErrors.size,
-        },
-      };
-    }
-
-    // All records are valid - transform dates
-    const records = result.data!.records.map(record => this.transformRecord(record));
-    
-    return {
-      valid_records: records,
-      invalid_records: [],
-      summary: {
-        total_records: records.length,
-        valid_count: records.length,
-        invalid_count: 0,
-      },
-    };
-  }
-
-  /**
-   * Process valid records through repository
-   * 
-   * Strategy:
-   * - Insert valid records one by one (for error isolation)
-   * - Continue processing even if some fail
-   * - Collect database errors for response
-   * 
-   * @param validRecords - Array of validated records
-   * @returns Processing result with success/failure details
-   */
-  private async processValidRecords(validRecords: WipBalanceRecord[]) {
-    const batchResult = await wipBalanceRepository.batchUpsert(validRecords);
-
-    return {
-      success_count: batchResult.success_count,
-      failed_count: batchResult.failed_count,
-      db_errors: batchResult.failed_records.map((failure) => ({
-        wms_id: failure.wms_id,
-        row_index: failure.row_index,
-        errors: [
-          {
-            field: 'database',
-            code: 'DB_ERROR',
-            message: failure.error,
-          },
-        ],
-      })),
-    };
-  }
-
-  /**
-   * Process batch request (main orchestration method)
+   * Process WIP Balance batch request
    * 
    * Flow:
-   * 1. Validate all records (schema validation)
-   * 2. If all invalid -> return failed response
-   * 3. Process valid records through repository
-   * 4. Combine validation errors + database errors
-   * 5. Return comprehensive response
-   * 
-   * @param payload - Raw batch request payload
-   * @returns API response with status and details
+   * 1. Validate batch structure (schema)
+   * 2. For each record:
+   *    a. Validate business logic (company, item code)
+   *    b. If valid: queue for database insert
+   *    c. If invalid: add to failed records
+   * 3. Return response (success/partial/failed)
    */
-  async processBatch(payload: unknown): Promise<WipBalanceApiResponse> {
-    // Step 1: Validate batch
-    const validation = this.validateBatch(payload);
+  async processBatch(
+    payload: unknown
+  ): Promise<
+    | { success: true; data: BatchSuccessResponse }
+    | { success: false; errors: ErrorDetail[] }
+  > {
+    const requestLogger = logger.child({
+      service: 'WIPBalanceService',
+      method: 'processBatch',
+    });
 
-    // Step 2: Check if all records are invalid
-    if (validation.summary.valid_count === 0) {
-      return {
-        status: 'failed',
-        message: 'All records failed validation',
-        summary: {
-          total_records: validation.summary.total_records,
-          success_count: 0,
-          failed_count: validation.summary.total_records,
-        },
-        validated_at: new Date().toISOString(),
-        failed_records: validation.invalid_records,
-      };
+    try {
+      // 1. Validate batch structure
+      const validationResult = validateWIPBalanceBatch(payload);
+
+      if (!validationResult.success) {
+        requestLogger.warn(
+          'Batch schema validation failed',
+          { errors: validationResult.errors }
+        );
+        // Convert BatchValidationError to ErrorDetail for response
+        const errorDetails = validationResult.errors.map((err) => ({
+          location: 'item' as const,
+          field: err.field,
+          code: err.code,
+          message: err.message,
+        }));
+        return { success: false, errors: errorDetails };
+      }
+
+      const batch = validationResult.data;
+      requestLogger.info('Batch schema validated', {
+        recordCount: batch.records.length,
+      });
+
+      // 2. Optimize: Pre-fetch company cache for all unique companies
+      const successRecords: WIPBalanceRecordValidated[] = [];
+      const failedRecords: BatchFailedRecord[] = [];
+
+      // Get unique company codes to minimize database queries
+      const uniqueCompanyCodes = [...new Set(batch.records.map(r => r.company_code))];
+      const companyCache = await this.cacheCompanyValidation(uniqueCompanyCodes);
+
+      // Process records with cached company validation
+      for (let i = 0; i < batch.records.length; i++) {
+        const record = batch.records[i];
+        const companyExists = companyCache.get(record.company_code) ?? false;
+        
+        const businessErrors: BatchValidationError[] = [];
+        if (!companyExists) {
+          businessErrors.push({
+            location: `records[${i}]`,
+            field: 'company_code',
+            code: 'INVALID_COMPANY_CODE',
+            message: `Company code ${record.company_code} is not active or does not exist`,
+          });
+        }
+
+        if (businessErrors.length > 0) {
+          // Convert BatchValidationError to ErrorDetail
+          const errorDetails = businessErrors.map((err) => ({
+            location: 'item' as const,
+            field: err.field,
+            code: err.code,
+            message: err.message,
+          }));
+          failedRecords.push({
+            wms_id: record.wms_id,
+            row_index: i + 1,
+            errors: errorDetails,
+          });
+          requestLogger.warn(
+            'Record business validation failed',
+            {
+              wmsId: record.wms_id,
+              rowIndex: i + 1,
+              errors: businessErrors,
+            }
+          );
+        } else {
+          successRecords.push(record);
+        }
+      }
+
+      requestLogger.info('Batch processing complete', {
+        success: successRecords.length,
+        failed: failedRecords.length,
+      });
+
+      // 3. Queue valid records for async database insert
+      if (successRecords.length > 0) {
+        // Fire and forget - don't wait for database insert
+        this.queueForDatabaseInsert(successRecords, requestLogger);
+      }
+
+      // 4. Return appropriate response
+      const totalRecords = batch.records.length;
+
+      if (failedRecords.length === 0) {
+        // All success
+        return {
+          success: true,
+          data: {
+            status: 'success',
+            message: 'All records validated and queued for processing',
+            summary: {
+              total_records: totalRecords,
+              success_count: successRecords.length,
+              failed_count: 0,
+            },
+            validated_at: new Date().toISOString(),
+          },
+        };
+      } else if (successRecords.length > 0) {
+        // Partial success
+        return {
+          success: true,
+          data: {
+            status: 'partial_success',
+            message: `${failedRecords.length} out of ${totalRecords} records failed validation`,
+            summary: {
+              total_records: totalRecords,
+              success_count: successRecords.length,
+              failed_count: failedRecords.length,
+            },
+            validated_at: new Date().toISOString(),
+            failed_records: failedRecords,
+          },
+        };
+      } else {
+        // All failed
+        return {
+          success: false,
+          errors: failedRecords.flatMap((r) => r.errors),
+        };
+      }
+    } catch (error) {
+      requestLogger.error('Failed to process batch', { error });
+      throw error;
     }
-
-    // Step 3: Process valid records through repository
-    const processResult = await this.processValidRecords(validation.valid_records);
-
-    // Step 4: Combine validation errors + database errors
-    const allFailedRecords = [
-      ...validation.invalid_records,
-      ...processResult.db_errors,
-    ];
-
-    const totalSuccessCount = processResult.success_count;
-    const totalFailedCount = allFailedRecords.length;
-    const totalRecords = validation.summary.total_records;
-
-    // Step 5: Determine response status
-    let status: 'success' | 'partial_success' | 'failed';
-    let message: string;
-
-    if (totalFailedCount === 0) {
-      status = 'success';
-      message = 'All records validated and queued for processing';
-    } else if (totalSuccessCount > 0) {
-      status = 'partial_success';
-      message = `${totalFailedCount} out of ${totalRecords} records failed validation`;
-    } else {
-      status = 'failed';
-      message = 'All records failed validation or processing';
-    }
-
-    // Step 6: Build response
-    const response: WipBalanceApiResponse = {
-      status,
-      message,
-      summary: {
-        total_records: totalRecords,
-        success_count: totalSuccessCount,
-        failed_count: totalFailedCount,
-      },
-      validated_at: new Date().toISOString(),
-    };
-
-    // Only include failed_records if there are failures
-    if (totalFailedCount > 0) {
-      response.failed_records = allFailedRecords;
-    }
-
-    return response;
   }
 
   /**
-   * Get WIP balance by date (for verification)
+   * Cache company validation results to minimize database queries
+   * Optimization: Batch query all unique company codes at once
+   */
+  private async cacheCompanyValidation(
+    companyCodes: number[]
+  ): Promise<Map<number, boolean>> {
+    const cache = new Map<number, boolean>();
+    
+    try {
+      // Batch query: fetch all companies in one go instead of one by one
+      const companies = await this.repository.getCompaniesByCode(companyCodes);
+      const validCompanyCodes = new Set(
+        companies
+          .filter(c => c.status === 'ACTIVE')
+          .map(c => c.code)
+      );
+      
+      // Build cache
+      companyCodes.forEach(code => {
+        cache.set(code, validCompanyCodes.has(code));
+      });
+    } catch (error) {
+      // If query fails, mark all as invalid
+      companyCodes.forEach(code => {
+        cache.set(code, false);
+      });
+    }
+    
+    return cache;
+  }
+
+  /**
+   * Business validations (database checks)
    * 
-   * @param company_code - Company code
-   * @param stock_date - Stock date
-   * @returns Array of WIP balance records
+   * Note: Based on API Contract v2.4:
+   * - Only company_code needs to be validated
+   * - Item_code validation is NOT required (WMS is source of truth)
+   * - Item_type validation is handled by WMS
+   */
+  private async validateBusiness(
+    record: WIPBalanceRecordValidated,
+    rowIndex: number
+  ): Promise<BatchValidationError[]> {
+    const errors: BatchValidationError[] = [];
+
+    // Check if company exists and is active
+    try {
+      const companyExists = await this.repository.companyExists(
+        record.company_code
+      );
+      if (!companyExists) {
+        errors.push({
+          location: `records[${rowIndex - 1}]`,
+          field: 'company_code',
+          code: 'INVALID_COMPANY_CODE',
+          message: `Company code ${record.company_code} is not active or does not exist`,
+        });
+      }
+    } catch (error) {
+      // Treat validation errors as business logic errors
+      errors.push({
+        location: `records[${rowIndex - 1}]`,
+        field: 'company_code',
+        code: 'VALIDATION_ERROR',
+        message: 'Failed to validate company code',
+      });
+    }
+
+    // NOTE: Item code validation removed as per API Contract v2.4
+    // WMS is the source of truth for item data
+    // iMAPS will accept any item_code sent by WMS
+
+    return errors;
+  }
+
+  /**
+   * Queue records for async database insert
+   * Fire and forget - no need to wait
+   */
+  private async queueForDatabaseInsert(
+    records: WIPBalanceRecordValidated[],
+    requestLogger: any
+  ): Promise<void> {
+    try {
+      // Convert records to database format
+      const dbRecords = records.map((r) => ({
+        wms_id: r.wms_id,
+        company_code: r.company_code,
+        item_type: r.item_type,
+        item_code: r.item_code,
+        item_name: r.item_name,
+        stock_date: new Date(r.stock_date),
+        uom: r.uom,
+        qty: r.qty,
+        timestamp: new Date(r.timestamp),
+      }));
+
+      // Queue for async insert (don't await)
+      this.repository.batchUpsert(dbRecords).catch((error) => {
+        requestLogger.error('Database insert failed:', { error });
+        // Don't re-throw - validation already succeeded
+      });
+    } catch (error) {
+      requestLogger.error('Error queuing records for insert:', { error });
+      // Don't re-throw - validation already succeeded
+    }
+  }
+
+  /**
+   * Get WIP Balance records for a specific date (for queries)
    */
   async getByDate(company_code: number, stock_date: Date) {
-    return await wipBalanceRepository.findByDate(company_code, stock_date);
-  }
-
-  /**
-   * Get WIP balance statistics
-   * 
-   * @param company_code - Company code
-   * @param from_date - Start date
-   * @param to_date - End date
-   * @returns Statistics object
-   */
-  async getStatistics(company_code: number, from_date: Date, to_date: Date) {
-    return await wipBalanceRepository.getStatistics(company_code, from_date, to_date);
+    return await this.repository.getByDateAndCompany(stock_date, company_code);
   }
 }
-
-// Export singleton instance
-export const wipBalanceService = new WipBalanceService();

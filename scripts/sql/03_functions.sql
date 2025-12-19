@@ -614,5 +614,109 @@ COMMENT ON FUNCTION process_recalc_queue IS 'Process pending snapshot recalculat
 -- SELECT process_recalc_queue(10);
 
 -- =============================================================================
+-- PARTITION MAINTENANCE FUNCTIONS (for backdated transactions)
+-- =============================================================================
+-- These functions ensure partitions exist for backdated transactions
+-- Called when a transaction date is before today (from BaseTransactionRepository)
+
+-- Function to ensure incoming_goods partition exists for backdated transaction
+CREATE OR REPLACE FUNCTION ensure_incoming_goods_partition(
+    p_company_code INTEGER,
+    p_transaction_date DATE
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_quarter_start DATE;
+    v_quarter_end DATE;
+    v_year INTEGER;
+    v_quarter INTEGER;
+    v_partition_name TEXT;
+    v_company_partition_name TEXT;
+BEGIN
+    -- Extract year and quarter from transaction date
+    v_year := EXTRACT(YEAR FROM p_transaction_date)::INTEGER;
+    v_quarter := CEIL(EXTRACT(MONTH FROM p_transaction_date) / 3.0)::INTEGER;
+    
+    -- Calculate quarter boundaries
+    v_quarter_start := DATE_TRUNC('quarter', p_transaction_date)::DATE;
+    v_quarter_end := (DATE_TRUNC('quarter', p_transaction_date) + INTERVAL '3 months')::DATE;
+    
+    -- Generate partition names
+    v_company_partition_name := 'incoming_goods_' || p_company_code;
+    v_partition_name := v_company_partition_name || '_' || v_year || '_q' || v_quarter;
+    
+    -- Check if company partition exists, if not create it
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables 
+        WHERE tablename = v_company_partition_name AND schemaname = 'public'
+    ) THEN
+        EXECUTE 'CREATE TABLE ' || v_company_partition_name || ' PARTITION OF incoming_goods FOR VALUES IN (' || p_company_code || ') PARTITION BY RANGE (incoming_date)';
+        EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO appuser';
+    END IF;
+    
+    -- Check if quarterly partition exists, if not create it
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables 
+        WHERE tablename = v_partition_name AND schemaname = 'public'
+    ) THEN
+        EXECUTE 'CREATE TABLE ' || v_partition_name || ' PARTITION OF ' || v_company_partition_name || ' FOR VALUES FROM (''' || v_quarter_start || ''') TO (''' || v_quarter_end || ''')';
+        EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO appuser';
+        RAISE NOTICE 'Created partition: %', v_partition_name;
+    END IF;
+END;
+$$;
+
+-- Function to ensure outgoing_goods partition exists for backdated transaction
+CREATE OR REPLACE FUNCTION ensure_outgoing_goods_partition(
+    p_company_code INTEGER,
+    p_transaction_date DATE
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_quarter_start DATE;
+    v_quarter_end DATE;
+    v_year INTEGER;
+    v_quarter INTEGER;
+    v_partition_name TEXT;
+    v_company_partition_name TEXT;
+BEGIN
+    -- Extract year and quarter from transaction date
+    v_year := EXTRACT(YEAR FROM p_transaction_date)::INTEGER;
+    v_quarter := CEIL(EXTRACT(MONTH FROM p_transaction_date) / 3.0)::INTEGER;
+    
+    -- Calculate quarter boundaries
+    v_quarter_start := DATE_TRUNC('quarter', p_transaction_date)::DATE;
+    v_quarter_end := (DATE_TRUNC('quarter', p_transaction_date) + INTERVAL '3 months')::DATE;
+    
+    -- Generate partition names
+    v_company_partition_name := 'outgoing_goods_' || p_company_code;
+    v_partition_name := v_company_partition_name || '_' || v_year || '_q' || v_quarter;
+    
+    -- Check if company partition exists, if not create it
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables 
+        WHERE tablename = v_company_partition_name AND schemaname = 'public'
+    ) THEN
+        EXECUTE 'CREATE TABLE ' || v_company_partition_name || ' PARTITION OF outgoing_goods FOR VALUES IN (' || p_company_code || ') PARTITION BY RANGE (outgoing_date)';
+        EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO appuser';
+    END IF;
+    
+    -- Check if quarterly partition exists, if not create it
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables 
+        WHERE tablename = v_partition_name AND schemaname = 'public'
+    ) THEN
+        EXECUTE 'CREATE TABLE ' || v_partition_name || ' PARTITION OF ' || v_company_partition_name || ' FOR VALUES FROM (''' || v_quarter_start || ''') TO (''' || v_quarter_end || ''')';
+        EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO appuser';
+        RAISE NOTICE 'Created partition: %', v_partition_name;
+    END IF;
+END;
+$$;
+
+-- =============================================================================
 -- END OF FILE
 -- =============================================================================

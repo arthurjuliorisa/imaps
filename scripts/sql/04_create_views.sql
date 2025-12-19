@@ -511,7 +511,7 @@ ON adjustment_items (item_type, adjustment_type, deleted_at);
 
 -- Index for stock_daily_snapshot (critical for hybrid approach)
 CREATE INDEX IF NOT EXISTS idx_stock_snapshot_item_type_date 
-ON stock_daily_snapshot (company_code, item_type, snapshot_date, deleted_at);
+ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 
 -- ============================================================================
 -- VERIFICATION QUERIES

@@ -1,192 +1,113 @@
-// app/api/v1/wip-balance/route.ts
-
 /**
- * WIP Balance API Endpoint
- * 
  * POST /api/v1/wip-balance
+ * WIP Balance API endpoint
  * 
- * Purpose:
- * - Accept daily WIP balance snapshot from WMS
- * - Support batch processing with partial success
- * - Return comprehensive validation results
+ * Pattern: Aligned with Incoming Goods endpoint
+ * - Middleware chain (auth, rate limit)
+ * - Service-based validation and processing
+ * - Consistent error handling
  * 
- * Authentication:
- * - API Key + IP Whitelist (handled by middleware)
- * 
- * Request Structure:
- * - Batch array: { records: [...] }
- * - Each record is independent (different wms_id)
- * 
- * Response Structure:
- * - HTTP 200: Success or Partial Success
- * - HTTP 400: Complete Failure (all records invalid)
- * - HTTP 500: Server Error
- * 
- * Key Features:
- * - Synchronous validation (immediate response)
- * - Asynchronous database insert (queued, non-blocking)
- * - Partial success allowed (valid records processed, invalid returned)
- * - Idempotent (safe to retry using wms_id)
+ * Differences from Incoming Goods:
+ * - Batch endpoint (multiple independent records)
+ * - Partial success allowed
+ * - No header-detail structure
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { wipBalanceService } from '@/lib/services/wip-balance.service';
+import { authenticate } from '@/lib/middleware/auth.middleware';
+import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware';
+import { errorHandler } from '@/lib/middleware/error-handler.middleware';
+import { WIPBalanceService } from '@/lib/services/wip-balance.service';
+import { createRequestLogger, logRequest, logResponse } from '@/lib/utils/logger';
 
 /**
  * POST /api/v1/wip-balance
- * 
- * Process batch of WIP balance records
+ * Process WIP Balance batch request
  */
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  const { requestId, logger: requestLogger } = createRequestLogger(request);
+
   try {
-    // Step 1: Parse request body
-    let payload: unknown;
-    try {
-      payload = await request.json();
-    } catch (error) {
+    // Log incoming request
+    await logRequest(request, requestLogger);
+
+    // Middleware chain
+    // 1. Authentication
+    const authResult = await authenticate(request);
+    if (!authResult.authenticated) {
+      logResponse(requestLogger, 401, startTime);
       return NextResponse.json(
         {
           status: 'failed',
-          message: 'Invalid JSON payload',
+          message: 'Authentication failed',
+          error: authResult.error,
+        },
+        { status: 401 }
+      );
+    }
+
+    // 2. Rate limiting
+    const rateLimitResult = rateLimiterMiddleware(request);
+    if (!rateLimitResult.success) {
+      logResponse(requestLogger, 429, startTime);
+      return NextResponse.json(
+        {
+          status: 'failed',
+          message: 'Rate limit exceeded',
+        },
+        { status: 429 }
+      );
+    }
+
+    // Parse request body
+    const body = await request.json();
+
+    // Process WIP Balance batch
+    const service = new WIPBalanceService();
+    const result = await service.processBatch(body);
+
+    if (!result.success) {
+      // Validation failed (all records failed)
+      // Get total_records from payload
+      const totalRecords = (body?.records?.length) || 0;
+      
+      logResponse(requestLogger, 400, startTime);
+      return NextResponse.json(
+        {
+          status: 'failed',
+          message: 'Batch validation failed',
           summary: {
-            total_records: 0,
+            total_records: totalRecords,
             success_count: 0,
-            failed_count: 0,
+            failed_count: totalRecords,
           },
           validated_at: new Date().toISOString(),
-          failed_records: [
-            {
-              wms_id: 'PARSE_ERROR',
-              row_index: 0,
-              errors: [
-                {
-                  field: 'body',
-                  code: 'INVALID_JSON',
-                  message: 'Request body must be valid JSON',
-                },
-              ],
-            },
-          ],
+          failed_records: result.errors.map((err, idx) => {
+            // Try to get wms_id from payload, fallback to placeholder
+            const record = (body?.records?.[idx]) as any;
+            const wmsId = record?.wms_id || `BATCH_ERROR_${idx + 1}`;
+            
+            return {
+              wms_id: wmsId,
+              row_index: idx + 1,
+              errors: [err],
+            };
+          }),
         },
         { status: 400 }
       );
     }
 
-    // Step 2: Process batch through service
-    const result = await wipBalanceService.processBatch(payload);
-
-    // Step 3: Determine HTTP status code
-    // - All success or partial success: HTTP 200
-    // - Complete failure: HTTP 400
-    const statusCode = result.status === 'failed' ? 400 : 200;
-
-    // Step 4: Return response
-    return NextResponse.json(result, { status: statusCode });
+    // Success or partial success
+    logResponse(requestLogger, 200, startTime);
+    return NextResponse.json(result.data, { status: 200 });
   } catch (error) {
-    // Unexpected server error
-    console.error('Unexpected error in WIP Balance API:', error);
+    requestLogger.error('Failed to process WIP Balance batch', { error });
 
-    return NextResponse.json(
-      {
-        status: 'failed',
-        message: 'Internal server error',
-        summary: {
-          total_records: 0,
-          success_count: 0,
-          failed_count: 0,
-        },
-        validated_at: new Date().toISOString(),
-        failed_records: [
-          {
-            wms_id: 'SERVER_ERROR',
-            row_index: 0,
-            errors: [
-              {
-                field: 'server',
-                code: 'INTERNAL_ERROR',
-                message:
-                  error instanceof Error ? error.message : 'Unknown server error',
-              },
-            ],
-          },
-        ],
-      },
-      { status: 500 }
-    );
-  }
-}
+    const errorResponse = errorHandler(error);
+    logResponse(requestLogger, errorResponse.status, startTime);
 
-/**
- * GET /api/v1/wip-balance
- * 
- * Query WIP balance records (for debugging/verification)
- * 
- * Query params:
- * - company_code (required): Company code
- * - stock_date (required): Stock date (YYYY-MM-DD)
- */
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const companyCodeParam = searchParams.get('company_code');
-    const stockDateParam = searchParams.get('stock_date');
-
-    // Validate required parameters
-    if (!companyCodeParam || !stockDateParam) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Missing required parameters: company_code and stock_date',
-        },
-        { status: 400 }
-      );
-    }
-
-    // Parse and validate company code
-    const companyCode = parseInt(companyCodeParam, 10);
-    if (isNaN(companyCode) || ![1370, 1310, 1380].includes(companyCode)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Invalid company_code. Must be 1370, 1310, or 1380',
-        },
-        { status: 400 }
-      );
-    }
-
-    // Parse and validate stock date
-    const stockDate = new Date(stockDateParam);
-    if (isNaN(stockDate.getTime())) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Invalid stock_date. Must be in YYYY-MM-DD format',
-        },
-        { status: 400 }
-      );
-    }
-
-    // Fetch records
-    const records = await wipBalanceService.getByDate(companyCode, stockDate);
-
-    return NextResponse.json(
-      {
-        success: true,
-        data: records,
-        count: records.length,
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error('Error in WIP Balance GET endpoint:', error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: 'Internal server error',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    );
+    return NextResponse.json(errorResponse.body, { status: errorResponse.status });
   }
 }

@@ -1,0 +1,37 @@
+{
+  "records": [
+    {
+      "wms_id": "WIP-1370-20251216-001",
+      "company_code": 1370,
+      "item_type": "ROH",
+      "item_code": "YARN-150D-POLYESTER-BACK",
+      "item_name": "Polyester Yarn 150D - Weaving In Progress (Backdated - Updated)",
+      "stock_date": "2025-12-16",
+      "uom": "KG",
+      "qty": 650.00,
+      "timestamp": "2025-12-19T16:00:00+07:00"
+    },
+    {
+      "wms_id": "WIP-1370-20251216-002",
+      "company_code": 1370,
+      "item_type": "HALB",
+      "item_code": "FABRIC-WOVEN-BACK-001",
+      "item_name": "Woven Fabric - Dyeing In Progress (Backdated - Updated)",
+      "stock_date": "2025-12-16",
+      "uom": "KG",
+      "qty": 520.75,
+      "timestamp": "2025-12-19T16:00:00+07:00"
+    },
+    {
+      "wms_id": "WIP-1370-20251216-003",
+      "company_code": 1370,
+      "item_type": "HALB",
+      "item_code": "FABRIC-DYED-BACK-001",
+      "item_name": "Dyed Fabric - Finishing In Progress (Backdated - Updated)",
+      "stock_date": "2025-12-16",
+      "uom": "KG",
+      "qty": 480.50,
+      "timestamp": "2025-12-19T16:00:00+07:00"
+    }
+  ]
+}
