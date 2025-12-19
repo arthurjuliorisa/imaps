@@ -11,7 +11,7 @@ import { createRequestLogger, logRequest, logResponse } from '@/lib/utils/logger
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-  const { requestId, logger: requestLogger } = createRequestLogger(request);
+  const { logger: requestLogger } = createRequestLogger(request);
 
   let wmsId: string | undefined;
 
