@@ -75,7 +75,8 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO appuser;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO appuser;
 GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO appuser;
 
--- Grant default privileges for future objects
+-- Set default privileges for FUTURE objects created by any user
+-- This ensures that objects created by scripts will be accessible by appuser
 ALTER DEFAULT PRIVILEGES IN SCHEMA public 
     GRANT ALL ON TABLES TO appuser;
 
@@ -84,6 +85,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public 
     GRANT ALL ON FUNCTIONS TO appuser;
+
+-- IMPORTANT: Reassign ownership of ALL existing and future objects to appuser
+-- This prevents "must be owner of table" errors when executing functions
+-- as the appuser
+REASSIGN OWNED BY postgres TO appuser;
 
 -- ============================================================================
 -- 6. CREATE CUSTOM TYPES/ENUMS (if needed before Prisma)
@@ -97,18 +103,19 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 -- 7. SETUP DATABASE PARAMETERS
 -- ============================================================================
 
--- Optimize for write-heavy workload
-ALTER DATABASE imaps_db SET synchronous_commit = 'off';  -- For development only!
-ALTER DATABASE imaps_db SET shared_buffers = '256MB';
-ALTER DATABASE imaps_db SET effective_cache_size = '1GB';
-ALTER DATABASE imaps_db SET maintenance_work_mem = '128MB';
-ALTER DATABASE imaps_db SET checkpoint_completion_target = 0.9;
-ALTER DATABASE imaps_db SET wal_buffers = '16MB';
-ALTER DATABASE imaps_db SET default_statistics_target = 100;
-ALTER DATABASE imaps_db SET random_page_cost = 1.1;
-
--- Set default timezone
+-- Set timezone
 ALTER DATABASE imaps_db SET timezone = 'Asia/Jakarta';
+
+-- NOTE: Other parameters below can only be set with server restart
+-- Uncomment and apply if needed:
+-- ALTER DATABASE imaps_db SET synchronous_commit = 'off';  -- For development only!
+-- ALTER DATABASE imaps_db SET shared_buffers = '256MB';
+-- ALTER DATABASE imaps_db SET effective_cache_size = '1GB';
+-- ALTER DATABASE imaps_db SET maintenance_work_mem = '128MB';
+-- ALTER DATABASE imaps_db SET checkpoint_completion_target = 0.9;
+-- ALTER DATABASE imaps_db SET wal_buffers = '16MB';
+-- ALTER DATABASE imaps_db SET default_statistics_target = 100;
+-- ALTER DATABASE imaps_db SET random_page_cost = 1.1;
 
 -- ============================================================================
 -- 8. VERIFY SETUP
