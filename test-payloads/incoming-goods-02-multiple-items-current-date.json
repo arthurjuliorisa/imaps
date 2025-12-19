@@ -1,0 +1,46 @@
+{
+  "wms_id": "INC-1370-20251219-M001",
+  "company_code": 1370,
+  "owner": 100,
+  "customs_document_type": "BC23",
+  "ppkek_number": "PPKEK-2025-002",
+  "customs_registration_date": "2025-12-19",
+  "incoming_evidence_number": "EV-20251219-002",
+  "incoming_date": "2025-12-19",
+  "invoice_number": "INV-002-2025",
+  "invoice_date": "2025-12-19",
+  "shipper_name": "PT Test Shipper Indonesia",
+  "timestamp": "2025-12-19T10:15:00+07:00",
+  "items": [
+    {
+      "item_type": "ROH",
+      "item_code": "RM-1370-TEST-002",
+      "item_name": "Nylon Thread 40 - Test",
+      "hs_code": "570790",
+      "uom": "KG",
+      "qty": 300.25,
+      "currency": "USD",
+      "amount": 3002.50
+    },
+    {
+      "item_type": "ROH",
+      "item_code": "RM-1370-TEST-003",
+      "item_name": "Polyester Yarn 50D - Test",
+      "hs_code": "570790",
+      "uom": "ROLL",
+      "qty": 150.75,
+      "currency": "USD",
+      "amount": 1507.50
+    },
+    {
+      "item_type": "FG",
+      "item_code": "FG-1370-TEST-001",
+      "item_name": "Finished Textile Product - Test",
+      "hs_code": "650699",
+      "uom": "PCS",
+      "qty": 100,
+      "currency": "USD",
+      "amount": 10000.00
+    }
+  ]
+}

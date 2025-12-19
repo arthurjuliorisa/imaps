@@ -1,0 +1,37 @@
+{
+  "description": "CURRENT DATE INCOMING GOODS - UPDATE EXISTING (same WMS_ID as payload #1, add more items)",
+  "wms_id": "INC-1370-20251219-S001",
+  "company_code": 1370,
+  "owner": 100,
+  "customs_document_type": "BC23",
+  "ppkek_number": "PPKEK-2025-001-UPDATE",
+  "customs_registration_date": "2025-12-19",
+  "incoming_evidence_number": "EV-20251219-001-UPDATE",
+  "incoming_date": "2025-12-19",
+  "invoice_number": "INV-001-UPDATE-2025",
+  "invoice_date": "2025-12-19",
+  "shipper_name": "PT Test Shipper Indonesia (Updated)",
+  "timestamp": "2025-12-19T14:00:00+07:00",
+  "items": [
+    {
+      "item_type": "ROH",
+      "item_code": "RM-1370-TEST-001",
+      "item_name": "Polyester Yarn 170D - Test Scenario 001 (Updated)",
+      "hs_code": "570790",
+      "uom": "KG",
+      "qty": 750.75,
+      "currency": "USD",
+      "amount": 7507.50
+    },
+    {
+      "item_type": "ROH",
+      "item_code": "RM-1370-TEST-UPDATE-ADD",
+      "item_name": "Additional Raw Material Added",
+      "hs_code": "570790",
+      "uom": "KG",
+      "qty": 200.00,
+      "currency": "USD",
+      "amount": 2000.00
+    }
+  ]
+}

@@ -21,7 +21,7 @@ export abstract class BaseTransactionRepository {
     company_code: number,
     transaction_date: Date,
     wms_id: string,
-    transaction_type: 'incoming_goods' | 'outgoing_goods' // typed for safety
+    transaction_type: 'incoming_goods' | 'outgoing_goods'
   ): Promise<void> {
     try {
       // Check if backdated
@@ -104,12 +104,28 @@ export abstract class BaseTransactionRepository {
         },
       );
 
-      // Run snapshot recalculation immediately for backdated changes
-      await this.snapshotRecalcRepo.processImmediately(
-        queueId,
-        company_code,
-        transaction_date,
-      );
+      // Run snapshot recalculation immediately for backdated changes (non-blocking)
+      try {
+        await this.snapshotRecalcRepo.processImmediately(
+          queueId,
+          company_code,
+          transaction_date,
+        );
+      } catch (processError: any) {
+        // Log error but don't fail - recalculation will be processed by background worker
+        logger.warn(
+          'Immediate snapshot recalculation failed (will retry via background worker)',
+          {
+            wmsId: wms_id,
+            companyCode: company_code,
+            transactionDate: transaction_date,
+            queueId: queueId.toString(),
+            errorName: processError?.name,
+            errorMessage: processError?.message,
+            errorCode: processError?.code,
+          },
+        );
+      }
 
       // Ensure partition/maintenance for backdated data (non-blocking)
       await this.ensureBackdatedMaintenance(company_code, transaction_date, wms_id, transaction_type);

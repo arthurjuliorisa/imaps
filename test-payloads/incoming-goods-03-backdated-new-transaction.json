@@ -1,0 +1,27 @@
+{
+  "description": "BACKDATED INCOMING GOODS - NEW TRANSACTION (5 days ago)",
+  "wms_id": "INC-1370-20251214-BD001",
+  "company_code": 1370,
+  "owner": 1370,
+  "customs_document_type": "BC40",
+  "ppkek_number": "PPKEK-BACKDATE-001",
+  "customs_registration_date": "2025-12-14",
+  "incoming_evidence_number": "EV-BACKDATE-001",
+  "incoming_date": "2025-12-14",
+  "invoice_number": "INV-BACKDATE-001-2025",
+  "invoice_date": "2025-12-14",
+  "shipper_name": "PT Backdated Shipper Limited",
+  "timestamp": "2025-12-19T11:00:00+07:00",
+  "items": [
+    {
+      "item_type": "ROH",
+      "item_code": "RM-1370-BACKDATE-001",
+      "item_name": "Backdated Raw Material - Cotton Yarn",
+      "hs_code": "520100",
+      "uom": "KG",
+      "qty": 1000.00,
+      "currency": "USD",
+      "amount": 10000.00
+    }
+  ]
+}

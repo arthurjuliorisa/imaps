@@ -150,6 +150,30 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
   }
 
   /**
+   * Batch query companies by code (optimization)
+   * Fetch multiple companies in one query instead of individual lookups
+   */
+  async getCompaniesByCode(companyCodes: number[]) {
+    try {
+      const companies = await prisma.companies.findMany({
+        where: {
+          code: {
+            in: companyCodes,
+          },
+        },
+        select: {
+          code: true,
+          status: true,
+        },
+      });
+      return companies;
+    } catch (error) {
+      logger.error('Error in IncomingGoodsRepository.getCompaniesByCode:', { error, companyCodes });
+      return [];
+    }
+  }
+
+  /**
    * Check if company exists and is active
    */
   async companyExists(company_code: number): Promise<boolean> {

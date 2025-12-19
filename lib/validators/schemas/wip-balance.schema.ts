@@ -60,15 +60,37 @@ const dateStringSchema = z
 
 /**
  * ISO 8601 datetime schema
+ * Flexible validation supporting multiple ISO 8601 formats:
+ * - 2025-11-27T17:00:00Z
+ * - 2025-11-27T17:00:00+07:00
+ * - 2025-11-27T17:00:00.000Z
+ * - 2025-11-27T17:00:00.000+07:00
  */
 const iso8601Schema = z
   .string()
   .refine(
     (dateStr) => {
-      const date = new Date(dateStr);
-      return !isNaN(date.getTime()) && dateStr.includes('T');
+      try {
+        // Must contain 'T' to separate date and time
+        if (!dateStr.includes('T')) {
+          return false;
+        }
+        
+        // Try parsing with Date constructor (accepts most ISO 8601 formats)
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) {
+          return false;
+        }
+        
+        // Additional check: must contain timezone info (Z or +/-HH:MM)
+        const hasTimezone = /Z$/.test(dateStr) || /[+-]\d{2}:\d{2}$/.test(dateStr) || /[+-]\d{4}$/.test(dateStr);
+        
+        return hasTimezone;
+      } catch {
+        return false;
+      }
     },
-    { message: 'Timestamp must be in ISO 8601 format (e.g., 2025-11-27T17:00:00Z)' }
+    { message: 'Timestamp must be in ISO 8601 format with timezone (e.g., 2025-11-27T17:00:00Z or 2025-11-27T17:00:00+07:00)' }
   );
 
 /**
