@@ -17,9 +17,45 @@ const prisma = new PrismaClient({
   },
 });
 
+async function grantDatabasePermissions() {
+  console.log('\n🔐 Verifying database permissions...');
+  try {
+    const dbUrl = process.env.DATABASE_URL || '';
+    // Extract app user from DATABASE_URL (format: postgresql://user:pass@host:port/db)
+    const userMatch = dbUrl.match(/postgresql:\/\/([^:]+):/);
+    const appUser = userMatch ? userMatch[1] : 'appuser';
+
+    // Verify permissions on stock_daily_snapshot table
+    const checkPerms = await prisma.$queryRawUnsafe<Array<{tableowner: string}>>(`
+      SELECT tableowner FROM pg_tables 
+      WHERE tablename = 'stock_daily_snapshot' AND schemaname = 'public'
+    `);
+    
+    if (checkPerms.length > 0) {
+      const owner = checkPerms[0].tableowner;
+      if (owner !== appUser) {
+        console.warn(`⚠️  Table owner is '${owner}', but app user is '${appUser}'`);
+        console.warn('    This will cause "must be owner of table" errors.');
+        console.warn('    Run database initialization script with superuser:');
+        console.warn('    psql -f scripts/sql/00_init_database.sql');
+      } else {
+        console.log(`✅ Table owner verified: ${owner}`);
+      }
+    }
+  } catch (error: any) {
+    const msg = error?.message || '';
+    if (!msg.includes('does not exist')) {
+      console.warn('⚠️  Permission check warning:', msg.split('\n')[0]);
+    }
+  }
+}
+
 async function main() {
   console.log('🌱 Starting database seeding...\n');
   console.log('ℹ️  Note: Seeding all 3 companies, but transactions only for company 1310 (development)\n');
+
+  // Grant permissions first
+  await grantDatabasePermissions();
 
   // Seed in order to respect dependencies
   await seedCompanies();
