@@ -11,7 +11,7 @@ const OutgoingItemSchema = z.object({
   itemCode: z.string().min(1, 'Item code is required'),
   qty: z.number().positive('Quantity must be a positive number'),
   currency: z.enum(['USD', 'IDR', 'CNY', 'EUR', 'JPY'], {
-    errorMap: () => ({ message: 'Invalid currency. Must be one of: USD, IDR, CNY, EUR, JPY' }),
+    message: 'Invalid currency. Must be one of: USD, IDR, CNY, EUR, JPY',
   }),
   valueAmount: z.number().nonnegative('Value amount must be non-negative'),
   remarks: z.string().optional(),

@@ -333,7 +333,7 @@ export default function BeginningDataPage() {
         }}
       >
         <Autocomplete
-          value={itemTypes.find((it) => it.code === selectedItemType) || null}
+          value={itemTypes.find((it) => it.code === selectedItemType) || undefined}
           onChange={handleItemTypeChange}
           options={itemTypes}
           getOptionLabel={(option) => option.code === 'ALL' ? option.name : `${option.code} - ${option.name}`}

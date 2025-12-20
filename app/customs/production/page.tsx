@@ -68,7 +68,6 @@ export default function ProductionMutationPage() {
       'Item Code': row.itemCode,
       'Item Name': row.itemName,
       'Unit': row.unit,
-      'Snapshot Date': row.date ? formatDate(row.date) : '-',
       'Beginning': row.beginning,
       'In': row.in,
       'Out': row.out,

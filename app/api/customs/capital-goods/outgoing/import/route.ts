@@ -14,7 +14,7 @@ const ImportRecordSchema = z.object({
   recipientName: z.string().min(1, 'Recipient name is required').max(200, 'Recipient name must not exceed 200 characters'),
   qty: z.number().positive('Quantity must be a positive number'),
   currency: z.enum(['USD', 'IDR', 'CNY', 'EUR', 'JPY'], {
-    errorMap: () => ({ message: 'Invalid currency. Must be one of: USD, IDR, CNY, EUR, JPY' }),
+    message: 'Invalid currency. Must be one of: USD, IDR, CNY, EUR, JPY',
   }),
   valueAmount: z.number().nonnegative('Value amount must be non-negative'),
   remarks: z.string().max(500, 'Remarks must not exceed 500 characters').optional(),
@@ -173,7 +173,7 @@ export async function POST(request: Request) {
         validationErrors.push({
           index: i,
           record,
-          error: validationResult.error.errors.map(e => e.message).join(', '),
+          error: validationResult.error.issues.map(e => e.message).join(', '),
         });
         continue;
       }

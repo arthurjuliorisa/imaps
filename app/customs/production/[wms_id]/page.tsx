@@ -25,7 +25,7 @@ import {
   Button,
   Stack
 } from '@mui/material';
-import { NavigateNext, Home, Precision, ArrowBack } from '@mui/icons-material';
+import { NavigateNext, Home, Inventory, ArrowBack } from '@mui/icons-material';
 import { formatDate } from '@/lib/exportUtils';
 import type { ProductionOutputHeader, ProductionOutputDetail } from '@/types/core';
 
@@ -119,7 +119,7 @@ export default function ProductionDetailPage() {
           }}
           onClick={() => router.push('/customs/production')}
         >
-          <Precision sx={{ mr: 0.5 }} fontSize="small" />
+          <Inventory sx={{ mr: 0.5 }} fontSize="small" />
           Production Output
         </Link>
         <Typography

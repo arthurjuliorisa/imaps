@@ -75,7 +75,6 @@ export default function WIPMutationPage() {
       'Item Code': row.itemCode,
       'Item Name': row.itemName,
       'Unit': row.unit,
-      'Stock Date': row.date ? formatDate(row.date) : '-',
       'Beginning': row.beginning,
       'In': row.in,
       'Out': row.out,
