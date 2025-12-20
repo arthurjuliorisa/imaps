@@ -1,4 +1,4 @@
-import { RecalcStatus, Prisma } from '@prisma/client';
+import { RecalcStatus } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { logger } from '@/lib/utils/logger';
 

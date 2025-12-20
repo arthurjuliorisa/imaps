@@ -3,7 +3,6 @@ import { validateIncomingGoods } from '../validators/incoming-goods.validator';
 import type { IncomingGoodsValidated } from '../validators/incoming-goods.validator';
 import type { ErrorDetail, SuccessResponse } from '../types/api-response';
 import { logger } from '../utils/logger';
-import { ValidationError } from '../utils/error.util';
 
 export class IncomingGoodsService {
   private repository: IncomingGoodsRepository;

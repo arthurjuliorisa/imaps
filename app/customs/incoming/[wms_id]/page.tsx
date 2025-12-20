@@ -207,7 +207,7 @@ export default function IncomingDetailPage() {
                 Customs Registration Date
               </Typography>
               <Typography variant="body1">
-                {formatDate(data.header.customs_registration_date.toISOString())}
+                {formatDate(data.header.customs_registration_date)}
               </Typography>
             </Box>
           </Grid>
@@ -226,7 +226,7 @@ export default function IncomingDetailPage() {
                 Incoming Date
               </Typography>
               <Typography variant="body1">
-                {formatDate(data.header.incoming_date.toISOString())}
+                {formatDate(data.header.incoming_date)}
               </Typography>
             </Box>
             <Box sx={{ mb: 2 }}>
@@ -258,7 +258,7 @@ export default function IncomingDetailPage() {
                 Invoice Date
               </Typography>
               <Typography variant="body1">
-                {formatDate(data.header.invoice_date.toISOString())}
+                {formatDate(data.header.invoice_date)}
               </Typography>
             </Box>
           </Grid>

@@ -5,6 +5,34 @@ const prisma = new PrismaClient();
 export async function seedTransactions() {
   console.log('📦 Seeding transactions...');
 
+  // Delete existing transactions to ensure idempotency
+  await prisma.outgoing_good_items.deleteMany({
+    where: { outgoing_good_company: 1310 }
+  });
+  await prisma.outgoing_goods.deleteMany({
+    where: { company_code: 1310 }
+  });
+  await prisma.production_output_items.deleteMany({
+    where: { production_output_company: 1310 }
+  });
+  await prisma.production_outputs.deleteMany({
+    where: { company_code: 1310 }
+  });
+  await prisma.material_usage_items.deleteMany({
+    where: { material_usage_company: 1310 }
+  });
+  await prisma.material_usages.deleteMany({
+    where: { company_code: 1310 }
+  });
+  await prisma.incoming_good_items.deleteMany({
+    where: { incoming_good_company: 1310 }
+  });
+  await prisma.incoming_goods.deleteMany({
+    where: { company_code: 1310 }
+  });
+
+  console.log('  ✓ Deleted existing transactions for company 1310');
+
   // 1. INCOMING GOODS
   const incomingGood = await prisma.incoming_goods.create({
     data: {

@@ -54,11 +54,23 @@ export async function GET(request: NextRequest) {
       return errorResponse('Unauthorized', 'UNAUTHORIZED', 401);
     }
 
-    // Get all active companies
+    // Get query parameters
+    const { searchParams } = new URL(request.url);
+    const code = searchParams.get('code');
+
+    // Build where clause
+    const where: any = {
+      status: 'ACTIVE'
+    };
+
+    // Add code filter if provided
+    if (code) {
+      where.code = parseInt(code);
+    }
+
+    // Get companies
     const companies = await prisma.companies.findMany({
-      where: {
-        status: 'ACTIVE'
-      },
+      where,
       orderBy: {
         name: 'asc'
       }

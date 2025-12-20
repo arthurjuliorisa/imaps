@@ -56,14 +56,9 @@ const menuStructure: MenuInput[] = [
   },
   {
     menu_name: 'Beginning Data',
-    menu_path: null,
+    menu_path: '/customs/beginning-data',
     menu_icon: 'PlaylistAdd',
     menu_order: 5,
-    children: [
-      { menu_name: 'Beginning Raw Material', menu_path: '/customs/beginning-raw-material', menu_icon: 'Description', menu_order: 1 },
-      { menu_name: 'Beginning Finish Good', menu_path: '/customs/beginning-finish-good', menu_icon: 'Description', menu_order: 2 },
-      { menu_name: 'Beginning Capital Goods', menu_path: '/customs/beginning-capital-goods', menu_icon: 'Description', menu_order: 3 },
-    ],
   },
   {
     menu_name: 'Settings',

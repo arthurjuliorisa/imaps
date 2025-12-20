@@ -58,7 +58,7 @@ interface BeginningStockFormProps {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: BeginningStockFormData) => Promise<void>;
-  itemType: 'RAW_MATERIAL' | 'FINISH_GOOD' | 'CAPITAL_GOODS';
+  itemType: string;
   initialData?: BeginningStockFormData | null;
   mode: 'add' | 'edit';
 }
@@ -122,7 +122,7 @@ export function BeginningStockForm({
   const fetchItems = async () => {
     setLoadingItems(true);
     try {
-      const response = await fetch(`/api/master/item?type=${itemType}`);
+      const response = await fetch(`/api/master/item?itemType=${itemType}`);
       if (response.ok) {
         const data = await response.json();
         setItems(data);
@@ -211,16 +211,7 @@ export function BeginningStockForm({
     (formData.balance_date.isBefore(dayjs()) || formData.balance_date.isSame(dayjs(), 'day'));
 
   const getItemTypeLabel = () => {
-    switch (itemType) {
-      case 'RAW_MATERIAL':
-        return 'Raw Material';
-      case 'FINISH_GOOD':
-        return 'Finish Good';
-      case 'CAPITAL_GOODS':
-        return 'Capital Goods';
-      default:
-        return 'Item';
-    }
+    return itemType || 'Item';
   };
 
   return (
