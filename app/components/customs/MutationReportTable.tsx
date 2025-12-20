@@ -73,10 +73,12 @@ export function MutationReportTable({
 
   const hasRowNumber = data.some((item) => item.rowNumber !== undefined);
   const hasCompanyCode = data.some((item) => item.companyCode !== undefined);
-  const hasCompanyName = data.some((item) => item.companyName !== undefined);
-  const hasItemType = data.some((item) => item.itemType !== undefined);
   const hasValueAmount = data.some((item) => item.valueAmount !== undefined);
   const hasCurrency = data.some((item) => item.currency !== undefined);
+
+  // Always show Company Name and Item Type in LPJ Mutasi reports
+  const hasCompanyName = true;
+  const hasItemType = true;
 
   if (loading) {
     return (
