@@ -115,6 +115,23 @@ CREATE TABLE incoming_goods_1310_2026_q4 PARTITION OF incoming_goods_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
 ALTER TABLE incoming_goods_1310_2026_q4 OWNER TO appuser;
 
+-- Create date range partitions for company 1380 (2026)
+CREATE TABLE incoming_goods_1380_2026_q1 PARTITION OF incoming_goods_1380
+    FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
+ALTER TABLE incoming_goods_1380_2026_q1 OWNER TO appuser;
+
+CREATE TABLE incoming_goods_1380_2026_q2 PARTITION OF incoming_goods_1380
+    FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
+ALTER TABLE incoming_goods_1380_2026_q2 OWNER TO appuser;
+
+CREATE TABLE incoming_goods_1380_2026_q3 PARTITION OF incoming_goods_1380
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+ALTER TABLE incoming_goods_1380_2026_q3 OWNER TO appuser;
+
+CREATE TABLE incoming_goods_1380_2026_q4 PARTITION OF incoming_goods_1380
+    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+ALTER TABLE incoming_goods_1380_2026_q4 OWNER TO appuser;
+
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX incoming_goods_company_code_wms_id_incoming_date_key ON incoming_goods (company_code, wms_id, incoming_date);
 CREATE UNIQUE INDEX incoming_goods_company_code_id_incoming_date_key ON incoming_goods (company_code, id, incoming_date);
@@ -203,6 +220,23 @@ CREATE TABLE material_usages_1310_2025_q4 PARTITION OF material_usages_1310
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
 ALTER TABLE material_usages_1310_2025_q4 OWNER TO appuser;
 
+-- Create date range partitions for company 1380 (2026)
+CREATE TABLE material_usages_1380_2026_q1 PARTITION OF material_usages_1380
+    FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
+ALTER TABLE material_usages_1380_2026_q1 OWNER TO appuser;
+
+CREATE TABLE material_usages_1380_2026_q2 PARTITION OF material_usages_1380
+    FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
+ALTER TABLE material_usages_1380_2026_q2 OWNER TO appuser;
+
+CREATE TABLE material_usages_1380_2026_q3 PARTITION OF material_usages_1380
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+ALTER TABLE material_usages_1380_2026_q3 OWNER TO appuser;
+
+CREATE TABLE material_usages_1380_2026_q4 PARTITION OF material_usages_1380
+    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+ALTER TABLE material_usages_1380_2026_q4 OWNER TO appuser;
+
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX material_usages_company_code_wms_id_transaction_date_key ON material_usages (company_code, wms_id, transaction_date);
 CREATE UNIQUE INDEX material_usages_company_code_id_transaction_date_key ON material_usages (company_code, id, transaction_date);
@@ -287,6 +321,23 @@ CREATE TABLE wip_balances_1310_2026_q4 PARTITION OF wip_balances_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
 ALTER TABLE wip_balances_1310_2026_q4 OWNER TO appuser;
 
+-- Create date range partitions for company 1380 (2026)
+CREATE TABLE wip_balances_1380_2026_q1 PARTITION OF wip_balances_1380
+    FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
+ALTER TABLE wip_balances_1380_2026_q1 OWNER TO appuser;
+
+CREATE TABLE wip_balances_1380_2026_q2 PARTITION OF wip_balances_1380
+    FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
+ALTER TABLE wip_balances_1380_2026_q2 OWNER TO appuser;
+
+CREATE TABLE wip_balances_1380_2026_q3 PARTITION OF wip_balances_1380
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+ALTER TABLE wip_balances_1380_2026_q3 OWNER TO appuser;
+
+CREATE TABLE wip_balances_1380_2026_q4 PARTITION OF wip_balances_1380
+    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+ALTER TABLE wip_balances_1380_2026_q4 OWNER TO appuser;
+
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX wip_balances_company_code_wms_id_stock_date_key ON wip_balances (company_code, wms_id, stock_date);
 CREATE INDEX wip_balances_wms_id_idx ON wip_balances (wms_id);
@@ -365,6 +416,23 @@ ALTER TABLE production_outputs_1310_2026_q3 OWNER TO appuser;
 CREATE TABLE production_outputs_1310_2026_q4 PARTITION OF production_outputs_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
 ALTER TABLE production_outputs_1310_2026_q4 OWNER TO appuser;
+
+-- Create date range partitions for company 1380 (2026)
+CREATE TABLE production_outputs_1380_2026_q1 PARTITION OF production_outputs_1380
+    FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
+ALTER TABLE production_outputs_1380_2026_q1 OWNER TO appuser;
+
+CREATE TABLE production_outputs_1380_2026_q2 PARTITION OF production_outputs_1380
+    FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
+ALTER TABLE production_outputs_1380_2026_q2 OWNER TO appuser;
+
+CREATE TABLE production_outputs_1380_2026_q3 PARTITION OF production_outputs_1380
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+ALTER TABLE production_outputs_1380_2026_q3 OWNER TO appuser;
+
+CREATE TABLE production_outputs_1380_2026_q4 PARTITION OF production_outputs_1380
+    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+ALTER TABLE production_outputs_1380_2026_q4 OWNER TO appuser;
 
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX production_outputs_company_code_wms_id_transaction_date_key ON production_outputs (company_code, wms_id, transaction_date);
@@ -451,6 +519,23 @@ CREATE TABLE outgoing_goods_1310_2026_q4 PARTITION OF outgoing_goods_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
 ALTER TABLE outgoing_goods_1310_2026_q4 OWNER TO appuser;
 
+-- Create date range partitions for company 1380 (2026)
+CREATE TABLE outgoing_goods_1380_2026_q1 PARTITION OF outgoing_goods_1380
+    FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
+ALTER TABLE outgoing_goods_1380_2026_q1 OWNER TO appuser;
+
+CREATE TABLE outgoing_goods_1380_2026_q2 PARTITION OF outgoing_goods_1380
+    FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
+ALTER TABLE outgoing_goods_1380_2026_q2 OWNER TO appuser;
+
+CREATE TABLE outgoing_goods_1380_2026_q3 PARTITION OF outgoing_goods_1380
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+ALTER TABLE outgoing_goods_1380_2026_q3 OWNER TO appuser;
+
+CREATE TABLE outgoing_goods_1380_2026_q4 PARTITION OF outgoing_goods_1380
+    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+ALTER TABLE outgoing_goods_1380_2026_q4 OWNER TO appuser;
+
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX outgoing_goods_company_code_wms_id_outgoing_date_key ON outgoing_goods (company_code, wms_id, outgoing_date);
 CREATE UNIQUE INDEX outgoing_goods_company_code_id_outgoing_date_key ON outgoing_goods (company_code, id, outgoing_date);
@@ -531,6 +616,23 @@ ALTER TABLE adjustments_1310_2026_q3 OWNER TO appuser;
 CREATE TABLE adjustments_1310_2026_q4 PARTITION OF adjustments_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
 ALTER TABLE adjustments_1310_2026_q4 OWNER TO appuser;
+
+-- Create date range partitions for company 1380 (2026)
+CREATE TABLE adjustments_1380_2026_q1 PARTITION OF adjustments_1380
+    FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
+ALTER TABLE adjustments_1380_2026_q1 OWNER TO appuser;
+
+CREATE TABLE adjustments_1380_2026_q2 PARTITION OF adjustments_1380
+    FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
+ALTER TABLE adjustments_1380_2026_q2 OWNER TO appuser;
+
+CREATE TABLE adjustments_1380_2026_q3 PARTITION OF adjustments_1380
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+ALTER TABLE adjustments_1380_2026_q3 OWNER TO appuser;
+
+CREATE TABLE adjustments_1380_2026_q4 PARTITION OF adjustments_1380
+    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+ALTER TABLE adjustments_1380_2026_q4 OWNER TO appuser;
 
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX adjustments_company_code_wms_id_transaction_date_key ON adjustments (company_code, wms_id, transaction_date);

@@ -9,6 +9,21 @@ import { seedTransactions } from './seeders/transaction.seeder';
 // NOTE: If you see TypeScript errors below, run `npx prisma generate` first
 // This regenerates Prisma Client with updated schema types
 
+// ============================================================================
+// SEEDER CONFIGURATION - Skip seeders as needed
+// ============================================================================
+// Usage examples:
+//   npm run seed                                    (run all seeders)
+//   SKIP_SEEDERS="transaction" npm run seed        (skip transaction seeder)
+//   SKIP_SEEDERS="transaction,item" npm run seed   (skip multiple)
+// ============================================================================
+
+const SKIP_SEEDERS = process.env.SKIP_SEEDERS?.split(',').map(s => s.trim().toLowerCase()) || [];
+
+const shouldRun = (seederName: string): boolean => {
+  return !SKIP_SEEDERS.includes(seederName.toLowerCase());
+};
+
 const prisma = new PrismaClient({
   datasources: {
     db: {
@@ -110,25 +125,30 @@ async function main() {
   console.log('🌱 Starting database seeding...\n');
   console.log('ℹ️  Note: Seeding all 3 companies, but transactions only for company 1310 (development)\n');
 
+  // Show skip configuration if any
+  if (SKIP_SEEDERS.length > 0) {
+    console.log(`⏭️  Skipping seeders: ${SKIP_SEEDERS.join(', ')}\n`);
+  }
+
   // Grant permissions first
   await grantDatabasePermissions();
 
   // Seed in order to respect dependencies
-  await seedCompanies();
-  await seedItemTypes();
-  await seedItems();
-  await seedUsers();
-  await seedMenus();
-  await seedTransactions();
+  if (shouldRun('company')) await seedCompanies();
+  if (shouldRun('itemtype')) await seedItemTypes();
+  if (shouldRun('item')) await seedItems();
+  if (shouldRun('user')) await seedUsers();
+  if (shouldRun('menu')) await seedMenus();
+  if (shouldRun('transaction')) await seedTransactions();
 
   console.log('🎉 Database seeding completed!');
   console.log('📊 Summary:');
-  console.log('   - 3 companies (1370, 1310, 1380)');
-  console.log('   - 9 item types');
-  console.log('   - 2 items (company 1310 only)');
-  console.log('   - 3 users');
-  console.log('   - 6 parent menus with children');
-  console.log('   - 4 transactions (company 1310 only)');
+  if (shouldRun('company')) console.log('   - 3 companies (1370, 1310, 1380)');
+  if (shouldRun('itemtype')) console.log('   - 9 item types');
+  if (shouldRun('item')) console.log('   - 2 items (company 1310 only)');
+  if (shouldRun('user')) console.log('   - 3 users');
+  if (shouldRun('menu')) console.log('   - 6 parent menus with children');
+  if (shouldRun('transaction')) console.log('   - 4 transactions (company 1310 only)');
 }
 
 main()
