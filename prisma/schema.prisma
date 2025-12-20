@@ -59,6 +59,13 @@ enum CompanyStatus {
   INACTIVE
 }
 
+enum CalculationMethod {
+  TRANSACTION
+  WIP_SNAPSHOT
+
+  @@map("calculation_method")
+}
+
 // ============================================================================
 // MASTER DATA TABLES
 // ============================================================================
@@ -83,6 +90,7 @@ model companies {
   items                items[]
   users                users[]
   snapshot_recalc_queue snapshot_recalc_queue[]
+  stock_daily_snapshot  stock_daily_snapshot[]
 
   @@index([code])
   @@index([status])
@@ -287,7 +295,7 @@ model incoming_good_items {
 }
 
 model material_usages {
-  id                       Int       @default(autoincrement())
+  id                       Int       @id @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
   work_order_number        String?   @db.VarChar(50)
@@ -300,8 +308,9 @@ model material_usages {
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at               DateTime? @db.Timestamptz(6)
 
-  company companies              @relation(fields: [company_code], references: [code])
-  items   material_usage_items[]
+  company                          companies                            @relation(fields: [company_code], references: [code])
+  items                            material_usage_items[]
+  work_order_material_consumption  work_order_material_consumption[]
 
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
@@ -374,8 +383,9 @@ model production_outputs {
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at               DateTime? @db.Timestamptz(6)
 
-  company companies                 @relation(fields: [company_code], references: [code])
-  items   production_output_items[]
+  company                     companies                    @relation(fields: [company_code], references: [code])
+  items                       production_output_items[]
+  work_order_fg_production    work_order_fg_production[]
 
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
@@ -457,7 +467,8 @@ model outgoing_good_items {
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime? @db.Timestamptz(6)
 
-  outgoing_good outgoing_goods @relation(fields: [outgoing_good_company, outgoing_good_id, outgoing_good_date], references: [company_code, id, outgoing_date], onDelete: Cascade)
+  outgoing_good                           outgoing_goods                          @relation(fields: [outgoing_good_company, outgoing_good_id, outgoing_good_date], references: [company_code, id, outgoing_date], onDelete: Cascade)
+  outgoing_fg_production_traceability    outgoing_fg_production_traceability[]
 
   @@index([outgoing_good_id])
   @@index([outgoing_good_id, outgoing_good_company, outgoing_good_date])
@@ -511,6 +522,105 @@ model adjustment_items {
   @@index([item_code])
   @@index([item_type])
   @@index([adjustment_type])
+}
+
+// ============================================================================
+// TRACEABILITY TABLES
+// ============================================================================
+
+model work_order_material_consumption {
+  id                       BigInt   @id @default(autoincrement())
+  material_usage_id        Int
+  material_usage_item_id   Int
+  material_usage_wms_id    String   @db.VarChar(100)
+  work_order_number        String   @db.VarChar(50)
+  company_code             Int
+  item_code                String   @db.VarChar(50)
+  ppkek_number             String?  @db.VarChar(50) // Nullable: materials from adjustments may not have PPKEK
+  qty_consumed             Decimal  @db.Decimal(15, 3)
+  trx_date                 DateTime @db.Date
+  created_at               DateTime @default(now()) @db.Timestamptz(6)
+
+  material_usage material_usages @relation(fields: [material_usage_id], references: [id], onDelete: Cascade)
+
+  @@unique([material_usage_wms_id, work_order_number, item_code])
+  @@index([work_order_number])
+  @@index([company_code])
+  @@index([ppkek_number])
+  @@index([trx_date])
+}
+
+model work_order_fg_production {
+  id                       BigInt   @id @default(autoincrement())
+  production_output_id     Int
+  production_output_item_id Int
+  production_wms_id        String   @db.VarChar(100)
+  work_order_number        String   @db.VarChar(50)
+  company_code             Int
+  item_type                String   @db.VarChar(10) // FERT or HALB
+  item_code                String   @db.VarChar(50)
+  qty_produced             Decimal  @db.Decimal(15, 3)
+  trx_date                 DateTime @db.Date
+  created_at               DateTime @default(now()) @db.Timestamptz(6)
+
+  production_output production_outputs @relation(fields: [production_output_id], references: [id], onDelete: Cascade)
+
+  @@unique([production_wms_id, work_order_number, item_code], name: "work_order_fg_production_unique")
+  @@index([work_order_number])
+  @@index([company_code])
+  @@index([item_type])
+  @@index([trx_date])
+}
+
+model outgoing_fg_production_traceability {
+  id                     BigInt   @id @default(autoincrement())
+  outgoing_good_item_id  Int
+  outgoing_wms_id        String   @db.VarChar(100)
+  production_wms_id      String   @db.VarChar(100)
+  company_code           Int
+  item_code              String   @db.VarChar(50)
+  trx_date               DateTime @db.Date
+  allocated_qty          Decimal? @db.Decimal(15, 3) // Nullable: Optional qty allocation
+  allocation_notes       String?  @db.Text
+  created_at             DateTime @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime @updatedAt @db.Timestamptz(6)
+
+  outgoing_good_item outgoing_good_items @relation(fields: [outgoing_good_item_id], references: [id], onDelete: Cascade)
+
+  @@unique([outgoing_wms_id, production_wms_id, item_code])
+  @@index([outgoing_wms_id])
+  @@index([production_wms_id])
+  @@index([company_code])
+  @@index([trx_date])
+}
+
+model stock_daily_snapshot {
+  id                 BigInt            @id @default(autoincrement())
+  company_code       Int
+  item_type          String            @db.VarChar(10)
+  item_code          String            @db.VarChar(50)
+  item_name          String            @db.VarChar(200)
+  uom                String            @db.VarChar(20)
+  opening_balance    Decimal           @default(0) @db.Decimal(15, 3)
+  closing_balance    Decimal           @default(0) @db.Decimal(15, 3)
+  incoming_qty       Decimal           @default(0) @db.Decimal(15, 3)
+  outgoing_qty       Decimal           @default(0) @db.Decimal(15, 3)
+  production_qty     Decimal           @default(0) @db.Decimal(15, 3)
+  material_usage_qty Decimal           @default(0) @db.Decimal(15, 3)
+  adjustment_qty     Decimal           @default(0) @db.Decimal(15, 3) // Can be positive (GAIN) or negative (LOSS)
+  wip_balance_qty    Decimal?          @db.Decimal(15, 3) // For HALB only (snapshot-based)
+  snapshot_date      DateTime          @db.Date
+  calculated_at      DateTime          @default(now()) @db.Timestamptz(6)
+  calculation_method CalculationMethod
+  created_at         DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime          @updatedAt @db.Timestamptz(6)
+
+  company companies @relation(fields: [company_code], references: [code], onDelete: Cascade)
+
+  @@unique([company_code, item_type, item_code, snapshot_date])
+  @@index([company_code, snapshot_date])
+  @@index([item_type, snapshot_date])
+  @@index([snapshot_date])
 }
 
 // ============================================================================

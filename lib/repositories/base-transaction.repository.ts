@@ -21,7 +21,7 @@ export abstract class BaseTransactionRepository {
     company_code: number,
     transaction_date: Date,
     wms_id: string,
-    transaction_type: 'incoming_goods' | 'outgoing_goods'
+    transaction_type: 'incoming_goods' | 'material_usage' | 'outgoing_goods' | 'production_output' | 'adjustments'
   ): Promise<void> {
     try {
       // Check if backdated
@@ -155,7 +155,7 @@ export abstract class BaseTransactionRepository {
     companyCode: number,
     transactionDate: Date,
     wmsId: string,
-    tableName: 'incoming_goods' | 'outgoing_goods'
+    tableName: 'incoming_goods' | 'material_usage' | 'outgoing_goods' | 'production_output' | 'adjustments'
   ): Promise<void> {
     const log = logger.child({
       scope: 'BaseTransactionRepository.ensureBackdatedMaintenance',
@@ -165,14 +165,20 @@ export abstract class BaseTransactionRepository {
       tableName,
     });
 
-    // Call ensure_<table>_partition if it exists; function name is trusted from union type
-    const funcName = tableName === 'incoming_goods'
-      ? 'ensure_incoming_goods_partition'
-      : 'ensure_outgoing_goods_partition';
+    // Map table names to function names
+    const funcNameMap: Record<string, string> = {
+      'incoming_goods': 'ensure_incoming_goods_partition',
+      'material_usage': 'ensure_material_usages_partition',
+      'outgoing_goods': 'ensure_outgoing_goods_partition',
+      'production_output': 'ensure_production_output_partition',
+      'adjustments': 'ensure_adjustments_partition',
+    };
+
+    const funcName = funcNameMap[tableName];
 
     try {
       await prisma.$executeRawUnsafe(
-        `SELECT ${funcName}($1, $2::date)`,
+        `SELECT ${funcName}($1::integer, $2::date)`,
         companyCode,
         transactionDate,
       );

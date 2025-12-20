@@ -80,7 +80,6 @@ BEGIN
         FROM stock_daily_snapshot sds
         JOIN companies c ON sds.company_code = c.code
         WHERE sds.item_type = ANY(p_item_types)
-          AND sds.deleted_at IS NULL
     ),
     -- Recent data: Calculate from transactions (real-time)
     recent_data AS (
@@ -110,7 +109,7 @@ BEGIN
                 i.item_name,
                 i.item_type,
                 i.uom,
-                dates.snapshot_date,
+                dates.snapshot_date::DATE as snapshot_date,
                 -- Opening balance (closing from previous day)
                 LAG(
                     COALESCE(opening.opening_balance, 0) +

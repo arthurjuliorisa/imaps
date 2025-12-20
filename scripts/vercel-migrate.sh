@@ -38,14 +38,14 @@ run_prisma_migrate() {
 
 # Function to check if custom SQL needs to run
 needs_custom_sql() {
-    # Check if stock_daily_snapshot table exists
-    psql "$DATABASE_URL" -tc "SELECT 1 FROM information_schema.tables WHERE table_name='stock_daily_snapshot'" | grep -q 1
+    # Check if partitions are set up (check for incoming_goods_1370 partition)
+    psql "$DATABASE_URL" -tc "SELECT 1 FROM information_schema.tables WHERE table_name='incoming_goods_1370'" | grep -q 1
 
     if [ $? -eq 0 ]; then
-        echo "Custom tables already exist, skipping custom SQL"
+        echo "Partitions already exist, skipping partitioning setup"
         return 1
     else
-        echo "Custom tables not found, will run custom SQL"
+        echo "Partitions not found, will run partitioning setup"
         return 0
     fi
 }
@@ -54,13 +54,10 @@ needs_custom_sql() {
 run_custom_sql() {
     echo "Running custom SQL scripts..."
 
-    # Only run if tables don't exist yet
+    # Only run if partitions don't exist yet
     if needs_custom_sql; then
-        echo "Applying partitions..."
+        echo "Applying partitions for traceability tables..."
         psql "$DATABASE_URL" -f scripts/sql/01_setup_partitions.sql || echo "Warning: Partitions may already exist"
-
-        echo "Applying traceability tables..."
-        psql "$DATABASE_URL" -f scripts/sql/02_traceability_tables.sql || echo "Warning: Traceability tables may already exist"
 
         echo "Applying functions..."
         psql "$DATABASE_URL" -f scripts/sql/03_functions.sql || true
