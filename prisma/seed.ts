@@ -126,7 +126,7 @@ async function main() {
   console.log('   - 3 companies (1370, 1310, 1380)');
   console.log('   - 9 item types');
   console.log('   - 2 items (company 1310 only)');
-  console.log('   - 3 users');
+  console.log('   - 5 users (1 admin, 1 API, 3 company users)');
   console.log('   - 6 parent menus with children');
   console.log('   - 4 transactions (company 1310 only)');
 }

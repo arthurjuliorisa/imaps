@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
+import { validateCompanyCode } from '@/lib/company-validation';
 
 export async function GET(request: Request) {
   try {
@@ -11,19 +12,16 @@ export async function GET(request: Request) {
     }
 
     const { session } = authCheck as { authenticated: true; session: any };
-    const user = session.user;
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    // Parse companyCode as integer
-    const companyCode = parseInt(user.companyCode);
-    if (!companyCode || isNaN(companyCode)) {
-      return NextResponse.json(
-        { message: 'Invalid company code' },
-        { status: 400 }
-      );
+    // Validate company code with detailed error messages
+    const companyValidation = validateCompanyCode(session);
+    if (!companyValidation.success) {
+      return companyValidation.response;
     }
+    const { companyCode } = companyValidation;
 
     // Query from vw_lpj_wip view (WIP balances with stock_date)
     let query = `

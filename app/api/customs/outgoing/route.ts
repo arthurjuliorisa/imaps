@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
+import { validateCompanyCode } from '@/lib/company-validation';
 
 /**
  * Parse PostgreSQL array field to JavaScript array
@@ -29,14 +30,12 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    // Parse companyCode as integer
-    const companyCode = parseInt(session.user.companyCode);
-    if (!companyCode || isNaN(companyCode)) {
-      return NextResponse.json(
-        { message: 'Invalid company code' },
-        { status: 400 }
-      );
+    // Validate company code with detailed error messages
+    const companyValidation = validateCompanyCode(session);
+    if (!companyValidation.success) {
+      return companyValidation.response;
     }
+    const { companyCode } = companyValidation;
 
     // Query from vw_laporan_pengeluaran view with date filtering
     let query = `

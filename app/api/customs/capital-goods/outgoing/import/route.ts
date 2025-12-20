@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
+import { validateCompanyCode } from '@/lib/company-validation';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import validator from 'validator';
@@ -127,14 +128,12 @@ export async function POST(request: Request) {
 
     const { session } = authCheck as { authenticated: true; session: any };
 
-    // Parse and validate company code
-    const companyCode = parseInt(session.user.companyCode);
-    if (!companyCode || isNaN(companyCode)) {
-      return NextResponse.json(
-        { message: 'Invalid company code' },
-        { status: 400 }
-      );
+    // Validate company code with detailed error messages
+    const companyValidation = validateCompanyCode(session);
+    if (!companyValidation.success) {
+      return companyValidation.response;
     }
+    const { companyCode } = companyValidation;
 
     // Parse request body
     const body = await request.json();

@@ -27,8 +27,12 @@ export async function GET(request: Request) {
       },
     };
 
+    // Optional company filter - if companyCode exists and is valid, filter by it
     if (session.user.companyCode) {
-      whereClause.company_code = parseInt(session.user.companyCode);
+      const companyCode = parseInt(session.user.companyCode);
+      if (!isNaN(companyCode) && companyCode > 0) {
+        whereClause.company_code = companyCode;
+      }
     }
 
     // Get distinct capital goods items from beginning_balances
