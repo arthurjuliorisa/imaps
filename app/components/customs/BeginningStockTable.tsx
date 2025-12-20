@@ -34,6 +34,7 @@ export interface BeginningStockData {
   id: string;
   itemCode: string;
   itemName: string;
+  itemType?: string;
   uom: string;
   beginningBalance: number;
   beginningDate: string;
@@ -187,6 +188,7 @@ export function BeginningStockTable({
               <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>UOM</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">
                 Beginning Balance
@@ -201,7 +203,7 @@ export function BeginningStockTable({
           <TableBody>
             {paginatedData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 8 }}>
+                <TableCell colSpan={9} align="center" sx={{ py: 8 }}>
                   <Typography variant="body1" color="text.secondary">
                     No beginning stock data found
                   </Typography>
@@ -224,6 +226,23 @@ export function BeginningStockTable({
                     </Typography>
                   </TableCell>
                   <TableCell>{row.itemName}</TableCell>
+                  <TableCell>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        px: 1,
+                        py: 0.5,
+                        bgcolor: alpha(theme.palette.secondary.main, 0.1),
+                        color: theme.palette.secondary.main,
+                        borderRadius: 1,
+                        display: 'inline-block',
+                        fontWeight: 600,
+                        fontSize: '0.75rem',
+                      }}
+                    >
+                      {row.itemType || '-'}
+                    </Typography>
+                  </TableCell>
                   <TableCell>
                     <Typography
                       variant="body2"

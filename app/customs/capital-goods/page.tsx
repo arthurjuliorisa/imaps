@@ -167,6 +167,7 @@ export default function CapitalGoodsMutationPage() {
                   textTransform: 'none',
                   borderRadius: 2,
                   px: 2,
+                  color: 'white',
                 }}
               >
                 Add Outgoing
@@ -180,6 +181,7 @@ export default function CapitalGoodsMutationPage() {
                   textTransform: 'none',
                   borderRadius: 2,
                   px: 2,
+                  color: 'white',
                 }}
               >
                 Import from Excel

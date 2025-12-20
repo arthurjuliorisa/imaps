@@ -37,8 +37,6 @@ export async function GET(request: Request) {
         unit_quantity as unit,
         quantity,
         stock_date,
-        value_amount,
-        currency,
         remarks
       FROM vw_lpj_wip
       WHERE company_code = $1
@@ -81,8 +79,6 @@ export async function GET(request: Request) {
       ending: Number(row.quantity || 0),
       stockOpname: 0,
       variant: 0,
-      valueAmount: Number(row.value_amount || 0),
-      currency: row.currency,
       remarks: row.remarks,
     }));
 

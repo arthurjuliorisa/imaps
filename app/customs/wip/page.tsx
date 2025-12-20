@@ -3,83 +3,62 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/app/components/ToastProvider';
-import {
-  Box,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Typography,
-  Stack,
-  TablePagination,
-  alpha,
-  useTheme,
-  Chip,
-  CircularProgress,
-  Button,
-  IconButton,
-  Tooltip,
-} from '@mui/material';
-import { Add, Visibility } from '@mui/icons-material';
+import { Box, Stack, Button } from '@mui/material';
+import { Add as AddIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
+import { MutationReportTable, MutationData } from '@/app/components/customs/MutationReportTable';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
-import { getWIPBalanceTransactions } from '@/lib/api';
-import type { WIPBalanceHeader } from '@/types/core';
 
-export default function WIPBalancePage() {
-  const theme = useTheme();
+export default function WIPMutationPage() {
   const toast = useToast();
   const router = useRouter();
 
+  // Default date range: last 30 days to today
   const now = new Date();
   const thirtyDaysAgo = new Date(now);
   thirtyDaysAgo.setDate(now.getDate() - 30);
 
   const [startDate, setStartDate] = useState(thirtyDaysAgo.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [data, setData] = useState<WIPBalanceHeader[]>([]);
-  const [totalRecords, setTotalRecords] = useState(0);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [data, setData] = useState<MutationData[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await getWIPBalanceTransactions({
-        page,
-        page_size: pageSize,
-        start_date: startDate,
-        end_date: endDate,
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
       });
 
-      setData(response.data);
-      setTotalRecords(response.pagination.total_records);
+      const response = await fetch(`/api/customs/wip?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch data');
+      const result = await response.json();
+      setData(result);
     } catch (error) {
-      console.error('Error fetching WIP balance:', error);
-      toast.error('Failed to load WIP balance data');
+      console.error('Error fetching WIP mutation data:', error);
+      toast.error('Failed to load WIP mutation data');
       setData([]);
-      setTotalRecords(0);
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, page, pageSize, toast]);
+  }, [startDate, endDate, toast]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
-    setPage(newPage + 1);
+    setPage(newPage);
   };
 
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setPageSize(parseInt(event.target.value, 10));
-    setPage(1);
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
   };
 
   const handleNewDocument = () => {
@@ -88,55 +67,101 @@ export default function WIPBalancePage() {
 
   const handleExportExcel = () => {
     const exportData = data.map((row, index) => ({
-      No: (page - 1) * pageSize + index + 1,
-      'WMS ID': row.wms_id,
-      'Company': row.company_code,
-      'Stock Date': formatDate(row.stock_date),
+      No: index + 1,
+      'Row Number': row.rowNumber || '-',
+      'Company Code': row.companyCode || '-',
+      'Company Name': row.companyName || '-',
+      'Item Type': row.itemType || '-',
+      'Item Code': row.itemCode,
+      'Item Name': row.itemName,
+      'Unit': row.unit,
+      'Stock Date': row.date ? formatDate(row.date) : '-',
+      'Beginning': row.beginning,
+      'In': row.in,
+      'Out': row.out,
+      'Adjustment': row.adjustment,
+      'Ending': row.ending,
+      'Stock Opname': row.stockOpname,
+      'Variant': row.variant,
+      'Value Amount': row.valueAmount || '-',
+      'Currency': row.currency || '-',
+      'Remarks': row.remarks || '-',
     }));
 
     exportToExcel(
       exportData,
-      `WIP_Balance_${startDate}_${endDate}`,
-      'WIP Balance'
+      `LPJ_Mutasi_WIP_${startDate}_${endDate}`,
+      'WIP Mutation'
     );
   };
 
   const handleExportPDF = () => {
     const exportData = data.map((row, index) => ({
-      no: (page - 1) * pageSize + index + 1,
-      wmsId: row.wms_id,
-      company: row.company_code,
-      stockDate: formatDate(row.stock_date),
+      no: index + 1,
+      itemCode: row.itemCode,
+      itemName: row.itemName,
+      unit: row.unit,
+      beginning: row.beginning.toString(),
+      in: row.in.toString(),
+      out: row.out.toString(),
+      adjustment: row.adjustment.toString(),
+      ending: row.ending.toString(),
+      stockOpname: row.stockOpname.toString(),
+      variant: row.variant.toString(),
+      remarks: row.remarks || '-',
     }));
 
     const columns = [
       { header: 'No', dataKey: 'no' },
-      { header: 'WMS ID', dataKey: 'wmsId' },
-      { header: 'Company', dataKey: 'company' },
-      { header: 'Stock Date', dataKey: 'stockDate' },
+      { header: 'Item Code', dataKey: 'itemCode' },
+      { header: 'Item Name', dataKey: 'itemName' },
+      { header: 'Unit', dataKey: 'unit' },
+      { header: 'Beginning', dataKey: 'beginning' },
+      { header: 'In', dataKey: 'in' },
+      { header: 'Out', dataKey: 'out' },
+      { header: 'Adjustment', dataKey: 'adjustment' },
+      { header: 'Ending', dataKey: 'ending' },
+      { header: 'Stock Opname', dataKey: 'stockOpname' },
+      { header: 'Variant', dataKey: 'variant' },
+      { header: 'Remarks', dataKey: 'remarks' },
     ];
 
     exportToPDF(
       exportData,
       columns,
-      `WIP_Balance_${startDate}_${endDate}`,
-      'WIP Balance Report',
+      `LPJ_Mutasi_WIP_${startDate}_${endDate}`,
+      'LPJ Mutasi WIP',
       `Period: ${formatDate(startDate)} - ${formatDate(endDate)}`
     );
   };
 
+  const handleEdit = (item: MutationData) => {
+    console.log('Edit item:', item);
+    // Implement edit functionality
+  };
+
+  const handleView = (item: MutationData) => {
+    console.log('View item:', item);
+    // Implement view functionality
+  };
+
   return (
     <ReportLayout
-      title="WIP Balance"
-      subtitle="Work in Process balance snapshots"
+      title="LPJ Mutasi WIP"
+      subtitle="Laporan Pertanggungjawaban Mutasi Work In Process"
       actions={
-        <Stack spacing={2}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Stack spacing={3}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <Button
               variant="contained"
-              startIcon={<Add />}
+              startIcon={<AddIcon />}
               onClick={handleNewDocument}
               disabled={loading}
+              sx={{
+                textTransform: 'none',
+                borderRadius: 2,
+                px: 2,
+              }}
             >
               New WIP Balance
             </Button>
@@ -157,80 +182,16 @@ export default function WIPBalancePage() {
         </Stack>
       }
     >
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <TableContainer>
-          <Table sx={{ minWidth: 650 }}>
-            <TableHead>
-              <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
-                <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Stock Date</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {data.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
-                    <Typography variant="body1" color="text.secondary">
-                      No records found for the selected date range
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                data.map((row, index) => (
-                  <TableRow
-                    key={`${row.company_code}-${row.wms_id}`}
-                    sx={{ '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.04) } }}
-                  >
-                    <TableCell>{(page - 1) * pageSize + index + 1}</TableCell>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600}>
-                        {row.wms_id}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip label={row.company_code} size="small" />
-                    </TableCell>
-                    <TableCell>{formatDate(row.stock_date)}</TableCell>
-                    <TableCell>
-                      <Tooltip title="View Details">
-                        <IconButton
-                          size="small"
-                          color="primary"
-                          onClick={() => router.push(`/customs/wip/${row.wms_id}`)}
-                        >
-                          <Visibility fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
-      {!loading && totalRecords > 0 && (
-        <TablePagination
-          rowsPerPageOptions={[10, 20, 50, 100]}
-          component="div"
-          count={totalRecords}
-          rowsPerPage={pageSize}
-          page={page - 1}
-          onPageChange={handleChangePage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-          labelRowsPerPage="Rows per page:"
-          labelDisplayedRows={({ from, to, count }) =>
-            `${from}-${to} of ${count !== -1 ? count : `more than ${to}`}`
-          }
-        />
-      )}
+      <MutationReportTable
+        data={data}
+        page={page}
+        rowsPerPage={rowsPerPage}
+        onPageChange={handleChangePage}
+        onRowsPerPageChange={handleChangeRowsPerPage}
+        onEdit={handleEdit}
+        onView={handleView}
+        loading={loading}
+      />
     </ReportLayout>
   );
 }
