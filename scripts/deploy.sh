@@ -158,7 +158,6 @@ check_prerequisites() {
     local required_sql_files=(
         "00_init_database.sql"
         "01_setup_partitions.sql"
-        "02_traceability_tables.sql"
         "03_functions.sql"
         "04_create_views.sql"
     )
@@ -260,11 +259,6 @@ setup_partitions() {
     execute_sql_script "01_setup_partitions.sql" || fatal "Failed to setup partitions"
 }
 
-create_traceability_tables() {
-    info "Creating traceability tables..."
-    execute_sql_script "02_traceability_tables.sql" || fatal "Failed to create traceability tables"
-}
-
 create_functions() {
     info "Creating database functions..."
     execute_sql_script "03_functions.sql" || fatal "Failed to create functions"
@@ -361,25 +355,22 @@ main() {
     # Step 2: Generate Prisma client
     run_prisma_generate
 
-    # Step 3: Push Prisma schema
+    # Step 3: Push Prisma schema (includes traceability tables)
     run_prisma_push
 
     # Step 4: Setup partitions
     setup_partitions
 
-    # Step 5: Create traceability tables
-    create_traceability_tables
-
-    # Step 6: Create functions
+    # Step 5: Create functions
     create_functions
 
-    # Step 7: Create views
+    # Step 6: Create views
     create_views
 
-    # Step 8: Seed database (optional)
+    # Step 7: Seed database (optional)
     seed_database
 
-    # Step 9: Verify deployment
+    # Step 8: Verify deployment
     verify_deployment
 
     info "============================================================================"

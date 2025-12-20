@@ -61,6 +61,7 @@ BEGIN
         item_type,
         item_code,
         item_name,
+        uom,
         opening_balance,
         closing_balance,
         incoming_qty,
@@ -71,7 +72,9 @@ BEGIN
         wip_balance_qty,
         snapshot_date,
         calculated_at,
-        calculation_method
+        calculation_method,
+        created_at,
+        updated_at
     )
     -- Get all items that had any transaction on this date or have opening balance
     WITH all_items AS (
@@ -79,10 +82,11 @@ BEGIN
             p_company_code AS company_code,
             item_type,
             item_code,
-            item_name
+            item_name,
+            uom
         FROM (
             -- Items from incoming
-            SELECT item_type, item_code, item_name 
+            SELECT item_type, item_code, item_name, uom 
             FROM incoming_good_items igi
             JOIN incoming_goods ig ON igi.incoming_good_id = ig.id
             WHERE ig.company_code = p_company_code 
@@ -91,7 +95,7 @@ BEGIN
             UNION
             
             -- Items from outgoing
-            SELECT item_type, item_code, item_name 
+            SELECT item_type, item_code, item_name, uom 
             FROM outgoing_good_items ogi
             JOIN outgoing_goods og ON ogi.outgoing_good_id = og.id
             WHERE og.company_code = p_company_code 
@@ -100,7 +104,7 @@ BEGIN
             UNION
             
             -- Items from material usage
-            SELECT item_type, item_code, item_name 
+            SELECT item_type, item_code, item_name, uom 
             FROM material_usage_items mui
             JOIN material_usages mu ON mui.material_usage_id = mu.id
             WHERE mu.company_code = p_company_code 
@@ -109,7 +113,7 @@ BEGIN
             UNION
             
             -- Items from production
-            SELECT item_type, item_code, item_name 
+            SELECT item_type, item_code, item_name, uom 
             FROM production_output_items poi
             JOIN production_outputs po ON poi.production_output_id = po.id
             WHERE po.company_code = p_company_code 
@@ -118,7 +122,7 @@ BEGIN
             UNION
             
             -- Items from adjustments
-            SELECT item_type, item_code, item_name 
+            SELECT item_type, item_code, item_name, uom 
             FROM adjustment_items ai
             JOIN adjustments a ON ai.adjustment_id = a.id
             WHERE a.company_code = p_company_code 
@@ -127,7 +131,7 @@ BEGIN
             UNION
             
             -- Items from WIP balance
-            SELECT item_type, item_code, item_name 
+            SELECT item_type, item_code, item_name, uom 
             FROM wip_balances 
             WHERE company_code = p_company_code 
               AND stock_date = p_snapshot_date
@@ -135,7 +139,7 @@ BEGIN
             UNION
             
             -- Items with opening balance (from previous day)
-            SELECT item_type, item_code, item_name 
+            SELECT item_type, item_code, item_name, uom 
             FROM stock_daily_snapshot 
             WHERE company_code = p_company_code 
               AND snapshot_date = p_snapshot_date - INTERVAL '1 day'
@@ -254,6 +258,7 @@ BEGIN
         ai.item_type,
         ai.item_code,
         ai.item_name,
+        ai.uom,
         -- Opening balance
         COALESCE(ob.opening_balance, 0) AS opening_balance,
         -- Closing balance calculation by item type
@@ -265,9 +270,14 @@ BEGIN
                 COALESCE(mat.material_usage_qty, 0) +
                 COALESCE(adj.adjustment_qty, 0)
             
-            -- HALB: Use WIP snapshot (overrides calculation)
+            -- HALB: Semi-finished goods (opening + incoming - material_usage +/- adjustment)
+            -- Note: HALB is NOT WIP. WIP is a separate snapshot sent by WMS.
+            -- HALB is treated as regular inventory item like ROH/FERT
             WHEN ai.item_type = 'HALB' THEN
-                COALESCE(wip.wip_balance_qty, 0)
+                COALESCE(ob.opening_balance, 0) +
+                COALESCE(inc.incoming_qty, 0) -
+                COALESCE(mat.material_usage_qty, 0) +
+                COALESCE(adj.adjustment_qty, 0)
             
             -- FERT: opening + production - outgoing +/- adjustment
             WHEN ai.item_type = 'FERT' THEN
@@ -302,10 +312,9 @@ BEGIN
         wip.wip_balance_qty,
         p_snapshot_date AS snapshot_date,
         CURRENT_TIMESTAMP AS calculated_at,
-        CASE 
-            WHEN ai.item_type = 'HALB' THEN 'WIP_SNAPSHOT'::calculation_method
-            ELSE 'TRANSACTION'::calculation_method
-        END AS calculation_method
+        'TRANSACTION'::calculation_method AS calculation_method,
+        CURRENT_TIMESTAMP AS created_at,
+        CURRENT_TIMESTAMP AS updated_at
     FROM all_items ai
     LEFT JOIN opening_balances ob ON ai.company_code = ob.company_code 
         AND ai.item_type = ob.item_type 
@@ -702,6 +711,153 @@ BEGIN
         WHERE tablename = v_company_partition_name AND schemaname = 'public'
     ) THEN
         EXECUTE 'CREATE TABLE ' || v_company_partition_name || ' PARTITION OF outgoing_goods FOR VALUES IN (' || p_company_code || ') PARTITION BY RANGE (outgoing_date)';
+        EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO appuser';
+    END IF;
+    
+    -- Check if quarterly partition exists, if not create it
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables 
+        WHERE tablename = v_partition_name AND schemaname = 'public'
+    ) THEN
+        EXECUTE 'CREATE TABLE ' || v_partition_name || ' PARTITION OF ' || v_company_partition_name || ' FOR VALUES FROM (''' || v_quarter_start || ''') TO (''' || v_quarter_end || ''')';
+        EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO appuser';
+        RAISE NOTICE 'Created partition: %', v_partition_name;
+    END IF;
+END;
+$$;
+
+-- Function to ensure material_usages partition exists for backdated transaction
+CREATE OR REPLACE FUNCTION ensure_material_usages_partition(
+    p_company_code INTEGER,
+    p_transaction_date DATE
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_quarter_start DATE;
+    v_quarter_end DATE;
+    v_year INTEGER;
+    v_quarter INTEGER;
+    v_partition_name TEXT;
+    v_company_partition_name TEXT;
+BEGIN
+    -- Extract year and quarter from transaction date
+    v_year := EXTRACT(YEAR FROM p_transaction_date)::INTEGER;
+    v_quarter := CEIL(EXTRACT(MONTH FROM p_transaction_date) / 3.0)::INTEGER;
+    
+    -- Calculate quarter boundaries
+    v_quarter_start := DATE_TRUNC('quarter', p_transaction_date)::DATE;
+    v_quarter_end := (DATE_TRUNC('quarter', p_transaction_date) + INTERVAL '3 months')::DATE;
+    
+    -- Generate partition names
+    v_company_partition_name := 'material_usages_' || p_company_code;
+    v_partition_name := v_company_partition_name || '_' || v_year || '_q' || v_quarter;
+    
+    -- Check if company partition exists, if not create it
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables 
+        WHERE tablename = v_company_partition_name AND schemaname = 'public'
+    ) THEN
+        EXECUTE 'CREATE TABLE ' || v_company_partition_name || ' PARTITION OF material_usages FOR VALUES IN (' || p_company_code || ') PARTITION BY RANGE (transaction_date)';
+        EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO appuser';
+    END IF;
+    
+    -- Check if quarterly partition exists, if not create it
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables 
+        WHERE tablename = v_partition_name AND schemaname = 'public'
+    ) THEN
+        EXECUTE 'CREATE TABLE ' || v_partition_name || ' PARTITION OF ' || v_company_partition_name || ' FOR VALUES FROM (''' || v_quarter_start || ''') TO (''' || v_quarter_end || ''')';
+        EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO appuser';
+        RAISE NOTICE 'Created partition: %', v_partition_name;
+    END IF;
+END;
+$$;
+
+-- Function to ensure production_outputs partition exists for backdated transaction
+CREATE OR REPLACE FUNCTION ensure_production_output_partition(
+    p_company_code INTEGER,
+    p_transaction_date DATE
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_quarter_start DATE;
+    v_quarter_end DATE;
+    v_year INTEGER;
+    v_quarter INTEGER;
+    v_partition_name TEXT;
+    v_company_partition_name TEXT;
+BEGIN
+    -- Extract year and quarter from transaction date
+    v_year := EXTRACT(YEAR FROM p_transaction_date)::INTEGER;
+    v_quarter := CEIL(EXTRACT(MONTH FROM p_transaction_date) / 3.0)::INTEGER;
+    
+    -- Calculate quarter boundaries
+    v_quarter_start := DATE_TRUNC('quarter', p_transaction_date)::DATE;
+    v_quarter_end := (DATE_TRUNC('quarter', p_transaction_date) + INTERVAL '3 months')::DATE;
+    
+    -- Generate partition names
+    v_company_partition_name := 'production_outputs_' || p_company_code;
+    v_partition_name := v_company_partition_name || '_' || v_year || '_q' || v_quarter;
+    
+    -- Check if company partition exists, if not create it
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables 
+        WHERE tablename = v_company_partition_name AND schemaname = 'public'
+    ) THEN
+        EXECUTE 'CREATE TABLE ' || v_company_partition_name || ' PARTITION OF production_outputs FOR VALUES IN (' || p_company_code || ') PARTITION BY RANGE (transaction_date)';
+        EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO appuser';
+    END IF;
+    
+    -- Check if quarterly partition exists, if not create it
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables 
+        WHERE tablename = v_partition_name AND schemaname = 'public'
+    ) THEN
+        EXECUTE 'CREATE TABLE ' || v_partition_name || ' PARTITION OF ' || v_company_partition_name || ' FOR VALUES FROM (''' || v_quarter_start || ''') TO (''' || v_quarter_end || ''')';
+        EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO appuser';
+        RAISE NOTICE 'Created partition: %', v_partition_name;
+    END IF;
+END;
+$$;
+
+-- Function to ensure adjustments partition exists for backdated transaction
+CREATE OR REPLACE FUNCTION ensure_adjustments_partition(
+    p_company_code INTEGER,
+    p_transaction_date DATE
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_quarter_start DATE;
+    v_quarter_end DATE;
+    v_year INTEGER;
+    v_quarter INTEGER;
+    v_partition_name TEXT;
+    v_company_partition_name TEXT;
+BEGIN
+    -- Extract year and quarter from transaction date
+    v_year := EXTRACT(YEAR FROM p_transaction_date)::INTEGER;
+    v_quarter := CEIL(EXTRACT(MONTH FROM p_transaction_date) / 3.0)::INTEGER;
+    
+    -- Calculate quarter boundaries
+    v_quarter_start := DATE_TRUNC('quarter', p_transaction_date)::DATE;
+    v_quarter_end := (DATE_TRUNC('quarter', p_transaction_date) + INTERVAL '3 months')::DATE;
+    
+    -- Generate partition names
+    v_company_partition_name := 'adjustments_' || p_company_code;
+    v_partition_name := v_company_partition_name || '_' || v_year || '_q' || v_quarter;
+    
+    -- Check if company partition exists, if not create it
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables 
+        WHERE tablename = v_company_partition_name AND schemaname = 'public'
+    ) THEN
+        EXECUTE 'CREATE TABLE ' || v_company_partition_name || ' PARTITION OF adjustments FOR VALUES IN (' || p_company_code || ') PARTITION BY RANGE (transaction_date)';
         EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO appuser';
     END IF;
     

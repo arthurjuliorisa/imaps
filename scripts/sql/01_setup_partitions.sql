@@ -11,6 +11,10 @@
 -- NOTE: Run this AFTER prisma db push/migrate
 -- This is a manual step because Prisma doesn't support partitioning natively
 --
+-- IMPORTANT: This script uses CASCADE drops, which removes child tables.
+-- After running this script, you MUST run: npx prisma db push
+-- to recreate child tables (incoming_good_items, outgoing_good_items, etc.)
+--
 -- FIXED: Added proper permissions for appuser
 -- ============================================================================
 
@@ -193,6 +197,11 @@ ALTER TABLE material_usages_1310_2026_q3 OWNER TO appuser;
 CREATE TABLE material_usages_1310_2026_q4 PARTITION OF material_usages_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
 ALTER TABLE material_usages_1310_2026_q4 OWNER TO appuser;
+
+-- Create date range partitions for company 1310 (2025)
+CREATE TABLE material_usages_1310_2025_q4 PARTITION OF material_usages_1310
+    FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
+ALTER TABLE material_usages_1310_2025_q4 OWNER TO appuser;
 
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX material_usages_company_code_wms_id_transaction_date_key ON material_usages (company_code, wms_id, transaction_date);
@@ -532,7 +541,65 @@ CREATE INDEX adjustments_transaction_date_idx ON adjustments (transaction_date);
 CREATE INDEX adjustments_internal_evidence_number_idx ON adjustments (internal_evidence_number);
 
 -- ============================================================================
+-- 7. STOCK DAILY SNAPSHOT PARTITIONING
+-- ============================================================================
+-- Drop existing non-partitioned table and recreate as partitioned (by year)
+DROP TABLE IF EXISTS stock_daily_snapshot CASCADE;
+
+CREATE TABLE stock_daily_snapshot (
+    id BIGSERIAL,
+    company_code INTEGER NOT NULL,
+    item_type VARCHAR(10) NOT NULL,
+    item_code VARCHAR(50) NOT NULL,
+    item_name VARCHAR(200) NOT NULL,
+    uom VARCHAR(20) NOT NULL,
+    opening_balance DECIMAL(15, 3) NOT NULL DEFAULT 0,
+    closing_balance DECIMAL(15, 3) NOT NULL DEFAULT 0,
+    incoming_qty DECIMAL(15, 3) NOT NULL DEFAULT 0,
+    outgoing_qty DECIMAL(15, 3) NOT NULL DEFAULT 0,
+    production_qty DECIMAL(15, 3) NOT NULL DEFAULT 0,
+    material_usage_qty DECIMAL(15, 3) NOT NULL DEFAULT 0,
+    adjustment_qty DECIMAL(15, 3) NOT NULL DEFAULT 0,
+    wip_balance_qty DECIMAL(15, 3),
+    snapshot_date DATE NOT NULL,
+    calculated_at TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
+    calculation_method VARCHAR(50) NOT NULL,
+    created_at TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ(6) NOT NULL,
+    PRIMARY KEY (id, snapshot_date)
+) PARTITION BY RANGE (snapshot_date);
+
+ALTER TABLE stock_daily_snapshot OWNER TO appuser;
+
+-- Create yearly partitions for historical data
+CREATE TABLE stock_daily_snapshot_2024 PARTITION OF stock_daily_snapshot
+    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+ALTER TABLE stock_daily_snapshot_2024 OWNER TO appuser;
+
+CREATE TABLE stock_daily_snapshot_2025 PARTITION OF stock_daily_snapshot
+    FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
+ALTER TABLE stock_daily_snapshot_2025 OWNER TO appuser;
+
+CREATE TABLE stock_daily_snapshot_2026 PARTITION OF stock_daily_snapshot
+    FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+ALTER TABLE stock_daily_snapshot_2026 OWNER TO appuser;
+
+-- Create indexes with Prisma naming convention
+CREATE UNIQUE INDEX stock_snapshot_company_item_date_key 
+    ON stock_daily_snapshot (company_code, item_type, item_code, snapshot_date);
+CREATE INDEX stock_snapshot_company_date_idx 
+    ON stock_daily_snapshot (company_code, snapshot_date);
+CREATE INDEX stock_snapshot_item_date_idx 
+    ON stock_daily_snapshot (item_type, snapshot_date);
+CREATE INDEX stock_snapshot_date_idx 
+    ON stock_daily_snapshot (snapshot_date);
+
+-- ============================================================================
 -- GRANT FINAL PRIVILEGES TO APPUSER
+-- ============================================================================
+-- NOTE: Traceability tables (work_order_material_consumption, work_order_fg_production,
+-- outgoing_fg_production_traceability) are now created by Prisma during 'prisma db push'.
+-- stock_daily_snapshot is recreated here as a partitioned table (see section 7 above).
 -- ============================================================================
 
 -- Grant all privileges on all tables (including partitions)

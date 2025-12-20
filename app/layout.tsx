@@ -4,6 +4,7 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import { SessionProvider } from "./components/SessionProvider";
 import { ToastProvider } from "./components/ToastProvider";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { CronInitializer } from "./components/CronInitializer";
 
 export const metadata: Metadata = {
   title: "iMAPS - Inventory Management & Production System",
@@ -18,6 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
+        <CronInitializer />
         <ErrorBoundary>
           <SessionProvider>
             <ThemeProvider>

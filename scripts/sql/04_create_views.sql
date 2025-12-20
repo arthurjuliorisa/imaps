@@ -110,7 +110,7 @@ BEGIN
                 i.item_name,
                 i.item_type,
                 i.uom,
-                dates.snapshot_date,
+                dates.snapshot_date::DATE as snapshot_date,
                 -- Opening balance (closing from previous day)
                 LAG(
                     COALESCE(opening.opening_balance, 0) +

@@ -150,7 +150,6 @@ function Test-Prerequisites {
     $requiredSqlFiles = @(
         "00_init_database.sql",
         "01_setup_partitions.sql",
-        "02_traceability_tables.sql",
         "03_functions.sql",
         "04_create_views.sql"
     )
@@ -290,13 +289,6 @@ function Initialize-Partitions {
     }
 }
 
-function Initialize-TraceabilityTables {
-    Write-Info "Creating traceability tables..."
-    if (-not (Invoke-SqlScript "02_traceability_tables.sql")) {
-        Write-Fatal "Failed to create traceability tables"
-    }
-}
-
 function Initialize-Functions {
     Write-Info "Creating database functions..."
     if (-not (Invoke-SqlScript "03_functions.sql")) {
@@ -426,25 +418,22 @@ function Start-Deployment {
     # Step 2: Generate Prisma client
     Invoke-PrismaGenerate
 
-    # Step 3: Push Prisma schema
+    # Step 3: Push Prisma schema (includes traceability tables)
     Invoke-PrismaPush
 
     # Step 4: Setup partitions
     Initialize-Partitions
 
-    # Step 5: Create traceability tables
-    Initialize-TraceabilityTables
-
-    # Step 6: Create functions
+    # Step 5: Create functions
     Initialize-Functions
 
-    # Step 7: Create views
+    # Step 6: Create views
     Initialize-Views
 
-    # Step 8: Seed database (optional)
+    # Step 7: Seed database (optional)
     Initialize-SeedData
 
-    # Step 9: Verify deployment
+    # Step 8: Verify deployment
     Test-Deployment
 
     Write-Info "============================================================================"

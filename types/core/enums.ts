@@ -156,10 +156,13 @@ export function isCapitalGoods(itemType: ItemTypeCode): boolean {
 
 /**
  * Check if item type uses TRANSACTION calculation method
+ * All item types use TRANSACTION method (including HALB - semi-finished goods)
+ * Note: WIP snapshot is separate data sent by WMS, not used for balance calculation
  */
 export function usesTransactionCalculation(itemType: ItemTypeCode): boolean {
   return [
     ItemTypeCode.ROH,
+    ItemTypeCode.HALB,
     ItemTypeCode.FERT,
     ItemTypeCode.HIBE,
     ItemTypeCode.HIBE_M,
@@ -171,16 +174,17 @@ export function usesTransactionCalculation(itemType: ItemTypeCode): boolean {
 
 /**
  * Check if item type uses WIP_SNAPSHOT calculation method
+ * No item types use WIP_SNAPSHOT - all use TRANSACTION method
+ * WIP snapshot is stored for reference but not used for balance calculation
  */
 export function usesWIPSnapshotCalculation(itemType: ItemTypeCode): boolean {
-  return itemType === ItemTypeCode.HALB;
+  return false; // HALB is semi-finished goods, not WIP (Work In Progress)
 }
 
 /**
  * Get calculation method for item type
+ * All item types use TRANSACTION calculation
  */
 export function getCalculationMethod(itemType: ItemTypeCode): CalculationMethod {
-  return usesWIPSnapshotCalculation(itemType)
-    ? CalculationMethod.WIP_SNAPSHOT
-    : CalculationMethod.TRANSACTION;
+  return CalculationMethod.TRANSACTION;
 }
