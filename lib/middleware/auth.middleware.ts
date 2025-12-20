@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { AuthenticationError, ForbiddenError } from '../utils/error.util';
 import { logger } from '../utils/logger';
 

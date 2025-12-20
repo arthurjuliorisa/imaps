@@ -2,6 +2,21 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
+import { validateCompanyCode } from '@/lib/company-validation';
+
+/**
+ * Parse PostgreSQL array field to JavaScript array
+ * Handles format: {id1,id2,id3} or null
+ */
+function parseArrayField(field: any): string[] {
+  if (!field) return [];
+  if (Array.isArray(field)) return field;
+  if (typeof field === 'string') {
+    // Handle PostgreSQL array format: {id1,id2,id3}
+    return field.replace(/[{}]/g, '').split(',').filter(Boolean);
+  }
+  return [];
+}
 
 export async function GET(request: Request) {
   try {
@@ -10,65 +25,83 @@ export async function GET(request: Request) {
       return authCheck.response;
     }
 
+    const { session } = authCheck as { authenticated: true; session: any };
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    const where: any = {};
+    // Validate company code with detailed error messages
+    const companyValidation = validateCompanyCode(session);
+    if (!companyValidation.success) {
+      return companyValidation.response;
+    }
+    const { companyCode } = companyValidation;
 
-    if (startDate || endDate) {
-      where.outgoing_date = {};
-      if (startDate) {
-        where.outgoing_date.gte = new Date(startDate);
-      }
-      if (endDate) {
-        where.outgoing_date.lte = new Date(endDate);
-      }
+    // Query from vw_laporan_pengeluaran view with date filtering
+    let query = `
+      SELECT
+        id,
+        company_code,
+        company_name,
+        customs_document_type,
+        cust_doc_registration_no as ppkek_number,
+        reg_date as registration_date,
+        doc_number,
+        doc_date,
+        recipient_name,
+        type_code,
+        item_code,
+        item_name,
+        unit,
+        quantity,
+        currency,
+        value_amount,
+        production_output_wms_ids,
+        created_at
+      FROM vw_laporan_pengeluaran
+      WHERE company_code = $1
+    `;
+
+    const params: any[] = [companyCode];
+    let paramIndex = 2;
+
+    if (startDate) {
+      query += ` AND doc_date >= $${paramIndex}`;
+      params.push(new Date(startDate));
+      paramIndex++;
+    }
+    if (endDate) {
+      query += ` AND doc_date <= $${paramIndex}`;
+      params.push(new Date(endDate));
+      paramIndex++;
     }
 
-    const outgoingHeaders = await prisma.outgoing_goods.findMany({
-      where,
-      include: {
-        items: {
-          select: {
-            item_code: true,
-            item_name: true,
-            uom: true,
-            qty: true,
-            currency: true,
-            amount: true,
-            hs_code: true,
-          },
-        },
-      },
-      orderBy: [
-        { outgoing_date: 'desc' },
-        { customs_registration_date: 'desc' },
-      ],
-    });
+    query += ` ORDER BY doc_date DESC, id`;
 
-    const transformedData = outgoingHeaders.flatMap((header) =>
-      header.items.map((detail) => ({
-        id: header.wms_id + '-' + detail.item_code,
-        wmsId: header.wms_id,
-        companyCode: header.company_code,
-        documentType: header.customs_document_type,
-        ppkekNumber: header.ppkek_number,
-        registrationDate: header.customs_registration_date,
-        documentNumber: header.outgoing_evidence_number,
-        date: header.outgoing_date,
-        invoiceNumber: header.invoice_number,
-        invoiceDate: header.invoice_date,
-        recipientName: header.recipient_name,
-        itemCode: detail.item_code,
-        itemName: detail.item_name,
-        unit: detail.uom,
-        qty: Number(detail.qty),
-        currency: detail.currency,
-        amount: Number(detail.amount),
-        hsCode: detail.hs_code,
-      }))
-    );
+    const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+
+    // Transform to expected format
+    const transformedData = result.map((row: any) => ({
+      id: `${row.id}-${row.item_code}`,
+      wmsId: row.id,
+      companyCode: row.company_code,
+      companyName: row.company_name,
+      documentType: row.customs_document_type,
+      ppkekNumber: row.ppkek_number,
+      registrationDate: row.registration_date,
+      documentNumber: row.doc_number,
+      date: row.doc_date,
+      recipientName: row.recipient_name,
+      typeCode: row.type_code,
+      itemCode: row.item_code,
+      itemName: row.item_name,
+      unit: row.unit,
+      qty: Number(row.quantity || 0),
+      currency: row.currency,
+      amount: Number(row.value_amount || 0),
+      productionOutputWmsIds: parseArrayField(row.production_output_wms_ids),
+      createdAt: row.created_at,
+    }));
 
     return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {

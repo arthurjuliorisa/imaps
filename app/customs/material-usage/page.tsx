@@ -92,7 +92,7 @@ export default function MaterialUsagePage() {
       'WMS ID': row.wms_id,
       'Company': row.company_code,
       'Work Order': row.work_order_number,
-      'Transaction Date': formatDate(row.transaction_date.toISOString()),
+      'Transaction Date': formatDate(row.transaction_date),
     }));
 
     exportToExcel(
@@ -108,7 +108,7 @@ export default function MaterialUsagePage() {
       wmsId: row.wms_id,
       company: row.company_code,
       workOrder: row.work_order_number,
-      transactionDate: formatDate(row.transaction_date.toISOString()),
+      transactionDate: formatDate(row.transaction_date),
     }));
 
     const columns = [
@@ -204,7 +204,7 @@ export default function MaterialUsagePage() {
                     <TableCell>
                       <Chip label={row.work_order_number} size="small" color="info" variant="outlined" />
                     </TableCell>
-                    <TableCell>{formatDate(row.transaction_date.toISOString())}</TableCell>
+                    <TableCell>{formatDate(row.transaction_date)}</TableCell>
                     <TableCell>
                       <Tooltip title="View Details">
                         <IconButton

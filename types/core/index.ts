@@ -83,6 +83,8 @@ export type {
   // Production
   FinishedGoodsProductionHeader,
   FinishedGoodsProductionDetail,
+  ProductionOutputHeader,
+  ProductionOutputDetail,
 
   // WIP Balance
   WIPBalanceHeader,

@@ -13,7 +13,7 @@ export async function seedUsers() {
       password: await bcrypt.hash('admin123', 10),
       full_name: 'System Administrator',
       role: 'ADMIN',
-      company_code: null, // Super admin - all companies
+      company_code: 1310, // Default company for admin UI access
       is_active: true,
     },
     {
@@ -22,16 +22,34 @@ export async function seedUsers() {
       password: await bcrypt.hash('wms123', 10),
       full_name: 'WMS Integration User',
       role: 'API',
-      company_code: null, // API user - all companies
+      company_code: 1310, // Default company for API access
       is_active: true,
     },
     {
       username: 'user_1310',
       email: 'user@harmoni.co.id',
       password: await bcrypt.hash('user123', 10),
-      full_name: 'Company 1310 User',
+      full_name: 'PT Polygroup Manufaktur Indonesia',
       role: 'USER',
       company_code: 1310,
+      is_active: true,
+    },
+    {
+      username: 'user_1370',
+      email: 'user1370@harmoni.co.id',
+      password: await bcrypt.hash('user123', 10),
+      full_name: 'PT Polyprima Karyareksa',
+      role: 'USER',
+      company_code: 1370,
+      is_active: true,
+    },
+    {
+      username: 'user_1380',
+      email: 'user1380@harmoni.co.id',
+      password: await bcrypt.hash('user123', 10),
+      full_name: 'PT Indo Acidatama Tbk',
+      role: 'USER',
+      company_code: 1380,
       is_active: true,
     },
   ];

@@ -107,9 +107,9 @@ export function formatCurrency(amount: number, currency: string = 'IDR'): string
   }).format(amount);
 }
 
-export function formatDate(dateString: string): string {
+export function formatDate(dateString: string | Date): string {
   if (!dateString) return '';
-  const date = new Date(dateString);
+  const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
   return date.toLocaleDateString('id-ID', {
     year: 'numeric',
     month: 'long',

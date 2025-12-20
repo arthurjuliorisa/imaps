@@ -1,16 +1,9 @@
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
+import { serializeBigInt } from '@/lib/bigint-serializer';
+import { validateCompanyCode } from '@/lib/company-validation';
 
-/**
- * GET /api/customs/wip
- *
- * This endpoint is temporarily disabled because it depends on the stock_daily_snapshot table
- * which has been removed from the schema.
- *
- * To re-enable this endpoint, either:
- * 1. Add the stock_daily_snapshot table back to the schema
- * 2. Implement real-time stock calculation from transaction tables
- */
 export async function GET(request: Request) {
   try {
     const authCheck = await checkAuth();
@@ -18,11 +11,76 @@ export async function GET(request: Request) {
       return authCheck.response;
     }
 
-    return NextResponse.json({
-      success: false,
-      message: 'This endpoint is temporarily disabled. The stock_daily_snapshot table has been removed from the schema.',
-      data: []
-    }, { status: 503 });
+    const { session } = authCheck as { authenticated: true; session: any };
+    const { searchParams } = new URL(request.url);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+
+    // Validate company code with detailed error messages
+    const companyValidation = validateCompanyCode(session);
+    if (!companyValidation.success) {
+      return companyValidation.response;
+    }
+    const { companyCode } = companyValidation;
+
+    // Query from vw_lpj_wip view (WIP balances with stock_date)
+    let query = `
+      SELECT
+        no,
+        company_code,
+        company_name,
+        item_code,
+        item_name,
+        item_type,
+        unit_quantity as unit,
+        quantity,
+        stock_date,
+        remarks
+      FROM vw_lpj_wip
+      WHERE company_code = $1
+    `;
+
+    const params: any[] = [companyCode];
+    let paramIndex = 2;
+
+    // Add date filtering if provided
+    if (startDate) {
+      query += ` AND stock_date >= $${paramIndex}`;
+      params.push(new Date(startDate));
+      paramIndex++;
+    }
+    if (endDate) {
+      query += ` AND stock_date <= $${paramIndex}`;
+      params.push(new Date(endDate));
+      paramIndex++;
+    }
+
+    query += ` ORDER BY stock_date DESC, item_code`;
+
+    const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+
+    // Transform to expected format
+    const transformedData = result.map((row: any) => ({
+      id: `${row.item_code}-${row.stock_date}`,
+      rowNumber: row.no,
+      companyCode: row.company_code,
+      companyName: row.company_name,
+      itemCode: row.item_code,
+      itemName: row.item_name,
+      itemType: row.item_type,
+      unit: row.unit || 'N/A',
+      date: row.stock_date,
+      beginning: 0, // WIP doesn't have opening/closing - just quantity at date
+      in: 0,
+      out: 0,
+      adjustment: 0,
+      ending: Number(row.quantity || 0),
+      stockOpname: 0,
+      variant: 0,
+      remarks: row.remarks,
+    }));
+
+    return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {
     console.error('[API Error] Failed to fetch WIP records:', error);
     return NextResponse.json(

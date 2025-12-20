@@ -212,7 +212,7 @@ export default function LoginPage() {
                 fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2.125rem' },
               }}
             >
-              Welcome to iMAPS for Polygroup
+              Welcome to iMAPS
             </Typography>
             <Typography
               variant="body2"

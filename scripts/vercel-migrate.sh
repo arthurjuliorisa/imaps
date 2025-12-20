@@ -25,15 +25,11 @@ echo "Environment: $VERCEL_ENV"
 
 # Function to run Prisma migrations
 run_prisma_migrate() {
-    echo "Running Prisma migrations..."
+    echo "Running Prisma schema sync..."
 
-    if [ "$VERCEL_ENV" = "production" ]; then
-        echo "Production mode: Using prisma migrate deploy"
-        npx prisma migrate deploy
-    else
-        echo "Non-production mode: Using prisma db push"
-        npx prisma db push --skip-generate
-    fi
+    # Use db push with force-reset for clean schema sync
+    echo "Using prisma db push to sync schema (with force reset)"
+    npx prisma db push --force-reset --skip-generate --accept-data-loss
 }
 
 # Function to check if custom SQL needs to run
@@ -76,13 +72,9 @@ main() {
     # Step 2: Run Prisma migrations
     run_prisma_migrate
 
-    # Step 3: Run custom SQL (only for first-time setup)
-    if [ "$VERCEL_ENV" != "production" ]; then
-        echo "Checking if custom SQL needed..."
-        run_custom_sql || echo "Custom SQL skipped or already applied"
-    else
-        echo "Production: Skipping automatic custom SQL (run manually for safety)"
-    fi
+    # Step 3: Run custom SQL (with safety check for all environments)
+    echo "Checking if custom SQL needed..."
+    run_custom_sql || echo "Custom SQL skipped or already applied"
 
     echo "========================================"
     echo "Vercel Auto-Migration Completed!"

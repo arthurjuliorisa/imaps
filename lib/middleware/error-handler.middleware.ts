@@ -1,13 +1,6 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
-import {
-  AppError,
-  ValidationError,
-  AuthenticationError,
-  ForbiddenError,
-  RateLimitError,
-  DatabaseError,
-} from '../utils/error.util';
+import { AppError } from '../utils/error.util';
 import { logger } from '../utils/logger';
 
 /**

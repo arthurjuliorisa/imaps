@@ -33,6 +33,12 @@ export interface MutationData {
   stockOpname: number;
   variant: number;
   remarks: string | null;
+  rowNumber?: number;
+  companyCode?: number;
+  companyName?: string;
+  itemType?: string;
+  valueAmount?: number;
+  currency?: string;
 }
 
 interface MutationReportTableProps {
@@ -65,6 +71,15 @@ export function MutationReportTable({
     return 'default';
   };
 
+  const hasRowNumber = data.some((item) => item.rowNumber !== undefined);
+  const hasCompanyCode = data.some((item) => item.companyCode !== undefined);
+  const hasValueAmount = data.some((item) => item.valueAmount !== undefined);
+  const hasCurrency = data.some((item) => item.currency !== undefined);
+
+  // Always show Company Name and Item Type in LPJ Mutasi reports
+  const hasCompanyName = true;
+  const hasItemType = true;
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', p: 8 }}>
@@ -84,8 +99,12 @@ export function MutationReportTable({
               }}
             >
               <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
+              {hasRowNumber && <TableCell sx={{ fontWeight: 600 }}>Row Number</TableCell>}
+              {hasCompanyCode && <TableCell sx={{ fontWeight: 600 }}>Company Code</TableCell>}
+              {hasCompanyName && <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>}
               <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
+              {hasItemType && <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>}
               <TableCell sx={{ fontWeight: 600 }}>Unit</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">Beginning</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">In</TableCell>
@@ -94,6 +113,8 @@ export function MutationReportTable({
               <TableCell sx={{ fontWeight: 600 }} align="right">Ending</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">Stock Opname</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">Variant</TableCell>
+              {hasValueAmount && <TableCell sx={{ fontWeight: 600 }} align="right">Value Amount</TableCell>}
+              {hasCurrency && <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>}
               <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="center">Action</TableCell>
             </TableRow>
@@ -101,7 +122,11 @@ export function MutationReportTable({
           <TableBody>
             {paginatedData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={13} align="center" sx={{ py: 8 }}>
+                <TableCell
+                  colSpan={13 + (hasRowNumber ? 1 : 0) + (hasCompanyCode ? 1 : 0) + (hasCompanyName ? 1 : 0) + (hasItemType ? 1 : 0) + (hasValueAmount ? 1 : 0) + (hasCurrency ? 1 : 0)}
+                  align="center"
+                  sx={{ py: 8 }}
+                >
                   <Typography variant="body1" color="text.secondary">
                     No records found for the selected date range
                   </Typography>
@@ -118,12 +143,24 @@ export function MutationReportTable({
                   }}
                 >
                   <TableCell>{page * rowsPerPage + index + 1}</TableCell>
+                  {hasRowNumber && <TableCell>{row.rowNumber ?? '-'}</TableCell>}
+                  {hasCompanyCode && (
+                    <TableCell>
+                      <Chip label={row.companyCode} size="small" variant="outlined" />
+                    </TableCell>
+                  )}
+                  {hasCompanyName && <TableCell>{row.companyName || '-'}</TableCell>}
                   <TableCell>
                     <Typography variant="body2" fontWeight={600}>
                       {row.itemCode}
                     </Typography>
                   </TableCell>
                   <TableCell>{row.itemName}</TableCell>
+                  {hasItemType && (
+                    <TableCell>
+                      <Chip label={row.itemType} size="small" color="info" />
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Chip label={row.unit} size="small" />
                   </TableCell>
@@ -153,6 +190,22 @@ export function MutationReportTable({
                       sx={{ fontWeight: 600 }}
                     />
                   </TableCell>
+                  {hasValueAmount && (
+                    <TableCell align="right">
+                      <Typography variant="body2" fontWeight={600}>
+                        {row.valueAmount !== undefined
+                          ? row.currency
+                            ? `${row.currency} ${row.valueAmount.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : row.valueAmount.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                          : '-'}
+                      </Typography>
+                    </TableCell>
+                  )}
+                  {hasCurrency && !hasValueAmount && (
+                    <TableCell>
+                      <Chip label={row.currency || '-'} size="small" variant="outlined" />
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Typography variant="body2" color="text.secondary">
                       {row.remarks || '-'}

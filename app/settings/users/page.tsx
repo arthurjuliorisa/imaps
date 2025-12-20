@@ -26,6 +26,7 @@ import { useRouter } from 'next/navigation';
 interface User {
   id: string;
   username: string;
+  full_name: string;
   email: string;
   role: string;
   company_code?: string | null;
@@ -60,6 +61,7 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({
     username: '',
+    full_name: '',
     email: '',
     password: '',
     role: 'User',
@@ -118,7 +120,7 @@ export default function UsersPage() {
 
   const handleAdd = () => {
     setEditingUser(null);
-    setFormData({ username: '', email: '', password: '', role: 'User', company_code: '' });
+    setFormData({ username: '', full_name: '', email: '', password: '', role: 'User', company_code: '' });
     setCompanyError(false);
     setDialogOpen(true);
   };
@@ -127,6 +129,7 @@ export default function UsersPage() {
     setEditingUser(user);
     setFormData({
       username: user.username,
+      full_name: user.full_name,
       email: user.email,
       password: '',
       role: user.role,
@@ -188,8 +191,8 @@ export default function UsersPage() {
 
   const handleSave = async () => {
     // Validation
-    if (!formData.username || !formData.email) {
-      toast.error('Please fill in username and email');
+    if (!formData.username || !formData.full_name || !formData.email) {
+      toast.error('Please fill in username, full name, and email');
       return;
     }
 
@@ -219,6 +222,7 @@ export default function UsersPage() {
       // When updating, only send password if it's not empty (user wants to change it)
       const body: any = {
         username: formData.username,
+        full_name: formData.full_name,
         email: formData.email,
         role: formData.role,
         company_code: formData.company_code,
@@ -321,6 +325,14 @@ export default function UsersPage() {
               label="Username"
               value={formData.username}
               onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+              required
+              fullWidth
+              disabled={loading}
+            />
+            <TextField
+              label="Full Name"
+              value={formData.full_name}
+              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
               required
               fullWidth
               disabled={loading}
