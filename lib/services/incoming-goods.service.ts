@@ -77,6 +77,38 @@ export class IncomingGoodsService {
   }
 
   /**
+   * Cache company validation results to minimize database queries
+   * Optimization: Batch query all unique company codes at once
+   */
+  private async cacheCompanyValidation(
+    companyCodes: number[]
+  ): Promise<Map<number, boolean>> {
+    const cache = new Map<number, boolean>();
+    
+    try {
+      // Batch query: fetch all companies in one go instead of one by one
+      const companies = await this.repository.getCompaniesByCode(companyCodes);
+      const validCompanyCodes = new Set(
+        companies
+          .filter(c => c.status === 'ACTIVE')
+          .map(c => c.code)
+      );
+      
+      // Build cache
+      companyCodes.forEach(code => {
+        cache.set(code, validCompanyCodes.has(code));
+      });
+    } catch (error) {
+      // If query fails, mark all as invalid
+      companyCodes.forEach(code => {
+        cache.set(code, false);
+      });
+    }
+    
+    return cache;
+  }
+
+  /**
    * Business validations (database checks)
    * 
    * Note: Based on API Contract v2.4:
@@ -87,8 +119,12 @@ export class IncomingGoodsService {
   private async validateBusiness(data: IncomingGoodsValidated): Promise<ErrorDetail[]> {
     const errors: ErrorDetail[] = [];
 
-    // Check if company exists and is active
-    const companyExists = await this.repository.companyExists(data.company_code);
+    // Optimization: Batch query both company_code and owner in one database call
+    const companyCodes = [data.company_code, data.owner];
+    const companyCache = await this.cacheCompanyValidation(companyCodes);
+
+    // Check if company exists and is active (from cache)
+    const companyExists = companyCache.get(data.company_code) ?? false;
     if (!companyExists) {
       errors.push({
         location: 'header',
@@ -98,8 +134,8 @@ export class IncomingGoodsService {
       });
     }
 
-    // Check if owner exists and is active
-    const ownerExists = await this.repository.companyExists(data.owner);
+    // Check if owner exists and is active (from cache)
+    const ownerExists = companyCache.get(data.owner) ?? false;
     if (!ownerExists) {
       errors.push({
         location: 'header',

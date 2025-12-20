@@ -138,19 +138,32 @@ export class WipBalanceRepository {
    * @returns Batch processing result with success/failure counts
    */
   async batchUpsert(records: WipBalanceRecord[]): Promise<WipBalanceBatchResult> {
-    const results: WipBalanceUpsertResult[] = [];
+    // Optimization: Process all records in parallel using Promise.allSettled
+    // This prevents one failure from blocking others and maximizes throughput
+    const results = await Promise.allSettled(
+      records.map(record => this.upsertSingle(record))
+    );
 
-    // Process each record individually
-    for (const record of records) {
-      const result = await this.upsertSingle(record);
-      results.push(result);
-    }
+    // Process results
+    const upsertResults = results.map((result, index) => {
+      if (result.status === 'fulfilled') {
+        return result.value;
+      } else {
+        // Handle rejected promises gracefully
+        return {
+          success: false,
+          wms_id: records[index]?.wms_id || `UNKNOWN_${index}`,
+          id: 0,
+          error: result.reason?.message || 'Unknown error',
+        } as WipBalanceUpsertResult;
+      }
+    });
 
     // Aggregate results
-    const successCount = results.filter(r => r.success).length;
-    const failedCount = results.filter(r => !r.success).length;
+    const successCount = upsertResults.filter(r => r.success).length;
+    const failedCount = upsertResults.filter(r => !r.success).length;
 
-    const failedRecords = results
+    const failedRecords = upsertResults
       .map((result, index) => {
         if (!result.success) {
           return {
@@ -222,6 +235,17 @@ export class WipBalanceRepository {
       console.error('Error in WipBalanceRepository.findByDate:', error);
       return [];
     }
+  }
+
+  /**
+   * Get WIP Balance records for a specific date (alias method)
+   * 
+   * @param stock_date - Stock date
+   * @param company_code - Company code
+   * @returns Array of WIP balance records
+   */
+  async getByDateAndCompany(stock_date: Date, company_code: number) {
+    return this.findByDate(company_code, stock_date);
   }
 
   /**
@@ -357,6 +381,51 @@ export class WipBalanceRepository {
     } catch (error) {
       console.error('Error in WipBalanceRepository.countByDate:', error);
       return 0;
+    }
+  }
+
+  /**
+   * Batch query companies by code (optimization)
+   * Fetch multiple companies in one query instead of individual lookups
+   * 
+   * @param companyCodes - Array of company codes
+   * @returns Array of company records
+   */
+  async getCompaniesByCode(companyCodes: number[]) {
+    try {
+      const companies = await prisma.companies.findMany({
+        where: {
+          code: {
+            in: companyCodes,
+          },
+        },
+        select: {
+          code: true,
+          status: true,
+        },
+      });
+      return companies;
+    } catch (error) {
+      console.error('Error in WipBalanceRepository.getCompaniesByCode:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Check if company exists and is active
+   * 
+   * @param company_code - Company code
+   * @returns true if company exists and is active
+   */
+  async companyExists(company_code: number): Promise<boolean> {
+    try {
+      const company = await prisma.companies.findUnique({
+        where: { code: company_code },
+      });
+      return company !== null && company.status === 'ACTIVE';
+    } catch (error) {
+      console.error('Error in WipBalanceRepository.companyExists:', error);
+      return false;
     }
   }
 }

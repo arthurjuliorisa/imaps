@@ -157,26 +157,34 @@ export class SnapshotRecalcRepository {
         }
       );
     } catch (error: any) {
+      const errorMessage = error?.message ?? 'Unknown error';
+      const pgCode = error?.meta?.code ?? error?.code;
+      
       await prisma.snapshot_recalc_queue.update({
         where: { id: queueId },
-        data: { status: RecalcStatus.FAILED, completed_at: new Date(), error_message: error?.message ?? 'Unknown error' },
+        data: { status: RecalcStatus.FAILED, completed_at: new Date(), error_message: errorMessage },
       });
 
-      logger.error(
-        'Immediate snapshot recalculation failed',
+      // Use warn level for expected failures (permission errors, function not found, etc)
+      // Background worker will retry with proper permissions
+      logger.warn(
+        'Immediate snapshot recalculation failed (background worker will retry)',
         {
           queueId: queueId.toString(),
           companyCode: company_code,
           recalcDate,
           errorName: error?.name,
           errorMessage: error?.message,
-          errorCode: error?.code,
-          errorMeta: error?.meta,
-          errorStack: error?.stack,
+          errorCode: pgCode,
+          reason: pgCode === '42501' 
+            ? 'Permission denied - check database user privileges'
+            : pgCode === '42883'
+            ? 'Function not found - maintenance function may not exist'
+            : 'Unknown error',
         }
       );
 
-      throw error;
+      // Don't re-throw: let background worker retry
     }
   }
 
