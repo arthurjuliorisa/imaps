@@ -107,14 +107,34 @@ export function formatCurrency(amount: number, currency: string = 'IDR'): string
   }).format(amount);
 }
 
-export function formatDate(dateString: string | Date): string {
-  if (!dateString) return '';
-  const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-  return date.toLocaleDateString('id-ID', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+export function formatDate(dateString: string | Date | null | undefined): string {
+  if (!dateString) return '-';
+
+  try {
+    let date: Date;
+
+    if (typeof dateString === 'string') {
+      date = new Date(dateString);
+    } else if (dateString instanceof Date) {
+      date = dateString;
+    } else {
+      return '-';
+    }
+
+    // Check if date is valid
+    if (!(date instanceof Date) || isNaN(date.getTime())) {
+      return '-';
+    }
+
+    return date.toLocaleDateString('id-ID', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  } catch (error) {
+    console.error('Error formatting date:', error, dateString);
+    return '-';
+  }
 }
 
 export function formatNumber(num: number): string {
