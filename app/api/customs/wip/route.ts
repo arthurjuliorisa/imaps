@@ -24,18 +24,19 @@ export async function GET(request: Request) {
     const { companyCode } = companyValidation;
 
     // Query from vw_lpj_wip view (WIP balances with stock_date)
+    // Returns all fields except company_code and updated_at
     let query = `
       SELECT
         no,
-        company_code,
         company_name,
         item_code,
         item_name,
         item_type,
-        unit_quantity as unit,
+        unit_quantity,
         quantity,
         stock_date,
-        remarks
+        remarks,
+        created_at
       FROM vw_lpj_wip
       WHERE company_code = $1
     `;
@@ -59,25 +60,19 @@ export async function GET(request: Request) {
 
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
-    // Transform to expected format
+    // Transform to match vw_lpj_wip structure
     const transformedData = result.map((row: any) => ({
       id: `${row.item_code}-${row.stock_date}`,
-      rowNumber: row.no,
-      companyCode: row.company_code,
+      no: Number(row.no),
       companyName: row.company_name,
       itemCode: row.item_code,
       itemName: row.item_name,
       itemType: row.item_type,
-      unit: row.unit || 'N/A',
-      date: row.stock_date,
-      beginning: 0, // WIP doesn't have opening/closing - just quantity at date
-      in: 0,
-      out: 0,
-      adjustment: 0,
-      ending: Number(row.quantity || 0),
-      stockOpname: 0,
-      variant: 0,
+      unitQuantity: row.unit_quantity,
+      quantity: Number(row.quantity || 0),
+      stockDate: row.stock_date,
       remarks: row.remarks,
+      createdAt: row.created_at,
     }));
 
     return NextResponse.json(serializeBigInt(transformedData));

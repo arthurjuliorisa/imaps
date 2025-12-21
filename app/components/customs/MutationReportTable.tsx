@@ -50,7 +50,6 @@ interface MutationReportTableProps {
   onEdit?: (item: MutationData) => void;
   onView?: (item: MutationData) => void;
   loading?: boolean;
-  showOnlyEnding?: boolean; // For WIP page: only show ending balance without transaction columns
 }
 
 export function MutationReportTable({
@@ -62,7 +61,6 @@ export function MutationReportTable({
   onEdit,
   onView,
   loading = false,
-  showOnlyEnding = false,
 }: MutationReportTableProps) {
   const theme = useTheme();
   const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
@@ -108,13 +106,13 @@ export function MutationReportTable({
               <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
               {hasItemType && <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>}
               <TableCell sx={{ fontWeight: 600 }}>Unit</TableCell>
-              {!showOnlyEnding && <TableCell sx={{ fontWeight: 600 }} align="right">Beginning</TableCell>}
-              {!showOnlyEnding && <TableCell sx={{ fontWeight: 600 }} align="right">In</TableCell>}
-              {!showOnlyEnding && <TableCell sx={{ fontWeight: 600 }} align="right">Out</TableCell>}
-              {!showOnlyEnding && <TableCell sx={{ fontWeight: 600 }} align="right">Adjustment</TableCell>}
+              <TableCell sx={{ fontWeight: 600 }} align="right">Beginning</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">In</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">Out</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">Adjustment</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">Ending</TableCell>
-              {!showOnlyEnding && <TableCell sx={{ fontWeight: 600 }} align="right">Stock Opname</TableCell>}
-              {!showOnlyEnding && <TableCell sx={{ fontWeight: 600 }} align="right">Variant</TableCell>}
+              <TableCell sx={{ fontWeight: 600 }} align="right">Stock Opname</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">Variant</TableCell>
               {hasValueAmount && <TableCell sx={{ fontWeight: 600 }} align="right">Value Amount</TableCell>}
               {hasCurrency && <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>}
               <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>
@@ -125,7 +123,7 @@ export function MutationReportTable({
             {paginatedData.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={13 + (hasRowNumber ? 1 : 0) + (hasCompanyCode ? 1 : 0) + (hasCompanyName ? 1 : 0) + (hasItemType ? 1 : 0) + (hasValueAmount ? 1 : 0) + (hasCurrency ? 1 : 0) - (showOnlyEnding ? 6 : 0)}
+                  colSpan={13 + (hasRowNumber ? 1 : 0) + (hasCompanyCode ? 1 : 0) + (hasCompanyName ? 1 : 0) + (hasItemType ? 1 : 0) + (hasValueAmount ? 1 : 0) + (hasCurrency ? 1 : 0)}
                   align="center"
                   sx={{ py: 8 }}
                 >
@@ -166,38 +164,32 @@ export function MutationReportTable({
                   <TableCell>
                     <Chip label={row.unit} size="small" />
                   </TableCell>
-                  {!showOnlyEnding && <TableCell align="right">{(row.beginning ?? 0).toLocaleString('id-ID')}</TableCell>}
-                  {!showOnlyEnding && (
-                    <TableCell align="right">
-                      <Typography variant="body2" color="success.main" fontWeight={600}>
-                        {(row.in ?? 0).toLocaleString('id-ID')}
-                      </Typography>
-                    </TableCell>
-                  )}
-                  {!showOnlyEnding && (
-                    <TableCell align="right">
-                      <Typography variant="body2" color="error.main" fontWeight={600}>
-                        {(row.out ?? 0).toLocaleString('id-ID')}
-                      </Typography>
-                    </TableCell>
-                  )}
-                  {!showOnlyEnding && <TableCell align="right">{(row.adjustment ?? 0).toLocaleString('id-ID')}</TableCell>}
+                  <TableCell align="right">{(row.beginning ?? 0).toLocaleString('id-ID')}</TableCell>
+                  <TableCell align="right">
+                    <Typography variant="body2" color="success.main" fontWeight={600}>
+                      {(row.in ?? 0).toLocaleString('id-ID')}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Typography variant="body2" color="error.main" fontWeight={600}>
+                      {(row.out ?? 0).toLocaleString('id-ID')}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">{(row.adjustment ?? 0).toLocaleString('id-ID')}</TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" fontWeight={700}>
                       {(row.ending ?? 0).toLocaleString('id-ID')}
                     </Typography>
                   </TableCell>
-                  {!showOnlyEnding && <TableCell align="right">{(row.stockOpname ?? 0).toLocaleString('id-ID')}</TableCell>}
-                  {!showOnlyEnding && (
-                    <TableCell align="right">
-                      <Chip
-                        label={(row.variant ?? 0).toLocaleString('id-ID')}
-                        size="small"
-                        color={getVariantColor(row.variant ?? 0)}
-                        sx={{ fontWeight: 600 }}
-                      />
-                    </TableCell>
-                  )}
+                  <TableCell align="right">{(row.stockOpname ?? 0).toLocaleString('id-ID')}</TableCell>
+                  <TableCell align="right">
+                    <Chip
+                      label={(row.variant ?? 0).toLocaleString('id-ID')}
+                      size="small"
+                      color={getVariantColor(row.variant ?? 0)}
+                      sx={{ fontWeight: 600 }}
+                    />
+                  </TableCell>
                   {hasValueAmount && (
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>
