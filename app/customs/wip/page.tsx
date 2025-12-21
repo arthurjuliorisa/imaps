@@ -1,10 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { useToast } from '@/app/components/ToastProvider';
-import { Box, Stack, Button } from '@mui/material';
-import { Add as AddIcon } from '@mui/icons-material';
+import { Box, Stack } from '@mui/material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
@@ -13,7 +11,6 @@ import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 
 export default function WIPMutationPage() {
   const toast = useToast();
-  const router = useRouter();
 
   // Default date range: last 30 days to today
   const now = new Date();
@@ -59,10 +56,6 @@ export default function WIPMutationPage() {
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
-  };
-
-  const handleNewDocument = () => {
-    router.push('/customs/wip/new');
   };
 
   const handleExportExcel = () => {
@@ -139,19 +132,6 @@ export default function WIPMutationPage() {
       actions={
         <Stack spacing={3}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={handleNewDocument}
-              disabled={loading}
-              sx={{
-                textTransform: 'none',
-                borderRadius: 2,
-                px: 2,
-              }}
-            >
-              New WIP Balance
-            </Button>
             <DateRangeFilter
               startDate={startDate}
               endDate={endDate}
