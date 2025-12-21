@@ -28,35 +28,30 @@ export async function GET() {
 
     const worksheet = workbook.addWorksheet('Beginning Data Template');
 
-    // Define headers
+    // Define headers - MUST match what frontend parser expects
     const headers = [
-      'Item Type*',
-      'Item Code*',
-      'Item Name*',
-      'UOM*',
-      'Qty*',
-      'Balance Date*',
+      'Item Code',
+      'Beginning Balance',
+      'Beginning Date',
       'Remarks'
     ];
 
     // Define format hints (row 2)
     const formatHints = [
-      'e.g., ROH, FERT, HIBE_M',
-      'e.g., RM-001',
-      'Item description',
-      'e.g., KG, PCS, LTR',
+      'e.g., RM-001, FG-001, CG-001',
       'Positive number > 0',
       'DD/MM/YYYY',
       'Optional notes'
     ];
 
-    // Define sample data (rows 3-7) - showcasing different item types
+    // Define sample data (rows 3-8) - showcasing different item types
     const sampleData = [
-      ['ROH', 'RM-001', 'Raw Material A', 'KG', 100, '01/01/2025', 'Opening balance for raw materials'],
-      ['FERT', 'FG-001', 'Finished Good A', 'PCS', 250.5, '01/01/2025', 'Initial finished goods stock'],
-      ['HIBE_M', 'CG-001', 'Machine A', 'UNIT', 2, '01/01/2025', 'Capital goods - Machine'],
-      ['HALB', 'SFG-001', 'Semi-Finished Good A', 'KG', 150, '01/01/2025', 'WIP stock'],
-      ['SCRAP', 'SC-001', 'Scrap Material A', 'KG', 10, '01/01/2025', 'Waste materials'],
+      ['RM-1310-001', 100, '01/01/2025', 'Opening balance for raw materials'],
+      ['FG-1310-001', 250.5, '01/01/2025', 'Initial finished goods stock'],
+      ['CG-MACH-001', 2, '01/01/2025', 'Capital goods - Machine'],
+      ['WIP-1310-001', 150, '01/01/2025', 'WIP stock'],
+      ['SCRAP-1310-001', 10, '01/01/2025', 'Waste materials'],
+      ['CG-EQUIP-001', 5, '01/01/2025', 'Quality control equipment'],
     ];
 
     // Add rows
@@ -66,13 +61,10 @@ export async function GET() {
 
     // Set column widths
     worksheet.columns = [
-      { width: 18 },  // Item Type column
-      { width: 15 },  // Item Code column
-      { width: 30 },  // Item Name column
-      { width: 12 },  // UOM column
-      { width: 15 },  // Qty column
-      { width: 18 },  // Balance Date column
-      { width: 35 },  // Remarks column
+      { width: 20 },  // Item Code column
+      { width: 20 },  // Beginning Balance column
+      { width: 18 },  // Beginning Date column
+      { width: 40 },  // Remarks column
     ];
 
     // Style header row
@@ -92,9 +84,9 @@ export async function GET() {
       fgColor: { argb: 'FFF5F5F5' }, // Light gray
     };
 
-    // Format Qty column (E3:E7) as numbers with 2 decimal places
-    for (let row = 3; row <= 7; row++) {
-      worksheet.getCell(`E${row}`).numFmt = '0.00';
+    // Format Beginning Balance column (B3:B8) as numbers with 2 decimal places
+    for (let row = 3; row <= 8; row++) {
+      worksheet.getCell(`B${row}`).numFmt = '0.00';
     }
 
     // ============================================
@@ -108,43 +100,25 @@ export async function GET() {
       [],
       ['How to Use This Template:'],
       ['1. Fill in your beginning balance data starting from Row 3 (after the format hints)'],
-      ['2. You can delete the sample data rows (3-7) or overwrite them with your actual data'],
+      ['2. You can delete the sample data rows (3-8) or overwrite them with your actual data'],
       ['3. Add as many rows as needed for your import'],
-      ['4. You can import MULTIPLE item types in ONE file (ROH, FERT, HIBE_M, etc.)'],
+      ['4. Make sure the Item Code exists in your Beginning Balances master data'],
       ['5. Save the file and upload it through the import function'],
       [],
       ['Column Details:'],
       [],
-      ['Item Type* (REQUIRED):'],
-      ['  - The item type code (e.g., ROH, FERT, HIBE_M)'],
-      ['  - Must exist in the Item Type master data'],
-      ['  - Common types: ROH (Raw Material), FERT (Finished Good), HALB (Semi-Finished),'],
-      ['    HIBE (Operating Supplies), HIBE_M (Capital Goods - Machine), HIBE_E (Capital Goods - Engineering),'],
-      ['    HIBE_T (Capital Goods - Tools), DIEN (Services), SCRAP (Scrap and Waste)'],
-      ['  - Item types are dynamically loaded from the database, so new types are automatically supported'],
+      ['Item Code (REQUIRED):'],
+      ['  - The unique code of the item (e.g., RM-1310-001, FG-1310-001, CG-MACH-001)'],
+      ['  - Must match an existing item code in the Beginning Balances master data'],
       ['  - Case sensitive'],
       [],
-      ['Item Code* (REQUIRED):'],
-      ['  - The unique code of the item (e.g., RM-001, FG-001)'],
-      ['  - Must match the item code in your system'],
-      ['  - Case sensitive'],
-      [],
-      ['Item Name* (REQUIRED):'],
-      ['  - The name/description of the item'],
-      ['  - Will be stored as provided'],
-      [],
-      ['UOM* (REQUIRED):'],
-      ['  - Unit of Measure code (e.g., KG, PCS, LTR, UNIT)'],
-      ['  - Must be a valid UOM in your system'],
-      ['  - Case sensitive'],
-      [],
-      ['Qty* (REQUIRED):'],
+      ['Beginning Balance (REQUIRED):'],
       ['  - The beginning balance quantity'],
       ['  - Must be a positive number greater than 0'],
       ['  - Can include decimals (e.g., 250.5)'],
-      ['  - Format: Number with up to 3 decimal places supported'],
+      ['  - Format: Number with up to 2 decimal places'],
       [],
-      ['Balance Date* (REQUIRED):'],
+      ['Beginning Date (REQUIRED):'],
       ['  - The date for this beginning balance'],
       ['  - Format: DD/MM/YYYY (e.g., 01/01/2025)'],
       ['  - Must be a valid date'],
@@ -155,20 +129,13 @@ export async function GET() {
       ['  - Can be left empty'],
       [],
       ['Validation Rules:'],
-      ['  - Item Code + Balance Date combination must be unique per company'],
-      ['  - Item Type must exist in the Item Type master data (validated against database)'],
-      ['  - Qty must be > 0 (not just >= 0)'],
-      ['  - Balance Date cannot be in the future'],
-      [],
-      ['Multi-Type Import:'],
-      ['  - You can import ALL item types in a SINGLE Excel file'],
-      ['  - Simply specify the Item Type for each row'],
-      ['  - The system will process all types together in one transaction'],
-      ['  - After import, you will receive a summary showing counts by item type'],
-      ['  - Example summary: { total: 10, byType: { ROH: 5, FERT: 3, HIBE_M: 2 } }'],
+      ['  - Item Code must exist in the Beginning Balances master data'],
+      ['  - Beginning Balance must be > 0 (not just >= 0)'],
+      ['  - Beginning Date cannot be in the future'],
+      ['  - Beginning Date must be in DD/MM/YYYY format'],
       [],
       ['Important Notes:'],
-      ['  - Fields marked with * are REQUIRED'],
+      ['  - All fields except Remarks are REQUIRED'],
       ['  - Do NOT modify the header row (Row 1)'],
       ['  - Format hints (Row 2) are for reference only and will be ignored during import'],
       ['  - Empty rows will be skipped during import'],
@@ -176,18 +143,18 @@ export async function GET() {
       ['  - Maximum 1000 records per import'],
       [],
       ['What Happens After Import:'],
-      ['  1. The system validates all entries (including item type validation against database)'],
-      ['  2. Creates beginning balance records for all item types'],
+      ['  1. The system validates all entries'],
+      ['  2. Creates beginning balance records'],
       ['  3. All records are inserted in a single transaction (all or nothing)'],
-      ['  4. Returns a summary with total count and breakdown by item type'],
+      ['  4. Returns a summary with total count'],
       [],
       ['Example Data:'],
-      ['Item Type | Item Code | Item Name           | UOM  | Qty   | Balance Date | Remarks'],
-      ['ROH       | RM-001    | Raw Material A      | KG   | 100   | 01/01/2025   | Opening balance'],
-      ['FERT      | FG-001    | Finished Good A     | PCS  | 250.5 | 01/01/2025   | Initial stock'],
-      ['HIBE_M    | CG-001    | Machine A           | UNIT | 2     | 01/01/2025   | Capital goods'],
-      ['HALB      | SFG-001   | Semi-Finished Good A| KG   | 150   | 01/01/2025   | WIP stock'],
-      ['SCRAP     | SC-001    | Scrap Material A    | KG   | 10    | 01/01/2025   | Waste materials'],
+      ['Item Code     | Beginning Balance | Beginning Date | Remarks'],
+      ['RM-1310-001   | 100               | 01/01/2025     | Opening balance for raw materials'],
+      ['FG-1310-001   | 250.5             | 01/01/2025     | Initial finished goods stock'],
+      ['CG-MACH-001   | 2                 | 01/01/2025     | Capital goods - Machine'],
+      ['WIP-1310-001  | 150               | 01/01/2025     | WIP stock'],
+      ['SCRAP-1310-001| 10                | 01/01/2025     | Waste materials'],
       [],
       ['For assistance, please contact the system administrator.'],
     ];
@@ -202,7 +169,7 @@ export async function GET() {
     instructionsWorksheet.getCell('A1').font = { bold: true, size: 14 };
 
     // Style section headers
-    const sectionHeaderRows = [3, 10, 12, 21, 26, 31, 36, 41, 46, 51, 56, 62, 67, 74];
+    const sectionHeaderRows = [3, 10, 12, 17, 22, 27, 30, 35, 42, 48];
     sectionHeaderRows.forEach(rowNumber => {
       instructionsWorksheet.getRow(rowNumber).font = { bold: true };
     });

@@ -184,12 +184,16 @@ export function CapitalGoodsManualEntryDialog({
         body: JSON.stringify({
           date: formData.date?.format('YYYY-MM-DD'),
           recipientName: formData.recipientName,
-          documentNumber: formData.documentNumber || null,
-          itemId: formData.itemId,
-          qty: formData.qty,
-          currency: formData.currency,
-          valueAmount: formData.valueAmount,
-          remarks: formData.remarks || null,
+          documentNumber: formData.documentNumber || undefined,
+          items: [
+            {
+              itemCode: formData.itemCode,
+              qty: formData.qty,
+              currency: formData.currency,
+              valueAmount: formData.valueAmount,
+              remarks: formData.remarks || undefined,
+            },
+          ],
         }),
       });
 

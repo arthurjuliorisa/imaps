@@ -67,6 +67,21 @@ function generateDocumentNumber(companyCode: number, date: Date, recipientName: 
 }
 
 /**
+ * Calculate priority for snapshot recalculation queue
+ * Same-day transactions: priority -1 (queued for EOD processing)
+ * Backdated transactions: priority 0 (processed immediately)
+ */
+function calculatePriority(transactionDate: Date): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const txDate = new Date(transactionDate);
+  txDate.setHours(0, 0, 0, 0);
+
+  return txDate < today ? 0 : -1;
+}
+
+/**
  * Interface for validated record
  */
 interface ValidatedRecord {
@@ -362,6 +377,37 @@ export async function POST(request: Request) {
           await tx.outgoing_good_items.createMany({
             data: itemRecords,
           });
+
+          // Queue snapshot recalculation for each item
+          const priority = calculatePriority(group.date);
+
+          for (const itemRecord of itemRecords) {
+            await tx.snapshot_recalc_queue.upsert({
+              where: {
+                company_code_recalc_date_item_type_item_code: {
+                  company_code: companyCode,
+                  recalc_date: group.date,
+                  item_type: itemRecord.item_type,
+                  item_code: itemRecord.item_code,
+                },
+              },
+              create: {
+                company_code: companyCode,
+                item_type: itemRecord.item_type,
+                item_code: itemRecord.item_code,
+                recalc_date: group.date,
+                status: 'PENDING',
+                priority: priority,
+                reason: `Capital goods outgoing import: ${outgoingGoods.wms_id}`,
+              },
+              update: {
+                status: 'PENDING',
+                priority: priority,
+                reason: `Capital goods outgoing import: ${outgoingGoods.wms_id}`,
+                queued_at: new Date(),
+              },
+            });
+          }
 
           successCount += group.items.length;
         }
