@@ -16,7 +16,6 @@ import {
   useTheme,
   Stack,
   MenuItem,
-  Grid,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -222,118 +221,104 @@ export function ScrapIncomingDialog({ open, onClose, onSubmit }: ScrapIncomingDi
       <DialogContent sx={{ mt: 3 }}>
         <LocalizationProvider dateAdapter={AdapterDayjs}>
           <Stack spacing={3}>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}>
-                <DatePicker
-                  label="Date"
-                  value={formData.date}
-                  onChange={(newValue) => {
-                    setFormData((prev) => ({ ...prev, date: newValue }));
-                    setErrors((prev) => ({ ...prev, date: '' }));
-                  }}
-                  maxDate={dayjs()}
-                  slotProps={{
-                    textField: {
-                      fullWidth: true,
-                      required: true,
-                      error: !!errors.date,
-                      helperText: errors.date,
-                    },
-                  }}
-                />
-              </Grid>
+            <DatePicker
+              label="Date"
+              value={formData.date}
+              onChange={(newValue) => {
+                setFormData((prev) => ({ ...prev, date: newValue }));
+                setErrors((prev) => ({ ...prev, date: '' }));
+              }}
+              maxDate={dayjs()}
+              slotProps={{
+                textField: {
+                  fullWidth: true,
+                  required: true,
+                  error: !!errors.date,
+                  helperText: errors.date,
+                },
+              }}
+            />
 
-              <Grid item xs={12} sm={6}>
-                <Autocomplete
-                  options={scrapItems}
-                  loading={loadingScrapItems}
-                  getOptionLabel={(option) => `${option.scrapCode} - ${option.scrapName}`}
-                  onChange={(_event, newValue) => handleScrapItemSelect(newValue)}
-                  value={scrapItems.find((item) => item.id === formData.scrapItemId) || null}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Scrap Item"
-                      placeholder="Search scrap item..."
-                      required
-                      error={!!errors.scrapItemId}
-                      helperText={errors.scrapItemId}
-                      InputProps={{
-                        ...params.InputProps,
-                        endAdornment: (
-                          <>
-                            {loadingScrapItems ? <CircularProgress color="inherit" size={20} /> : null}
-                            {params.InputProps.endAdornment}
-                          </>
-                        ),
-                      }}
-                    />
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
+            <Autocomplete
+              options={scrapItems}
+              loading={loadingScrapItems}
+              getOptionLabel={(option) => `${option.scrapCode} - ${option.scrapName}`}
+              onChange={(_event, newValue) => handleScrapItemSelect(newValue)}
+              value={scrapItems.find((item) => item.id === formData.scrapItemId) || null}
+              renderInput={(params) => (
                 <TextField
-                  fullWidth
-                  label="Quantity"
-                  type="number"
-                  value={formData.qty || ''}
-                  onChange={(e) => handleNumberChange('qty', e.target.value)}
-                  inputProps={{ min: 0.01, step: 0.01 }}
+                  {...params}
+                  label="Scrap Item"
+                  placeholder="Search scrap item..."
                   required
-                  error={!!errors.qty}
-                  helperText={errors.qty || 'Enter quantity (must be greater than 0)'}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  select
-                  label="Currency"
-                  value={formData.currency}
-                  onChange={(e) => {
-                    setFormData((prev) => ({ ...prev, currency: e.target.value }));
-                    setErrors((prev) => ({ ...prev, currency: '' }));
+                  error={!!errors.scrapItemId}
+                  helperText={errors.scrapItemId}
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {loadingScrapItems ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
                   }}
-                  required
-                  error={!!errors.currency}
-                  helperText={errors.currency}
-                >
-                  {CURRENCIES.map((currency) => (
-                    <MenuItem key={currency} value={currency}>
-                      {currency}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Grid>
-
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Amount"
-                  type="number"
-                  value={formData.amount || ''}
-                  onChange={(e) => handleNumberChange('amount', e.target.value)}
-                  inputProps={{ min: 0, step: 0.01 }}
-                  required
-                  error={!!errors.amount}
-                  helperText={errors.amount || 'Enter transaction amount'}
                 />
-              </Grid>
+              )}
+            />
 
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Remarks"
-                  multiline
-                  rows={3}
-                  value={formData.remarks}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, remarks: e.target.value }))}
-                  placeholder="Enter any additional notes (optional)"
-                />
-              </Grid>
-            </Grid>
+            <TextField
+              fullWidth
+              label="Quantity"
+              type="number"
+              value={formData.qty || ''}
+              onChange={(e) => handleNumberChange('qty', e.target.value)}
+              inputProps={{ min: 0.01, step: 0.01 }}
+              required
+              error={!!errors.qty}
+              helperText={errors.qty || 'Enter quantity (must be greater than 0)'}
+            />
+
+            <TextField
+              fullWidth
+              select
+              label="Currency"
+              value={formData.currency}
+              onChange={(e) => {
+                setFormData((prev) => ({ ...prev, currency: e.target.value }));
+                setErrors((prev) => ({ ...prev, currency: '' }));
+              }}
+              required
+              error={!!errors.currency}
+              helperText={errors.currency}
+            >
+              {CURRENCIES.map((currency) => (
+                <MenuItem key={currency} value={currency}>
+                  {currency}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              fullWidth
+              label="Amount"
+              type="number"
+              value={formData.amount || ''}
+              onChange={(e) => handleNumberChange('amount', e.target.value)}
+              inputProps={{ min: 0, step: 0.01 }}
+              required
+              error={!!errors.amount}
+              helperText={errors.amount || 'Enter transaction amount'}
+            />
+
+            <TextField
+              fullWidth
+              label="Remarks"
+              multiline
+              rows={3}
+              value={formData.remarks}
+              onChange={(e) => setFormData((prev) => ({ ...prev, remarks: e.target.value }))}
+              placeholder="Enter any additional notes (optional)"
+            />
 
             <Box
               sx={{
