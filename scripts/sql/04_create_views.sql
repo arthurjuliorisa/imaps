@@ -155,7 +155,9 @@ BEGIN
                     ig.incoming_date as trx_date,
                     SUM(igi.qty) as incoming_qty
                 FROM incoming_goods ig
-                JOIN incoming_good_items igi ON ig.id = igi.incoming_good_id
+                JOIN incoming_good_items igi ON ig.company_code = igi.incoming_good_company
+                    AND ig.id = igi.incoming_good_id
+                    AND ig.incoming_date = igi.incoming_good_date
                 WHERE ig.deleted_at IS NULL AND igi.deleted_at IS NULL
                 GROUP BY ig.company_code, igi.item_code, ig.incoming_date
             ) inc ON i.company_code = inc.company_code 
@@ -169,7 +171,9 @@ BEGIN
                     og.outgoing_date as trx_date,
                     SUM(ogi.qty) as outgoing_qty
                 FROM outgoing_goods og
-                JOIN outgoing_good_items ogi ON og.id = ogi.outgoing_good_id
+                JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
+                    AND og.id = ogi.outgoing_good_id
+                    AND og.outgoing_date = ogi.outgoing_good_date
                 WHERE og.deleted_at IS NULL AND ogi.deleted_at IS NULL
                 GROUP BY og.company_code, ogi.item_code, og.outgoing_date
             ) out ON i.company_code = out.company_code 
@@ -186,7 +190,9 @@ BEGIN
                         ELSE mui.qty 
                     END) as material_usage_qty
                 FROM material_usages mu
-                JOIN material_usage_items mui ON mu.id = mui.material_usage_id
+                JOIN material_usage_items mui ON mu.company_code = mui.material_usage_company
+                    AND mu.id = mui.material_usage_id
+                    AND mu.transaction_date = mui.material_usage_date
                 WHERE mu.deleted_at IS NULL AND mui.deleted_at IS NULL
                 GROUP BY mu.company_code, mui.item_code, mu.transaction_date
             ) mat ON i.company_code = mat.company_code 
@@ -203,7 +209,9 @@ BEGIN
                         ELSE poi.qty 
                     END) as production_qty
                 FROM production_outputs po
-                JOIN production_output_items poi ON po.id = poi.production_output_id
+                JOIN production_output_items poi ON po.company_code = poi.production_output_company
+                    AND po.id = poi.production_output_id
+                    AND po.transaction_date = poi.production_output_date
                 WHERE po.deleted_at IS NULL AND poi.deleted_at IS NULL
                 GROUP BY po.company_code, poi.item_code, po.transaction_date
             ) prod ON i.company_code = prod.company_code 
@@ -220,7 +228,9 @@ BEGIN
                         ELSE -ai.qty
                     END) as adjustment_qty
                 FROM adjustments a
-                JOIN adjustment_items ai ON a.id = ai.adjustment_id
+                JOIN adjustment_items ai ON a.company_code = ai.adjustment_company
+                    AND a.id = ai.adjustment_id
+                    AND a.transaction_date = ai.adjustment_date
                 WHERE a.deleted_at IS NULL AND ai.deleted_at IS NULL
                 GROUP BY a.company_code, ai.item_code, a.transaction_date
             ) adj ON i.company_code = adj.company_code 
@@ -272,7 +282,9 @@ SELECT
     ig.updated_at,
     ig.deleted_at
 FROM incoming_goods ig
-JOIN incoming_good_items igi ON ig.id = igi.incoming_good_id
+JOIN incoming_good_items igi ON ig.company_code = igi.incoming_good_company
+    AND ig.id = igi.incoming_good_id
+    AND ig.incoming_date = igi.incoming_good_date
 JOIN companies c ON ig.company_code = c.code
 WHERE ig.deleted_at IS NULL
   AND igi.deleted_at IS NULL
@@ -312,7 +324,9 @@ SELECT
     og.updated_at,
     og.deleted_at
 FROM outgoing_goods og
-JOIN outgoing_good_items ogi ON og.id = ogi.outgoing_good_id
+JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
+    AND og.id = ogi.outgoing_good_id
+    AND og.outgoing_date = ogi.outgoing_good_date
 JOIN companies c ON og.company_code = c.code
 WHERE og.deleted_at IS NULL
   AND ogi.deleted_at IS NULL
