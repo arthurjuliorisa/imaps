@@ -68,68 +68,50 @@ export default function WIPMutationPage() {
   const handleExportExcel = () => {
     const exportData = data.map((row, index) => ({
       No: index + 1,
-      'Row Number': row.rowNumber || '-',
-      'Company Code': row.companyCode || '-',
       'Company Name': row.companyName || '-',
       'Item Type': row.itemType || '-',
       'Item Code': row.itemCode,
       'Item Name': row.itemName,
       'Unit': row.unit,
-      'Beginning': row.beginning,
-      'In': row.in,
-      'Out': row.out,
-      'Adjustment': row.adjustment,
-      'Ending': row.ending,
-      'Stock Opname': row.stockOpname,
-      'Variant': row.variant,
-      'Value Amount': row.valueAmount || '-',
-      'Currency': row.currency || '-',
+      'Stock Position': row.ending,
       'Remarks': row.remarks || '-',
     }));
 
     exportToExcel(
       exportData,
-      `LPJ_Mutasi_WIP_${startDate}_${endDate}`,
-      'WIP Mutation'
+      `WIP_Stock_Position_${startDate}_${endDate}`,
+      'WIP Stock Position'
     );
   };
 
   const handleExportPDF = () => {
     const exportData = data.map((row, index) => ({
       no: index + 1,
+      companyName: row.companyName || '-',
+      itemType: row.itemType || '-',
       itemCode: row.itemCode,
       itemName: row.itemName,
       unit: row.unit,
-      beginning: row.beginning.toString(),
-      in: row.in.toString(),
-      out: row.out.toString(),
-      adjustment: row.adjustment.toString(),
-      ending: row.ending.toString(),
-      stockOpname: row.stockOpname.toString(),
-      variant: row.variant.toString(),
+      stockPosition: row.ending.toString(),
       remarks: row.remarks || '-',
     }));
 
     const columns = [
       { header: 'No', dataKey: 'no' },
+      { header: 'Company', dataKey: 'companyName' },
+      { header: 'Type', dataKey: 'itemType' },
       { header: 'Item Code', dataKey: 'itemCode' },
       { header: 'Item Name', dataKey: 'itemName' },
       { header: 'Unit', dataKey: 'unit' },
-      { header: 'Beginning', dataKey: 'beginning' },
-      { header: 'In', dataKey: 'in' },
-      { header: 'Out', dataKey: 'out' },
-      { header: 'Adjustment', dataKey: 'adjustment' },
-      { header: 'Ending', dataKey: 'ending' },
-      { header: 'Stock Opname', dataKey: 'stockOpname' },
-      { header: 'Variant', dataKey: 'variant' },
+      { header: 'Stock Position', dataKey: 'stockPosition' },
       { header: 'Remarks', dataKey: 'remarks' },
     ];
 
     exportToPDF(
       exportData,
       columns,
-      `LPJ_Mutasi_WIP_${startDate}_${endDate}`,
-      'LPJ Mutasi WIP',
+      `WIP_Stock_Position_${startDate}_${endDate}`,
+      'WIP Stock Position Report',
       `Period: ${formatDate(startDate)} - ${formatDate(endDate)}`
     );
   };
@@ -190,6 +172,7 @@ export default function WIPMutationPage() {
         onEdit={handleEdit}
         onView={handleView}
         loading={loading}
+        showOnlyEnding={true}
       />
     </ReportLayout>
   );
