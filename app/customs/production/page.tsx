@@ -77,7 +77,6 @@ export default function ProductionMutationPage() {
       'Variant': row.variant,
       'Value Amount': row.valueAmount || '-',
       'Currency': row.currency || '-',
-      'Remarks': row.remarks || '-',
     }));
 
     exportToExcel(
@@ -100,7 +99,6 @@ export default function ProductionMutationPage() {
       ending: row.ending.toString(),
       stockOpname: row.stockOpname.toString(),
       variant: row.variant.toString(),
-      remarks: row.remarks || '-',
     }));
 
     const columns = [
@@ -115,7 +113,6 @@ export default function ProductionMutationPage() {
       { header: 'Ending', dataKey: 'ending' },
       { header: 'Stock Opname', dataKey: 'stockOpname' },
       { header: 'Variant', dataKey: 'variant' },
-      { header: 'Remarks', dataKey: 'remarks' },
     ];
 
     exportToPDF(
@@ -168,6 +165,8 @@ export default function ProductionMutationPage() {
         onEdit={handleEdit}
         onView={handleView}
         loading={loading}
+        hideRemarks={true}
+        hideActions={true}
       />
     </ReportLayout>
   );

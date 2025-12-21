@@ -50,6 +50,8 @@ interface MutationReportTableProps {
   onEdit?: (item: MutationData) => void;
   onView?: (item: MutationData) => void;
   loading?: boolean;
+  hideRemarks?: boolean;
+  hideActions?: boolean;
 }
 
 export function MutationReportTable({
@@ -61,6 +63,8 @@ export function MutationReportTable({
   onEdit,
   onView,
   loading = false,
+  hideRemarks = false,
+  hideActions = false,
 }: MutationReportTableProps) {
   const theme = useTheme();
   const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
@@ -115,15 +119,15 @@ export function MutationReportTable({
               <TableCell sx={{ fontWeight: 600 }} align="right">Variant</TableCell>
               {hasValueAmount && <TableCell sx={{ fontWeight: 600 }} align="right">Value Amount</TableCell>}
               {hasCurrency && <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>}
-              <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="center">Action</TableCell>
+              {!hideRemarks && <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>}
+              {!hideActions && <TableCell sx={{ fontWeight: 600 }} align="center">Action</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {paginatedData.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={13 + (hasRowNumber ? 1 : 0) + (hasCompanyCode ? 1 : 0) + (hasCompanyName ? 1 : 0) + (hasItemType ? 1 : 0) + (hasValueAmount ? 1 : 0) + (hasCurrency ? 1 : 0)}
+                  colSpan={13 + (hasRowNumber ? 1 : 0) + (hasCompanyCode ? 1 : 0) + (hasCompanyName ? 1 : 0) + (hasItemType ? 1 : 0) + (hasValueAmount ? 1 : 0) + (hasCurrency ? 1 : 0) - (hideRemarks ? 1 : 0) - (hideActions ? 1 : 0)}
                   align="center"
                   sx={{ py: 8 }}
                 >
@@ -206,31 +210,35 @@ export function MutationReportTable({
                       <Chip label={row.currency || '-'} size="small" variant="outlined" />
                     </TableCell>
                   )}
-                  <TableCell>
-                    <Typography variant="body2" color="text.secondary">
-                      {row.remarks || '-'}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="center">
-                    <Tooltip title="View Details">
-                      <IconButton
-                        size="small"
-                        onClick={() => onView?.(row)}
-                        sx={{ mr: 0.5 }}
-                      >
-                        <ViewIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Edit">
-                      <IconButton
-                        size="small"
-                        onClick={() => onEdit?.(row)}
-                        color="primary"
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
+                  {!hideRemarks && (
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {row.remarks || '-'}
+                      </Typography>
+                    </TableCell>
+                  )}
+                  {!hideActions && (
+                    <TableCell align="center">
+                      <Tooltip title="View Details">
+                        <IconButton
+                          size="small"
+                          onClick={() => onView?.(row)}
+                          sx={{ mr: 0.5 }}
+                        >
+                          <ViewIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Edit">
+                        <IconButton
+                          size="small"
+                          onClick={() => onEdit?.(row)}
+                          color="primary"
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
