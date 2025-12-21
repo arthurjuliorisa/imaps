@@ -328,6 +328,93 @@ export async function seedTestData() {
 
   console.log('  ✅ Created outgoing goods');
 
+  // 8. CREATE SCRAP MASTER DATA
+  console.log('  ♻️  Creating scrap master items...');
+
+  const scrapItem1 = await prisma.scrap_items.create({
+    data: {
+      company_code: COMPANY_CODE,
+      scrap_code: 'SCRAP-COMPOSITE-001',
+      scrap_name: 'Mixed Textile Scrap Grade A',
+      scrap_description: 'Composite scrap consisting of mixed fabric offcuts',
+      uom: 'KG',
+      is_active: true,
+    },
+  });
+
+  await prisma.scrap_item_details.createMany({
+    data: [
+      {
+        scrap_item_id: scrapItem1.id,
+        component_code: 'RM-1310-001',
+        component_name: 'Polyester Yarn 150D White',
+        component_type: 'ROH',
+        uom: 'KG',
+        quantity: 0.6,
+        percentage: 60,
+        remarks: 'Main component',
+      },
+      {
+        scrap_item_id: scrapItem1.id,
+        component_code: 'RM-1310-002',
+        component_name: 'Cotton Thread 40s',
+        component_type: 'ROH',
+        uom: 'KG',
+        quantity: 0.3,
+        percentage: 30,
+        remarks: 'Secondary component',
+      },
+      {
+        scrap_item_id: scrapItem1.id,
+        component_code: 'SCRAP-FIBER-001',
+        component_name: 'Mixed Fiber Waste',
+        component_type: 'ROH',
+        uom: 'KG',
+        quantity: 0.1,
+        percentage: 10,
+        remarks: 'Minor component',
+      },
+    ],
+  });
+
+  const scrapItem2 = await prisma.scrap_items.create({
+    data: {
+      company_code: COMPANY_CODE,
+      scrap_code: 'SCRAP-COMPOSITE-002',
+      scrap_name: 'Production Waste Composite',
+      scrap_description: 'Composite scrap from production process',
+      uom: 'KG',
+      is_active: true,
+    },
+  });
+
+  await prisma.scrap_item_details.createMany({
+    data: [
+      {
+        scrap_item_id: scrapItem2.id,
+        component_code: 'FG-1310-001',
+        component_name: 'Finished Fabric Roll Grade A',
+        component_type: 'FERT',
+        uom: 'KG',
+        quantity: 0.5,
+        percentage: 50,
+        remarks: 'Finished goods waste',
+      },
+      {
+        scrap_item_id: scrapItem2.id,
+        component_code: 'WIP-1310-001',
+        component_name: 'Semi-Finished Fabric Roll',
+        component_type: 'HALB',
+        uom: 'KG',
+        quantity: 0.5,
+        percentage: 50,
+        remarks: 'WIP waste',
+      },
+    ],
+  });
+
+  console.log('  ✅ Created 2 scrap master items with 5 total components');
+
   console.log('  🎉 Test data seeding completed!\n');
   console.log('  📊 Summary:');
   console.log('     - Beginning Balances: 7 items');
@@ -336,6 +423,7 @@ export async function seedTestData() {
   console.log('     - Production Output: 1 document (2 items - FG + Scrap)');
   console.log('     - WIP Balance: 1 record');
   console.log('     - Outgoing Goods: 1 document (1 item)');
+  console.log('     - Scrap Master: 2 composite items (5 components)');
 }
 
 /**
@@ -381,5 +469,33 @@ export async function cleanupTestData() {
     where: { company_code: COMPANY_CODE }
   });
 
+  // Clean up scrap items
+  const scrapItems = await prisma.scrap_items.findMany({
+    where: { company_code: COMPANY_CODE },
+    select: { id: true }
+  });
+
+  for (const scrapItem of scrapItems) {
+    await prisma.scrap_item_details.deleteMany({
+      where: { scrap_item_id: scrapItem.id }
+    });
+  }
+
+  await prisma.scrap_items.deleteMany({
+    where: { company_code: COMPANY_CODE }
+  });
+
   console.log('  ✅ Cleaned up all test data for company 1310');
+}
+
+// Run seeder if executed directly
+if (require.main === module) {
+  seedTestData()
+    .catch((e) => {
+      console.error('❌ Error during test data seeding:', e);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
 }

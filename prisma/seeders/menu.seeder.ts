@@ -29,6 +29,7 @@ const menuStructure: MenuInput[] = [
     children: [
       { menu_name: 'Company', menu_path: '/master/companies', menu_icon: 'Category', menu_order: 1 },
       { menu_name: 'Item Type', menu_path: '/master/item-types', menu_icon: 'Category', menu_order: 2 },
+      { menu_name: 'Scrap Master', menu_path: '/master/scrap-items', menu_icon: 'Recycling', menu_order: 3 },
     ],
   },
   {

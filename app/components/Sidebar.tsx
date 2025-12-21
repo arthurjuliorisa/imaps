@@ -29,6 +29,7 @@ import {
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   History as HistoryIcon,
+  Recycling as RecyclingIcon,
 } from '@mui/icons-material';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -64,6 +65,7 @@ const menuSections: MenuSection[] = [
     items: [
       { title: 'Company', icon: <CategoryIcon />, path: '/master/companies' },
       { title: 'Item Type', icon: <CategoryIcon />, path: '/master/item-types' },
+      { title: 'Scrap Master', icon: <RecyclingIcon />, path: '/master/scrap-items' },
     ],
   },
   {

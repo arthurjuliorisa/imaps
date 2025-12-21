@@ -87,6 +87,7 @@ model companies {
   outgoing_goods       outgoing_goods[]
   adjustments          adjustments[]
   beginning_balances   beginning_balances[]
+  scrap_items          scrap_items[]
   items                items[]
   users                users[]
   snapshot_recalc_queue snapshot_recalc_queue[]
@@ -200,6 +201,51 @@ model beginning_balances {
   @@index([company_code])
   @@index([item_code])
   @@index([balance_date])
+}
+
+// ============================================================================
+// SCRAP MASTER DATA
+// ============================================================================
+
+model scrap_items {
+  id                 Int                  @id @default(autoincrement())
+  company_code       Int
+  scrap_code         String               @unique @db.VarChar(50)
+  scrap_name         String               @db.VarChar(200)
+  scrap_description  String?              @db.VarChar(500)
+  uom                String               @db.VarChar(20)
+  is_active          Boolean              @default(true)
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @updatedAt @db.Timestamptz(6)
+  deleted_at         DateTime?            @db.Timestamptz(6)
+
+  company            companies            @relation(fields: [company_code], references: [code])
+  scrap_item_details scrap_item_details[]
+
+  @@unique([company_code, scrap_code])
+  @@index([company_code])
+  @@index([scrap_code])
+  @@index([is_active])
+}
+
+model scrap_item_details {
+  id              Int         @id @default(autoincrement())
+  scrap_item_id   Int
+  component_code  String      @db.VarChar(50)
+  component_name  String      @db.VarChar(200)
+  component_type  String      @db.VarChar(10)
+  uom             String      @db.VarChar(20)
+  quantity        Decimal     @db.Decimal(15, 3)
+  percentage      Decimal?    @db.Decimal(5, 2)
+  remarks         String?     @db.VarChar(500)
+  created_at      DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime    @updatedAt @db.Timestamptz(6)
+
+  scrap_item      scrap_items @relation(fields: [scrap_item_id], references: [id], onDelete: Cascade)
+
+  @@unique([scrap_item_id, component_code])
+  @@index([scrap_item_id])
+  @@index([component_code])
 }
 
 model audit_logs {
