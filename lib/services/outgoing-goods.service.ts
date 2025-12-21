@@ -212,14 +212,22 @@ export class OutgoingGoodsService {
       const item = data.items[itemIndex];
 
       // Query stock_daily_snapshot for current stock
+      // Use snapshot from the PREVIOUS day since today's snapshot is created at end-of-day
+      // For same-day transactions, we need yesterday's closing balance as today's opening
+      const previousDay = new Date(outgoingDate);
+      previousDay.setDate(previousDay.getDate() - 1);
+
       const snapshot = await prisma.stock_daily_snapshot.findFirst({
         where: {
           company_code: data.company_code,
           item_code: item.item_code,
-          snapshot_date: outgoingDate,
+          snapshot_date: previousDay,
         },
         select: {
           closing_balance: true,
+        },
+        orderBy: {
+          snapshot_date: 'desc', // In case multiple snapshots exist, get the latest
         },
       });
 

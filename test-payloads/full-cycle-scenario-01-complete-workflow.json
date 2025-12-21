@@ -1,28 +1,30 @@
 {
   "scenario_name": "Full Cycle Transaction with Stock Tracking & Reversal",
-  "company_code": 1370,
+  "company_code": 1310,
   "scenario_description": "Complete workflow showing incoming goods → material usage → production output → adjustments → outgoing goods with reversal scenario to verify accurate stock calculations",
   "created_date": "2025-12-20",
   
   "stock_summary": {
     "description": "Expected stock balance after all transactions",
     "beginning_balance": {
-      "RM_1370_001": 0,
-      "RM_1370_002": 0,
-      "SA_1370_010": 0,
-      "FG_1370_001": 0
+      "RM_1310_001": 0,
+      "RM_1310_002": 0,
+      "SA_1310_010": 0,
+      "FG_1310_001": 0
     },
     "ending_balance": {
-      "RM_1370_001": 200,
-      "RM_1370_002": 150,
-      "SA_1370_010": 0,
-      "FG_1370_001": 150
+      "RM_1310_001": 200,
+      "RM_1310_002": 150,
+      "SA_1310_010": 0,
+      "FG_1310_001": 150,
+      "EQ_1310_001": 2
     },
     "detailed_calculation": {
-      "RM_1370_001": "1000 (incoming) - 500 (usage) - 100 (reversal-return) = 400; Then outgoing 200 = 200 remaining",
-      "RM_1370_002": "800 (incoming) - 300 (usage) = 500; Then outgoing 350 = 150 remaining",
-      "SA_1370_010": "200 (incoming) - 100 (usage in production) - 100 (reversal-return from production) = 0; All semifinished sold",
-      "FG_1370_001": "250 (production output from WO-001 & WO-002) + 50 (reversal rework completed) - 150 (outgoing) = 150 remaining"
+      "RM_1310_001": "1000 (incoming) - 500 (usage) - 100 (reversal-return) = 400; Then outgoing 200 = 200 remaining",
+      "RM_1310_002": "800 (incoming) - 300 (usage) = 500; Then outgoing 350 = 150 remaining",
+      "SA_1310_010": "200 (incoming) - 100 (usage in production) - 100 (reversal-return from production) = 0; All semifinished sold",
+      "FG_1310_001": "250 (production output from WO-001 & WO-002) + 50 (reversal rework completed) - 150 (outgoing) = 150 remaining",
+      "EQ_1310_001": "2 (incoming capital goods) - 0 (no usage in this scenario) = 2 remaining"
     }
   },
 
@@ -33,21 +35,21 @@
       "description": "Raw Materials arrival from overseas supplier",
       "endpoint": "POST /api/v1/incoming-goods",
       "payload": {
-        "wms_id": "INC-1370-20251215-001",
-        "company_code": 1370,
-        "owner": 1370,
+        "wms_id": "INC-1310-20251215-001",
+        "company_code": 1310,
+        "owner": 1310,
         "customs_document_type": "BC23",
-        "ppkek_number": "PPKEK-1370-2025-0100",
+        "ppkek_number": "PPKEK-1310-2025-0100",
         "customs_registration_date": "2025-12-15",
         "incoming_evidence_number": "EV-20251215-001",
         "incoming_date": "2025-12-15",
-        "invoice_number": "INV-1370-IMP-2025-0001",
+        "invoice_number": "INV-1310-IMP-2025-0001",
         "invoice_date": "2025-12-10",
         "shipper_name": "PT Global Textile Supplier",
         "items": [
           {
             "item_type": "ROH",
-            "item_code": "RM-1370-001",
+            "item_code": "RM-1310-001",
             "item_name": "Polyester Yarn 150D White",
             "hs_code": "570790",
             "uom": "KG",
@@ -57,7 +59,7 @@
           },
           {
             "item_type": "ROH",
-            "item_code": "RM-1370-002",
+            "item_code": "RM-1310-002",
             "item_name": "Polyester Yarn 300D Black",
             "hs_code": "570790",
             "uom": "KG",
@@ -69,8 +71,8 @@
         "timestamp": "2025-12-15T10:00:00+07:00"
       },
       "expected_stock_after": {
-        "RM_1370_001": 1000,
-        "RM_1370_002": 800
+        "RM_1310_001": 1000,
+        "RM_1310_002": 800
       },
       "notes": "Initial stock entry for raw materials"
     },
@@ -81,21 +83,21 @@
       "description": "Semifinished goods (HALB) arrival from local supplier",
       "endpoint": "POST /api/v1/incoming-goods",
       "payload": {
-        "wms_id": "INC-1370-20251215-002",
-        "company_code": 1370,
-        "owner": 1370,
+        "wms_id": "INC-1310-20251215-002",
+        "company_code": 1310,
+        "owner": 1310,
         "customs_document_type": "BC23",
-        "ppkek_number": "PPKEK-1370-2025-0101",
+        "ppkek_number": "PPKEK-1310-2025-0101",
         "customs_registration_date": "2025-12-15",
         "incoming_evidence_number": "EV-20251215-002",
         "incoming_date": "2025-12-15",
-        "invoice_number": "INV-1370-IMP-2025-0002",
+        "invoice_number": "INV-1310-IMP-2025-0002",
         "invoice_date": "2025-12-15",
         "shipper_name": "PT Fabric Intermediate",
         "items": [
           {
             "item_type": "HALB",
-            "item_code": "SA-1370-010",
+            "item_code": "SA-1310-010",
             "item_name": "Pre-cut Fabric Roll",
             "hs_code": "521100",
             "uom": "ROLL",
@@ -107,110 +109,152 @@
         "timestamp": "2025-12-15T11:00:00+07:00"
       },
       "expected_stock_after": {
-        "RM_1370_001": 1000,
-        "RM_1370_002": 800,
-        "SA_1370_010": 200
+        "RM_1310_001": 1000,
+        "RM_1310_002": 800,
+        "SA_1310_010": 200
       },
       "notes": "Semifinished goods for further processing"
     },
 
     {
       "sequence": 3,
-      "type": "MATERIAL_USAGE",
-      "description": "Material consumption for production - Work Order WO-001",
-      "endpoint": "POST /api/v1/material-usage",
+      "type": "INCOMING_GOODS",
+      "description": "Capital goods machinery arrival for production facility",
+      "endpoint": "POST /api/v1/incoming-goods",
       "payload": {
-        "wms_id": "MAT-1370-20251216-001",
-        "company_code": 1370,
-        "work_order_number": "WO-2025-001",
-        "cost_center_number": null,
-        "internal_evidence_number": "INT-MAT-1370-20251216-001",
-        "transaction_date": "2025-12-16",
-        "reversal": null,
+        "wms_id": "INC-1310-20251215-003",
+        "company_code": 1310,
+        "owner": 1310,
+        "customs_document_type": "BC23",
+        "ppkek_number": "PPKEK-1310-2025-0102",
+        "customs_registration_date": "2025-12-15",
+        "incoming_evidence_number": "EV-20251215-003",
+        "incoming_date": "2025-12-15",
+        "invoice_number": "INV-1310-IMP-2025-0003",
+        "invoice_date": "2025-12-12",
+        "shipper_name": "PT Industrial Machinery Equipment",
         "items": [
           {
-            "item_type": "ROH",
-            "item_code": "RM-1370-001",
-            "item_name": "Polyester Yarn 150D White",
-            "uom": "KG",
-            "qty": 300.00,
-            "ppkek_number": "PPKEK-1370-2025-0100"
-          },
-          {
-            "item_type": "HALB",
-            "item_code": "SA-1370-010",
-            "item_name": "Pre-cut Fabric Roll",
-            "uom": "ROLL",
-            "qty": 50.00,
-            "ppkek_number": "PPKEK-1370-2025-0101"
+            "item_type": "HIBE_M",
+            "item_code": "EQ-1310-001",
+            "item_name": "Industrial Weaving Machine Model X500",
+            "hs_code": "844810",
+            "uom": "UNIT",
+            "qty": 2.00,
+            "currency": "USD",
+            "amount": 150000.00
           }
         ],
-        "timestamp": "2025-12-16T08:30:00+07:00"
+        "timestamp": "2025-12-15T12:00:00+07:00"
       },
       "expected_stock_after": {
-        "RM_1370_001": 700,
-        "RM_1370_002": 800,
-        "SA_1370_010": 150
+        "RM_1310_001": 1000,
+        "RM_1310_002": 800,
+        "SA_1310_010": 200,
+        "EQ_1310_001": 2
       },
-      "notes": "First production run consuming raw and semifinished materials"
+      "notes": "Capital goods (HIBE_M - Capital Goods Machine) entry for production facility equipment"
     },
 
     {
       "sequence": 4,
       "type": "MATERIAL_USAGE",
-      "description": "Material consumption for production - Work Order WO-002",
+      "description": "Material consumption for production - Work Order WO-001",
       "endpoint": "POST /api/v1/material-usage",
       "payload": {
-        "wms_id": "MAT-1370-20251216-002",
-        "company_code": 1370,
-        "work_order_number": "WO-2025-002",
+        "wms_id": "MAT-1310-20251216-001",
+        "company_code": 1310,
+        "work_order_number": "WO-2025-001",
         "cost_center_number": null,
-        "internal_evidence_number": "INT-MAT-1370-20251216-002",
+        "internal_evidence_number": "INT-MAT-1310-20251216-001",
         "transaction_date": "2025-12-16",
         "reversal": null,
         "items": [
           {
             "item_type": "ROH",
-            "item_code": "RM-1370-002",
-            "item_name": "Polyester Yarn 300D Black",
+            "item_code": "RM-1310-001",
+            "item_name": "Polyester Yarn 150D White",
             "uom": "KG",
             "qty": 300.00,
-            "ppkek_number": "PPKEK-1370-2025-0100"
+            "ppkek_number": "PPKEK-1310-2025-0100"
           },
           {
             "item_type": "HALB",
-            "item_code": "SA-1370-010",
+            "item_code": "SA-1310-010",
             "item_name": "Pre-cut Fabric Roll",
             "uom": "ROLL",
             "qty": 50.00,
-            "ppkek_number": "PPKEK-1370-2025-0101"
+            "ppkek_number": "PPKEK-1310-2025-0101"
+          }
+        ],
+        "timestamp": "2025-12-16T08:30:00+07:00"
+      },
+      "expected_stock_after": {
+        "RM_1310_001": 700,
+        "RM_1310_002": 800,
+        "SA_1310_010": 150,
+        "EQ_1310_001": 2
+      },
+      "notes": "First production run consuming raw and semifinished materials"
+    },
+
+    {
+      "sequence": 5,
+      "type": "MATERIAL_USAGE",
+      "description": "Material consumption for production - Work Order WO-002",
+      "endpoint": "POST /api/v1/material-usage",
+      "payload": {
+        "wms_id": "MAT-1310-20251216-002",
+        "company_code": 1310,
+        "work_order_number": "WO-2025-002",
+        "cost_center_number": null,
+        "internal_evidence_number": "INT-MAT-1310-20251216-002",
+        "transaction_date": "2025-12-16",
+        "reversal": null,
+        "items": [
+          {
+            "item_type": "ROH",
+            "item_code": "RM-1310-002",
+            "item_name": "Polyester Yarn 300D Black",
+            "uom": "KG",
+            "qty": 300.00,
+            "ppkek_number": "PPKEK-1310-2025-0100"
+          },
+          {
+            "item_type": "HALB",
+            "item_code": "SA-1310-010",
+            "item_name": "Pre-cut Fabric Roll",
+            "uom": "ROLL",
+            "qty": 50.00,
+            "ppkek_number": "PPKEK-1310-2025-0101"
           }
         ],
         "timestamp": "2025-12-16T09:15:00+07:00"
       },
       "expected_stock_after": {
-        "RM_1370_001": 700,
-        "RM_1370_002": 500,
-        "SA_1370_010": 100
+        "RM_1310_001": 700,
+        "RM_1310_002": 500,
+        "SA_1310_010": 100,
+        "EQ_1310_001": 2
       },
       "notes": "Second production run"
     },
 
     {
-      "sequence": 5,
+      "sequence": 6,
       "type": "PRODUCTION_OUTPUT",
       "description": "Finished goods production from WO-001 and WO-002",
       "endpoint": "POST /api/v1/production-output",
       "payload": {
-        "wms_id": "PROD-1370-20251216-001",
-        "company_code": 1370,
-        "internal_evidence_number": "INT-PROD-1370-20251216-001",
+        "wms_id": "PROD-1310-20251216-001",
+        "company_code": 1310,
+        "internal_evidence_number": "INT-PROD-1310-20251216-001",
         "transaction_date": "2025-12-16",
         "reversal": null,
         "items": [
           {
             "item_type": "FERT",
-            "item_code": "FG-1370-001",
+            "item_code": "FG-1310-001",
             "item_name": "Polyester Fabric Roll 100x150cm Grade A",
             "uom": "ROLL",
             "qty": 200.00,
@@ -220,71 +264,73 @@
         "timestamp": "2025-12-16T15:30:00+07:00"
       },
       "expected_stock_after": {
-        "RM_1370_001": 700,
-        "RM_1370_002": 500,
-        "SA_1370_010": 100,
-        "FG_1370_001": 200
+        "RM_1310_001": 700,
+        "RM_1310_002": 500,
+        "SA_1310_010": 100,
+        "FG_1310_001": 200,
+        "EQ_1310_001": 2
       },
       "notes": "Production output from both work orders combined"
     },
 
     {
-      "sequence": 6,
+      "sequence": 7,
       "type": "MATERIAL_USAGE_REVERSAL",
       "description": "Material return from production - unused materials",
       "endpoint": "POST /api/v1/material-usage",
       "payload": {
-        "wms_id": "MAT-1370-20251217-001",
-        "company_code": 1370,
+        "wms_id": "MAT-1310-20251217-001",
+        "company_code": 1310,
         "work_order_number": "WO-2025-001",
         "cost_center_number": null,
-        "internal_evidence_number": "INT-MAT-1370-20251217-001",
+        "internal_evidence_number": "INT-MAT-1310-20251217-001",
         "transaction_date": "2025-12-17",
         "reversal": "Y",
         "items": [
           {
             "item_type": "ROH",
-            "item_code": "RM-1370-001",
+            "item_code": "RM-1310-001",
             "item_name": "Polyester Yarn 150D White",
             "uom": "KG",
             "qty": 100.00,
-            "ppkek_number": "PPKEK-1370-2025-0100"
+            "ppkek_number": "PPKEK-1310-2025-0100"
           },
           {
             "item_type": "HALB",
-            "item_code": "SA-1370-010",
+            "item_code": "SA-1310-010",
             "item_name": "Pre-cut Fabric Roll",
             "uom": "ROLL",
             "qty": 100.00,
-            "ppkek_number": "PPKEK-1370-2025-0101"
+            "ppkek_number": "PPKEK-1310-2025-0101"
           }
         ],
         "timestamp": "2025-12-17T10:00:00+07:00"
       },
       "expected_stock_after": {
-        "RM_1370_001": 800,
-        "RM_1370_002": 500,
-        "SA_1370_010": 200,
-        "FG_1370_001": 200
+        "RM_1310_001": 800,
+        "RM_1310_002": 500,
+        "SA_1310_010": 200,
+        "FG_1310_001": 200,
+        "EQ_1310_001": 2
       },
       "notes": "Material returned to warehouse due to over-allocation. reversal='Y' means stock INCREASE (return)"
     },
 
     {
-      "sequence": 7,
+      "sequence": 8,
       "type": "PRODUCTION_OUTPUT_REVERSAL",
       "description": "Finished goods returned for rework - quality hold",
       "endpoint": "POST /api/v1/production-output",
       "payload": {
-        "wms_id": "PROD-1370-20251217-001",
-        "company_code": 1370,
-        "internal_evidence_number": "INT-PROD-1370-20251217-001",
+        "wms_id": "PROD-1310-20251217-001",
+        "company_code": 1310,
+        "internal_evidence_number": "INT-PROD-1310-20251217-001",
         "transaction_date": "2025-12-17",
         "reversal": "Y",
         "items": [
           {
             "item_type": "FERT",
-            "item_code": "FG-1370-001",
+            "item_code": "FG-1310-001",
             "item_name": "Polyester Fabric Roll 100x150cm Grade A",
             "uom": "ROLL",
             "qty": 50.00,
@@ -294,29 +340,30 @@
         "timestamp": "2025-12-17T14:00:00+07:00"
       },
       "expected_stock_after": {
-        "RM_1370_001": 800,
-        "RM_1370_002": 500,
-        "SA_1370_010": 200,
-        "FG_1370_001": 150
+        "RM_1310_001": 800,
+        "RM_1310_002": 500,
+        "SA_1310_010": 200,
+        "FG_1310_001": 150,
+        "EQ_1310_001": 2
       },
       "notes": "50 rolls returned from warehouse to production for rework. reversal='Y' means stock DECREASE (taken back)"
     },
 
     {
-      "sequence": 8,
+      "sequence": 9,
       "type": "PRODUCTION_OUTPUT",
       "description": "Reworked finished goods completed and returned to warehouse",
       "endpoint": "POST /api/v1/production-output",
       "payload": {
-        "wms_id": "PROD-1370-20251218-001",
-        "company_code": 1370,
-        "internal_evidence_number": "INT-PROD-1370-20251218-001",
+        "wms_id": "PROD-1310-20251218-001",
+        "company_code": 1310,
+        "internal_evidence_number": "INT-PROD-1310-20251218-001",
         "transaction_date": "2025-12-18",
         "reversal": null,
         "items": [
           {
             "item_type": "FERT",
-            "item_code": "FG-1370-001",
+            "item_code": "FG-1310-001",
             "item_name": "Polyester Fabric Roll 100x150cm Grade A",
             "uom": "ROLL",
             "qty": 50.00,
@@ -326,30 +373,31 @@
         "timestamp": "2025-12-18T16:30:00+07:00"
       },
       "expected_stock_after": {
-        "RM_1370_001": 800,
-        "RM_1370_002": 500,
-        "SA_1370_010": 200,
-        "FG_1370_001": 200
+        "RM_1310_001": 800,
+        "RM_1310_002": 500,
+        "SA_1310_010": 200,
+        "FG_1310_001": 200,
+        "EQ_1310_001": 2
       },
       "notes": "Rework completed successfully, 50 rolls back to inventory"
     },
 
     {
-      "sequence": 9,
+      "sequence": 10,
       "type": "ADJUSTMENTS",
       "description": "Physical count adjustment - stock variance correction",
       "endpoint": "POST /api/v1/adjustments",
       "payload": {
-        "wms_id": "ADJ-1370-20251218-001",
-        "company_code": 1370,
+        "wms_id": "ADJ-1310-20251218-001",
+        "company_code": 1310,
         "wms_doc_type": "Physical Count Adjustment",
-        "internal_evidence_number": "INT-ADJ-1370-20251218-001",
+        "internal_evidence_number": "INT-ADJ-1310-20251218-001",
         "transaction_date": "2025-12-18",
         "items": [
           {
             "adjustment_type": "LOSS",
-            "item_type": "RM-1370-002",
-            "item_code": "RM-1370-002",
+            "item_type": "ROH",
+            "item_code": "RM-1310-002",
             "item_name": "Polyester Yarn 300D Black",
             "uom": "KG",
             "qty": 350.00,
@@ -359,37 +407,38 @@
         "timestamp": "2025-12-18T17:00:00+07:00"
       },
       "expected_stock_after": {
-        "RM_1370_001": 800,
-        "RM_1370_002": 150,
-        "SA_1370_010": 200,
-        "FG_1370_001": 200
+        "RM_1310_001": 800,
+        "RM_1310_002": 150,
+        "SA_1310_010": 200,
+        "FG_1310_001": 200,
+        "EQ_1310_001": 2
       },
-      "notes": "Adjustment reduces RM-1370-002 stock due to damaged inventory discovery"
+      "notes": "Adjustment reduces RM-1310-002 stock due to damaged inventory discovery"
     },
 
     {
-      "sequence": 10,
+      "sequence": 11,
       "type": "OUTGOING_GOODS",
       "description": "Export shipment - finished goods and excess materials",
       "endpoint": "POST /api/v1/outgoing-goods",
       "payload": {
-        "wms_id": "OUT-1370-20251219-001",
-        "company_code": 1370,
-        "owner": 1370,
+        "wms_id": "OUT-1310-20251219-001",
+        "company_code": 1310,
+        "owner": 1310,
         "customs_document_type": "BC30",
-        "ppkek_number": "PPKEK-1370-2025-0100",
+        "ppkek_number": "PPKEK-1310-2025-0100",
         "customs_registration_date": "2025-12-19",
-        "outgoing_evidence_number": "SJ-1370-OUT-20251219-001",
+        "outgoing_evidence_number": "SJ-1310-OUT-20251219-001",
         "outgoing_date": "2025-12-19",
-        "invoice_number": "INV-1370-EXP-2025-0050",
+        "invoice_number": "INV-1310-EXP-2025-0050",
         "invoice_date": "2025-12-18",
         "recipient_name": "Global Textile Imports LLC",
         "items": [
           {
             "item_type": "FERT",
-            "item_code": "FG-1370-001",
+            "item_code": "FG-1310-001",
             "item_name": "Polyester Fabric Roll 100x150cm Grade A",
-            "production_output_wms_ids": ["PROD-1370-20251216-001", "PROD-1370-20251218-001"],
+            "production_output_wms_ids": ["PROD-1310-20251216-001", "PROD-1310-20251218-001"],
             "hs_code": "5407.42.00",
             "uom": "ROLL",
             "qty": 150.00,
@@ -398,7 +447,7 @@
           },
           {
             "item_type": "ROH",
-            "item_code": "RM-1370-001",
+            "item_code": "RM-1310-001",
             "item_name": "Polyester Yarn 150D White",
             "hs_code": "570790",
             "uom": "KG",
@@ -408,7 +457,7 @@
           },
           {
             "item_type": "ROH",
-            "item_code": "RM-1370-002",
+            "item_code": "RM-1310-002",
             "item_name": "Polyester Yarn 300D Black",
             "hs_code": "570790",
             "uom": "KG",
@@ -420,37 +469,38 @@
         "timestamp": "2025-12-19T09:00:00+07:00"
       },
       "expected_stock_after": {
-        "RM_1370_001": 600,
-        "RM_1370_002": -200,
-        "SA_1370_010": 200,
-        "FG_1370_001": 50
+        "RM_1310_001": 600,
+        "RM_1310_002": -200,
+        "SA_1310_010": 200,
+        "FG_1310_001": 50,
+        "EQ_1310_001": 2
       },
-      "notes": "ERROR DETECTED: Outgoing qty for RM-1370-002 (350) exceeds available balance (150). This demonstrates the validation that should catch overshooting inventory. In real scenario, this transaction should FAIL validation."
+      "notes": "⚠️ WARNING DETECTED: Outgoing qty for RM-1310-002 (350) exceeds available balance (150 after adjustment loss). Transaction SUCCEEDS but generates INSUFFICIENT_STOCK warning in response. WMS accepts negative stock rather than rejecting transaction. Final balance shows -200 KG for RM-1310-002 indicating system allowed overshooting. Review stock validation rules and consider using ALTERNATIVE path if negative stock is not acceptable."
     },
 
     {
-      "sequence": 10,
-      "type": "OUTGOING_GOODS_CORRECTED",
-      "description": "CORRECTED Export shipment - with valid quantities",
+      "sequence": "11-ALTERNATIVE",
+      "type": "OUTGOING_GOODS_ALTERNATIVE",
+      "description": "ALTERNATIVE: Conservative export shipment - with valid quantities only",
       "endpoint": "POST /api/v1/outgoing-goods",
       "payload": {
-        "wms_id": "OUT-1370-20251219-002",
-        "company_code": 1370,
-        "owner": 1370,
+        "wms_id": "OUT-1310-20251219-002",
+        "company_code": 1310,
+        "owner": 1310,
         "customs_document_type": "BC30",
-        "ppkek_number": "PPKEK-1370-2025-0100",
+        "ppkek_number": "PPKEK-1310-2025-0100",
         "customs_registration_date": "2025-12-19",
-        "outgoing_evidence_number": "SJ-1370-OUT-20251219-002",
+        "outgoing_evidence_number": "SJ-1310-OUT-20251219-002",
         "outgoing_date": "2025-12-19",
-        "invoice_number": "INV-1370-EXP-2025-0051",
+        "invoice_number": "INV-1310-EXP-2025-0051",
         "invoice_date": "2025-12-18",
         "recipient_name": "Global Textile Imports LLC",
         "items": [
           {
             "item_type": "FERT",
-            "item_code": "FG-1370-001",
+            "item_code": "FG-1310-001",
             "item_name": "Polyester Fabric Roll 100x150cm Grade A",
-            "production_output_wms_ids": ["PROD-1370-20251216-001", "PROD-1370-20251218-001"],
+            "production_output_wms_ids": ["PROD-1310-20251216-001", "PROD-1310-20251218-001"],
             "hs_code": "5407.42.00",
             "uom": "ROLL",
             "qty": 150.00,
@@ -459,7 +509,7 @@
           },
           {
             "item_type": "ROH",
-            "item_code": "RM-1370-001",
+            "item_code": "RM-1310-001",
             "item_name": "Polyester Yarn 150D White",
             "hs_code": "570790",
             "uom": "KG",
@@ -471,12 +521,75 @@
         "timestamp": "2025-12-19T09:15:00+07:00"
       },
       "expected_stock_after": {
-        "RM_1370_001": 600,
-        "RM_1370_002": 150,
-        "SA_1370_010": 200,
-        "FG_1370_001": 50
+        "RM_1310_001": 600,
+        "RM_1310_002": 150,
+        "SA_1310_010": 200,
+        "FG_1310_001": 50,
+        "EQ_1310_001": 2
       },
-      "notes": "CORRECTED transaction - only ships materials that are in stock. RM-1370-002 NOT included because available balance is only 150 KG after adjustments."
+      "notes": "ALTERNATIVE PATH: Conservative shipment that respects available stock. Only ships FG and RM-1310-001. RM-1310-002 NOT included because available balance is only 150 KG after adjustment loss. Use this path when strict inventory validation is required. Choose EITHER sequence 11 OR 11-ALTERNATIVE, not both."
+    },
+
+    {
+      "sequence": 12,
+      "type": "OUTGOING_GOODS_IDEMPOTENCY",
+      "description": "IDEMPOTENCY TEST: WMS retries same wms_id with corrected quantities after realizing negative stock issue",
+      "endpoint": "POST /api/v1/outgoing-goods",
+      "payload": {
+        "wms_id": "OUT-1310-20251219-001",
+        "company_code": 1310,
+        "owner": 1310,
+        "customs_document_type": "BC30",
+        "ppkek_number": "PPKEK-1310-2025-0100",
+        "customs_registration_date": "2025-12-19",
+        "outgoing_evidence_number": "SJ-1310-OUT-20251219-001",
+        "outgoing_date": "2025-12-19",
+        "invoice_number": "INV-1310-EXP-2025-0050",
+        "invoice_date": "2025-12-18",
+        "recipient_name": "Global Textile Imports LLC",
+        "items": [
+          {
+            "item_type": "FERT",
+            "item_code": "FG-1310-001",
+            "item_name": "Polyester Fabric Roll 100x150cm Grade A",
+            "production_output_wms_ids": ["PROD-1310-20251216-001", "PROD-1310-20251218-001"],
+            "hs_code": "5407.42.00",
+            "uom": "ROLL",
+            "qty": 150.00,
+            "currency": "USD",
+            "amount": 30000.00
+          },
+          {
+            "item_type": "ROH",
+            "item_code": "RM-1310-001",
+            "item_name": "Polyester Yarn 150D White",
+            "hs_code": "570790",
+            "uom": "KG",
+            "qty": 200.00,
+            "currency": "USD",
+            "amount": 2000.00
+          },
+          {
+            "item_type": "ROH",
+            "item_code": "RM-1310-002",
+            "item_name": "Polyester Yarn 300D Black",
+            "hs_code": "570790",
+            "uom": "KG",
+            "qty": 150.00,
+            "currency": "USD",
+            "amount": 1800.00
+          }
+        ],
+        "timestamp": "2025-12-19T09:30:00+07:00"
+      },
+      "expected_stock_after": {
+        "RM_1310_001": 600,
+        "RM_1310_002": 0,
+        "SA_1310_010": 200,
+        "FG_1310_001": 50,
+        "EQ_1310_001": 2
+      },
+      "notes": "EDGE CASE - IDEMPOTENCY: Same wms_id (OUT-1310-20251219-001) as sequence 11, but with CORRECTED qty for RM-1310-002 (150 instead of 350). WMS realizes after sequence 11 that it would cause negative stock, so retries with correct quantities. System should handle duplicate wms_id by either: (a) rejecting as duplicate, or (b) updating/replacing previous record. Final stock shows RM-1310-002 at 0 KG (all available stock shipped)."
     }
   ],
 
@@ -493,22 +606,25 @@
   },
 
   "testing_checklist": [
-    "✓ Submit INC transactions 1 & 2 → Verify stock increased",
-    "✓ Submit MAT transactions 3 & 4 → Verify stock decreased correctly",
-    "✓ Submit PROD transaction 5 → Verify FERT stock created",
-    "✓ Submit MAT reversal transaction 6 → Verify material stock INCREASED",
-    "✓ Submit PROD reversal transaction 7 → Verify FERT stock DECREASED",
-    "✓ Submit PROD transaction 8 → Verify FERT stock returned to inventory",
-    "✓ Submit ADJ transaction 9 → Verify damaged inventory removed",
-    "✓ Submit OUT transaction (corrected) 10 → Verify shipment reduces stock properly",
+    "✓ Submit INC transactions 1 → Verify raw materials stock increased",
+    "✓ Submit INC transaction 2 → Verify semifinished goods stock increased",
+    "✓ Submit INC transaction 3 → Verify CAPITAL GOODS (ANLA) stock added",
+    "✓ Submit MAT transactions 4 & 5 → Verify stock decreased correctly",
+    "✓ Submit PROD transaction 6 → Verify FERT stock created",
+    "✓ Submit MAT reversal transaction 7 → Verify material stock INCREASED",
+    "✓ Submit PROD reversal transaction 8 → Verify FERT stock DECREASED",
+    "✓ Submit PROD transaction 9 → Verify FERT stock returned to inventory",
+    "✓ Submit ADJ transaction 10 → Verify damaged inventory removed",
+    "✓ Submit OUT transaction (corrected) 11 → Verify shipment reduces stock properly",
     "✓ Calculate final balance and match expected_stock_after values",
     "✓ Verify no negative stock at any point",
+    "✓ Verify CAPITAL GOODS (EQ_1310_001) stock remains unchanged (no usage)",
     "✓ Trace PPKEK traceability from incoming → production → outgoing",
     "✓ Verify work order numbers properly link material usage to production output"
   ],
 
   "final_stock_validation": {
-    "RM_1370_001": {
+    "RM_1310_001": {
       "initial": 0,
       "after_incoming": 1000,
       "after_usage_wo1": 700,
@@ -518,7 +634,7 @@
       "final_expected": 600,
       "status": "CORRECT"
     },
-    "RM_1370_002": {
+    "RM_1310_002": {
       "initial": 0,
       "after_incoming": 800,
       "after_usage_wo2": 500,
@@ -526,7 +642,7 @@
       "final_expected": 150,
       "status": "CORRECT"
     },
-    "SA_1370_010": {
+    "SA_1310_010": {
       "initial": 0,
       "after_incoming": 200,
       "after_usage_wo1": 150,
@@ -535,7 +651,7 @@
       "final_expected": 200,
       "status": "CORRECT - All used in production then returned, never shipped"
     },
-    "FG_1370_001": {
+    "FG_1310_001": {
       "initial": 0,
       "after_production": 200,
       "after_reversal_minus": 150,
@@ -543,6 +659,13 @@
       "after_outgoing": 50,
       "final_expected": 50,
       "status": "CORRECT"
+    },
+    "EQ_1310_001": {
+      "initial": 0,
+      "after_incoming": 2,
+      "after_usage": 2,
+      "final_expected": 2,
+      "status": "CORRECT - CAPITAL GOODS (HIBE_M - Machinery) item, no usage in this scenario"
     }
   }
 }

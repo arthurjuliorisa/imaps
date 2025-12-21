@@ -263,20 +263,22 @@ BEGIN
         COALESCE(ob.opening_balance, 0) AS opening_balance,
         -- Closing balance calculation by item type
         CASE 
-            -- ROH: opening + incoming - material_usage +/- adjustment
+            -- ROH: opening + incoming - material_usage - outgoing +/- adjustment
             WHEN ai.item_type = 'ROH' THEN
                 COALESCE(ob.opening_balance, 0) +
                 COALESCE(inc.incoming_qty, 0) -
-                COALESCE(mat.material_usage_qty, 0) +
+                COALESCE(mat.material_usage_qty, 0) -
+                COALESCE(out.outgoing_qty, 0) +
                 COALESCE(adj.adjustment_qty, 0)
             
-            -- HALB: Semi-finished goods (opening + incoming - material_usage +/- adjustment)
+            -- HALB: Semi-finished goods (opening + incoming - material_usage - outgoing +/- adjustment)
             -- Note: HALB is NOT WIP. WIP is a separate snapshot sent by WMS.
-            -- HALB is treated as regular inventory item like ROH/FERT
+            -- HALB is treated as regular inventory item like ROH
             WHEN ai.item_type = 'HALB' THEN
                 COALESCE(ob.opening_balance, 0) +
                 COALESCE(inc.incoming_qty, 0) -
-                COALESCE(mat.material_usage_qty, 0) +
+                COALESCE(mat.material_usage_qty, 0) -
+                COALESCE(out.outgoing_qty, 0) +
                 COALESCE(adj.adjustment_qty, 0)
             
             -- FERT: opening + production - outgoing +/- adjustment
@@ -301,7 +303,14 @@ BEGIN
                 COALESCE(out.outgoing_qty, 0) +
                 COALESCE(adj.adjustment_qty, 0)
             
-            ELSE 0
+            -- Default formula for any other item types: opening + incoming - material_usage - outgoing +/- adjustment +/- production
+            ELSE
+                COALESCE(ob.opening_balance, 0) +
+                COALESCE(inc.incoming_qty, 0) -
+                COALESCE(mat.material_usage_qty, 0) -
+                COALESCE(out.outgoing_qty, 0) +
+                COALESCE(prod.production_qty, 0) +
+                COALESCE(adj.adjustment_qty, 0)
         END AS closing_balance,
         -- Transaction quantities
         COALESCE(inc.incoming_qty, 0) AS incoming_qty,

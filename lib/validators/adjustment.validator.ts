@@ -17,12 +17,12 @@ import { z } from 'zod';
 
 const AdjustmentItemSchema = z.object({
   adjustment_type: z.enum(['GAIN', 'LOSS']),
-  item_type: z.string().trim().min(1).max(50), // Relaxed from 10 to 50 to allow longer item type codes
+  item_type: z.string().trim().min(1), // No max length - client controls categorization
   item_code: z.string().trim().min(1).max(50),
   item_name: z.string().trim().min(1).max(200),
   uom: z.string().trim().min(1).max(20),
   qty: z.number().positive('Quantity must be greater than 0').finite(),
-  reason: z.string().trim().max(1000).nullable().optional(), // Relaxed from 500 to 1000 for more flexibility
+  reason: z.string().trim().max(500).nullable().optional(),
 });
 
 export type AdjustmentItem = z.infer<typeof AdjustmentItemSchema>;
