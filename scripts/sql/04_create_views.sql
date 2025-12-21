@@ -1,13 +1,15 @@
 -- ============================================================================
 -- IMAPS REPORTING VIEWS - Hybrid Approach (Snapshot + Real-time)
 -- ============================================================================
--- Version: 2.5.0 (Optimized with Generic Function)
--- Created: December 18, 2025
+-- Version: 3.0.0 (Refactored with Source-based Functions)
+-- Created: December 18, 2025 | Updated: December 21, 2025
 -- Purpose: Create hybrid views for customs compliance reports
 -- 
--- ARCHITECTURE: Generic Function + Separate Views
--- - 1 reusable function: fn_calculate_lpj_mutation()
--- - 4 report-specific views calling the function with different item_types
+-- ARCHITECTURE: Source-based Functions + Separate Views
+-- - 2 specialized functions:
+--   1. fn_calculate_lpj_bahan_baku(): Incoming-based materials (ROH, HALB, HIBE)
+--   2. fn_calculate_lpj_hasil_produksi(): Production-based goods (FERT, HALB produced)
+-- - Report-specific views calling appropriate function by data source
 -- 
 -- PERFORMANCE: Hybrid approach (30x faster for historical queries)
 -- - Historical data: FROM stock_daily_snapshot (pre-calculated)
@@ -15,13 +17,22 @@
 -- ============================================================================
 
 -- ============================================================================
--- GENERIC FUNCTION: CALCULATE LPJ MUTATION (HYBRID APPROACH)
+-- GENERIC FUNCTIONS: CALCULATE LPJ MUTATION (HYBRID APPROACH)
 -- ============================================================================
--- This function calculates daily mutation report for any item types
--- Uses hybrid approach: snapshot for historical + transactions for recent
+-- Two specialized functions for different reporting sources:
+-- 1. fn_calculate_lpj_bahan_baku: For raw materials (incoming source only)
+-- 2. fn_calculate_lpj_hasil_produksi: For finished/semi-finished goods (production source only)
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION fn_calculate_lpj_mutation(
+-- ============================================================================
+-- FUNCTION 1: CALCULATE LPJ BAHAN BAKU (Incoming/Purchased Materials)
+-- ============================================================================
+-- This function calculates daily mutation for raw materials and purchased goods
+-- Sources: incoming_qty only (excludes production_qty)
+-- Item types: ROH, HALB (purchased), HIBE
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION fn_calculate_lpj_bahan_baku(
     p_item_types TEXT[]
 )
 RETURNS TABLE (
@@ -57,6 +68,7 @@ BEGIN
         GROUP BY sds.company_code
     ),
     -- Historical data: FROM stock_daily_snapshot (fast)
+    -- Only includes incoming-based transactions
     historical_data AS (
         SELECT
             ROW_NUMBER() OVER (PARTITION BY sds.company_code ORDER BY sds.snapshot_date, sds.item_code) as row_no,
@@ -83,6 +95,7 @@ BEGIN
         WHERE sds.item_type = ANY(p_item_types)
     ),
     -- Recent data: Calculate from transactions (real-time)
+    -- Only includes incoming-based transactions (excludes production_qty)
     recent_data AS (
         SELECT 
             ROW_NUMBER() OVER (PARTITION BY calc.company_code ORDER BY calc.snapshot_date, calc.item_code) as row_no,
@@ -117,19 +130,17 @@ BEGIN
                     COALESCE(inc.incoming_qty, 0) -
                     COALESCE(out.outgoing_qty, 0) -
                     COALESCE(mat.material_usage_qty, 0) +
-                    COALESCE(prod.production_qty, 0) +
                     COALESCE(adj.adjustment_qty, 0)
                 ) OVER (PARTITION BY i.company_code, i.item_code ORDER BY dates.snapshot_date) as opening_balance,
-                -- Daily transactions
+                -- Daily transactions (incoming only)
                 COALESCE(inc.incoming_qty, 0) as quantity_received,
                 COALESCE(out.outgoing_qty, 0) + COALESCE(mat.material_usage_qty, 0) as quantity_issued_outgoing,
                 COALESCE(adj.adjustment_qty, 0) as adjustment,
-                -- Closing balance calculation
+                -- Closing balance calculation (WITHOUT production_qty)
                 COALESCE(opening.opening_balance, 0) +
                 COALESCE(inc.incoming_qty, 0) -
                 COALESCE(out.outgoing_qty, 0) -
                 COALESCE(mat.material_usage_qty, 0) +
-                COALESCE(prod.production_qty, 0) +
                 COALESCE(adj.adjustment_qty, 0) as closing_balance
             FROM items i
             JOIN companies co ON i.company_code = co.code
@@ -198,25 +209,6 @@ BEGIN
             ) mat ON i.company_code = mat.company_code 
                 AND i.item_code = mat.item_code 
                 AND mat.trx_date = dates.snapshot_date
-            -- Production quantities
-            LEFT JOIN (
-                SELECT 
-                    po.company_code,
-                    poi.item_code,
-                    po.transaction_date as trx_date,
-                    SUM(CASE 
-                        WHEN po.reversal = 'Y' THEN -poi.qty
-                        ELSE poi.qty 
-                    END) as production_qty
-                FROM production_outputs po
-                JOIN production_output_items poi ON po.company_code = poi.production_output_company
-                    AND po.id = poi.production_output_id
-                    AND po.transaction_date = poi.production_output_date
-                WHERE po.deleted_at IS NULL AND poi.deleted_at IS NULL
-                GROUP BY po.company_code, poi.item_code, po.transaction_date
-            ) prod ON i.company_code = prod.company_code 
-                AND i.item_code = prod.item_code 
-                AND prod.trx_date = dates.snapshot_date
             -- Adjustment quantities
             LEFT JOIN (
                 SELECT 
@@ -249,7 +241,208 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION fn_calculate_lpj_mutation IS 'Generic function for LPJ mutation reports using hybrid approach (snapshot + realtime)';
+COMMENT ON FUNCTION fn_calculate_lpj_bahan_baku IS 'Calculate LPJ for raw materials (incoming-based only, excludes production)';
+
+-- ============================================================================
+-- FUNCTION 2: CALCULATE LPJ HASIL PRODUKSI (Production Output)
+-- ============================================================================
+-- This function calculates daily mutation for finished/semi-finished goods from production
+-- Sources: production_qty only (excludes incoming_qty)
+-- Item types: FERT, HALB (produced)
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION fn_calculate_lpj_hasil_produksi(
+    p_item_types TEXT[]
+)
+RETURNS TABLE (
+    no BIGINT,
+    company_code INTEGER,
+    company_name VARCHAR(200),
+    item_code VARCHAR(50),
+    item_name VARCHAR(200),
+    item_type VARCHAR(10),
+    unit_quantity VARCHAR(20),
+    snapshot_date DATE,
+    opening_balance NUMERIC(15,3),
+    quantity_received NUMERIC(15,3),
+    quantity_issued_outgoing NUMERIC(15,3),
+    adjustment NUMERIC(15,3),
+    closing_balance NUMERIC(15,3),
+    stock_count_result NUMERIC(15,3),
+    quantity_difference NUMERIC(15,3),
+    value_amount NUMERIC(18,4),
+    currency VARCHAR(3),
+    remarks TEXT
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH 
+    -- Find last snapshot date per company
+    last_snapshot AS (
+        SELECT 
+            sds.company_code,
+            MAX(sds.snapshot_date) as last_date
+        FROM stock_daily_snapshot sds
+        WHERE sds.item_type = ANY(p_item_types)
+        GROUP BY sds.company_code
+    ),
+    -- Historical data: FROM stock_daily_snapshot (fast)
+    -- For production-based items, we use snapshot closing_balance (which includes production)
+    historical_data AS (
+        SELECT
+            ROW_NUMBER() OVER (PARTITION BY sds.company_code ORDER BY sds.snapshot_date, sds.item_code) as row_no,
+            sds.company_code,
+            c.name as company_name,
+            sds.item_code,
+            sds.item_name,
+            sds.item_type,
+            COALESCE(i.uom, 'UNIT') as unit_quantity,
+            sds.snapshot_date,
+            sds.opening_balance,
+            sds.production_qty as quantity_received,
+            sds.outgoing_qty as quantity_issued_outgoing,
+            sds.adjustment_qty as adjustment,
+            sds.closing_balance,
+            NULL::NUMERIC(15,3) as stock_count_result,
+            NULL::NUMERIC(15,3) as quantity_difference,
+            NULL::NUMERIC(18,4) as value_amount,
+            NULL::VARCHAR(3) as currency,
+            NULL::TEXT as remarks
+        FROM stock_daily_snapshot sds
+        JOIN companies c ON sds.company_code = c.code
+        LEFT JOIN items i ON sds.company_code = i.company_code AND sds.item_code = i.item_code
+        WHERE sds.item_type = ANY(p_item_types)
+    ),
+    -- Recent data: Calculate from transactions (real-time)
+    -- Only includes production-based transactions
+    recent_data AS (
+        SELECT 
+            ROW_NUMBER() OVER (PARTITION BY calc.company_code ORDER BY calc.snapshot_date, calc.item_code) as row_no,
+            calc.company_code,
+            c.name as company_name,
+            calc.item_code,
+            calc.item_name,
+            calc.item_type,
+            calc.uom as unit_quantity,
+            calc.snapshot_date,
+            calc.opening_balance,
+            calc.quantity_received,
+            calc.quantity_issued_outgoing,
+            calc.adjustment,
+            calc.closing_balance,
+            NULL::NUMERIC(15,3) as stock_count_result,
+            NULL::NUMERIC(15,3) as quantity_difference,
+            NULL::NUMERIC(18,4) as value_amount,
+            NULL::VARCHAR(3) as currency,
+            NULL::TEXT as remarks
+        FROM (
+            SELECT 
+                i.company_code,
+                i.item_code,
+                i.item_name,
+                i.item_type,
+                i.uom,
+                dates.snapshot_date::DATE as snapshot_date,
+                -- Opening balance (closing from previous day)
+                LAG(
+                    COALESCE(opening.opening_balance, 0) +
+                    COALESCE(prod.production_qty, 0) -
+                    COALESCE(out.outgoing_qty, 0) +
+                    COALESCE(adj.adjustment_qty, 0)
+                ) OVER (PARTITION BY i.company_code, i.item_code ORDER BY dates.snapshot_date) as opening_balance,
+                -- Daily transactions (production only)
+                COALESCE(prod.production_qty, 0) as quantity_received,
+                COALESCE(out.outgoing_qty, 0) as quantity_issued_outgoing,
+                COALESCE(adj.adjustment_qty, 0) as adjustment,
+                -- Closing balance calculation (only production)
+                COALESCE(opening.opening_balance, 0) +
+                COALESCE(prod.production_qty, 0) -
+                COALESCE(out.outgoing_qty, 0) +
+                COALESCE(adj.adjustment_qty, 0) as closing_balance
+            FROM items i
+            JOIN companies co ON i.company_code = co.code
+            JOIN last_snapshot ls ON i.company_code = ls.company_code
+            CROSS JOIN LATERAL (
+                SELECT generate_series::DATE as snapshot_date
+                FROM generate_series(
+                    ls.last_date + 1,
+                    CURRENT_DATE,
+                    '1 day'::INTERVAL
+                )
+            ) AS dates
+            -- Opening balance (from last snapshot)
+            LEFT JOIN stock_daily_snapshot opening ON 
+                i.company_code = opening.company_code AND
+                i.item_code = opening.item_code AND
+                opening.snapshot_date = ls.last_date
+            -- Production quantities
+            LEFT JOIN (
+                SELECT 
+                    po.company_code,
+                    poi.item_code,
+                    po.transaction_date as trx_date,
+                    SUM(CASE 
+                        WHEN po.reversal = 'Y' THEN -poi.qty
+                        ELSE poi.qty 
+                    END) as production_qty
+                FROM production_outputs po
+                JOIN production_output_items poi ON po.company_code = poi.production_output_company
+                    AND po.id = poi.production_output_id
+                    AND po.transaction_date = poi.production_output_date
+                WHERE po.deleted_at IS NULL AND poi.deleted_at IS NULL
+                GROUP BY po.company_code, poi.item_code, po.transaction_date
+            ) prod ON i.company_code = prod.company_code 
+                AND i.item_code = prod.item_code 
+                AND prod.trx_date = dates.snapshot_date
+            -- Outgoing quantities
+            LEFT JOIN (
+                SELECT 
+                    og.company_code,
+                    ogi.item_code,
+                    og.outgoing_date as trx_date,
+                    SUM(ogi.qty) as outgoing_qty
+                FROM outgoing_goods og
+                JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
+                    AND og.id = ogi.outgoing_good_id
+                    AND og.outgoing_date = ogi.outgoing_good_date
+                WHERE og.deleted_at IS NULL AND ogi.deleted_at IS NULL
+                GROUP BY og.company_code, ogi.item_code, og.outgoing_date
+            ) out ON i.company_code = out.company_code 
+                AND i.item_code = out.item_code 
+                AND out.trx_date = dates.snapshot_date
+            -- Adjustment quantities
+            LEFT JOIN (
+                SELECT 
+                    a.company_code,
+                    ai.item_code,
+                    a.transaction_date as trx_date,
+                    SUM(CASE 
+                        WHEN ai.adjustment_type = 'GAIN' THEN ai.qty
+                        ELSE -ai.qty
+                    END) as adjustment_qty
+                FROM adjustments a
+                JOIN adjustment_items ai ON a.company_code = ai.adjustment_company
+                    AND a.id = ai.adjustment_id
+                    AND a.transaction_date = ai.adjustment_date
+                WHERE a.deleted_at IS NULL AND ai.deleted_at IS NULL
+                GROUP BY a.company_code, ai.item_code, a.transaction_date
+            ) adj ON i.company_code = adj.company_code 
+                AND i.item_code = adj.item_code 
+                AND adj.trx_date = dates.snapshot_date
+            WHERE i.item_type = ANY(p_item_types)
+              AND i.deleted_at IS NULL
+        ) calc
+        JOIN companies c ON calc.company_code = c.code
+    )
+    -- Combine historical and recent data
+    SELECT * FROM historical_data
+    UNION ALL
+    SELECT * FROM recent_data
+    ORDER BY company_code, snapshot_date, item_code;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+COMMENT ON FUNCTION fn_calculate_lpj_hasil_produksi IS 'Calculate LPJ for finished/semi-finished goods (production-based only, excludes incoming)';
 
 -- ============================================================================
 -- REPORT #1: LAPORAN PEMASUKAN (Goods Receiving Report)
@@ -337,13 +530,13 @@ COMMENT ON VIEW vw_laporan_pengeluaran IS 'Report #2: Goods Issuance Report - Re
 -- ============================================================================
 -- REPORT #3: LPJ BAHAN BAKU DAN BAHAN PENOLONG (Raw Material Mutation Report)
 -- ============================================================================
--- REFACTORED: Now uses generic function with hybrid approach
--- Item types: ROH, HIBE, HIBE_M, HIBE_E, HIBE_T
+-- Uses function for incoming-based materials (excludes production)
+-- Item types: ROH, HALB (purchased), HIBE
 
 CREATE OR REPLACE VIEW vw_lpj_bahan_baku AS
-SELECT * FROM fn_calculate_lpj_mutation(ARRAY['ROH', 'HIBE', 'HIBE_M', 'HIBE_E', 'HIBE_T']);
+SELECT * FROM fn_calculate_lpj_bahan_baku(ARRAY['ROH', 'HALB', 'HIBE']);
 
-COMMENT ON VIEW vw_lpj_bahan_baku IS 'Report #3: Raw Material and Auxiliary Material Mutation Report - Hybrid approach (ROH, HIBE types)';
+COMMENT ON VIEW vw_lpj_bahan_baku IS 'Report #3: Raw Material and Auxiliary Material Mutation Report - Incoming-based only (ROH, HALB purchased, HIBE)';
 
 -- ============================================================================
 -- REPORT #4: LPJ WIP (Work in Process Position Report)
@@ -374,41 +567,42 @@ COMMENT ON VIEW vw_lpj_wip IS 'Report #4: Work in Process Position Report - Snap
 -- ============================================================================
 -- REPORT #5: LPJ HASIL PRODUKSI (Finished Goods Mutation Report)
 -- ============================================================================
--- NEW: Uses generic function with hybrid approach
--- Item types: FERT, HALB
+-- Uses function for production-based goods (excludes incoming)
+-- Item types: FERT, HALB (produced)
 
 CREATE OR REPLACE VIEW vw_lpj_hasil_produksi AS
-SELECT * FROM fn_calculate_lpj_mutation(ARRAY['FERT', 'HALB']);
+SELECT * FROM fn_calculate_lpj_hasil_produksi(ARRAY['FERT', 'HALB']);
 
-COMMENT ON VIEW vw_lpj_hasil_produksi IS 'Report #5: Finished Goods Mutation Report - Hybrid approach (FERT, HALB)';
+COMMENT ON VIEW vw_lpj_hasil_produksi IS 'Report #5: Finished Goods Mutation Report - Production-based only (FERT, HALB produced)';
 
 -- ============================================================================
 -- REPORT #6: LPJ BARANG MODAL (Capital Goods Mutation Report)
 -- ============================================================================
--- NEW: Uses generic function with hybrid approach
--- Item types: HIBE_M, HIBE_E, HIBE_T (Capital Goods only)
+-- Uses function for incoming-based capital goods (excludes production)
+-- Item types: HIBE_M, HIBE_E, HIBE_T (Capital Goods - purchased only)
 
 CREATE OR REPLACE VIEW vw_lpj_barang_modal AS
-SELECT * FROM fn_calculate_lpj_mutation(ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T']);
+SELECT * FROM fn_calculate_lpj_bahan_baku(ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T']);
 
-COMMENT ON VIEW vw_lpj_barang_modal IS 'Report #6: Capital Goods Mutation Report - Hybrid approach (HIBE_M/E/T)';
+COMMENT ON VIEW vw_lpj_barang_modal IS 'Report #6: Capital Goods Mutation Report - Incoming-based only (HIBE_M/E/T purchased)';
 
 -- ============================================================================
 -- REPORT #7: LPJ BARANG SISA / SCRAP (Scrap Mutation Report)
 -- ============================================================================
--- NEW: Uses generic function with hybrid approach
--- Item types: SCRAP
-
-CREATE OR REPLACE VIEW vw_lpj_barang_sisa AS
-SELECT * FROM fn_calculate_lpj_mutation(ARRAY['SCRAP']);
-
-COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - Hybrid approach (SCRAP)';
+-- NOTE: Scrap table structure is still under development
+-- This view is temporarily disabled until scrap transaction tables are created
+-- Expected structure: scrap_mutations table with independent transaction tracking
+-- 
+-- CREATE OR REPLACE VIEW vw_lpj_barang_sisa AS
+-- SELECT * FROM fn_calculate_lpj_barang_sisa(ARRAY['SCRAP']);
+-- 
+-- COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - Independent scrap transactions (SCRAP)';
 
 -- ============================================================================
 -- ADDITIONAL HELPER VIEWS
 -- ============================================================================
 
--- Current stock summary (all item types)
+-- Current stock summary (all item types - excluding scrap until implementation)
 CREATE OR REPLACE VIEW vw_current_stock_summary AS
 SELECT 
     company_code,
@@ -422,8 +616,7 @@ FROM (
     SELECT company_code, item_code, item_type, closing_balance FROM vw_lpj_hasil_produksi
     UNION ALL
     SELECT company_code, item_code, item_type, closing_balance FROM vw_lpj_barang_modal
-    UNION ALL
-    SELECT company_code, item_code, item_type, closing_balance FROM vw_lpj_barang_sisa
+    -- NOTE: vw_lpj_barang_sisa excluded - scrap table under development
 ) combined
 JOIN companies c ON combined.company_code = c.code
 GROUP BY company_code, c.name, item_type
@@ -535,22 +728,19 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 -- ============================================================================
 -- Run these to verify views are working correctly:
 
--- Test generic function directly
--- SELECT * FROM fn_calculate_lpj_mutation(ARRAY['ROH']) WHERE company_code = 1310 LIMIT 10;
-
--- Test Report #3: Raw Material Mutation (refactored)
+-- Test Report #3: Raw Material Mutation (incoming-based)
 -- SELECT * FROM vw_lpj_bahan_baku WHERE company_code = 1310 LIMIT 10;
 
--- Test Report #4: WIP Position (unchanged)
+-- Test Report #4: WIP Position (snapshot-based)
 -- SELECT * FROM vw_lpj_wip WHERE company_code = 1310 LIMIT 10;
 
--- Test Report #5: Finished Goods Mutation (new)
+-- Test Report #5: Finished Goods Mutation (production-based)
 -- SELECT * FROM vw_lpj_hasil_produksi WHERE company_code = 1310 LIMIT 10;
 
--- Test Report #6: Capital Goods Mutation (new)
+-- Test Report #6: Capital Goods Mutation (incoming-based)
 -- SELECT * FROM vw_lpj_barang_modal WHERE company_code = 1310 LIMIT 10;
 
--- Test Report #7: Scrap Mutation (new)
+-- Test Report #7: Scrap Mutation (TBD - scrap table under development)
 -- SELECT * FROM vw_lpj_barang_sisa WHERE company_code = 1310 LIMIT 10;
 
 -- Test Summary Views
@@ -562,11 +752,11 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 -- ============================================================================
 -- Compare hybrid vs all-realtime performance:
 
--- Hybrid approach (fast for historical data)
+-- Incoming-based approach (fast for historical data)
 -- EXPLAIN ANALYZE 
 -- SELECT * FROM vw_lpj_bahan_baku 
 -- WHERE company_code = 1310 
---   AND snapshot_date BETWEEN '2022-01-01' AND '2025-12-18';
+--   AND snapshot_date BETWEEN '2022-01-01' AND '2025-12-21';
 
 -- All-realtime approach (slow for historical data)
 -- EXPLAIN ANALYZE
@@ -582,15 +772,15 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 --    SELECT calculate_stock_snapshot(1310, CURRENT_DATE);
 --    SELECT calculate_stock_snapshot(1380, CURRENT_DATE);
 --
--- 2. Generic function can be called directly for custom queries:
---    SELECT * FROM fn_calculate_lpj_mutation(ARRAY['ROH', 'FERT']) 
+-- 2. Source-specific functions can be called directly for custom queries:
+--    SELECT * FROM fn_calculate_lpj_bahan_baku(ARRAY['ROH']) 
 --    WHERE snapshot_date >= '2025-01-01';
 --
--- 3. To add new item types, just create new view:
---    CREATE VIEW vw_custom_report AS
---      SELECT * FROM fn_calculate_lpj_mutation(ARRAY['NEW_TYPE']);
+-- 3. To add new item types (for existing sources):
+--    UPDATE existing view with new type in array, OR
+--    CREATE new view for new source type
 --
--- 4. Function is STABLE (not VOLATILE) for query optimization
+-- 4. Functions are STABLE (not VOLATILE) for query optimization
 --
 -- 5. Monitor query performance with EXPLAIN ANALYZE
 --
@@ -599,6 +789,11 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 --    - Recent queries (< 1 month): 1-2 seconds
 --    - All-time queries: 2-3 seconds
 --    - Without hybrid: 30+ seconds for 4 years
+--
+-- 7. For new transaction types (like scrap):
+--    - Create new function: fn_calculate_lpj_<type>
+--    - Define unique source logic
+--    - Create new view: vw_lpj_<type>
 
 -- ============================================================================
 -- END OF VIEWS CREATION
