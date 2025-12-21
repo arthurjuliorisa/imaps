@@ -34,9 +34,13 @@ class CronService {
   private timezone: TimezoneConfig;
   private endOfDayHour: number = 0; // Default 00:00 (midnight)
   private endOfDayMinute: number = 5; // 5 minutes after midnight
+  private recalcQueueSchedule: string;
+  private dailySnapshotSchedule: string;
 
   constructor() {
     this.timezone = this.getTimezoneConfig();
+    this.recalcQueueSchedule = this.getRecalcQueueSchedule();
+    this.dailySnapshotSchedule = this.getDailySnapshotSchedule();
   }
 
   /**
@@ -87,21 +91,63 @@ class CronService {
   }
 
   /**
-   * Get current date in application timezone
+   * Get cron schedule for recalc queue from environment or use default
    */
-  private getCurrentDateInTimezone(): Date {
-    const now = new Date();
-    const utcTime = now.getTime() + now.getTimezoneOffset() * 60000;
-    const tzTime = new Date(utcTime + this.timezone.offset * 3600000);
-    // Set to date only (00:00:00)
-    tzTime.setUTCHours(0, 0, 0, 0);
-    return tzTime;
+  private getRecalcQueueSchedule(): string {
+    const envSchedule = process.env.CRON_RECALC_QUEUE_SCHEDULE;
+    const defaultSchedule = '*/15 * * * *'; // Every 15 minutes (production default)
+
+    if (envSchedule) {
+      // Validate basic cron format (5 fields)
+      const fields = envSchedule.trim().split(/\s+/);
+      if (fields.length === 5) {
+        logger.info('📅 Using CRON_RECALC_QUEUE_SCHEDULE from environment', {
+          schedule: envSchedule,
+        });
+        return envSchedule;
+      } else {
+        logger.warn('⚠️ Invalid CRON_RECALC_QUEUE_SCHEDULE format, using default', {
+          provided: envSchedule,
+          default: defaultSchedule,
+        });
+      }
+    }
+
+    logger.info('📅 Using default CRON_RECALC_QUEUE_SCHEDULE', {
+      schedule: defaultSchedule,
+    });
+    return defaultSchedule;
   }
 
   /**
-   * Get cron schedule for end-of-day based on timezone
+   * Get cron schedule for daily snapshot from environment or calculate from timezone
    */
-  private getEndOfDaySchedule(): string {
+  private getDailySnapshotSchedule(): string {
+    const envSchedule = process.env.CRON_DAILY_SNAPSHOT_SCHEDULE;
+
+    // If env variable is set, use it
+    if (envSchedule) {
+      const fields = envSchedule.trim().split(/\s+/);
+      if (fields.length === 5) {
+        logger.info('📅 Using CRON_DAILY_SNAPSHOT_SCHEDULE from environment', {
+          schedule: envSchedule,
+        });
+        return envSchedule;
+      } else {
+        logger.warn('⚠️ Invalid CRON_DAILY_SNAPSHOT_SCHEDULE format, calculating from timezone', {
+          provided: envSchedule,
+        });
+      }
+    }
+
+    // Fall back to timezone-based calculation (original behavior)
+    return this.calculateEndOfDaySchedule();
+  }
+
+  /**
+   * Calculate cron schedule for end-of-day based on timezone (original logic)
+   */
+  private calculateEndOfDaySchedule(): string {
     // Format: minute hour day month weekday
     // Using UTC-adjusted time for cron schedule
     const offsetMinutes = Math.round(this.timezone.offset * 60);
@@ -117,7 +163,7 @@ class CronService {
     }
 
     const schedule = `${utcMinute} ${utcHour} * * *`;
-    logger.info('📅 End-of-day schedule calculated', {
+    logger.info('📅 End-of-day schedule calculated from timezone', {
       appTimezone: this.timezone.name,
       endOfDayTime: `${this.endOfDayHour.toString().padStart(2, '0')}:${this.endOfDayMinute.toString().padStart(2, '0')}`,
       utcEquivalent: `${utcHour.toString().padStart(2, '0')}:${utcMinute.toString().padStart(2, '0')} UTC`,
@@ -125,6 +171,18 @@ class CronService {
     });
 
     return schedule;
+  }
+
+  /**
+   * Get current date in application timezone
+   */
+  private getCurrentDateInTimezone(): Date {
+    const now = new Date();
+    const utcTime = now.getTime() + now.getTimezoneOffset() * 60000;
+    const tzTime = new Date(utcTime + this.timezone.offset * 3600000);
+    // Set to date only (00:00:00)
+    tzTime.setUTCHours(0, 0, 0, 0);
+    return tzTime;
   }
 
   /**
@@ -146,12 +204,12 @@ class CronService {
       const cronJobs: CronJob[] = [
         {
           name: 'process-recalc-queue',
-          schedule: '*/15 * * * *', // Every 15 minutes (timezone-agnostic)
+          schedule: this.recalcQueueSchedule, // From env or default
           task: this.processRecalcQueue.bind(this),
         },
         {
           name: 'calculate-daily-snapshots',
-          schedule: this.getEndOfDaySchedule(), // Daily at end-of-day (timezone-aware)
+          schedule: this.dailySnapshotSchedule, // From env or timezone calculation
           task: this.calculateDailySnapshots.bind(this),
         },
       ];
