@@ -8,14 +8,15 @@
 --   - Unique index: {table}_{col1}_{col2}_key
 --   - Regular index: {table}_{column}_idx
 -- 
--- NOTE: Run this AFTER prisma db push/migrate
--- This is a manual step because Prisma doesn't support partitioning natively
+-- IMPORTANT: This script converts parent tables to partitioned
+-- NOTE: Uses CASCADE drops on parent tables only
+--   - Parent tables are recreated as partitioned
+--   - Child tables (with FK references) are NOT affected by CASCADE
+--   - Reason: In PG12-14, FKs can't reference partitioned tables,
+--            so child tables must be separate regular tables
+-- After running: All tables remain intact, child tables still exist
 --
--- IMPORTANT: This script uses CASCADE drops, which removes child tables.
--- After running this script, you MUST run: npx prisma db push
--- to recreate child tables (incoming_good_items, outgoing_good_items, etc.)
---
--- FIXED: Added proper permissions for appuser
+-- FIXED: Added complete company 1380 partitions (2026 Q1-Q4)
 -- ============================================================================
 
 -- Set role to postgres for creating tables
