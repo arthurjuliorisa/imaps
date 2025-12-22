@@ -89,7 +89,6 @@ export default function MaterialUsagePage() {
   const handleExportExcel = () => {
     const exportData = data.map((row, index) => ({
       No: (page - 1) * pageSize + index + 1,
-      'WMS ID': row.wms_id,
       'Company': row.company_code,
       'Work Order': row.work_order_number,
       'Transaction Date': formatDate(row.transaction_date),
@@ -105,7 +104,6 @@ export default function MaterialUsagePage() {
   const handleExportPDF = () => {
     const exportData = data.map((row, index) => ({
       no: (page - 1) * pageSize + index + 1,
-      wmsId: row.wms_id,
       company: row.company_code,
       workOrder: row.work_order_number,
       transactionDate: formatDate(row.transaction_date),
@@ -113,7 +111,6 @@ export default function MaterialUsagePage() {
 
     const columns = [
       { header: 'No', dataKey: 'no' },
-      { header: 'WMS ID', dataKey: 'wmsId' },
       { header: 'Company', dataKey: 'company' },
       { header: 'Work Order', dataKey: 'workOrder' },
       { header: 'Transaction Date', dataKey: 'transactionDate' },
@@ -170,7 +167,6 @@ export default function MaterialUsagePage() {
             <TableHead>
               <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Work Order</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Transaction Date</TableCell>
@@ -180,7 +176,7 @@ export default function MaterialUsagePage() {
             <TableBody>
               {data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -193,11 +189,6 @@ export default function MaterialUsagePage() {
                     sx={{ '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.04) } }}
                   >
                     <TableCell>{(page - 1) * pageSize + index + 1}</TableCell>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600}>
-                        {row.wms_id}
-                      </Typography>
-                    </TableCell>
                     <TableCell>
                       <Chip label={row.company_code} size="small" />
                     </TableCell>

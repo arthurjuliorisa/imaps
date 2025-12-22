@@ -101,7 +101,6 @@ export default function OutgoingGoodsReportPage() {
   const handleExportExcel = () => {
     const exportData = data.map((row, index) => ({
       No: index + 1,
-      'WMS ID': row.wmsId,
       'Company Name': row.companyName,
       'Doc Type': row.documentType,
       'PPKEK Number': row.ppkekNumber || '-',
@@ -128,7 +127,6 @@ export default function OutgoingGoodsReportPage() {
   const handleExportPDF = () => {
     const exportData = data.map((row, index) => ({
       no: index + 1,
-      wmsId: row.wmsId.toString(),
       docType: row.documentType,
       docNumber: row.documentNumber,
       docDate: formatDate(row.date),
@@ -142,7 +140,6 @@ export default function OutgoingGoodsReportPage() {
 
     const columns = [
       { header: 'No', dataKey: 'no' },
-      { header: 'WMS ID', dataKey: 'wmsId' },
       { header: 'Doc Type', dataKey: 'docType' },
       { header: 'Doc Number', dataKey: 'docNumber' },
       { header: 'Date', dataKey: 'docDate' },
@@ -201,7 +198,6 @@ export default function OutgoingGoodsReportPage() {
                 }}
               >
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Doc Type</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>PPKEK Number</TableCell>
@@ -222,7 +218,7 @@ export default function OutgoingGoodsReportPage() {
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={17} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={16} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -239,11 +235,6 @@ export default function OutgoingGoodsReportPage() {
                     }}
                   >
                     <TableCell>{page * rowsPerPage + index + 1}</TableCell>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600}>
-                        {row.wmsId}
-                      </Typography>
-                    </TableCell>
                     <TableCell>{row.companyName}</TableCell>
                     <TableCell>
                       <Chip
