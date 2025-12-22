@@ -30,15 +30,21 @@ export async function GET() {
 
     // Define headers - MUST match what frontend parser expects
     const headers = [
+      'Item Type',
       'Item Code',
-      'Beginning Balance',
-      'Beginning Date',
+      'Item Name',
+      'UOM',
+      'Qty',
+      'Balance Date',
       'Remarks'
     ];
 
     // Define format hints (row 2)
     const formatHints = [
-      'e.g., RM-001, FG-001, CG-001',
+      'e.g., ROH, HASI, HIBE_M',
+      'e.g., RM-001, FG-001',
+      'Item description',
+      'e.g., KG, PCS, SET',
       'Positive number > 0',
       'DD/MM/YYYY',
       'Optional notes'
@@ -46,12 +52,12 @@ export async function GET() {
 
     // Define sample data (rows 3-8) - showcasing different item types
     const sampleData = [
-      ['RM-1310-001', 100, '01/01/2025', 'Opening balance for raw materials'],
-      ['FG-1310-001', 250.5, '01/01/2025', 'Initial finished goods stock'],
-      ['CG-MACH-001', 2, '01/01/2025', 'Capital goods - Machine'],
-      ['WIP-1310-001', 150, '01/01/2025', 'WIP stock'],
-      ['SCRAP-1310-001', 10, '01/01/2025', 'Waste materials'],
-      ['CG-EQUIP-001', 5, '01/01/2025', 'Quality control equipment'],
+      ['ROH', 'RM-1310-001', 'Steel Plate', 'KG', 100, '01/01/2025', 'Opening balance for raw materials'],
+      ['HASI', 'FG-1310-001', 'Finished Product A', 'PCS', 250.5, '01/01/2025', 'Initial finished goods stock'],
+      ['HIBE_M', 'CG-MACH-001', 'CNC Machine', 'SET', 2, '01/01/2025', 'Capital goods - Machine'],
+      ['WIP', 'WIP-1310-001', 'Semi-finished Product', 'PCS', 150, '01/01/2025', 'WIP stock'],
+      ['SCRP', 'SCRAP-1310-001', 'Waste Materials', 'KG', 10, '01/01/2025', 'Waste materials'],
+      ['HIBE_E', 'CG-EQUIP-001', 'Testing Equipment', 'SET', 5, '01/01/2025', 'Quality control equipment'],
     ];
 
     // Add rows
@@ -61,10 +67,13 @@ export async function GET() {
 
     // Set column widths
     worksheet.columns = [
-      { width: 20 },  // Item Code column
-      { width: 20 },  // Beginning Balance column
-      { width: 18 },  // Beginning Date column
-      { width: 40 },  // Remarks column
+      { width: 15 },  // Item Type column
+      { width: 18 },  // Item Code column
+      { width: 25 },  // Item Name column
+      { width: 10 },  // UOM column
+      { width: 15 },  // Qty column
+      { width: 18 },  // Balance Date column
+      { width: 35 },  // Remarks column
     ];
 
     // Style header row
@@ -84,9 +93,9 @@ export async function GET() {
       fgColor: { argb: 'FFF5F5F5' }, // Light gray
     };
 
-    // Format Beginning Balance column (B3:B8) as numbers with 2 decimal places
+    // Format Qty column (E3:E8) as numbers with 2 decimal places
     for (let row = 3; row <= 8; row++) {
-      worksheet.getCell(`B${row}`).numFmt = '0.00';
+      worksheet.getCell(`E${row}`).numFmt = '0.00';
     }
 
     // ============================================
@@ -107,18 +116,31 @@ export async function GET() {
       [],
       ['Column Details:'],
       [],
-      ['Item Code (REQUIRED):'],
-      ['  - The unique code of the item (e.g., RM-1310-001, FG-1310-001, CG-MACH-001)'],
-      ['  - Must match an existing item code in the Beginning Balances master data'],
+      ['Item Type (REQUIRED):'],
+      ['  - The item type code (e.g., ROH, HASI, HIBE_M, WIP, SCRP)'],
+      ['  - Must match an existing item type code in the system'],
       ['  - Case sensitive'],
       [],
-      ['Beginning Balance (REQUIRED):'],
+      ['Item Code (REQUIRED):'],
+      ['  - The unique code of the item (e.g., RM-1310-001, FG-1310-001, CG-MACH-001)'],
+      ['  - Can be any unique identifier for the item'],
+      ['  - Case sensitive'],
+      [],
+      ['Item Name (REQUIRED):'],
+      ['  - The description/name of the item (e.g., Steel Plate, Finished Product A)'],
+      ['  - Cannot be empty'],
+      [],
+      ['UOM (REQUIRED):'],
+      ['  - Unit of Measurement (e.g., KG, PCS, SET, METER)'],
+      ['  - Cannot be empty'],
+      [],
+      ['Qty (REQUIRED):'],
       ['  - The beginning balance quantity'],
       ['  - Must be a positive number greater than 0'],
       ['  - Can include decimals (e.g., 250.5)'],
       ['  - Format: Number with up to 2 decimal places'],
       [],
-      ['Beginning Date (REQUIRED):'],
+      ['Balance Date (REQUIRED):'],
       ['  - The date for this beginning balance'],
       ['  - Format: DD/MM/YYYY (e.g., 01/01/2025)'],
       ['  - Must be a valid date'],
@@ -129,10 +151,11 @@ export async function GET() {
       ['  - Can be left empty'],
       [],
       ['Validation Rules:'],
-      ['  - Item Code must exist in the Beginning Balances master data'],
-      ['  - Beginning Balance must be > 0 (not just >= 0)'],
-      ['  - Beginning Date cannot be in the future'],
-      ['  - Beginning Date must be in DD/MM/YYYY format'],
+      ['  - Item Type must exist in the system'],
+      ['  - All fields except Remarks are REQUIRED'],
+      ['  - Qty must be > 0 (not just >= 0)'],
+      ['  - Balance Date cannot be in the future'],
+      ['  - Balance Date must be in DD/MM/YYYY format'],
       [],
       ['Important Notes:'],
       ['  - All fields except Remarks are REQUIRED'],
@@ -149,12 +172,12 @@ export async function GET() {
       ['  4. Returns a summary with total count'],
       [],
       ['Example Data:'],
-      ['Item Code     | Beginning Balance | Beginning Date | Remarks'],
-      ['RM-1310-001   | 100               | 01/01/2025     | Opening balance for raw materials'],
-      ['FG-1310-001   | 250.5             | 01/01/2025     | Initial finished goods stock'],
-      ['CG-MACH-001   | 2                 | 01/01/2025     | Capital goods - Machine'],
-      ['WIP-1310-001  | 150               | 01/01/2025     | WIP stock'],
-      ['SCRAP-1310-001| 10                | 01/01/2025     | Waste materials'],
+      ['Item Type | Item Code    | Item Name          | UOM  | Qty   | Balance Date | Remarks'],
+      ['ROH       | RM-1310-001  | Steel Plate        | KG   | 100   | 01/01/2025   | Opening balance for raw materials'],
+      ['HASI      | FG-1310-001  | Finished Product A | PCS  | 250.5 | 01/01/2025   | Initial finished goods stock'],
+      ['HIBE_M    | CG-MACH-001  | CNC Machine        | SET  | 2     | 01/01/2025   | Capital goods - Machine'],
+      ['WIP       | WIP-1310-001 | Semi-finished      | PCS  | 150   | 01/01/2025   | WIP stock'],
+      ['SCRP      | SCRAP-001    | Waste Materials    | KG   | 10    | 01/01/2025   | Waste materials'],
       [],
       ['For assistance, please contact the system administrator.'],
     ];

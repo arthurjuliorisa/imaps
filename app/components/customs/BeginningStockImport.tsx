@@ -28,9 +28,12 @@ import dayjs from 'dayjs';
 import { useToast } from '../ToastProvider';
 
 interface ImportedRecord {
+  itemType: string;
   itemCode: string;
-  beginningBalance: number;
-  beginningDate: string;
+  itemName: string;
+  uom: string;
+  qty: number;
+  balanceDate: string;
   remarks: string;
   // Validation
   isValid: boolean;
@@ -112,27 +115,30 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
     const errors: string[] = [];
 
     // Required field validation
+    if (!row['Item Type']) errors.push('Item Type is required');
     if (!row['Item Code']) errors.push('Item Code is required');
-    if (!row['Beginning Balance'] && row['Beginning Balance'] !== 0) errors.push('Beginning Balance is required');
-    if (!row['Beginning Date']) errors.push('Beginning Date is required');
+    if (!row['Item Name']) errors.push('Item Name is required');
+    if (!row['UOM']) errors.push('UOM is required');
+    if (!row['Qty'] && row['Qty'] !== 0) errors.push('Qty is required');
+    if (!row['Balance Date']) errors.push('Balance Date is required');
 
-    // Beginning Balance validation
-    if (row['Beginning Balance'] !== undefined && row['Beginning Balance'] !== '') {
-      const value = parseFloat(row['Beginning Balance']);
+    // Qty validation
+    if (row['Qty'] !== undefined && row['Qty'] !== '') {
+      const value = parseFloat(row['Qty']);
       if (isNaN(value)) {
-        errors.push('Beginning Balance must be a number');
+        errors.push('Qty must be a number');
       } else if (value <= 0) {
-        errors.push('Beginning Balance must be greater than 0');
+        errors.push('Qty must be greater than 0');
       }
     }
 
     // Date validation
-    if (row['Beginning Date']) {
-      const date = dayjs(row['Beginning Date']);
+    if (row['Balance Date']) {
+      const date = dayjs(row['Balance Date']);
       if (!date.isValid()) {
         errors.push('Invalid date format');
       } else if (date.isAfter(dayjs(), 'day')) {
-        errors.push('Beginning date cannot be in the future');
+        errors.push('Balance date cannot be in the future');
       }
     }
 
@@ -191,13 +197,16 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
       // Process and validate records
       const processedRecords: ImportedRecord[] = jsonData.map((row: any) => {
         const validation = validateRecord(row);
-        const beginningBalance = parseFloat(row['Beginning Balance']) || 0;
+        const qty = parseFloat(row['Qty']) || 0;
 
         return {
+          itemType: row['Item Type'] || '',
           itemCode: row['Item Code'] || '',
-          beginningBalance,
-          beginningDate: row['Beginning Date'] ? dayjs(row['Beginning Date']).format('YYYY-MM-DD') : '',
-          remarks: row.Remarks || '',
+          itemName: row['Item Name'] || '',
+          uom: row['UOM'] || '',
+          qty,
+          balanceDate: row['Balance Date'] ? dayjs(row['Balance Date']).format('DD/MM/YYYY') : '',
+          remarks: row['Remarks'] || '',
           isValid: validation.isValid,
           errors: validation.errors,
         };
@@ -355,7 +364,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
 
           <Alert severity="info" icon={false} sx={{ mb: 2, py: 0.75 }}>
             <Typography variant="caption" component="div">
-              <strong>Format:</strong> Item Code | Beginning Balance | Beginning Date | Remarks
+              <strong>Format:</strong> Item Type | Item Code | Item Name | UOM | Qty | Balance Date | Remarks
             </Typography>
           </Alert>
 
@@ -406,13 +415,22 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     Status
                   </TableCell>
                   <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
-                    Item Code
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
-                    Beginning Balance
+                    Item Type
                   </TableCell>
                   <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
-                    Beginning Date
+                    Item Code
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                    Item Name
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                    UOM
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                    Qty
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                    Balance Date
                   </TableCell>
                   <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
                     Remarks
@@ -440,13 +458,28 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                       )}
                     </TableCell>
                     <TableCell>
+                      <Typography variant="body2" fontSize="0.875rem">
+                        {record.itemType || '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
                       <Typography variant="body2" fontWeight={600} fontSize="0.875rem">
                         {record.itemCode || '-'}
                       </Typography>
                     </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontSize="0.875rem">
+                        {record.itemName || '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontSize="0.875rem">
+                        {record.uom || '-'}
+                      </Typography>
+                    </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600} fontSize="0.875rem">
-                        {record.beginningBalance.toLocaleString('id-ID', {
+                        {record.qty.toLocaleString('id-ID', {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
@@ -454,7 +487,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontSize="0.875rem">
-                        {record.beginningDate ? dayjs(record.beginningDate).format('DD/MM/YYYY') : '-'}
+                        {record.balanceDate || '-'}
                       </Typography>
                     </TableCell>
                     <TableCell>

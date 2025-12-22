@@ -233,9 +233,12 @@ export default function BeginningDataPage() {
         },
         body: JSON.stringify({
           records: records.map((r) => ({
+            itemType: r.itemType,
             itemCode: r.itemCode,
-            beginningBalance: r.beginningBalance,
-            beginningDate: r.beginningDate,
+            itemName: r.itemName,
+            uom: r.uom,
+            qty: r.qty,
+            balanceDate: r.balanceDate,
             remarks: r.remarks,
           })),
         }),
