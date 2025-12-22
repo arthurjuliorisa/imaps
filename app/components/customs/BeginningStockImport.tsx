@@ -170,7 +170,10 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
         if (rowNumber === 1) {
           // First row is headers
           row.eachCell((cell) => {
-            headers.push(cell.value?.toString() || '');
+            // Remove asterisk (*) from header names for backward compatibility
+            const headerValue = cell.value?.toString() || '';
+            const cleanHeader = headerValue.replace(/\*$/, '').trim();
+            headers.push(cleanHeader);
           });
         } else if (rowNumber === 2) {
           // Second row is format hints - skip it
