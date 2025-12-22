@@ -172,8 +172,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
           row.eachCell((cell) => {
             headers.push(cell.value?.toString() || '');
           });
+        } else if (rowNumber === 2) {
+          // Second row is format hints - skip it
+          return;
         } else {
-          // Data rows
+          // Data rows (start from row 3)
           const rowData: any = {};
           row.eachCell((cell, colNumber) => {
             const header = headers[colNumber - 1];
