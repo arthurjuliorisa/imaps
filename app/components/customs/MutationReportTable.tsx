@@ -53,6 +53,7 @@ interface MutationReportTableProps {
   hideRemarks?: boolean;
   hideActions?: boolean;
   hideValueAmount?: boolean;
+  hideRowNumber?: boolean;
 }
 
 export function MutationReportTable({
@@ -67,6 +68,7 @@ export function MutationReportTable({
   hideRemarks = false,
   hideActions = false,
   hideValueAmount = false,
+  hideRowNumber = true,
 }: MutationReportTableProps) {
   const theme = useTheme();
   const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
@@ -105,7 +107,7 @@ export function MutationReportTable({
               }}
             >
               <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
-              {hasRowNumber && <TableCell sx={{ fontWeight: 600 }}>Row Number</TableCell>}
+              {hasRowNumber && !hideRowNumber && <TableCell sx={{ fontWeight: 600 }}>Row Number</TableCell>}
               {hasCompanyCode && <TableCell sx={{ fontWeight: 600 }}>Company Code</TableCell>}
               {hasCompanyName && <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>}
               <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
@@ -129,7 +131,7 @@ export function MutationReportTable({
             {paginatedData.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={13 + (hasRowNumber ? 1 : 0) + (hasCompanyCode ? 1 : 0) + (hasCompanyName ? 1 : 0) + (hasItemType ? 1 : 0) + (!hideValueAmount && hasValueAmount ? 1 : 0) + (!hideValueAmount && hasCurrency ? 1 : 0) - (hideRemarks ? 1 : 0) - (hideActions ? 1 : 0)}
+                  colSpan={13 + (hasRowNumber && !hideRowNumber ? 1 : 0) + (hasCompanyCode ? 1 : 0) + (hasCompanyName ? 1 : 0) + (hasItemType ? 1 : 0) + (!hideValueAmount && hasValueAmount ? 1 : 0) + (!hideValueAmount && hasCurrency ? 1 : 0) - (hideRemarks ? 1 : 0) - (hideActions ? 1 : 0)}
                   align="center"
                   sx={{ py: 8 }}
                 >
@@ -149,7 +151,7 @@ export function MutationReportTable({
                   }}
                 >
                   <TableCell>{page * rowsPerPage + index + 1}</TableCell>
-                  {hasRowNumber && <TableCell>{row.rowNumber ?? '-'}</TableCell>}
+                  {hasRowNumber && !hideRowNumber && <TableCell>{row.rowNumber ?? '-'}</TableCell>}
                   {hasCompanyCode && (
                     <TableCell>
                       <Chip label={row.companyCode} size="small" variant="outlined" />
