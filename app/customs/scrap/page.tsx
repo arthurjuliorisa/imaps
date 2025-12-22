@@ -86,7 +86,6 @@ export default function ScrapMutationPage() {
       'Ending': row.ending,
       'Stock Opname': row.stockOpname,
       'Variant': row.variant,
-      'Remarks': row.remarks,
     }));
 
     exportToExcel(
@@ -109,7 +108,6 @@ export default function ScrapMutationPage() {
       ending: row.ending.toString(),
       stockOpname: row.stockOpname.toString(),
       variant: row.variant.toString(),
-      remarks: row.remarks || '-',
     }));
 
     const columns = [
@@ -124,7 +122,6 @@ export default function ScrapMutationPage() {
       { header: 'Ending', dataKey: 'ending' },
       { header: 'Stock Opname', dataKey: 'stockOpname' },
       { header: 'Variant', dataKey: 'variant' },
-      { header: 'Remarks', dataKey: 'remarks' },
     ];
 
     exportToPDF(
@@ -352,6 +349,9 @@ export default function ScrapMutationPage() {
         onEdit={handleEdit}
         onView={handleView}
         loading={loading}
+        hideRemarks={true}
+        hideActions={true}
+        hideValueAmount={true}
       />
 
       {/* Incoming Scrap Dialog */}

@@ -52,6 +52,7 @@ interface MutationReportTableProps {
   loading?: boolean;
   hideRemarks?: boolean;
   hideActions?: boolean;
+  hideValueAmount?: boolean;
 }
 
 export function MutationReportTable({
@@ -65,6 +66,7 @@ export function MutationReportTable({
   loading = false,
   hideRemarks = false,
   hideActions = false,
+  hideValueAmount = false,
 }: MutationReportTableProps) {
   const theme = useTheme();
   const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
@@ -117,8 +119,8 @@ export function MutationReportTable({
               <TableCell sx={{ fontWeight: 600 }} align="right">Ending</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">Stock Opname</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">Variant</TableCell>
-              {hasValueAmount && <TableCell sx={{ fontWeight: 600 }} align="right">Value Amount</TableCell>}
-              {hasCurrency && <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>}
+              {!hideValueAmount && hasValueAmount && <TableCell sx={{ fontWeight: 600 }} align="right">Value Amount</TableCell>}
+              {!hideValueAmount && hasCurrency && <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>}
               {!hideRemarks && <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>}
               {!hideActions && <TableCell sx={{ fontWeight: 600 }} align="center">Action</TableCell>}
             </TableRow>
@@ -127,7 +129,7 @@ export function MutationReportTable({
             {paginatedData.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={13 + (hasRowNumber ? 1 : 0) + (hasCompanyCode ? 1 : 0) + (hasCompanyName ? 1 : 0) + (hasItemType ? 1 : 0) + (hasValueAmount ? 1 : 0) + (hasCurrency ? 1 : 0) - (hideRemarks ? 1 : 0) - (hideActions ? 1 : 0)}
+                  colSpan={13 + (hasRowNumber ? 1 : 0) + (hasCompanyCode ? 1 : 0) + (hasCompanyName ? 1 : 0) + (hasItemType ? 1 : 0) + (!hideValueAmount && hasValueAmount ? 1 : 0) + (!hideValueAmount && hasCurrency ? 1 : 0) - (hideRemarks ? 1 : 0) - (hideActions ? 1 : 0)}
                   align="center"
                   sx={{ py: 8 }}
                 >
@@ -194,7 +196,7 @@ export function MutationReportTable({
                       sx={{ fontWeight: 600 }}
                     />
                   </TableCell>
-                  {hasValueAmount && (
+                  {!hideValueAmount && hasValueAmount && (
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>
                         {row.valueAmount !== undefined
@@ -205,7 +207,7 @@ export function MutationReportTable({
                       </Typography>
                     </TableCell>
                   )}
-                  {hasCurrency && !hasValueAmount && (
+                  {!hideValueAmount && hasCurrency && !hasValueAmount && (
                     <TableCell>
                       <Chip label={row.currency || '-'} size="small" variant="outlined" />
                     </TableCell>

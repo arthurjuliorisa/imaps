@@ -170,6 +170,7 @@ export default function RawMaterialMutationPage() {
         loading={loading}
         hideRemarks={true}
         hideActions={true}
+        hideValueAmount={true}
       />
     </ReportLayout>
   );

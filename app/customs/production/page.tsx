@@ -167,6 +167,7 @@ export default function ProductionMutationPage() {
         loading={loading}
         hideRemarks={true}
         hideActions={true}
+        hideValueAmount={true}
       />
     </ReportLayout>
   );
