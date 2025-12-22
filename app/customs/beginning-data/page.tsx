@@ -245,14 +245,18 @@ export default function BeginningDataPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to import data');
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.message || 'Failed to import data';
+        throw new Error(errorMessage);
       }
 
-      toast.success(`Successfully imported ${records.length} beginning stock record(s)!`);
+      const result = await response.json();
+      const successMessage = result.message || `Successfully imported ${records.length} beginning stock record(s)!`;
+      toast.success(successMessage);
       await fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error importing data:', error);
-      toast.error('Failed to import records. Please try again.');
+      toast.error(error.message || 'Failed to import records. Please try again.');
       throw error;
     }
   };
@@ -336,7 +340,7 @@ export default function BeginningDataPage() {
         }}
       >
         <Autocomplete
-          value={itemTypes.find((it) => it.code === selectedItemType) ?? null}
+          value={itemTypes.find((it) => it.code === selectedItemType)}
           onChange={handleItemTypeChange}
           options={itemTypes}
           getOptionLabel={(option) => option.code === 'ALL' ? option.name : `${option.code} - ${option.name}`}

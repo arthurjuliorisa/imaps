@@ -191,6 +191,7 @@ model beginning_balances {
   uom          String    @db.VarChar(20)
   qty          Decimal   @db.Decimal(15, 3)
   balance_date DateTime  @db.Date
+  remarks      String?   @db.VarChar(1000)
   created_at   DateTime  @default(now()) @db.Timestamptz(6)
   updated_at   DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at   DateTime? @db.Timestamptz(6)
@@ -702,3 +703,4 @@ model snapshot_recalc_queue {
   @@index([status, priority, queued_at])
   @@index([company_code, recalc_date])
 }
+

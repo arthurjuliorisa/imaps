@@ -41,7 +41,7 @@ export async function GET() {
 
     // Define format hints (row 2)
     const formatHints = [
-      'e.g., ROH, HASI, HIBE_M',
+      'e.g., ROH, FERT, HALB, HIBE_M, SCRAP',
       'e.g., RM-001, FG-001',
       'Item description',
       'e.g., KG, PCS, SET',
@@ -53,10 +53,10 @@ export async function GET() {
     // Define sample data (rows 3-8) - showcasing different item types
     const sampleData = [
       ['ROH', 'RM-1310-001', 'Steel Plate', 'KG', 100, '01/01/2025', 'Opening balance for raw materials'],
-      ['HASI', 'FG-1310-001', 'Finished Product A', 'PCS', 250.5, '01/01/2025', 'Initial finished goods stock'],
+      ['FERT', 'FG-1310-001', 'Finished Product A', 'PCS', 250.5, '01/01/2025', 'Initial finished goods stock'],
       ['HIBE_M', 'CG-MACH-001', 'CNC Machine', 'SET', 2, '01/01/2025', 'Capital goods - Machine'],
-      ['WIP', 'WIP-1310-001', 'Semi-finished Product', 'PCS', 150, '01/01/2025', 'WIP stock'],
-      ['SCRP', 'SCRAP-1310-001', 'Waste Materials', 'KG', 10, '01/01/2025', 'Waste materials'],
+      ['HALB', 'WIP-1310-001', 'Semi-finished Product', 'PCS', 150, '01/01/2025', 'WIP stock'],
+      ['SCRAP', 'SCRAP-1310-001', 'Waste Materials', 'KG', 10, '01/01/2025', 'Waste materials'],
       ['HIBE_E', 'CG-EQUIP-001', 'Testing Equipment', 'SET', 5, '01/01/2025', 'Quality control equipment'],
     ];
 
@@ -117,7 +117,7 @@ export async function GET() {
       ['Column Details:'],
       [],
       ['Item Type (REQUIRED):'],
-      ['  - The item type code (e.g., ROH, HASI, HIBE_M, WIP, SCRP)'],
+      ['  - The item type code (e.g., ROH, FERT, HALB, HIBE_M, HIBE_E, HIBE_T, SCRAP, HIBE, DIEN)'],
       ['  - Must match an existing item type code in the system'],
       ['  - Case sensitive'],
       [],
@@ -174,10 +174,10 @@ export async function GET() {
       ['Example Data:'],
       ['Item Type | Item Code    | Item Name          | UOM  | Qty   | Balance Date | Remarks'],
       ['ROH       | RM-1310-001  | Steel Plate        | KG   | 100   | 01/01/2025   | Opening balance for raw materials'],
-      ['HASI      | FG-1310-001  | Finished Product A | PCS  | 250.5 | 01/01/2025   | Initial finished goods stock'],
+      ['FERT      | FG-1310-001  | Finished Product A | PCS  | 250.5 | 01/01/2025   | Initial finished goods stock'],
       ['HIBE_M    | CG-MACH-001  | CNC Machine        | SET  | 2     | 01/01/2025   | Capital goods - Machine'],
-      ['WIP       | WIP-1310-001 | Semi-finished      | PCS  | 150   | 01/01/2025   | WIP stock'],
-      ['SCRP      | SCRAP-001    | Waste Materials    | KG   | 10    | 01/01/2025   | Waste materials'],
+      ['HALB      | WIP-1310-001 | Semi-finished      | PCS  | 150   | 01/01/2025   | WIP stock'],
+      ['SCRAP     | SCRAP-001    | Waste Materials    | KG   | 10    | 01/01/2025   | Waste materials'],
       [],
       ['For assistance, please contact the system administrator.'],
     ];

@@ -97,6 +97,15 @@ export async function POST(request: Request) {
       );
     }
 
+    // Convert company code to integer for database operations
+    const companyCodeInt = parseInt(companyCode, 10);
+    if (isNaN(companyCodeInt)) {
+      return NextResponse.json(
+        { message: 'Invalid company code format' },
+        { status: 400 }
+      );
+    }
+
     // Fetch valid item types from database (dynamic validation)
     const validItemTypes = await prisma.item_types.findMany({
       select: { item_type_code: true, name_id: true, name_en: true },
@@ -253,7 +262,7 @@ export async function POST(request: Request) {
         for (const record of validRecords) {
           const existing = await tx.beginning_balances.findFirst({
             where: {
-              company_code: companyCode,
+              company_code: companyCodeInt,
               item_code: record.itemCode,
               balance_date: record.balanceDate,
             },
@@ -277,13 +286,14 @@ export async function POST(request: Request) {
         for (const record of validRecords) {
           await tx.beginning_balances.create({
             data: {
-              company_code: companyCode,
+              company_code: companyCodeInt,
               item_type: record.itemType,
               item_code: record.itemCode,
               item_name: record.itemName,
               uom: record.uom,
               qty: record.qty,
               balance_date: record.balanceDate,
+              remarks: record.remarks,
             },
           });
 
@@ -379,3 +389,4 @@ export async function POST(request: Request) {
     );
   }
 }
+
