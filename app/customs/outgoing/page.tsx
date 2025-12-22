@@ -45,60 +45,6 @@ interface OutgoingReportData {
   qty: number;
   currency: string;
   amount: number;
-  productionOutputWmsIds: string[];
-  createdAt: Date;
-}
-
-interface ProductionOutputIdsCellProps {
-  ids: string[];
-}
-
-function ProductionOutputIdsCell({ ids }: ProductionOutputIdsCellProps) {
-  if (!ids || ids.length === 0) {
-    return <Typography variant="body2" color="text.secondary">-</Typography>;
-  }
-
-  const displayIds = ids.slice(0, 2);
-  const remainingCount = ids.length - 2;
-
-  return (
-    <Tooltip
-      title={
-        <Box>
-          <Typography variant="caption" fontWeight={600} sx={{ mb: 0.5 }}>
-            All Production Output IDs:
-          </Typography>
-          {ids.map((id, index) => (
-            <Typography key={index} variant="caption" display="block">
-              {id}
-            </Typography>
-          ))}
-        </Box>
-      }
-      arrow
-    >
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-        {displayIds.map((id, index) => (
-          <Chip
-            key={index}
-            label={id}
-            size="small"
-            variant="outlined"
-            color="secondary"
-            sx={{ fontSize: '0.7rem' }}
-          />
-        ))}
-        {remainingCount > 0 && (
-          <Chip
-            label={`+${remainingCount} more`}
-            size="small"
-            color="info"
-            sx={{ fontSize: '0.7rem', fontWeight: 600 }}
-          />
-        )}
-      </Box>
-    </Tooltip>
-  );
 }
 
 export default function OutgoingGoodsReportPage() {
@@ -170,8 +116,6 @@ export default function OutgoingGoodsReportPage() {
       'Quantity': row.qty,
       'Currency': row.currency,
       'Value Amount': row.amount,
-      'Production Output IDs': (row.productionOutputWmsIds || []).join(', ') || '-',
-      'Created Date': formatDate(row.createdAt),
     }));
 
     exportToExcel(
@@ -272,15 +216,13 @@ export default function OutgoingGoodsReportPage() {
                 <TableCell sx={{ fontWeight: 600 }} align="right">Quantity</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Value Amount</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Production Output IDs</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Created Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="center">Action</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={19} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={17} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -347,10 +289,6 @@ export default function OutgoingGoodsReportPage() {
                         {row.amount.toLocaleString('id-ID', { minimumFractionDigits: 2 })}
                       </Typography>
                     </TableCell>
-                    <TableCell>
-                      <ProductionOutputIdsCell ids={row.productionOutputWmsIds} />
-                    </TableCell>
-                    <TableCell>{formatDate(row.createdAt)}</TableCell>
                     <TableCell align="center">
                       <Tooltip title="View Details">
                         <IconButton
