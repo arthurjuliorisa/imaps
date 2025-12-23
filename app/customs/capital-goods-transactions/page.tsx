@@ -125,7 +125,7 @@ export default function CapitalGoodsTransactionsPage() {
       headerName: 'Value Amount',
       width: 140,
       type: 'number',
-      valueFormatter: (value) => value ? value.toLocaleString() : '0',
+      valueFormatter: (value: number) => value ? value.toLocaleString() : '0',
     },
     {
       field: 'remarks',

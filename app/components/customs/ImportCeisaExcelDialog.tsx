@@ -196,10 +196,9 @@ export function ImportCeisaExcelDialog({
                 row
                 value={direction}
                 onChange={(e) => setDirection(e.target.value as 'IN' | 'OUT')}
-                disabled={loading}
               >
-                <FormControlLabel value="IN" control={<Radio />} label="Incoming" />
-                <FormControlLabel value="OUT" control={<Radio />} label="Outgoing" />
+                <FormControlLabel value="IN" control={<Radio />} label="Incoming" disabled={loading} />
+                <FormControlLabel value="OUT" control={<Radio />} label="Outgoing" disabled={loading} />
               </RadioGroup>
             </FormControl>
           )}

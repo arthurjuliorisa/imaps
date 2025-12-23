@@ -10,12 +10,8 @@ import { z } from 'zod';
  * Zod schema for import request validation
  */
 const ImportRequestSchema = z.object({
-  transactionType: z.enum(['SCRAP', 'CAPITAL_GOODS'], {
-    required_error: 'Transaction type is required',
-  }),
-  direction: z.enum(['IN', 'OUT'], {
-    required_error: 'Transaction direction is required',
-  }),
+  transactionType: z.enum(['SCRAP', 'CAPITAL_GOODS']),
+  direction: z.enum(['IN', 'OUT']),
 });
 
 type ImportRequest = z.infer<typeof ImportRequestSchema>;
@@ -366,6 +362,8 @@ async function importScrapTransactions(
           customs_registration_date: regDate,
           outgoing_evidence_number: data.docNumber,
           outgoing_date: docDate,
+          invoice_number: data.docNumber,
+          invoice_date: docDate,
           recipient_name: data.recipientName || 'Unknown',
           timestamp: new Date(),
         },
