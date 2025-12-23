@@ -135,17 +135,17 @@ export async function parseCeisa40Excel(buffer: Buffer): Promise<ParsedCeisaData
         typeof cell === 'string' && cell.includes('KODE DOKUMEN')
       );
 
-      // Try to find row with code 308 (invoice), or use first document
+      // Try to find row with code 380 (shipping document), or use first document
       let targetRow = null;
       for (let i = dokumenHeaderIndex + 1; i < dokumenData.length; i++) {
         const row = dokumenData[i];
-        if (docCodeIndex >= 0 && (row[docCodeIndex] === '308' || row[docCodeIndex] === 308)) {
+        if (docCodeIndex >= 0 && (row[docCodeIndex] === '380' || row[docCodeIndex] === 380)) {
           targetRow = row;
           break;
         }
       }
 
-      // If no 308 found, use first document row
+      // If no 380 found, use first document row
       if (!targetRow && dokumenData.length > dokumenHeaderIndex + 1) {
         targetRow = dokumenData[dokumenHeaderIndex + 1];
       }
