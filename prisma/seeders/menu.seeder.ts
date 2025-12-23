@@ -56,16 +56,26 @@ const menuStructure: MenuInput[] = [
     ],
   },
   {
+    menu_name: 'Transaksi',
+    menu_path: null,
+    menu_icon: 'SwapHoriz',
+    menu_order: 5,
+    children: [
+      { menu_name: 'Transaksi Scrap', menu_path: '/customs/scrap-transactions', menu_icon: 'Recycling', menu_order: 1 },
+      { menu_name: 'Transaksi Barang Modal', menu_path: '/customs/capital-goods-transactions', menu_icon: 'Inventory', menu_order: 2 },
+    ],
+  },
+  {
     menu_name: 'Beginning Data',
     menu_path: '/customs/beginning-data',
     menu_icon: 'PlaylistAdd',
-    menu_order: 5,
+    menu_order: 6,
   },
   {
     menu_name: 'Settings',
     menu_path: null,
     menu_icon: 'Settings',
-    menu_order: 6,
+    menu_order: 7,
     children: [
       { menu_name: 'User Management', menu_path: '/settings/users', menu_icon: 'People', menu_order: 1 },
       { menu_name: 'Access Menu', menu_path: '/settings/access-menu', menu_icon: 'Settings', menu_order: 2 },

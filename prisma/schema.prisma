@@ -80,18 +80,20 @@ model companies {
   deleted_at DateTime?     @db.Timestamptz(6)
 
   // Relations
-  incoming_goods       incoming_goods[]
-  material_usages      material_usages[]
-  wip_balances         wip_balances[]
-  production_outputs   production_outputs[]
-  outgoing_goods       outgoing_goods[]
-  adjustments          adjustments[]
-  beginning_balances   beginning_balances[]
-  scrap_items          scrap_items[]
-  items                items[]
-  users                users[]
-  snapshot_recalc_queue snapshot_recalc_queue[]
-  stock_daily_snapshot  stock_daily_snapshot[]
+  incoming_goods               incoming_goods[]
+  material_usages              material_usages[]
+  wip_balances                 wip_balances[]
+  production_outputs           production_outputs[]
+  outgoing_goods               outgoing_goods[]
+  adjustments                  adjustments[]
+  beginning_balances           beginning_balances[]
+  scrap_items                  scrap_items[]
+  items                        items[]
+  users                        users[]
+  snapshot_recalc_queue        snapshot_recalc_queue[]
+  stock_daily_snapshot         stock_daily_snapshot[]
+  incoming_capital_goods       incoming_capital_goods[]
+  outgoing_scrap_capital_goods outgoing_scrap_capital_goods[]
 
   @@index([code])
   @@index([status])
@@ -209,16 +211,16 @@ model beginning_balances {
 // ============================================================================
 
 model scrap_items {
-  id                 Int                  @id @default(autoincrement())
-  company_code       Int
-  scrap_code         String               @unique @db.VarChar(50)
-  scrap_name         String               @db.VarChar(200)
-  scrap_description  String?              @db.VarChar(500)
-  uom                String               @db.VarChar(20)
-  is_active          Boolean              @default(true)
-  created_at         DateTime             @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime             @updatedAt @db.Timestamptz(6)
-  deleted_at         DateTime?            @db.Timestamptz(6)
+  id                Int       @id @default(autoincrement())
+  company_code      Int
+  scrap_code        String    @unique @db.VarChar(50)
+  scrap_name        String    @db.VarChar(200)
+  scrap_description String?   @db.VarChar(500)
+  uom               String    @db.VarChar(20)
+  is_active         Boolean   @default(true)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at        DateTime? @db.Timestamptz(6)
 
   company            companies            @relation(fields: [company_code], references: [code])
   scrap_item_details scrap_item_details[]
@@ -230,19 +232,19 @@ model scrap_items {
 }
 
 model scrap_item_details {
-  id              Int         @id @default(autoincrement())
-  scrap_item_id   Int
-  component_code  String      @db.VarChar(50)
-  component_name  String      @db.VarChar(200)
-  component_type  String      @db.VarChar(10)
-  uom             String      @db.VarChar(20)
-  quantity        Decimal     @db.Decimal(15, 3)
-  percentage      Decimal?    @db.Decimal(5, 2)
-  remarks         String?     @db.VarChar(500)
-  created_at      DateTime    @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime    @updatedAt @db.Timestamptz(6)
+  id             Int      @id @default(autoincrement())
+  scrap_item_id  Int
+  component_code String   @db.VarChar(50)
+  component_name String   @db.VarChar(200)
+  component_type String   @db.VarChar(10)
+  uom            String   @db.VarChar(20)
+  quantity       Decimal  @db.Decimal(15, 3)
+  percentage     Decimal? @db.Decimal(5, 2)
+  remarks        String?  @db.VarChar(500)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @updatedAt @db.Timestamptz(6)
 
-  scrap_item      scrap_items @relation(fields: [scrap_item_id], references: [id], onDelete: Cascade)
+  scrap_item scrap_items @relation(fields: [scrap_item_id], references: [id], onDelete: Cascade)
 
   @@unique([scrap_item_id, component_code])
   @@index([scrap_item_id])
@@ -355,9 +357,9 @@ model material_usages {
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at               DateTime? @db.Timestamptz(6)
 
-  company                          companies                            @relation(fields: [company_code], references: [code])
-  items                            material_usage_items[]
-  work_order_material_consumption  work_order_material_consumption[]
+  company                         companies                         @relation(fields: [company_code], references: [code])
+  items                           material_usage_items[]
+  work_order_material_consumption work_order_material_consumption[]
 
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
@@ -430,9 +432,9 @@ model production_outputs {
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at               DateTime? @db.Timestamptz(6)
 
-  company                     companies                    @relation(fields: [company_code], references: [code])
-  items                       production_output_items[]
-  work_order_fg_production    work_order_fg_production[]
+  company                  companies                  @relation(fields: [company_code], references: [code])
+  items                    production_output_items[]
+  work_order_fg_production work_order_fg_production[]
 
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
@@ -514,8 +516,8 @@ model outgoing_good_items {
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime? @db.Timestamptz(6)
 
-  outgoing_good                           outgoing_goods                          @relation(fields: [outgoing_good_company, outgoing_good_id, outgoing_good_date], references: [company_code, id, outgoing_date], onDelete: Cascade)
-  outgoing_fg_production_traceability    outgoing_fg_production_traceability[]
+  outgoing_good                       outgoing_goods                        @relation(fields: [outgoing_good_company, outgoing_good_id, outgoing_good_date], references: [company_code, id, outgoing_date], onDelete: Cascade)
+  outgoing_fg_production_traceability outgoing_fg_production_traceability[]
 
   @@index([outgoing_good_id])
   @@index([outgoing_good_id, outgoing_good_company, outgoing_good_date])
@@ -572,21 +574,120 @@ model adjustment_items {
 }
 
 // ============================================================================
+// CAPITAL GOODS TRANSACTIONS
+// ============================================================================
+// These tables handle incoming capital goods purchases and outgoing scrap disposals
+// Capital goods are identified by item_type: HIBE_M, HIBE_E, HIBE_T
+// ============================================================================
+
+model incoming_capital_goods {
+  id               Int       @id @default(autoincrement())
+  company_code     Int
+  transaction_date DateTime  @db.Date
+  document_number  String    @db.VarChar(100)
+  remarks          String?   @db.VarChar(1000)
+  timestamp        DateTime  @default(now()) @db.Timestamptz(6)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at       DateTime? @db.Timestamptz(6)
+
+  company companies                     @relation(fields: [company_code], references: [code])
+  items   incoming_capital_good_items[]
+
+  @@unique([company_code, id, transaction_date])
+  @@index([company_code])
+  @@index([transaction_date])
+  @@index([document_number])
+}
+
+model incoming_capital_good_items {
+  id                            Int       @id @default(autoincrement())
+  incoming_capital_good_id      Int
+  incoming_capital_good_company Int
+  incoming_capital_good_date    DateTime  @db.Date
+  item_type                     String    @db.VarChar(10) // HIBE_M, HIBE_E, HIBE_T
+  item_code                     String    @db.VarChar(50)
+  item_name                     String    @db.VarChar(200)
+  uom                           String    @db.VarChar(20)
+  qty                           Decimal   @db.Decimal(15, 3)
+  currency                      Currency
+  amount                        Decimal   @db.Decimal(18, 4)
+  remarks                       String?   @db.VarChar(500)
+  created_at                    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at                    DateTime? @db.Timestamptz(6)
+
+  incoming_capital_good incoming_capital_goods @relation(fields: [incoming_capital_good_company, incoming_capital_good_id, incoming_capital_good_date], references: [company_code, id, transaction_date], onDelete: Cascade)
+
+  @@index([incoming_capital_good_id])
+  @@index([incoming_capital_good_id, incoming_capital_good_company, incoming_capital_good_date])
+  @@index([item_code])
+  @@index([item_type])
+}
+
+model outgoing_scrap_capital_goods {
+  id               Int       @id @default(autoincrement())
+  company_code     Int
+  transaction_date DateTime  @db.Date
+  document_number  String    @db.VarChar(100)
+  disposal_method  String?   @db.VarChar(100) // e.g., "Sold as scrap", "Destroyed", "Donated"
+  remarks          String?   @db.VarChar(1000)
+  timestamp        DateTime  @default(now()) @db.Timestamptz(6)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at       DateTime? @db.Timestamptz(6)
+
+  company companies                           @relation(fields: [company_code], references: [code])
+  items   outgoing_scrap_capital_good_items[]
+
+  @@unique([company_code, id, transaction_date])
+  @@index([company_code])
+  @@index([transaction_date])
+  @@index([document_number])
+}
+
+model outgoing_scrap_capital_good_items {
+  id                                  Int       @id @default(autoincrement())
+  outgoing_scrap_capital_good_id      Int
+  outgoing_scrap_capital_good_company Int
+  outgoing_scrap_capital_good_date    DateTime  @db.Date
+  item_type                           String    @db.VarChar(10) // HIBE_M, HIBE_E, HIBE_T
+  item_code                           String    @db.VarChar(50)
+  item_name                           String    @db.VarChar(200)
+  uom                                 String    @db.VarChar(20)
+  qty                                 Decimal   @db.Decimal(15, 3)
+  currency                            Currency
+  amount                              Decimal   @db.Decimal(18, 4) // Original value or scrap value
+  scrap_reason                        String?   @db.VarChar(500)
+  remarks                             String?   @db.VarChar(500)
+  created_at                          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                          DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at                          DateTime? @db.Timestamptz(6)
+
+  outgoing_scrap_capital_good outgoing_scrap_capital_goods @relation(fields: [outgoing_scrap_capital_good_company, outgoing_scrap_capital_good_id, outgoing_scrap_capital_good_date], references: [company_code, id, transaction_date], onDelete: Cascade)
+
+  @@index([outgoing_scrap_capital_good_id], map: "oscg_items_good_id_idx")
+  @@index([outgoing_scrap_capital_good_id, outgoing_scrap_capital_good_company, outgoing_scrap_capital_good_date], map: "oscg_items_composite_idx")
+  @@index([item_code], map: "oscg_items_item_code_idx")
+  @@index([item_type], map: "oscg_items_item_type_idx")
+}
+
+// ============================================================================
 // TRACEABILITY TABLES
 // ============================================================================
 
 model work_order_material_consumption {
-  id                       BigInt   @id @default(autoincrement())
-  material_usage_id        Int
-  material_usage_item_id   Int
-  material_usage_wms_id    String   @db.VarChar(100)
-  work_order_number        String   @db.VarChar(50)
-  company_code             Int
-  item_code                String   @db.VarChar(50)
-  ppkek_number             String?  @db.VarChar(50) // Nullable: materials from adjustments may not have PPKEK
-  qty_consumed             Decimal  @db.Decimal(15, 3)
-  trx_date                 DateTime @db.Date
-  created_at               DateTime @default(now()) @db.Timestamptz(6)
+  id                     BigInt   @id @default(autoincrement())
+  material_usage_id      Int
+  material_usage_item_id Int
+  material_usage_wms_id  String   @db.VarChar(100)
+  work_order_number      String   @db.VarChar(50)
+  company_code           Int
+  item_code              String   @db.VarChar(50)
+  ppkek_number           String?  @db.VarChar(50) // Nullable: materials from adjustments may not have PPKEK
+  qty_consumed           Decimal  @db.Decimal(15, 3)
+  trx_date               DateTime @db.Date
+  created_at             DateTime @default(now()) @db.Timestamptz(6)
 
   material_usage material_usages @relation(fields: [material_usage_id], references: [id], onDelete: Cascade)
 
@@ -598,17 +699,17 @@ model work_order_material_consumption {
 }
 
 model work_order_fg_production {
-  id                       BigInt   @id @default(autoincrement())
-  production_output_id     Int
+  id                        BigInt   @id @default(autoincrement())
+  production_output_id      Int
   production_output_item_id Int
-  production_wms_id        String   @db.VarChar(100)
-  work_order_number        String   @db.VarChar(50)
-  company_code             Int
-  item_type                String   @db.VarChar(10) // FERT or HALB
-  item_code                String   @db.VarChar(50)
-  qty_produced             Decimal  @db.Decimal(15, 3)
-  trx_date                 DateTime @db.Date
-  created_at               DateTime @default(now()) @db.Timestamptz(6)
+  production_wms_id         String   @db.VarChar(100)
+  work_order_number         String   @db.VarChar(50)
+  company_code              Int
+  item_type                 String   @db.VarChar(10) // FERT or HALB
+  item_code                 String   @db.VarChar(50)
+  qty_produced              Decimal  @db.Decimal(15, 3)
+  trx_date                  DateTime @db.Date
+  created_at                DateTime @default(now()) @db.Timestamptz(6)
 
   production_output production_outputs @relation(fields: [production_output_id], references: [id], onDelete: Cascade)
 
@@ -620,17 +721,17 @@ model work_order_fg_production {
 }
 
 model outgoing_fg_production_traceability {
-  id                     BigInt   @id @default(autoincrement())
-  outgoing_good_item_id  Int
-  outgoing_wms_id        String   @db.VarChar(100)
-  production_wms_id      String   @db.VarChar(100)
-  company_code           Int
-  item_code              String   @db.VarChar(50)
-  trx_date               DateTime @db.Date
-  allocated_qty          Decimal? @db.Decimal(15, 3) // Nullable: Optional qty allocation
-  allocation_notes       String?  @db.Text
-  created_at             DateTime @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime @updatedAt @db.Timestamptz(6)
+  id                    BigInt   @id @default(autoincrement())
+  outgoing_good_item_id Int
+  outgoing_wms_id       String   @db.VarChar(100)
+  production_wms_id     String   @db.VarChar(100)
+  company_code          Int
+  item_code             String   @db.VarChar(50)
+  trx_date              DateTime @db.Date
+  allocated_qty         Decimal? @db.Decimal(15, 3) // Nullable: Optional qty allocation
+  allocation_notes      String?  @db.Text
+  created_at            DateTime @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime @updatedAt @db.Timestamptz(6)
 
   outgoing_good_item outgoing_good_items @relation(fields: [outgoing_good_item_id], references: [id], onDelete: Cascade)
 
@@ -703,4 +804,3 @@ model snapshot_recalc_queue {
   @@index([status, priority, queued_at])
   @@index([company_code, recalc_date])
 }
-

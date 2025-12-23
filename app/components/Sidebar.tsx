@@ -114,6 +114,21 @@ const menuSections: MenuSection[] = [
     ],
   },
   {
+    title: 'Transaksi',
+    items: [
+      {
+        title: 'Transaksi Scrap',
+        icon: <RecyclingIcon />,
+        path: '/customs/scrap-transactions',
+      },
+      {
+        title: 'Transaksi Barang Modal',
+        icon: <DescriptionIcon />,
+        path: '/customs/capital-goods-transactions',
+      },
+    ],
+  },
+  {
     title: 'Beginning Data',
     items: [
       {
