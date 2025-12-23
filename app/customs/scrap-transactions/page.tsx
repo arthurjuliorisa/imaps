@@ -36,7 +36,6 @@ export default function ScrapTransactionsPage() {
   const [addInDialogOpen, setAddInDialogOpen] = useState(false);
   const [addOutDialogOpen, setAddOutDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [importDirection, setImportDirection] = useState<'IN' | 'OUT'>('IN');
 
   const columns: GridColDef[] = [
     {
@@ -178,13 +177,7 @@ export default function ScrapTransactionsPage() {
     setAddOutDialogOpen(true);
   };
 
-  const handleImportInExcel = () => {
-    setImportDirection('IN');
-    setImportDialogOpen(true);
-  };
-
-  const handleImportOutExcel = () => {
-    setImportDirection('OUT');
+  const handleImportExcel = () => {
     setImportDialogOpen(true);
   };
 
@@ -305,18 +298,9 @@ export default function ScrapTransactionsPage() {
               </Button>
               <Button
                 variant="contained"
-                color="primary"
-                startIcon={<UploadFileIcon />}
-                onClick={handleImportInExcel}
-                disabled={loading}
-              >
-                Import In (Excel)
-              </Button>
-              <Button
-                variant="contained"
                 color="warning"
                 startIcon={<UploadFileIcon />}
-                onClick={handleImportOutExcel}
+                onClick={handleImportExcel}
                 disabled={loading}
               >
                 Import Out (Excel)
@@ -347,6 +331,12 @@ export default function ScrapTransactionsPage() {
               borderColor: 'divider',
             },
             '& .MuiDataGrid-columnHeaders': {
+              backgroundColor: 'primary.main',
+              color: 'white',
+              fontSize: 14,
+              fontWeight: 600,
+            },
+            '& .MuiDataGrid-columnHeader': {
               backgroundColor: 'primary.main',
               color: 'white',
               fontSize: 14,
@@ -390,7 +380,7 @@ export default function ScrapTransactionsPage() {
         onClose={() => setImportDialogOpen(false)}
         onSuccess={handleDialogSuccess}
         transactionType="SCRAP"
-        defaultDirection={importDirection}
+        defaultDirection="OUT"
         allowDirectionChange={false}
       />
     </ReportLayout>

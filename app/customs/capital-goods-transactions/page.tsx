@@ -320,6 +320,12 @@ export default function CapitalGoodsTransactionsPage() {
               fontSize: 14,
               fontWeight: 600,
             },
+            '& .MuiDataGrid-columnHeader': {
+              backgroundColor: 'primary.main',
+              color: 'white',
+              fontSize: 14,
+              fontWeight: 600,
+            },
             '& .MuiDataGrid-row:hover': {
               backgroundColor: 'action.hover',
             },

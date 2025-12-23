@@ -65,7 +65,8 @@ function normalizeDate(dateStr: string): Date {
 
 /**
  * Map document type code to enum value
- * Converts "27" to "BC27", "23" to "BC23", etc.
+ * Converts "25" to "BC25", "27" to "BC27", "41" to "BC41", etc.
+ * Valid document types for outgoing transactions: BC25, BC27, BC41
  */
 function mapDocumentTypeToEnum(docType: string): string {
   const cleanType = docType.trim();
