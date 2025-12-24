@@ -99,7 +99,7 @@ BEGIN
                     sds.item_code,
                     sds.item_name,
                     sds.item_type,
-                    COALESCE(i.uom, 'UNIT') as unit_quantity,
+                    'UNIT' as unit_quantity,
                     sds.snapshot_date,
                     sds.opening_balance,
                     sds.incoming_qty as quantity_received,
@@ -108,7 +108,6 @@ BEGIN
                     sds.closing_balance
                 FROM stock_daily_snapshot sds
                 JOIN companies c ON sds.company_code = c.code
-                LEFT JOIN items i ON sds.company_code = i.company_code AND sds.item_code = i.item_code
                 WHERE sds.item_type = ANY(p_item_types)
                   AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
                   
@@ -130,12 +129,12 @@ BEGIN
                     calc.closing_balance
                 FROM (
                     SELECT 
-                        i.company_code,
+                        i_src.company_code,
                         co.name as company_name,
-                        i.item_code,
-                        i.item_name,
-                        i.item_type,
-                        i.uom,
+                        i_src.item_code,
+                        i_src.item_name,
+                        i_src.item_type,
+                        'UNIT' as uom,
                         dates.snapshot_date::DATE as snapshot_date,
                         COALESCE(
                             LAG(
@@ -144,7 +143,7 @@ BEGIN
                                 COALESCE(out.outgoing_qty, 0) -
                                 COALESCE(mat.material_usage_qty, 0) +
                                 COALESCE(adj.adjustment_qty, 0)
-                            ) OVER (PARTITION BY i.company_code, i.item_code ORDER BY dates.snapshot_date),
+                            ) OVER (PARTITION BY i_src.company_code, i_src.item_code ORDER BY dates.snapshot_date),
                             COALESCE(opening.closing_balance, 0)
                         ) as opening_balance,
                         COALESCE(inc.incoming_qty, 0) as quantity_received,
@@ -155,14 +154,22 @@ BEGIN
                         COALESCE(out.outgoing_qty, 0) -
                         COALESCE(mat.material_usage_qty, 0) +
                         COALESCE(adj.adjustment_qty, 0) as closing_balance
-                    FROM items i
-                    JOIN companies co ON i.company_code = co.code
+                    FROM (
+                        SELECT DISTINCT 
+                            company_code,
+                            item_code,
+                            item_name,
+                            item_type
+                        FROM stock_daily_snapshot
+                        WHERE item_type = ANY(p_item_types)
+                    ) i_src
+                    JOIN companies co ON i_src.company_code = co.code
                     -- Find the last snapshot before start date for opening balance
                     LEFT JOIN LATERAL (
                         SELECT MAX(sds2.snapshot_date) as last_snapshot_date
                         FROM stock_daily_snapshot sds2
-                        WHERE sds2.company_code = i.company_code
-                          AND sds2.item_code = i.item_code
+                        WHERE sds2.company_code = i_src.company_code
+                          AND sds2.item_code = i_src.item_code
                           AND sds2.item_type = ANY(p_item_types)
                           AND sds2.snapshot_date < v_start_date
                     ) AS last_snap ON TRUE
@@ -173,8 +180,8 @@ BEGIN
                     ) AS dates
                     -- Opening balance (from last snapshot before range)
                     LEFT JOIN stock_daily_snapshot opening ON 
-                        i.company_code = opening.company_code AND
-                        i.item_code = opening.item_code AND
+                        i_src.company_code = opening.company_code AND
+                        i_src.item_code = opening.item_code AND
                         opening.snapshot_date = last_snap.last_snapshot_date
                     -- Incoming quantities
                     LEFT JOIN (
@@ -189,8 +196,8 @@ BEGIN
                             AND ig.incoming_date = igi.incoming_good_date
                         WHERE ig.deleted_at IS NULL AND igi.deleted_at IS NULL
                         GROUP BY ig.company_code, igi.item_code, ig.incoming_date
-                    ) inc ON i.company_code = inc.company_code 
-                        AND i.item_code = inc.item_code 
+                    ) inc ON i_src.company_code = inc.company_code 
+                        AND i_src.item_code = inc.item_code 
                         AND inc.trx_date = dates.snapshot_date
                     -- Outgoing quantities
                     LEFT JOIN (
@@ -205,8 +212,8 @@ BEGIN
                             AND og.outgoing_date = ogi.outgoing_good_date
                         WHERE og.deleted_at IS NULL AND ogi.deleted_at IS NULL
                         GROUP BY og.company_code, ogi.item_code, og.outgoing_date
-                    ) out ON i.company_code = out.company_code 
-                        AND i.item_code = out.item_code 
+                    ) out ON i_src.company_code = out.company_code 
+                        AND i_src.item_code = out.item_code 
                         AND out.trx_date = dates.snapshot_date
                     -- Material usage quantities
                     LEFT JOIN (
@@ -224,15 +231,15 @@ BEGIN
                             AND mu.transaction_date = mui.material_usage_date
                         WHERE mu.deleted_at IS NULL AND mui.deleted_at IS NULL
                         GROUP BY mu.company_code, mui.item_code, mu.transaction_date
-                    ) mat ON i.company_code = mat.company_code 
-                        AND i.item_code = mat.item_code 
+                    ) mat ON i_src.company_code = mat.company_code 
+                        AND i_src.item_code = mat.item_code 
                         AND mat.trx_date = dates.snapshot_date
-                    -- Adjustment quantities
+                    -- Adjustment quantities (CUMULATIVE: all adjustments up to snapshot_date)
                     LEFT JOIN (
                         SELECT 
                             a.company_code,
                             ai.item_code,
-                            a.transaction_date as trx_date,
+                            dates.snapshot_date as trx_date,
                             SUM(CASE 
                                 WHEN ai.adjustment_type = 'GAIN' THEN ai.qty
                                 ELSE -ai.qty
@@ -241,17 +248,17 @@ BEGIN
                         JOIN adjustment_items ai ON a.company_code = ai.adjustment_company
                             AND a.id = ai.adjustment_id
                             AND a.transaction_date = ai.adjustment_date
+                        CROSS JOIN (SELECT DISTINCT snapshot_date FROM dates_for_range) dates
                         WHERE a.deleted_at IS NULL AND ai.deleted_at IS NULL
-                        GROUP BY a.company_code, ai.item_code, a.transaction_date
-                    ) adj ON i.company_code = adj.company_code 
-                        AND i.item_code = adj.item_code 
+                          AND a.transaction_date <= dates.snapshot_date
+                        GROUP BY a.company_code, ai.item_code, dates.snapshot_date
+                    ) adj ON i_src.company_code = adj.company_code 
+                        AND i_src.item_code = adj.item_code 
                         AND adj.trx_date = dates.snapshot_date
-                    WHERE i.item_type = ANY(p_item_types)
-                      AND i.deleted_at IS NULL
-                      AND dates.snapshot_date NOT IN (
+                    WHERE dates.snapshot_date NOT IN (
                           SELECT sds3.snapshot_date FROM stock_daily_snapshot sds3
-                          WHERE sds3.company_code = i.company_code
-                            AND sds3.item_code = i.item_code
+                          WHERE sds3.company_code = i_src.company_code
+                            AND sds3.item_code = i_src.item_code
                             AND sds3.snapshot_date BETWEEN v_start_date AND v_end_date
                       )
                 ) calc
@@ -362,7 +369,7 @@ BEGIN
                     sds.item_code,
                     sds.item_name,
                     sds.item_type,
-                    COALESCE(i.uom, 'UNIT') as unit_quantity,
+                    'UNIT' as unit_quantity,
                     sds.snapshot_date,
                     sds.opening_balance,
                     sds.production_qty as quantity_received,
@@ -371,7 +378,6 @@ BEGIN
                     sds.closing_balance
                 FROM stock_daily_snapshot sds
                 JOIN companies c ON sds.company_code = c.code
-                LEFT JOIN items i ON sds.company_code = i.company_code AND sds.item_code = i.item_code
                 WHERE sds.item_type = ANY(p_item_types)
                   AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
                   
@@ -384,7 +390,7 @@ BEGIN
                     calc.item_code,
                     calc.item_name,
                     calc.item_type,
-                    calc.uom as unit_quantity,
+                    'UNIT' as unit_quantity,
                     calc.snapshot_date,
                     calc.opening_balance,
                     calc.quantity_received,
@@ -393,12 +399,12 @@ BEGIN
                     calc.closing_balance
                 FROM (
                     SELECT 
-                        i.company_code,
+                        i_src.company_code,
                         co.name as company_name,
-                        i.item_code,
-                        i.item_name,
-                        i.item_type,
-                        i.uom,
+                        i_src.item_code,
+                        i_src.item_name,
+                        i_src.item_type,
+                        'UNIT' as uom,
                         dates.snapshot_date::DATE as snapshot_date,
                         COALESCE(
                             LAG(
@@ -406,7 +412,7 @@ BEGIN
                                 COALESCE(prod.production_qty, 0) -
                                 COALESCE(out.outgoing_qty, 0) +
                                 COALESCE(adj.adjustment_qty, 0)
-                            ) OVER (PARTITION BY i.company_code, i.item_code ORDER BY dates.snapshot_date),
+                            ) OVER (PARTITION BY i_src.company_code, i_src.item_code ORDER BY dates.snapshot_date),
                             COALESCE(opening.closing_balance, 0)
                         ) as opening_balance,
                         COALESCE(prod.production_qty, 0) as quantity_received,
@@ -416,14 +422,22 @@ BEGIN
                         COALESCE(prod.production_qty, 0) -
                         COALESCE(out.outgoing_qty, 0) +
                         COALESCE(adj.adjustment_qty, 0) as closing_balance
-                    FROM items i
-                    JOIN companies co ON i.company_code = co.code
+                    FROM (
+                        SELECT DISTINCT 
+                            company_code,
+                            item_code,
+                            item_name,
+                            item_type
+                        FROM stock_daily_snapshot
+                        WHERE item_type = ANY(p_item_types)
+                    ) i_src
+                    JOIN companies co ON i_src.company_code = co.code
                     -- Find the last snapshot before start date for opening balance
                     LEFT JOIN LATERAL (
                         SELECT MAX(sds2.snapshot_date) as last_snapshot_date
                         FROM stock_daily_snapshot sds2
-                        WHERE sds2.company_code = i.company_code
-                          AND sds2.item_code = i.item_code
+                        WHERE sds2.company_code = i_src.company_code
+                          AND sds2.item_code = i_src.item_code
                           AND sds2.item_type = ANY(p_item_types)
                           AND sds2.snapshot_date < v_start_date
                     ) AS last_snap ON TRUE
@@ -434,8 +448,8 @@ BEGIN
                     ) AS dates
                     -- Opening balance (from last snapshot before range)
                     LEFT JOIN stock_daily_snapshot opening ON 
-                        i.company_code = opening.company_code AND
-                        i.item_code = opening.item_code AND
+                        i_src.company_code = opening.company_code AND
+                        i_src.item_code = opening.item_code AND
                         opening.snapshot_date = last_snap.last_snapshot_date
                     -- Production quantities
                     LEFT JOIN (
@@ -453,8 +467,8 @@ BEGIN
                             AND po.transaction_date = poi.production_output_date
                         WHERE po.deleted_at IS NULL AND poi.deleted_at IS NULL
                         GROUP BY po.company_code, poi.item_code, po.transaction_date
-                    ) prod ON i.company_code = prod.company_code 
-                        AND i.item_code = prod.item_code 
+                    ) prod ON i_src.company_code = prod.company_code 
+                        AND i_src.item_code = prod.item_code 
                         AND prod.trx_date = dates.snapshot_date
                     -- Outgoing quantities
                     LEFT JOIN (
@@ -469,8 +483,8 @@ BEGIN
                             AND og.outgoing_date = ogi.outgoing_good_date
                         WHERE og.deleted_at IS NULL AND ogi.deleted_at IS NULL
                         GROUP BY og.company_code, ogi.item_code, og.outgoing_date
-                    ) out ON i.company_code = out.company_code 
-                        AND i.item_code = out.item_code 
+                    ) out ON i_src.company_code = out.company_code 
+                        AND i_src.item_code = out.item_code 
                         AND out.trx_date = dates.snapshot_date
                     -- Adjustment quantities
                     LEFT JOIN (
@@ -488,15 +502,13 @@ BEGIN
                             AND a.transaction_date = ai.adjustment_date
                         WHERE a.deleted_at IS NULL AND ai.deleted_at IS NULL
                         GROUP BY a.company_code, ai.item_code, a.transaction_date
-                    ) adj ON i.company_code = adj.company_code 
-                        AND i.item_code = adj.item_code 
+                    ) adj ON i_src.company_code = adj.company_code 
+                        AND i_src.item_code = adj.item_code 
                         AND adj.trx_date = dates.snapshot_date
-                    WHERE i.item_type = ANY(p_item_types)
-                      AND i.deleted_at IS NULL
-                      AND dates.snapshot_date NOT IN (
+                    WHERE dates.snapshot_date NOT IN (
                           SELECT sds3.snapshot_date FROM stock_daily_snapshot sds3
-                          WHERE sds3.company_code = i.company_code
-                            AND sds3.item_code = i.item_code
+                          WHERE sds3.company_code = i_src.company_code
+                            AND sds3.item_code = i_src.item_code
                             AND sds3.snapshot_date BETWEEN v_start_date AND v_end_date
                       )
                 ) calc
@@ -949,6 +961,171 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 --    - Old calls without date parameters still work (return daily view)
 --    - New calls with date parameters return aggregated view
 --    - All reporting views (vw_lpj_*) still return daily view by default
+
+-- ============================================================================
+-- PPKEK TRACEABILITY DRILL-DOWN VIEWS
+-- ============================================================================
+-- Two new views for customs compliance tracing:
+-- 1. v_outgoing_ppkek_drill_down: Level 1 - PPKEK numbers only (basic drill-down)
+-- 2. v_outgoing_tracing_detail: Level 2 - PPKEK + Work Orders (internal production tracing)
+--
+-- These views support frontend drill-down:
+--   User clicks outgoing item -> Level 1: Show PPKEK numbers
+--   User clicks "Show Work Orders" -> Level 2: Show WO + PPKEK tracing chain
+-- ============================================================================
+
+-- ============================================================================
+-- VIEW 1: PPKEK DRILL-DOWN (Level 1 - Basic)
+-- ============================================================================
+-- Shows PPKEK numbers used for each outgoing item
+-- Supports all 3 outgoing sources: Production, Incoming Stock, Adjustment
+-- Response: List of PPKEK numbers + source type
+
+CREATE OR REPLACE VIEW v_outgoing_ppkek_drill_down AS
+SELECT
+    og.id as outgoing_id,
+    og.outgoing_date,
+    og.customs_document_type,
+    og.ppkek_number as customs_registration_no,
+    ogi.item_code,
+    ogi.item_name,
+    ogi.item_type,
+    ogi.qty as qty_outgoing,
+    ogi.uom as unit,
+    ogi.source_type,
+    ogi.ppkek_numbers,
+    COALESCE(ARRAY_LENGTH(ogi.ppkek_numbers, 1), 0) as ppkek_count,
+    og.company_code,
+    c.name as company_name,
+    og.recipient_name,
+    og.created_at,
+    og.updated_at
+FROM outgoing_goods og
+JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
+    AND og.id = ogi.outgoing_good_id
+    AND og.outgoing_date = ogi.outgoing_good_date
+JOIN companies c ON og.company_code = c.code
+WHERE og.deleted_at IS NULL
+  AND ogi.deleted_at IS NULL
+ORDER BY og.outgoing_date DESC, og.id, ogi.item_code;
+
+COMMENT ON VIEW v_outgoing_ppkek_drill_down IS 'Level 1 Drill-Down: PPKEK numbers for each outgoing item (all sources: Production, Incoming, Adjustment)';
+
+-- ============================================================================
+-- VIEW 2: TRACING DETAIL (Level 2 - Internal Production Tracing)
+-- ============================================================================
+-- Shows PPKEK numbers + Work Order numbers for internal tracing
+-- Supports routing based on source_type:
+--   PRODUCTION: Shows work_order_numbers + ppkek_numbers (complete chain)
+--   INCOMING_STOCK: Shows ppkek_numbers only (no work orders)
+--   ADJUSTMENT: Shows empty (no traceability)
+-- Response: Nested structure with work order and PPKEK mapping
+
+CREATE OR REPLACE VIEW v_outgoing_tracing_detail AS
+SELECT
+    og.id as outgoing_id,
+    og.outgoing_date,
+    og.customs_document_type,
+    og.ppkek_number as customs_registration_no,
+    ogi.item_code,
+    ogi.item_name,
+    ogi.item_type,
+    ogi.qty as qty_outgoing,
+    ogi.uom as unit,
+    ogi.source_type,
+    ogi.work_order_numbers,
+    ogi.ppkek_numbers,
+    CASE 
+        WHEN ogi.source_type = 'PRODUCTION' THEN
+            JSON_BUILD_OBJECT(
+                'trace_type', 'production',
+                'work_order_count', COALESCE(ARRAY_LENGTH(ogi.work_order_numbers, 1), 0),
+                'ppkek_count', COALESCE(ARRAY_LENGTH(ogi.ppkek_numbers, 1), 0),
+                'work_order_numbers', ogi.work_order_numbers,
+                'ppkek_numbers', ogi.ppkek_numbers
+            )
+        WHEN ogi.source_type = 'INCOMING_STOCK' THEN
+            JSON_BUILD_OBJECT(
+                'trace_type', 'incoming_stock',
+                'work_order_count', 0,
+                'ppkek_count', COALESCE(ARRAY_LENGTH(ogi.ppkek_numbers, 1), 0),
+                'ppkek_numbers', ogi.ppkek_numbers
+            )
+        WHEN ogi.source_type = 'ADJUSTMENT' THEN
+            JSON_BUILD_OBJECT(
+                'trace_type', 'adjustment',
+                'work_order_count', 0,
+                'ppkek_count', 0,
+                'note', 'No traceability for adjustments (internal stock difference)'
+            )
+        ELSE
+            JSON_BUILD_OBJECT()
+    END as tracing_data,
+    og.company_code,
+    c.name as company_name,
+    og.recipient_name,
+    og.created_at,
+    og.updated_at
+FROM outgoing_goods og
+JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
+    AND og.id = ogi.outgoing_good_id
+    AND og.outgoing_date = ogi.outgoing_good_date
+JOIN companies c ON og.company_code = c.code
+WHERE og.deleted_at IS NULL
+  AND ogi.deleted_at IS NULL
+ORDER BY og.outgoing_date DESC, og.id, ogi.item_code;
+
+COMMENT ON VIEW v_outgoing_tracing_detail IS 'Level 2 Drill-Down: Work Order + PPKEK tracing chain (production), or PPKEK only (incoming/adjustment)';
+
+-- ============================================================================
+-- INDEXES FOR TRACEABILITY VIEWS
+-- ============================================================================
+-- GIN indexes for array columns (efficient for PPKEK/WO lookup)
+CREATE INDEX IF NOT EXISTS idx_outgoing_good_items_ppkek_numbers 
+ON outgoing_good_items USING GIN (ppkek_numbers);
+
+CREATE INDEX IF NOT EXISTS idx_outgoing_good_items_work_order_numbers 
+ON outgoing_good_items USING GIN (work_order_numbers);
+
+-- B-tree index for source_type filtering
+CREATE INDEX IF NOT EXISTS idx_outgoing_good_items_source_type 
+ON outgoing_good_items (source_type, deleted_at);
+
+-- Composite index for drill-down queries
+CREATE INDEX IF NOT EXISTS idx_outgoing_good_items_drill_down 
+ON outgoing_good_items (outgoing_good_id, outgoing_good_company, outgoing_good_date, deleted_at);
+
+-- ============================================================================
+-- TEST QUERIES FOR TRACEABILITY VIEWS
+-- ============================================================================
+-- Level 1: PPKEK Drill-Down (basic)
+-- SELECT * FROM v_outgoing_ppkek_drill_down 
+-- WHERE company_code = 1310 
+--   AND outgoing_date >= '2025-12-01'
+-- ORDER BY outgoing_date DESC;
+
+-- Level 2: Tracing Detail (internal)
+-- SELECT * FROM v_outgoing_tracing_detail 
+-- WHERE company_code = 1310 
+--   AND outgoing_date >= '2025-12-01'
+-- ORDER BY outgoing_date DESC;
+
+-- Find all outgoing items with specific PPKEK
+-- SELECT * FROM v_outgoing_ppkek_drill_down
+-- WHERE ppkek_numbers @> ARRAY['BC23-2025-001']
+-- ORDER BY outgoing_date DESC;
+
+-- Find all outgoing items with specific work order (production only)
+-- SELECT * FROM v_outgoing_tracing_detail
+-- WHERE source_type = 'PRODUCTION'
+--   AND work_order_numbers @> ARRAY['WO-001']
+-- ORDER BY outgoing_date DESC;
+
+-- Count outgoing items by source type
+-- SELECT source_type, COUNT(*) as item_count, COUNT(DISTINCT outgoing_id) as outgoing_count
+-- FROM v_outgoing_ppkek_drill_down
+-- GROUP BY source_type
+-- ORDER BY item_count DESC;
 
 -- ============================================================================
 -- END OF VIEWS CREATION

@@ -222,7 +222,7 @@ BEGIN
           AND poi.deleted_at IS NULL
         GROUP BY po.company_code, poi.item_type, poi.item_code
     ),
-    -- Adjustment quantities (from adjustments)
+    -- Adjustment quantities (from adjustments) - CUMULATIVE up to snapshot_date
     adjustment_quantities AS (
         SELECT 
             a.company_code,
@@ -235,7 +235,7 @@ BEGIN
         FROM adjustments a
         JOIN adjustment_items ai ON a.id = ai.adjustment_id
         WHERE a.company_code = p_company_code
-          AND a.transaction_date = p_snapshot_date
+          AND a.transaction_date <= p_snapshot_date
           AND a.deleted_at IS NULL
           AND ai.deleted_at IS NULL
         GROUP BY a.company_code, ai.item_type, ai.item_code

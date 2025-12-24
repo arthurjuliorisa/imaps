@@ -509,6 +509,12 @@ model outgoing_good_items {
   qty                       Decimal   @db.Decimal(15, 3)
   currency                  Currency
   amount                    Decimal   @db.Decimal(18, 4)
+  
+  // Traceability fields (for PPKEK & Work Order drill-down)
+  ppkek_numbers             String[]  @default([])  // PPKEK numbers used for this outgoing item
+  work_order_numbers        String[]  @default([])  // Work order numbers (for internal production tracing)
+  source_type               String    @default("PRODUCTION") @db.VarChar(50)  // 'PRODUCTION' | 'INCOMING_STOCK' | 'ADJUSTMENT'
+  
   created_at                DateTime  @default(now()) @db.Timestamptz(6)
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime? @db.Timestamptz(6)
