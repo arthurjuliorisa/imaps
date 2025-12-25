@@ -6,7 +6,7 @@ import { validateCompanyCode } from '@/lib/company-validation';
 
 /**
  * GET /api/customs/scrap-transactions
- * Fetch combined scrap transaction records (incoming and outgoing)
+ * Fetch scrap transaction records (incoming and outgoing) from scrap_transactions table
  *
  * Query parameters:
  * - startDate: Start date filter (optional)
@@ -17,21 +17,19 @@ import { validateCompanyCode } from '@/lib/company-validation';
  * Returns combined results with columns:
  * - No (auto-generated based on pagination)
  * - Company Name
- * - Doc Type (CustomsDocumentType)
- * - PPKEK Number
- * - Reg Date (customs_registration_date)
- * - Doc Number (incoming_evidence_number or outgoing_evidence_number)
- * - Doc Date (incoming_date or outgoing_date)
- * - Recipient Name (shipper_name for incoming, recipient_name for outgoing)
+ * - Doc Type (transaction_type: IN or OUT)
+ * - Doc Number (document_number)
+ * - Doc Date (transaction_date)
+ * - Recipient Name (source for IN, recipient_name for OUT)
  * - Item Type (SCRAP)
  * - Item Code
  * - Item Name
  * - Unit (UOM)
- * - In (quantity from incoming_good_items, 0 for outgoing)
- * - Out (quantity from outgoing_good_items, 0 for incoming)
+ * - In (quantity for IN transactions, 0 for OUT)
+ * - Out (quantity for OUT transactions, 0 for IN)
  * - Currency
  * - Value Amount
- * - Remarks (optional, can be null)
+ * - Remarks
  * - Created At
  */
 export async function GET(request: Request) {
@@ -67,52 +65,33 @@ export async function GET(request: Request) {
     const offset = (page - 1) * pageSize;
 
     // Build date filter conditions
-    let dateFilterIncoming = '';
-    let dateFilterOutgoing = '';
+    let dateFilter = '';
     const params: any[] = [companyCode];
     let paramIndex = 2;
 
     if (startDate) {
-      dateFilterIncoming += ` AND ig.incoming_date >= $${paramIndex}`;
-      dateFilterOutgoing += ` AND og.outgoing_date >= $${paramIndex}`;
+      dateFilter += ` AND st.transaction_date >= $${paramIndex}`;
       params.push(new Date(startDate));
       paramIndex++;
     }
 
     if (endDate) {
-      dateFilterIncoming += ` AND ig.incoming_date <= $${paramIndex}`;
-      dateFilterOutgoing += ` AND og.outgoing_date <= $${paramIndex}`;
+      dateFilter += ` AND st.transaction_date <= $${paramIndex}`;
       params.push(new Date(endDate));
       paramIndex++;
     }
 
     // Count total records (for pagination)
     const countQuery = `
-      SELECT COUNT(*) as total FROM (
-        SELECT ig.id
-        FROM incoming_goods ig
-        JOIN incoming_good_items igi ON ig.company_code = igi.incoming_good_company
-          AND ig.id = igi.incoming_good_id
-          AND ig.incoming_date = igi.incoming_good_date
-        WHERE ig.company_code = $1
-          AND ig.deleted_at IS NULL
-          AND igi.deleted_at IS NULL
-          AND igi.item_type = 'SCRAP'
-          ${dateFilterIncoming}
-
-        UNION ALL
-
-        SELECT og.id
-        FROM outgoing_goods og
-        JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
-          AND og.id = ogi.outgoing_good_id
-          AND og.outgoing_date = ogi.outgoing_good_date
-        WHERE og.company_code = $1
-          AND og.deleted_at IS NULL
-          AND ogi.deleted_at IS NULL
-          AND ogi.item_type = 'SCRAP'
-          ${dateFilterOutgoing}
-      ) combined
+      SELECT COUNT(*) as total
+      FROM scrap_transactions st
+      JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
+        AND st.id = sti.scrap_transaction_id
+        AND st.transaction_date = sti.scrap_transaction_date
+      WHERE st.company_code = $1
+        AND st.deleted_at IS NULL
+        AND sti.deleted_at IS NULL
+        ${dateFilter}
     `;
 
     const countResult = await prisma.$queryRawUnsafe<[{ total: bigint }]>(
@@ -121,78 +100,43 @@ export async function GET(request: Request) {
     );
     const totalRecords = Number(countResult[0]?.total || 0);
 
-    // Fetch paginated data with combined incoming and outgoing scrap transactions
+    // Fetch paginated data from scrap_transactions
     const dataQuery = `
-      SELECT * FROM (
-        SELECT
-          ig.id,
-          ig.wms_id,
-          ig.company_code,
-          c.name as company_name,
-          ig.customs_document_type as doc_type,
-          ig.ppkek_number,
-          ig.customs_registration_date as reg_date,
-          ig.incoming_evidence_number as doc_number,
-          ig.incoming_date as doc_date,
-          ig.shipper_name as recipient_name,
-          igi.item_type,
-          igi.item_code,
-          igi.item_name,
-          igi.uom as unit,
-          igi.qty as quantity_in,
-          0::numeric(15,3) as quantity_out,
-          igi.currency,
-          igi.amount as value_amount,
-          NULL::varchar as remarks,
-          ig.created_at,
-          'IN' as transaction_type
-        FROM incoming_goods ig
-        JOIN incoming_good_items igi ON ig.company_code = igi.incoming_good_company
-          AND ig.id = igi.incoming_good_id
-          AND ig.incoming_date = igi.incoming_good_date
-        JOIN companies c ON ig.company_code = c.code
-        WHERE ig.company_code = $1
-          AND ig.deleted_at IS NULL
-          AND igi.deleted_at IS NULL
-          AND igi.item_type = 'SCRAP'
-          ${dateFilterIncoming}
-
-        UNION ALL
-
-        SELECT
-          og.id,
-          og.wms_id,
-          og.company_code,
-          c.name as company_name,
-          og.customs_document_type as doc_type,
-          og.ppkek_number,
-          og.customs_registration_date as reg_date,
-          og.outgoing_evidence_number as doc_number,
-          og.outgoing_date as doc_date,
-          og.recipient_name,
-          ogi.item_type,
-          ogi.item_code,
-          ogi.item_name,
-          ogi.uom as unit,
-          0::numeric(15,3) as quantity_in,
-          ogi.qty as quantity_out,
-          ogi.currency,
-          ogi.amount as value_amount,
-          NULL::varchar as remarks,
-          og.created_at,
-          'OUT' as transaction_type
-        FROM outgoing_goods og
-        JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
-          AND og.id = ogi.outgoing_good_id
-          AND og.outgoing_date = ogi.outgoing_good_date
-        JOIN companies c ON og.company_code = c.code
-        WHERE og.company_code = $1
-          AND og.deleted_at IS NULL
-          AND ogi.deleted_at IS NULL
-          AND ogi.item_type = 'SCRAP'
-          ${dateFilterOutgoing}
-      ) combined
-      ORDER BY doc_date DESC, id
+      SELECT
+        st.id,
+        st.document_number as wms_id,
+        st.company_code,
+        c.name as company_name,
+        st.transaction_type as doc_type,
+        '' as ppkek_number,
+        st.transaction_date as reg_date,
+        st.document_number as doc_number,
+        st.transaction_date as doc_date,
+        CASE
+          WHEN st.transaction_type = 'IN' THEN COALESCE(st.source, 'Scrap Collection')
+          WHEN st.transaction_type = 'OUT' THEN st.recipient_name
+        END as recipient_name,
+        sti.item_type,
+        sti.item_code,
+        sti.item_name,
+        sti.uom as unit,
+        CASE WHEN st.transaction_type = 'IN' THEN sti.qty ELSE 0 END as quantity_in,
+        CASE WHEN st.transaction_type = 'OUT' THEN sti.qty ELSE 0 END as quantity_out,
+        sti.currency,
+        sti.amount as value_amount,
+        st.remarks,
+        st.created_at,
+        st.transaction_type
+      FROM scrap_transactions st
+      JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
+        AND st.id = sti.scrap_transaction_id
+        AND st.transaction_date = sti.scrap_transaction_date
+      JOIN companies c ON st.company_code = c.code
+      WHERE st.company_code = $1
+        AND st.deleted_at IS NULL
+        AND sti.deleted_at IS NULL
+        ${dateFilter}
+      ORDER BY st.transaction_date DESC, st.id DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
 

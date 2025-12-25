@@ -150,50 +150,43 @@ export async function POST(request: Request) {
 
     // Execute transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Generate WMS ID and invoice number
-      const wmsId = generateWmsId();
-      const invoiceNumber = generateInvoiceNumber();
+      // 1. Generate document number
+      const timestamp = Date.now();
+      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      const documentNumber = `SCRAP-OUT-${timestamp}-${random}`;
 
-      // 2. Get company default ppkek_number (for now, use empty string)
-      const ppkekNumber = '';
-
-      // 3. Create outgoing_goods record
-      const outgoingGood = await tx.outgoing_goods.create({
+      // 2. Create scrap_transactions header record
+      const scrapTransaction = await tx.scrap_transactions.create({
         data: {
-          wms_id: wmsId,
           company_code: companyCode,
-          owner: companyCode,
-          customs_document_type: 'BC27',
-          ppkek_number: ppkekNumber,
-          customs_registration_date: date,
-          outgoing_evidence_number: wmsId,
-          outgoing_date: date,
-          invoice_number: invoiceNumber,
-          invoice_date: date,
+          transaction_date: date,
+          transaction_type: 'OUT',
+          document_number: documentNumber,
           recipient_name: recipientName,
+          disposal_method: 'Sold as scrap',
+          remarks: remarks,
           timestamp: new Date(),
         },
       });
 
-      // 4. Create outgoing_good_items record
-      await tx.outgoing_good_items.create({
+      // 3. Create scrap_transaction_items record
+      await tx.scrap_transaction_items.create({
         data: {
-          outgoing_good_id: outgoingGood.id,
-          outgoing_good_company: companyCode,
-          outgoing_good_date: date,
+          scrap_transaction_id: scrapTransaction.id,
+          scrap_transaction_company: companyCode,
+          scrap_transaction_date: date,
           item_type: 'SCRAP',
           item_code: scrapCode,
           item_name: scrapName,
-          production_output_wms_ids: [],
-          hs_code: null,
           uom: uom,
           qty: new Prisma.Decimal(qty),
           currency: currency,
           amount: new Prisma.Decimal(amount),
+          scrap_reason: remarks,
         },
       });
 
-      // 5. Queue snapshot recalculation
+      // 4. Queue snapshot recalculation
       const priority = calculatePriority(date);
 
       await tx.snapshot_recalc_queue.upsert({
@@ -212,19 +205,19 @@ export async function POST(request: Request) {
           recalc_date: date,
           status: 'PENDING',
           priority: priority,
-          reason: `Outgoing scrap transaction: ${wmsId}`,
+          reason: `Outgoing scrap transaction: ${documentNumber}`,
         },
         update: {
           status: 'PENDING',
           priority: priority,
-          reason: `Outgoing scrap transaction: ${wmsId}`,
+          reason: `Outgoing scrap transaction: ${documentNumber}`,
           queued_at: new Date(),
         },
       });
 
       return {
-        wmsId,
-        outgoingGoodId: outgoingGood.id,
+        documentNumber,
+        transactionId: scrapTransaction.id,
         date,
         scrapCode,
         scrapName,
