@@ -23,6 +23,9 @@ export async function GET(request: Request) {
     }
     const { companyCode } = companyValidation;
 
+    console.log('[WIP API] Company Code from session:', companyCode);
+    console.log('[WIP API] Session user:', session.user?.email, 'Company:', session.user?.companyCode);
+
     // Query from vw_lpj_wip view (WIP balances with stock_date)
     // Returns all fields except company_code and updated_at
     let query = `
@@ -58,7 +61,12 @@ export async function GET(request: Request) {
 
     query += ` ORDER BY stock_date DESC, item_code`;
 
+    console.log('[WIP API] Query:', query);
+    console.log('[WIP API] Params:', params);
+
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+
+    console.log('[WIP API] Query result count:', result.length);
 
     // Transform to match vw_lpj_wip structure
     const transformedData = result.map((row: any) => ({
