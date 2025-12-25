@@ -630,7 +630,7 @@ SELECT * FROM fn_calculate_lpj_bahan_baku(
     CURRENT_DATE
 )
 WHERE item_type IN ('ROH', 'HIBE') 
-   OR (item_type = 'HALB' AND (quantity_received > 0 OR opening_balance > 0));
+   OR (item_type = 'HALB' AND quantity_received > 0);
 
 COMMENT ON VIEW vw_lpj_bahan_baku IS 'Report #3: Raw Material and Auxiliary Material Mutation Report - Incoming-based only (ROH, HALB from incoming/beginning, HIBE) - YTD';
 
