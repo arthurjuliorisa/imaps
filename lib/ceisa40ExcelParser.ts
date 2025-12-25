@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 /**
  * Interface for parsed Ceisa 4.0 Excel data
@@ -25,26 +25,28 @@ export interface ParsedCeisaData {
 }
 
 /**
- * Parse a Ceisa 4.0 Excel file
+ * Parse a Ceisa 4.0 Excel file using ExcelJS
  * @param buffer - The Excel file buffer
  * @returns Parsed data from the Excel file
  */
 export async function parseCeisa40Excel(buffer: Buffer): Promise<ParsedCeisaData> {
   try {
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const workbook = new ExcelJS.Workbook();
+    // Load Excel file from buffer
+    await workbook.xlsx.load(buffer as any);
 
     // Extract data from different sheets
-    const headerSheet = workbook.Sheets['HEADER'];
-    const dokumenSheet = workbook.Sheets['DOKUMEN'];
-    const entitasSheet = workbook.Sheets['ENTITAS'];
-    const barangSheet = workbook.Sheets['BARANG'];
+    const headerSheet = workbook.getWorksheet('HEADER');
+    const dokumenSheet = workbook.getWorksheet('DOKUMEN');
+    const entitasSheet = workbook.getWorksheet('ENTITAS');
+    const barangSheet = workbook.getWorksheet('BARANG');
 
     if (!headerSheet || !dokumenSheet || !entitasSheet || !barangSheet) {
       throw new Error('Required sheets (HEADER, DOKUMEN, ENTITAS, BARANG) not found in Excel file');
     }
 
     // Parse HEADER sheet (row-based: row 1 = headers, row 2 = values)
-    const headerData = XLSX.utils.sheet_to_json(headerSheet, { header: 1 }) as any[][];
+    const headerData = worksheetToArray(headerSheet);
     if (headerData.length < 2) {
       throw new Error('HEADER sheet must have at least 2 rows (header and data)');
     }
@@ -69,7 +71,7 @@ export async function parseCeisa40Excel(buffer: Buffer): Promise<ParsedCeisaData
     const itemType = 'SCRAP'; // Default, can be overridden by user
 
     // Parse ENTITAS sheet - get company name and recipient
-    const entitasData = XLSX.utils.sheet_to_json(entitasSheet, { header: 1 }) as any[][];
+    const entitasData = worksheetToArray(entitasSheet);
     let recipientName = '';
 
     // Find header row
@@ -112,7 +114,7 @@ export async function parseCeisa40Excel(buffer: Buffer): Promise<ParsedCeisaData
     }
 
     // Parse DOKUMEN sheet - find document number and date
-    const dokumenData = XLSX.utils.sheet_to_json(dokumenSheet, { header: 1 }) as any[][];
+    const dokumenData = worksheetToArray(dokumenSheet);
     let docNumber = '';
     let docDate = '';
 
@@ -161,7 +163,7 @@ export async function parseCeisa40Excel(buffer: Buffer): Promise<ParsedCeisaData
     }
 
     // Parse BARANG sheet - get all items
-    const barangData = XLSX.utils.sheet_to_json(barangSheet, { header: 1 }) as any[][];
+    const barangData = worksheetToArray(barangSheet);
     const items: ParsedCeisaItem[] = [];
 
     // Find header row
@@ -244,45 +246,20 @@ export async function parseCeisa40Excel(buffer: Buffer): Promise<ParsedCeisaData
 }
 
 /**
- * Get cell value by column letter and row number
+ * Convert ExcelJS worksheet to 2D array
  */
-function getCellValue(sheet: XLSX.WorkSheet, col: string, row: number): string {
-  const cellAddress = `${col}${row}`;
-  const cell = sheet[cellAddress];
-  return cell ? String(cell.v || '') : '';
-}
+function worksheetToArray(worksheet: ExcelJS.Worksheet): any[][] {
+  const result: any[][] = [];
 
-/**
- * Find a value in the sheet by searching for a label
- */
-function findValueByLabel(sheet: XLSX.WorkSheet, label: string): string {
-  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+  worksheet.eachRow((row, rowNumber) => {
+    const rowData: any[] = [];
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      rowData.push(cell.value);
+    });
+    result.push(rowData);
+  });
 
-  for (let R = range.s.r; R <= range.e.r; R++) {
-    for (let C = range.s.c; C <= range.e.c; C++) {
-      const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-      const cell = sheet[cellAddress];
-
-      if (cell && typeof cell.v === 'string' && cell.v.includes(label)) {
-        // Found the label, try to get the value from adjacent cells
-        // Try next column (right)
-        const nextCellAddress = XLSX.utils.encode_cell({ r: R, c: C + 1 });
-        const nextCell = sheet[nextCellAddress];
-        if (nextCell && nextCell.v) {
-          return String(nextCell.v);
-        }
-
-        // Try next row (below)
-        const belowCellAddress = XLSX.utils.encode_cell({ r: R + 1, c: C });
-        const belowCell = sheet[belowCellAddress];
-        if (belowCell && belowCell.v) {
-          return String(belowCell.v);
-        }
-      }
-    }
-  }
-
-  return '';
+  return result;
 }
 
 /**
@@ -296,20 +273,23 @@ function parseExcelDate(value: any): string {
     return value;
   }
 
-  // If it's a number (Excel serial date)
-  if (typeof value === 'number') {
-    const date = XLSX.SSF.parse_date_code(value);
-    if (date) {
-      const year = date.y;
-      const month = String(date.m).padStart(2, '0');
-      const day = String(date.d).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    }
+  // If it's a Date object (ExcelJS automatically converts Excel dates to Date objects)
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
-  // If it's a Date object
-  if (value instanceof Date) {
-    return value.toISOString().split('T')[0];
+  // If it's a number (fallback for serial dates that weren't converted)
+  if (typeof value === 'number') {
+    // Excel serial date starts from 1900-01-01
+    const excelEpoch = new Date(1900, 0, 1);
+    const date = new Date(excelEpoch.getTime() + (value - 2) * 24 * 60 * 60 * 1000);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   return String(value);
