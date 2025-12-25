@@ -390,50 +390,52 @@ export async function POST(request: Request) {
       const snapshotRecalcRepo = new SnapshotRecalcRepository();
       const processedDates: string[] = [];
 
-      for (const balanceDate of uniqueBalanceDates) {
-        const date = new Date(balanceDate);
-        
-        // Queue the recalculation
-        const queueId = await snapshotRecalcRepo.queueRecalculation({
-          company_code: companyCodeInt,
-          recalc_date: date,
-          reason: `Beginning balance setup: ${successCount} item(s)`,
-          priority: 1, // High priority for opening balance
-        });
+      await Promise.all(
+        uniqueBalanceDates.map(async (balanceDate) => {
+          const date = new Date(balanceDate);
+          const dateISO = date.toISOString().split('T')[0];
 
-        // Process immediately for backdated data (non-blocking try-catch)
-        try {
-          await snapshotRecalcRepo.processImmediately(
-            queueId,
-            companyCodeInt,
-            date
-          );
-          
-          processedDates.push(date.toISOString().split('T')[0]);
-          
-          console.log(
-            '[API Info] Snapshot recalculation processed immediately',
-            {
-              companyCode: companyCodeInt,
-              balanceDate: date.toISOString().split('T')[0],
-              successCount,
-            }
-          );
-        } catch (processError) {
-          // Log warning but continue - will be retried by background worker
-          console.warn(
-            '[API Warning] Immediate snapshot calculation failed (will retry via worker)',
-            {
-              companyCode: companyCodeInt,
-              balanceDate: date.toISOString().split('T')[0],
-              queueId: queueId.toString(),
-              errorMessage: processError instanceof Error ? processError.message : String(processError),
-            }
-          );
-          processedDates.push(`${date.toISOString().split('T')[0]} (queued)`);
-        }
-      }
+          // Queue the recalculation
+          const queueId = await snapshotRecalcRepo.queueRecalculation({
+            company_code: companyCodeInt,
+            recalc_date: date,
+            reason: `Beginning balance setup: ${successCount} item(s)`,
+            priority: 1, // High priority for opening balance
+          });
 
+          // Process immediately for backdated data (non-blocking try-catch)
+          try {
+            await snapshotRecalcRepo.processImmediately(
+              queueId,
+              companyCodeInt,
+              date
+            );
+
+            processedDates.push(dateISO);
+
+            console.log(
+              '[API Info] Snapshot recalculation processed immediately',
+              {
+                companyCode: companyCodeInt,
+                balanceDate: dateISO,
+                successCount,
+              }
+            );
+          } catch (processError) {
+            // Log warning but continue - will be retried by background worker
+            console.warn(
+              '[API Warning] Immediate snapshot calculation failed (will retry via worker)',
+              {
+                companyCode: companyCodeInt,
+                balanceDate: dateISO,
+                queueId: queueId.toString(),
+                errorMessage: processError instanceof Error ? processError.message : String(processError),
+              }
+            );
+            processedDates.push(`${dateISO} (queued)`);
+          }
+        })
+      );
       console.log(
         '[API Info] Beginning balance snapshot calculation completed',
         {
