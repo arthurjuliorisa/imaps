@@ -251,7 +251,13 @@ export default function BeginningDataPage() {
       }
 
       const result = await response.json();
-      const successMessage = result.message || `Successfully imported ${records.length} beginning stock record(s)!`;
+      
+      // Enhanced success message with queue info
+      let successMessage = result.message || `Successfully imported ${records.length} beginning stock record(s)!`;
+      if (result.success) {
+        successMessage += '\n✓ Snapshot recalculation queued for processing';
+      }
+      
       toast.success(successMessage);
       await fetchData();
     } catch (error: any) {
