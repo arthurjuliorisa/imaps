@@ -168,14 +168,15 @@ export class TraceabilityRepository {
     });
 
     try {
-      const results: TraceabilityItem[] = [];
+      const traceabilityResults = await Promise.all(
+        outgoingItemIds.map((itemId) =>
+          this.getTraceabilityByOutgoingItem(itemId, companyCode)
+        )
+      );
 
-      for (const itemId of outgoingItemIds) {
-        const traceability = await this.getTraceabilityByOutgoingItem(itemId, companyCode);
-        if (traceability) {
-          results.push(traceability);
-        }
-      }
+      const results: TraceabilityItem[] = traceabilityResults.filter(
+        (traceability): traceability is TraceabilityItem => traceability !== null
+      );
 
       log.info('Batch traceability data retrieved', { resultCount: results.length });
       return results;
