@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -15,6 +15,7 @@ import {
   useTheme,
   Stack,
   MenuItem,
+  Autocomplete,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -23,8 +24,18 @@ import dayjs, { Dayjs } from 'dayjs';
 import { Save, Close } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
 
+interface ScrapItem {
+  id: number;
+  scrapCode: string;
+  scrapName: string;
+  scrapDescription?: string;
+  uom: string;
+  isActive: boolean;
+}
+
 interface FormData {
   date: Dayjs | null;
+  scrapItem: ScrapItem | null;
   scrapCode: string;
   scrapName: string;
   uom: string;
@@ -50,8 +61,11 @@ export function AddInScrapDialog({
   const theme = useTheme();
   const toast = useToast();
   const [loading, setLoading] = useState(false);
+  const [scrapItems, setScrapItems] = useState<ScrapItem[]>([]);
+  const [loadingScrapItems, setLoadingScrapItems] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     date: dayjs(),
+    scrapItem: null,
     scrapCode: '',
     scrapName: '',
     uom: '',
@@ -62,6 +76,30 @@ export function AddInScrapDialog({
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
+
+  // Fetch scrap items from master
+  useEffect(() => {
+    if (open) {
+      fetchScrapItems();
+    }
+  }, [open]);
+
+  const fetchScrapItems = async () => {
+    setLoadingScrapItems(true);
+    try {
+      const response = await fetch('/api/master/scrap-items');
+      if (!response.ok) {
+        throw new Error('Failed to fetch scrap items');
+      }
+      const data = await response.json();
+      setScrapItems(data);
+    } catch (error) {
+      console.error('Error fetching scrap items:', error);
+      toast.error('Failed to load scrap items');
+    } finally {
+      setLoadingScrapItems(false);
+    }
+  };
 
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
@@ -160,6 +198,7 @@ export function AddInScrapDialog({
   const resetForm = () => {
     setFormData({
       date: dayjs(),
+      scrapItem: null,
       scrapCode: '',
       scrapName: '',
       uom: '',
@@ -236,43 +275,62 @@ export function AddInScrapDialog({
               }}
             />
 
-            <TextField
-              fullWidth
-              label="Scrap Code"
-              value={formData.scrapCode}
-              onChange={(e) => {
-                setFormData((prev) => ({ ...prev, scrapCode: e.target.value }));
-                setErrors((prev) => ({ ...prev, scrapCode: undefined }));
+            <Autocomplete
+              options={scrapItems}
+              getOptionLabel={(option) => `${option.scrapCode} - ${option.scrapName}`}
+              value={formData.scrapItem}
+              onChange={(event, newValue) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  scrapItem: newValue,
+                  scrapCode: newValue?.scrapCode || '',
+                  scrapName: newValue?.scrapName || '',
+                  uom: newValue?.uom || '',
+                }));
+                setErrors((prev) => ({
+                  ...prev,
+                  scrapCode: undefined,
+                  scrapName: undefined,
+                  uom: undefined,
+                }));
               }}
-              required
-              error={!!errors.scrapCode}
-              helperText={errors.scrapCode}
+              loading={loadingScrapItems}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Scrap Code"
+                  required
+                  error={!!errors.scrapCode}
+                  helperText={errors.scrapCode || 'Select scrap item from master'}
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {loadingScrapItems ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
             />
 
             <TextField
               fullWidth
               label="Scrap Name"
               value={formData.scrapName}
-              onChange={(e) => {
-                setFormData((prev) => ({ ...prev, scrapName: e.target.value }));
-                setErrors((prev) => ({ ...prev, scrapName: undefined }));
-              }}
+              disabled
               required
-              error={!!errors.scrapName}
-              helperText={errors.scrapName}
+              helperText="Auto-filled from selected scrap item"
             />
 
             <TextField
               fullWidth
               label="UOM"
               value={formData.uom}
-              onChange={(e) => {
-                setFormData((prev) => ({ ...prev, uom: e.target.value }));
-                setErrors((prev) => ({ ...prev, uom: undefined }));
-              }}
+              disabled
               required
-              error={!!errors.uom}
-              helperText={errors.uom}
+              helperText="Auto-filled from selected scrap item"
             />
 
             <TextField
