@@ -385,28 +385,61 @@ export async function POST(request: Request) {
     }
 
     // Queue snapshot recalculation for each unique balance date
-    // This will trigger the worker to calculate stock_daily_snapshot with opening balance
+    // Since beginning balance is backdated data (historical), we calculate immediately (non-blocking)
     try {
       const snapshotRecalcRepo = new SnapshotRecalcRepository();
-      const queuedDates: string[] = [];
+      const processedDates: string[] = [];
 
       for (const balanceDate of uniqueBalanceDates) {
         const date = new Date(balanceDate);
-        await snapshotRecalcRepo.queueRecalculation({
+        
+        // Queue the recalculation
+        const queueId = await snapshotRecalcRepo.queueRecalculation({
           company_code: companyCodeInt,
           recalc_date: date,
           reason: `Beginning balance setup: ${successCount} item(s)`,
           priority: 1, // High priority for opening balance
         });
-        queuedDates.push(date.toISOString().split('T')[0]);
+
+        // Process immediately for backdated data (non-blocking try-catch)
+        try {
+          await snapshotRecalcRepo.processImmediately(
+            queueId,
+            companyCodeInt,
+            date
+          );
+          
+          processedDates.push(date.toISOString().split('T')[0]);
+          
+          console.log(
+            '[API Info] Snapshot recalculation processed immediately',
+            {
+              companyCode: companyCodeInt,
+              balanceDate: date.toISOString().split('T')[0],
+              successCount,
+            }
+          );
+        } catch (processError) {
+          // Log warning but continue - will be retried by background worker
+          console.warn(
+            '[API Warning] Immediate snapshot calculation failed (will retry via worker)',
+            {
+              companyCode: companyCodeInt,
+              balanceDate: date.toISOString().split('T')[0],
+              queueId: queueId.toString(),
+              errorMessage: processError instanceof Error ? processError.message : String(processError),
+            }
+          );
+          processedDates.push(`${date.toISOString().split('T')[0]} (queued)`);
+        }
       }
 
       console.log(
-        '[API Info] Snapshot recalculation queued',
+        '[API Info] Beginning balance snapshot calculation completed',
         {
           companyCode: companyCodeInt,
-          queuedDates,
-          successCount,
+          processedDates,
+          totalCount: processedDates.length,
         }
       );
     } catch (queueError) {

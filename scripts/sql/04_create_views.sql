@@ -33,7 +33,7 @@
 -- 
 -- Parameters:
 --   p_item_types: Array of item types to filter (e.g., ARRAY['ROH', 'HALB', 'HIBE'])
---   p_start_date: Start date for accumulation (NULL = from start of month)
+--   p_start_date: Start date for accumulation (NULL = from start of year)
 --   p_end_date: End date for accumulation (NULL = current date)
 --
 -- Return mode: Always returns aggregated records (1 row per company+item+date_range)
@@ -69,8 +69,8 @@ DECLARE
     v_start_date DATE;
     v_end_date DATE;
 BEGIN
-    -- Default: if date range not provided, use start of month to today
-    v_start_date := COALESCE(p_start_date, DATE_TRUNC('month', CURRENT_DATE)::DATE);
+    -- Default: if date range not provided, use start of year to today (includes beginning balance data)
+    v_start_date := COALESCE(p_start_date, DATE_TRUNC('year', CURRENT_DATE)::DATE);
     v_end_date := COALESCE(p_end_date, CURRENT_DATE);
     
     -- Return aggregated view based on provided or default date range
@@ -296,7 +296,7 @@ COMMENT ON FUNCTION fn_calculate_lpj_bahan_baku IS 'Calculate LPJ for raw materi
 --
 -- Parameters:
 --   p_item_types: Array of item types to filter (e.g., ARRAY['FERT', 'HALB'])
---   p_start_date: Start date for accumulation (NULL = from start of month)
+--   p_start_date: Start date for accumulation (NULL = from start of year)
 --   p_end_date: End date for accumulation (NULL = current date)
 --
 -- Return mode: Always returns aggregated records (1 row per company+item+date_range)
@@ -332,8 +332,8 @@ DECLARE
     v_start_date DATE;
     v_end_date DATE;
 BEGIN
-    -- Default: if date range not provided, use start of month to today
-    v_start_date := COALESCE(p_start_date, DATE_TRUNC('month', CURRENT_DATE)::DATE);
+    -- Default: if date range not provided, use start of year to today (includes beginning balance data)
+    v_start_date := COALESCE(p_start_date, DATE_TRUNC('year', CURRENT_DATE)::DATE);
     v_end_date := COALESCE(p_end_date, CURRENT_DATE);
     
     -- Return aggregated view based on provided or default date range
@@ -623,11 +623,15 @@ COMMENT ON VIEW vw_laporan_pengeluaran IS 'Report #2: Goods Issuance Report - Re
 -- Filter: Only HALB items with incoming_qty activity (excludes HALB from production)
 
 CREATE OR REPLACE VIEW vw_lpj_bahan_baku AS
-SELECT * FROM fn_calculate_lpj_bahan_baku(ARRAY['ROH', 'HALB', 'HIBE'])
+SELECT * FROM fn_calculate_lpj_bahan_baku(
+    ARRAY['ROH', 'HALB', 'HIBE'],
+    DATE_TRUNC('year', CURRENT_DATE)::DATE,
+    CURRENT_DATE
+)
 WHERE item_type IN ('ROH', 'HIBE') 
-   OR (item_type = 'HALB' AND quantity_received > 0);
+   OR (item_type = 'HALB' AND (quantity_received > 0 OR opening_balance > 0));
 
-COMMENT ON VIEW vw_lpj_bahan_baku IS 'Report #3: Raw Material and Auxiliary Material Mutation Report - Incoming-based only (ROH, HALB from incoming, HIBE)';
+COMMENT ON VIEW vw_lpj_bahan_baku IS 'Report #3: Raw Material and Auxiliary Material Mutation Report - Incoming-based only (ROH, HALB from incoming/beginning, HIBE) - YTD';
 
 -- ============================================================================
 -- REPORT #4: LPJ WIP (Work in Process Position Report)
@@ -665,11 +669,15 @@ COMMENT ON VIEW vw_lpj_wip IS 'Report #4: Work in Process Position Report - Snap
 --       HALB dari production output dilaporkan di sini
 
 CREATE OR REPLACE VIEW vw_lpj_hasil_produksi AS
-SELECT * FROM fn_calculate_lpj_hasil_produksi(ARRAY['FERT', 'HALB'])
+SELECT * FROM fn_calculate_lpj_hasil_produksi(
+    ARRAY['FERT', 'HALB'],
+    DATE_TRUNC('year', CURRENT_DATE)::DATE,
+    CURRENT_DATE
+)
 WHERE item_type = 'FERT'
    OR (item_type = 'HALB' AND quantity_received > 0);
 
-COMMENT ON VIEW vw_lpj_hasil_produksi IS 'Report #5: Finished Goods Mutation Report - Production-based (FERT and HALB from production output only)';
+COMMENT ON VIEW vw_lpj_hasil_produksi IS 'Report #5: Finished Goods Mutation Report - Production-based (FERT and HALB from production output only) - YTD';
 
 -- ============================================================================
 -- REPORT #6: LPJ BARANG MODAL (Capital Goods Mutation Report)
@@ -678,9 +686,13 @@ COMMENT ON VIEW vw_lpj_hasil_produksi IS 'Report #5: Finished Goods Mutation Rep
 -- Item types: HIBE_M, HIBE_E, HIBE_T (Capital Goods - purchased only)
 
 CREATE OR REPLACE VIEW vw_lpj_barang_modal AS
-SELECT * FROM fn_calculate_lpj_bahan_baku(ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T']);
+SELECT * FROM fn_calculate_lpj_bahan_baku(
+    ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
+    DATE_TRUNC('year', CURRENT_DATE)::DATE,
+    CURRENT_DATE
+);
 
-COMMENT ON VIEW vw_lpj_barang_modal IS 'Report #6: Capital Goods Mutation Report - Incoming-based only (HIBE_M/E/T purchased)';
+COMMENT ON VIEW vw_lpj_barang_modal IS 'Report #6: Capital Goods Mutation Report - Incoming-based only (HIBE_M/E/T purchased) - YTD';
 
 -- ============================================================================
 -- REPORT #7: LPJ BARANG SISA / SCRAP (Scrap Mutation Report)
@@ -824,27 +836,38 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 -- ============================================================================
 -- Run these to verify views are working correctly:
 
--- Test Report #3: Raw Material Mutation (incoming-based) - DAILY VIEW
+-- Test Report #3: Raw Material Mutation (incoming-based) - YEARLY VIEW (Jan 1 - Today)
 -- SELECT * FROM vw_lpj_bahan_baku WHERE company_code = 1310 LIMIT 10;
 
--- Test Report #3: Raw Material Mutation (incoming-based) - AGGREGATED VIEW (1 Dec - 25 Dec 2025)
--- SELECT * FROM fn_calculate_lpj_bahan_baku(ARRAY['ROH', 'HALB', 'HIBE'], '2025-12-01'::DATE, '2025-12-25'::DATE);
+-- Test Report #3: Raw Material Mutation - CUSTOM DATE RANGE (Dec 25, 2024 - Jan 1, 2025)
+-- SELECT * FROM fn_calculate_lpj_bahan_baku(
+--     ARRAY['ROH', 'HALB', 'HIBE'], 
+--     '2024-12-25'::DATE, 
+--     '2025-01-01'::DATE
+-- ) WHERE company_code = 1310;
 
 -- Test Report #4: WIP Position (snapshot-based)
 -- SELECT * FROM vw_lpj_wip WHERE company_code = 1310 LIMIT 10;
 
--- Test Report #5: Finished Goods Mutation (production-based FERT and HALB from production) - DAILY VIEW
+-- Test Report #5: Finished Goods Mutation (production-based FERT and HALB from production) - YEARLY VIEW
 -- SELECT * FROM vw_lpj_hasil_produksi WHERE company_code = 1310 LIMIT 10;
 
--- Test Report #5: Finished Goods Mutation (production-based) - AGGREGATED VIEW (1 Dec - 25 Dec 2025)
--- SELECT * FROM fn_calculate_lpj_hasil_produksi(ARRAY['FERT', 'HALB'], '2025-12-01'::DATE, '2025-12-25'::DATE)
--- WHERE item_type = 'FERT' OR (item_type = 'HALB' AND quantity_received > 0);
+-- Test Report #5: Finished Goods Mutation - CUSTOM DATE RANGE (Dec 1, 2025 - Dec 25, 2025)
+-- SELECT * FROM fn_calculate_lpj_hasil_produksi(
+--     ARRAY['FERT', 'HALB'], 
+--     '2025-12-01'::DATE, 
+--     '2025-12-25'::DATE
+-- ) WHERE item_type = 'FERT' OR (item_type = 'HALB' AND quantity_received > 0);
 
--- Test Report #6: Capital Goods Mutation (incoming-based) - DAILY VIEW
+-- Test Report #6: Capital Goods Mutation (incoming-based) - YEARLY VIEW (Jan 1 - Today)
 -- SELECT * FROM vw_lpj_barang_modal WHERE company_code = 1310 LIMIT 10;
 
--- Test Report #6: Capital Goods Mutation (incoming-based) - AGGREGATED VIEW (1 Dec - 25 Dec 2025)
--- SELECT * FROM fn_calculate_lpj_bahan_baku(ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'], '2025-12-01'::DATE, '2025-12-25'::DATE);
+-- Test Report #6: Capital Goods Mutation - CUSTOM DATE RANGE (Dec 25, 2024 - Jan 1, 2025)
+-- SELECT * FROM fn_calculate_lpj_bahan_baku(
+--     ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'], 
+--     '2024-12-25'::DATE, 
+--     '2025-01-01'::DATE
+-- ) WHERE company_code = 1310;
 
 -- Test Summary Views
 -- SELECT * FROM vw_current_stock_summary;
@@ -855,26 +878,58 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 -- ============================================================================
 -- The functions now support two modes:
 --
--- MODE 1: DAILY VIEW (Default - NULL date parameters)
---   SELECT * FROM fn_calculate_lpj_bahan_baku(ARRAY['ROH', 'HALB', 'HIBE'])
---   Result: 1 row per day per item (original behavior)
---   Use case: Drill-down analysis, daily variance tracking
+-- MODE 1: YEARLY VIEW (Views - Fixed Jan 1 to Today)
+--   SELECT * FROM vw_lpj_barang_modal WHERE company_code = 1310
+--   Result: Data for Year-To-Date (Jan 1 CURRENT_YEAR to TODAY)
+--   snapshot_date: Always shows TODAY
+--   opening_balance: From Jan 1 CURRENT_YEAR
+--   closing_balance: To TODAY
+--   Use case: Standard YTD reporting
 --
--- MODE 2: AGGREGATED VIEW (With date range)
+-- MODE 2: CUSTOM DATE RANGE (Functions - Dynamic)
 --   SELECT * FROM fn_calculate_lpj_bahan_baku(
---       ARRAY['ROH', 'HALB', 'HIBE'],
---       '2025-12-01'::DATE,
---       '2025-12-25'::DATE
+--       ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
+--       '2024-12-25'::DATE,  -- Start date (custom)
+--       '2025-01-01'::DATE   -- End date (custom)
 --   )
---   Result: 1 row per item covering entire date range
---   Fields:
---     - opening_balance: From first day of range (Dec 1)
---     - quantity_received: SUM of all in between Dec 1-25
---     - quantity_issued_outgoing: SUM of all out between Dec 1-25
---     - adjustment: SUM of all adjustments between Dec 1-25
---     - closing_balance: From last day of range (Dec 25)
---     - remarks: Shows "ACCUMULATED FROM 2025-12-01 TO 2025-12-25"
---   Use case: Period reporting, compliance reports, management summaries
+--   Result: Data for specified date range
+--   snapshot_date: Shows end_date of query
+--   opening_balance: From snapshot closest to start_date
+--   closing_balance: To end_date
+--   Use case: Custom period reporting, historical analysis, cross-month queries
+--
+-- KEY DIFFERENCE:
+--   - Views are FIXED to YTD (Jan 1 to Today) - for standard reporting
+--   - Functions are FLEXIBLE - for custom date range queries
+--
+-- EXAMPLE SCENARIOS:
+-- 
+-- Scenario 1: Query data from Dec 25, 2024 to Jan 1, 2025 (crosses year boundary)
+--   USE FUNCTION:
+--   SELECT * FROM fn_calculate_lpj_bahan_baku(
+--       ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
+--       '2024-12-25'::DATE,
+--       '2025-01-01'::DATE
+--   ) WHERE company_code = 1310;
+--   RESULT: opening_balance from Dec 25, transactions from Dec 25-Jan 1
+--
+-- Scenario 2: Query data from last month (e.g., Nov 2025)
+--   USE FUNCTION:
+--   SELECT * FROM fn_calculate_lpj_bahan_baku(
+--       ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
+--       '2025-11-01'::DATE,
+--       '2025-11-30'::DATE
+--   ) WHERE company_code = 1310;
+--   RESULT: Full November data with beginning and ending balances
+--
+-- Scenario 3: Year-to-date comparison (Jan 1 to specific date)
+--   USE FUNCTION:
+--   SELECT * FROM fn_calculate_lpj_bahan_baku(
+--       ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
+--       DATE_TRUNC('year', CURRENT_DATE)::DATE,  -- Jan 1 current year
+--       '2025-06-30'::DATE  -- Mid-year cutoff
+--   ) WHERE company_code = 1310;
+--   RESULT: H1 2025 data (Jan 1 - June 30)
 --
 -- ============================================================================
 -- PERFORMANCE NOTES

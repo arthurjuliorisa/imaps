@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     }
     const { companyCode } = companyValidation;
 
-    // Query from vw_lpj_barang_modal view with date filtering
+    // Query from function with custom date range support
     let query = `
       SELECT
         no,
@@ -44,25 +44,30 @@ export async function GET(request: Request) {
         value_amount,
         currency,
         remarks
-      FROM vw_lpj_barang_modal
+      FROM fn_calculate_lpj_bahan_baku(
+        ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
+        $2::DATE,
+        $3::DATE
+      )
       WHERE company_code = $1
     `;
 
     const params: any[] = [companyCode];
-    let paramIndex = 2;
 
-    if (startDate) {
-      query += ` AND snapshot_date >= $${paramIndex}`;
-      params.push(new Date(startDate));
-      paramIndex++;
-    }
-    if (endDate) {
-      query += ` AND snapshot_date <= $${paramIndex}`;
-      params.push(new Date(endDate));
-      paramIndex++;
+    // Use provided dates, but always include beginning of year for beginning balance
+    if (startDate && endDate) {
+      // Always start from Jan 1 of current year to include beginning balance
+      const currentDate = new Date();
+      const yearStart = new Date(currentDate.getFullYear(), 0, 1);
+      params.push(yearStart, new Date(endDate));
+    } else {
+      // Default to Jan 1 - Today (year-to-date)
+      const currentDate = new Date();
+      const yearStart = new Date(currentDate.getFullYear(), 0, 1);
+      params.push(yearStart, currentDate);
     }
 
-    query += ` ORDER BY snapshot_date DESC, item_code`;
+    query += ` ORDER BY item_code`;
 
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
