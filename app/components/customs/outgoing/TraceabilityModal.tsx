@@ -130,7 +130,7 @@ export function TraceabilityModal({
     let rowIndex = 0;
 
     data.forEach((item) => {
-      const { startRow, rowSpan } = itemRowSpans.get(item.item_code)!;
+      const { rowSpan } = itemRowSpans.get(item.item_code)!;
 
       if (item.work_orders.length === 0) {
         // No work orders - show single row with dashes
