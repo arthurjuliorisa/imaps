@@ -86,19 +86,30 @@ export async function GET(request: Request) {
       paramIndex++;
     }
 
+    // Build date filter conditions
+    let dateFilterAdjustment = '';
+    if (startDate) {
+      dateFilterAdjustment += ` AND a.transaction_date >= $${paramIndex - (endDate ? 1 : 0)}`;
+    }
+    if (endDate) {
+      dateFilterAdjustment += ` AND a.transaction_date <= $${paramIndex}`;
+    }
+
     // Count total records (for pagination)
     const countQuery = `
       SELECT COUNT(*) as total FROM (
-        SELECT ig.id
-        FROM incoming_goods ig
-        JOIN incoming_good_items igi ON ig.company_code = igi.incoming_good_company
-          AND ig.id = igi.incoming_good_id
-          AND ig.incoming_date = igi.incoming_good_date
-        WHERE ig.company_code = $1
-          AND ig.deleted_at IS NULL
-          AND igi.deleted_at IS NULL
-          AND igi.item_type = 'SCRAP'
-          ${dateFilterIncoming}
+        SELECT a.id
+        FROM adjustments a
+        JOIN adjustment_items ai ON a.company_code = ai.adjustment_company
+          AND a.id = ai.adjustment_id
+          AND a.transaction_date = ai.adjustment_date
+        WHERE a.company_code = $1
+          AND a.deleted_at IS NULL
+          AND ai.deleted_at IS NULL
+          AND ai.item_type = 'SCRAP'
+          AND ai.adjustment_type = 'GAIN'
+          AND a.wms_doc_type = 'SCRAP_IN'
+          ${dateFilterAdjustment}
 
         UNION ALL
 
@@ -125,37 +136,39 @@ export async function GET(request: Request) {
     const dataQuery = `
       SELECT * FROM (
         SELECT
-          ig.id,
-          ig.wms_id,
-          ig.company_code,
+          a.id,
+          a.wms_id,
+          a.company_code,
           c.name as company_name,
-          ig.customs_document_type as doc_type,
-          ig.ppkek_number,
-          ig.customs_registration_date as reg_date,
-          ig.incoming_evidence_number as doc_number,
-          ig.incoming_date as doc_date,
-          ig.shipper_name as recipient_name,
-          igi.item_type,
-          igi.item_code,
-          igi.item_name,
-          igi.uom as unit,
-          igi.qty as quantity_in,
+          'ADJUSTMENT' as doc_type,
+          '' as ppkek_number,
+          a.transaction_date as reg_date,
+          a.internal_evidence_number as doc_number,
+          a.transaction_date as doc_date,
+          'Scrap Collection' as recipient_name,
+          ai.item_type,
+          ai.item_code,
+          ai.item_name,
+          ai.uom as unit,
+          ai.qty as quantity_in,
           0::numeric(15,3) as quantity_out,
-          igi.currency,
-          igi.amount as value_amount,
-          NULL::varchar as remarks,
-          ig.created_at,
+          'IDR' as currency,
+          0::numeric(18,4) as value_amount,
+          ai.reason as remarks,
+          a.created_at,
           'IN' as transaction_type
-        FROM incoming_goods ig
-        JOIN incoming_good_items igi ON ig.company_code = igi.incoming_good_company
-          AND ig.id = igi.incoming_good_id
-          AND ig.incoming_date = igi.incoming_good_date
-        JOIN companies c ON ig.company_code = c.code
-        WHERE ig.company_code = $1
-          AND ig.deleted_at IS NULL
-          AND igi.deleted_at IS NULL
-          AND igi.item_type = 'SCRAP'
-          ${dateFilterIncoming}
+        FROM adjustments a
+        JOIN adjustment_items ai ON a.company_code = ai.adjustment_company
+          AND a.id = ai.adjustment_id
+          AND a.transaction_date = ai.adjustment_date
+        JOIN companies c ON a.company_code = c.code
+        WHERE a.company_code = $1
+          AND a.deleted_at IS NULL
+          AND ai.deleted_at IS NULL
+          AND ai.item_type = 'SCRAP'
+          AND ai.adjustment_type = 'GAIN'
+          AND a.wms_doc_type = 'SCRAP_IN'
+          ${dateFilterAdjustment}
 
         UNION ALL
 

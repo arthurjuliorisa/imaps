@@ -148,45 +148,35 @@ export async function POST(request: Request) {
 
     // Execute transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Generate WMS ID and invoice number
+      // 1. Generate WMS ID
       const wmsId = generateWmsId();
-      const invoiceNumber = generateInvoiceNumber();
+      const internalEvidenceNumber = wmsId;
 
-      // 2. Get company default ppkek_number (for now, use empty string)
-      const ppkekNumber = '';
-
-      // 3. Create incoming_goods record
-      const incomingGood = await tx.incoming_goods.create({
+      // 2. Create adjustment record for scrap incoming
+      const adjustment = await tx.adjustments.create({
         data: {
           wms_id: wmsId,
           company_code: companyCode,
-          owner: companyCode,
-          customs_document_type: 'BC27',
-          ppkek_number: ppkekNumber,
-          customs_registration_date: date,
-          incoming_evidence_number: wmsId,
-          incoming_date: date,
-          invoice_number: invoiceNumber,
-          invoice_date: date,
-          shipper_name: 'Internal Scrap Collection',
+          wms_doc_type: 'SCRAP_IN',
+          internal_evidence_number: internalEvidenceNumber,
+          transaction_date: date,
           timestamp: new Date(),
         },
       });
 
-      // 4. Create incoming_good_items record
-      await tx.incoming_good_items.create({
+      // 3. Create adjustment_items record with GAIN type
+      await tx.adjustment_items.create({
         data: {
-          incoming_good_id: incomingGood.id,
-          incoming_good_company: companyCode,
-          incoming_good_date: date,
+          adjustment_id: adjustment.id,
+          adjustment_company: companyCode,
+          adjustment_date: date,
+          adjustment_type: 'GAIN',
           item_type: 'SCRAP',
           item_code: scrapCode,
           item_name: scrapName,
-          hs_code: null,
           uom: uom,
           qty: new Prisma.Decimal(qty),
-          currency: currency,
-          amount: new Prisma.Decimal(amount),
+          reason: remarks || `Scrap incoming - ${currency} ${amount}`,
         },
       });
 
@@ -221,7 +211,7 @@ export async function POST(request: Request) {
 
       return {
         wmsId,
-        incomingGoodId: incomingGood.id,
+        adjustmentId: adjustment.id,
         date,
         scrapCode,
         scrapName,
