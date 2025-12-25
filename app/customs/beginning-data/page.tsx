@@ -254,9 +254,7 @@ export default function BeginningDataPage() {
       
       // Enhanced success message with queue info
       let successMessage = result.message || `Successfully imported ${records.length} beginning stock record(s)!`;
-      if (result.success) {
-        successMessage += '\n✓ Snapshot recalculation queued for processing';
-      }
+      successMessage += '\n✓ Snapshot recalculation queued for processing';
       
       toast.success(successMessage);
       await fetchData();
