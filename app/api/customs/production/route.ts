@@ -56,12 +56,20 @@ export async function GET(request: Request) {
 
     const params: any[] = [companyCode];
 
-    // Use provided dates, but always include beginning of year for beginning balance
+    // Use provided dates when available; otherwise fall back to year-to-date
     if (startDate && endDate) {
-      // Always start from Jan 1 of current year to include beginning balance
-      const currentDate = new Date();
-      const yearStart = new Date(currentDate.getFullYear(), 0, 1);
-      params.push(yearStart, new Date(endDate));
+      const parsedStart = new Date(startDate);
+      const parsedEnd = new Date(endDate);
+
+      if (!isNaN(parsedStart.getTime()) && !isNaN(parsedEnd.getTime())) {
+        // Use the caller-provided date range
+        params.push(parsedStart, parsedEnd);
+      } else {
+        // Fallback: invalid dates supplied, use Jan 1 - Today (year-to-date)
+        const currentDate = new Date();
+        const yearStart = new Date(currentDate.getFullYear(), 0, 1);
+        params.push(yearStart, currentDate);
+      }
     } else {
       // Default to Jan 1 - Today (year-to-date)
       const currentDate = new Date();
