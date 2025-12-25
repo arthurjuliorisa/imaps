@@ -92,6 +92,31 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Validate that the requested company code matches the authenticated user's company
+    const sessionCompanyRaw =
+      (session as any)?.user?.companyCode ??
+      (session as any)?.user?.company_code;
+
+    const sessionCompanyCode =
+      typeof sessionCompanyRaw === 'string'
+        ? parseInt(sessionCompanyRaw, 10)
+        : Number(sessionCompanyRaw);
+
+    if (!sessionCompanyRaw || Number.isNaN(sessionCompanyCode)) {
+      return errorResponse(
+        'Authenticated user does not have a valid company associated.',
+        'UNAUTHORIZED_COMPANY',
+        403
+      );
+    }
+
+    if (sessionCompanyCode !== companyCode) {
+      return errorResponse(
+        'Forbidden: company_code does not match authenticated user company.',
+        'FORBIDDEN',
+        403
+      );
+    }
     // Get traceability data
     const traceabilityData = await traceabilityRepository.getTraceabilityByOutgoingItemIds(
       itemIds,
