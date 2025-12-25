@@ -29,7 +29,7 @@ import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 
 interface OutgoingReportData {
   id: string;
-  wmsId: number;
+  wmsId: string;
   companyCode: number;
   companyName: string;
   documentType: string;

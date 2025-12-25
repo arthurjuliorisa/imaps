@@ -581,6 +581,7 @@ COMMENT ON VIEW vw_laporan_pemasukan IS 'Report #1: Goods Receiving Report - Rea
 CREATE OR REPLACE VIEW vw_laporan_pengeluaran AS
 SELECT 
     og.id,
+    og.wms_id,
     og.company_code,
     c.name as company_name,
     og.customs_document_type,
