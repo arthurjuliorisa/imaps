@@ -92,8 +92,7 @@ model companies {
   users                        users[]
   snapshot_recalc_queue        snapshot_recalc_queue[]
   stock_daily_snapshot         stock_daily_snapshot[]
-  incoming_capital_goods       incoming_capital_goods[]
-  outgoing_scrap_capital_goods outgoing_scrap_capital_goods[]
+  scrap_transactions           scrap_transactions[]
 
   @@index([code])
   @@index([status])
@@ -580,96 +579,59 @@ model adjustment_items {
 // Capital goods are identified by item_type: HIBE_M, HIBE_E, HIBE_T
 // ============================================================================
 
-model incoming_capital_goods {
-  id               Int       @id @default(autoincrement())
-  company_code     Int
-  transaction_date DateTime  @db.Date
-  document_number  String    @db.VarChar(100)
-  remarks          String?   @db.VarChar(1000)
-  timestamp        DateTime  @default(now()) @db.Timestamptz(6)
-  created_at       DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at       DateTime? @db.Timestamptz(6)
+// ============================================================================
+// SCRAP TRANSACTIONS
+// ============================================================================
 
-  company companies                     @relation(fields: [company_code], references: [code])
-  items   incoming_capital_good_items[]
+model scrap_transactions {
+  id               Int                       @id @default(autoincrement())
+  company_code     Int
+  transaction_date DateTime                  @db.Date
+  transaction_type String                    @db.VarChar(10) // 'IN' or 'OUT'
+  document_number  String                    @db.VarChar(100)
+  source           String?                   @db.VarChar(200) // For IN transactions
+  recipient_name   String?                   @db.VarChar(200) // For OUT transactions
+  disposal_method  String?                   @db.VarChar(100) // For OUT: "Sold as scrap", "Destroyed", "Donated"
+  remarks          String?                   @db.VarChar(1000)
+  timestamp        DateTime                  @default(now()) @db.Timestamptz(6)
+  created_at       DateTime                  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime                  @updatedAt @db.Timestamptz(6)
+  deleted_at       DateTime?                 @db.Timestamptz(6)
+
+  company companies                   @relation(fields: [company_code], references: [code])
+  items   scrap_transaction_items[]
 
   @@unique([company_code, id, transaction_date])
   @@index([company_code])
   @@index([transaction_date])
   @@index([document_number])
+  @@index([transaction_type])
 }
 
-model incoming_capital_good_items {
-  id                            Int       @id @default(autoincrement())
-  incoming_capital_good_id      Int
-  incoming_capital_good_company Int
-  incoming_capital_good_date    DateTime  @db.Date
-  item_type                     String    @db.VarChar(10) // HIBE_M, HIBE_E, HIBE_T
-  item_code                     String    @db.VarChar(50)
-  item_name                     String    @db.VarChar(200)
-  uom                           String    @db.VarChar(20)
-  qty                           Decimal   @db.Decimal(15, 3)
-  currency                      Currency
-  amount                        Decimal   @db.Decimal(18, 4)
-  remarks                       String?   @db.VarChar(500)
-  created_at                    DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at                    DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at                    DateTime? @db.Timestamptz(6)
+model scrap_transaction_items {
+  id                     Int                @id @default(autoincrement())
+  scrap_transaction_id   Int
+  scrap_transaction_company Int
+  scrap_transaction_date DateTime           @db.Date
+  item_type              String             @default("SCRAP") @db.VarChar(10)
+  item_code              String             @db.VarChar(50)
+  item_name              String             @db.VarChar(200)
+  uom                    String             @db.VarChar(20)
+  qty                    Decimal            @db.Decimal(15, 3)
+  currency               Currency
+  amount                 Decimal            @db.Decimal(18, 4)
+  scrap_reason           String?            @db.VarChar(500)
+  remarks                String?            @db.VarChar(500)
+  created_at             DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime           @updatedAt @db.Timestamptz(6)
+  deleted_at             DateTime?          @db.Timestamptz(6)
 
-  incoming_capital_good incoming_capital_goods @relation(fields: [incoming_capital_good_company, incoming_capital_good_id, incoming_capital_good_date], references: [company_code, id, transaction_date], onDelete: Cascade)
+  scrap_transaction scrap_transactions @relation(fields: [scrap_transaction_company, scrap_transaction_id, scrap_transaction_date], references: [company_code, id, transaction_date], onDelete: Cascade)
 
-  @@index([incoming_capital_good_id])
-  @@index([incoming_capital_good_id, incoming_capital_good_company, incoming_capital_good_date])
+  @@index([scrap_transaction_id])
+  @@index([scrap_transaction_id, scrap_transaction_company, scrap_transaction_date])
   @@index([item_code])
   @@index([item_type])
-}
-
-model outgoing_scrap_capital_goods {
-  id               Int       @id @default(autoincrement())
-  company_code     Int
-  transaction_date DateTime  @db.Date
-  document_number  String    @db.VarChar(100)
-  disposal_method  String?   @db.VarChar(100) // e.g., "Sold as scrap", "Destroyed", "Donated"
-  remarks          String?   @db.VarChar(1000)
-  timestamp        DateTime  @default(now()) @db.Timestamptz(6)
-  created_at       DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at       DateTime? @db.Timestamptz(6)
-
-  company companies                           @relation(fields: [company_code], references: [code])
-  items   outgoing_scrap_capital_good_items[]
-
-  @@unique([company_code, id, transaction_date])
-  @@index([company_code])
-  @@index([transaction_date])
-  @@index([document_number])
-}
-
-model outgoing_scrap_capital_good_items {
-  id                                  Int       @id @default(autoincrement())
-  outgoing_scrap_capital_good_id      Int
-  outgoing_scrap_capital_good_company Int
-  outgoing_scrap_capital_good_date    DateTime  @db.Date
-  item_type                           String    @db.VarChar(10) // HIBE_M, HIBE_E, HIBE_T
-  item_code                           String    @db.VarChar(50)
-  item_name                           String    @db.VarChar(200)
-  uom                                 String    @db.VarChar(20)
-  qty                                 Decimal   @db.Decimal(15, 3)
-  currency                            Currency
-  amount                              Decimal   @db.Decimal(18, 4) // Original value or scrap value
-  scrap_reason                        String?   @db.VarChar(500)
-  remarks                             String?   @db.VarChar(500)
-  created_at                          DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at                          DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at                          DateTime? @db.Timestamptz(6)
-
-  outgoing_scrap_capital_good outgoing_scrap_capital_goods @relation(fields: [outgoing_scrap_capital_good_company, outgoing_scrap_capital_good_id, outgoing_scrap_capital_good_date], references: [company_code, id, transaction_date], onDelete: Cascade)
-
-  @@index([outgoing_scrap_capital_good_id], map: "oscg_items_good_id_idx")
-  @@index([outgoing_scrap_capital_good_id, outgoing_scrap_capital_good_company, outgoing_scrap_capital_good_date], map: "oscg_items_composite_idx")
-  @@index([item_code], map: "oscg_items_item_code_idx")
-  @@index([item_type], map: "oscg_items_item_type_idx")
 }
 
 // ============================================================================

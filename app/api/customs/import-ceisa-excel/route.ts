@@ -451,97 +451,29 @@ async function importCapitalGoodsTransactions(
     const importedItems: any[] = [];
 
     if (direction === 'IN') {
-      // Create incoming_capital_goods record
-      const incomingCapitalGood = await tx.incoming_capital_goods.create({
-        data: {
-          company_code: companyCode,
-          transaction_date: docDate,
-          document_number: data.docNumber,
-          remarks: `Imported from Ceisa 4.0 - PPKEK: ${data.ppkekNumber}`,
-          timestamp: new Date(),
-        },
-      });
-
-      // Create incoming_capital_good_items for each item
-      for (const item of data.items) {
-        // Validate item type for capital goods
-        const itemType = data.itemType;
-        if (!['HIBE_M', 'HIBE_E', 'HIBE_T'].includes(itemType)) {
-          throw new Error(`Invalid item type for capital goods: ${itemType}. Must be HIBE_M, HIBE_E, or HIBE_T`);
-        }
-
-        await tx.incoming_capital_good_items.create({
-          data: {
-            incoming_capital_good_id: incomingCapitalGood.id,
-            incoming_capital_good_company: companyCode,
-            incoming_capital_good_date: docDate,
-            item_type: itemType,
-            item_code: item.itemCode,
-            item_name: item.itemName,
-            uom: item.unit,
-            qty: new Prisma.Decimal(item.quantity),
-            currency: data.currency as any,
-            amount: new Prisma.Decimal(item.valueAmount),
-          },
-        });
-
-        importedItems.push({
-          itemCode: item.itemCode,
-          itemName: item.itemName,
-          itemType: itemType,
-          quantity: item.quantity,
-        });
-
-        // Queue snapshot recalculation
-        const priority = calculatePriority(docDate);
-        await tx.snapshot_recalc_queue.upsert({
-          where: {
-            company_code_recalc_date_item_type_item_code: {
-              company_code: companyCode,
-              recalc_date: docDate,
-              item_type: itemType,
-              item_code: item.itemCode,
-            },
-          },
-          create: {
-            company_code: companyCode,
-            item_type: itemType,
-            item_code: item.itemCode,
-            recalc_date: docDate,
-            status: 'PENDING',
-            priority: priority,
-            reason: `Excel import: ${wmsId}`,
-          },
-          update: {
-            status: 'PENDING',
-            priority: priority,
-            reason: `Excel import: ${wmsId}`,
-            queued_at: new Date(),
-          },
-        });
-      }
-
-      return {
-        wmsId,
-        transactionId: incomingCapitalGood.id,
-        direction: 'IN',
-        itemCount: importedItems.length,
-        items: importedItems,
-      };
+      // Capital goods incoming is not supported
+      // Only outgoing capital goods transactions are available
+      throw new Error('Capital goods incoming transactions are not supported. Only outgoing transactions are available.');
     } else {
-      // Create outgoing_scrap_capital_goods record
-      const outgoingCapitalGood = await tx.outgoing_scrap_capital_goods.create({
+      // Create outgoing_goods record for capital goods
+      const outgoingGood = await tx.outgoing_goods.create({
         data: {
+          wms_id: wmsId,
           company_code: companyCode,
-          transaction_date: docDate,
-          document_number: data.docNumber,
-          disposal_method: 'Exported',
-          remarks: `Imported from Ceisa 4.0 - PPKEK: ${data.ppkekNumber} - Recipient: ${data.recipientName}`,
+          owner: companyCode,
+          customs_document_type: mapDocumentTypeToEnum(data.docType || '27') as any,
+          ppkek_number: data.ppkekNumber,
+          customs_registration_date: regDate,
+          outgoing_evidence_number: data.docNumber,
+          outgoing_date: docDate,
+          invoice_number: data.docNumber,
+          invoice_date: docDate,
+          recipient_name: data.recipientName || 'Unknown',
           timestamp: new Date(),
         },
       });
 
-      // Create outgoing_scrap_capital_good_items for each item
+      // Create outgoing_good_items for each item
       for (const item of data.items) {
         // Validate item type for capital goods
         const itemType = data.itemType;
@@ -549,14 +481,16 @@ async function importCapitalGoodsTransactions(
           throw new Error(`Invalid item type for capital goods: ${itemType}. Must be HIBE_M, HIBE_E, or HIBE_T`);
         }
 
-        await tx.outgoing_scrap_capital_good_items.create({
+        await tx.outgoing_good_items.create({
           data: {
-            outgoing_scrap_capital_good_id: outgoingCapitalGood.id,
-            outgoing_scrap_capital_good_company: companyCode,
-            outgoing_scrap_capital_good_date: docDate,
+            outgoing_good_id: outgoingGood.id,
+            outgoing_good_company: companyCode,
+            outgoing_good_date: docDate,
             item_type: itemType,
             item_code: item.itemCode,
             item_name: item.itemName,
+            production_output_wms_ids: [],
+            hs_code: null,
             uom: item.unit,
             qty: new Prisma.Decimal(item.quantity),
             currency: data.currency as any,
@@ -602,7 +536,7 @@ async function importCapitalGoodsTransactions(
 
       return {
         wmsId,
-        transactionId: outgoingCapitalGood.id,
+        transactionId: outgoingGood.id,
         direction: 'OUT',
         itemCount: importedItems.length,
         items: importedItems,

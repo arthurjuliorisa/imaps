@@ -148,39 +148,42 @@ export async function POST(request: Request) {
 
     // Execute transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Generate WMS ID
-      const wmsId = generateWmsId();
-      const internalEvidenceNumber = wmsId;
+      // 1. Generate document number (using wms_id format for consistency)
+      const timestamp = Date.now();
+      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      const documentNumber = `SCRAP-IN-${timestamp}-${random}`;
 
-      // 2. Create adjustment record for scrap incoming
-      const adjustment = await tx.adjustments.create({
+      // 2. Create scrap_transactions header record
+      const scrapTransaction = await tx.scrap_transactions.create({
         data: {
-          wms_id: wmsId,
           company_code: companyCode,
-          wms_doc_type: 'SCRAP_IN',
-          internal_evidence_number: internalEvidenceNumber,
           transaction_date: date,
+          transaction_type: 'IN',
+          document_number: documentNumber,
+          source: remarks || `Scrap incoming - ${currency} ${amount}`,
+          remarks: remarks,
           timestamp: new Date(),
         },
       });
 
-      // 3. Create adjustment_items record with GAIN type
-      await tx.adjustment_items.create({
+      // 3. Create scrap_transaction_items record
+      await tx.scrap_transaction_items.create({
         data: {
-          adjustment_id: adjustment.id,
-          adjustment_company: companyCode,
-          adjustment_date: date,
-          adjustment_type: 'GAIN',
+          scrap_transaction_id: scrapTransaction.id,
+          scrap_transaction_company: companyCode,
+          scrap_transaction_date: date,
           item_type: 'SCRAP',
           item_code: scrapCode,
           item_name: scrapName,
           uom: uom,
           qty: new Prisma.Decimal(qty),
-          reason: remarks || `Scrap incoming - ${currency} ${amount}`,
+          currency: currency,
+          amount: new Prisma.Decimal(amount),
+          scrap_reason: remarks,
         },
       });
 
-      // 5. Queue snapshot recalculation
+      // 4. Queue snapshot recalculation
       const priority = calculatePriority(date);
 
       await tx.snapshot_recalc_queue.upsert({
@@ -199,19 +202,19 @@ export async function POST(request: Request) {
           recalc_date: date,
           status: 'PENDING',
           priority: priority,
-          reason: `Incoming scrap transaction: ${wmsId}`,
+          reason: `Incoming scrap transaction: ${documentNumber}`,
         },
         update: {
           status: 'PENDING',
           priority: priority,
-          reason: `Incoming scrap transaction: ${wmsId}`,
+          reason: `Incoming scrap transaction: ${documentNumber}`,
           queued_at: new Date(),
         },
       });
 
       return {
-        wmsId,
-        adjustmentId: adjustment.id,
+        documentNumber,
+        transactionId: scrapTransaction.id,
         date,
         scrapCode,
         scrapName,
