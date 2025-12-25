@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Stack, Button, CircularProgress, Typography } from '@mui/material';
 import {
+  Add as AddIcon,
   UploadFile as UploadFileIcon,
   RemoveCircleOutline as RemoveIcon
 } from '@mui/icons-material';
@@ -10,6 +11,7 @@ import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
+import { AddInScrapDialog } from '@/app/components/customs/AddInScrapDialog';
 import { AddOutScrapDialog } from '@/app/components/customs/AddOutScrapDialog';
 import { ImportCeisaExcelDialog } from '@/app/components/customs/ImportCeisaExcelDialog';
 import { useToast } from '@/app/components/ToastProvider';
@@ -31,6 +33,7 @@ export default function ScrapTransactionsPage() {
     page: 0,
     pageSize: 10,
   });
+  const [addInDialogOpen, setAddInDialogOpen] = useState(false);
   const [addOutDialogOpen, setAddOutDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
 
@@ -166,6 +169,10 @@ export default function ScrapTransactionsPage() {
     fetchData();
   }, [fetchData]);
 
+  const handleAddIn = () => {
+    setAddInDialogOpen(true);
+  };
+
   const handleAddOut = () => {
     setAddOutDialogOpen(true);
   };
@@ -273,6 +280,15 @@ export default function ScrapTransactionsPage() {
             <Stack direction="row" spacing={2}>
               <Button
                 variant="contained"
+                color="success"
+                startIcon={<AddIcon />}
+                onClick={handleAddIn}
+                disabled={loading}
+              >
+                Add In
+              </Button>
+              <Button
+                variant="contained"
                 color="error"
                 startIcon={<RemoveIcon />}
                 onClick={handleAddOut}
@@ -282,12 +298,12 @@ export default function ScrapTransactionsPage() {
               </Button>
               <Button
                 variant="contained"
-                color="primary"
+                color="warning"
                 startIcon={<UploadFileIcon />}
                 onClick={handleImportExcel}
                 disabled={loading}
               >
-                Import from Excel
+                Import Out (Excel)
               </Button>
             </Stack>
             <ExportButtons
@@ -346,6 +362,12 @@ export default function ScrapTransactionsPage() {
           }}
         />
       </Box>
+
+      <AddInScrapDialog
+        open={addInDialogOpen}
+        onClose={() => setAddInDialogOpen(false)}
+        onSuccess={handleDialogSuccess}
+      />
 
       <AddOutScrapDialog
         open={addOutDialogOpen}
