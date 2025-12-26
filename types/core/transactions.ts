@@ -280,6 +280,8 @@ export interface BeginningBalance {
   uom: string;
   qty: number;
   balance_date: Date;
+  remarks?: string;
+  ppkek_numbers?: string[];
   created_at: Date;
   updated_at: Date;
   deleted_at?: Date;

@@ -198,11 +198,25 @@ model beginning_balances {
   deleted_at   DateTime? @db.Timestamptz(6)
 
   company companies @relation(fields: [company_code], references: [code])
+  ppkeks      beginning_balance_ppkeks[]
 
   @@unique([company_code, item_code, balance_date])
   @@index([company_code])
   @@index([item_code])
   @@index([balance_date])
+}
+
+model beginning_balance_ppkeks {
+  id                    Int                @id @default(autoincrement())
+  beginning_balance_id  Int
+  ppkek_number          String             @db.VarChar(50)
+  created_at            DateTime           @default(now()) @db.Timestamptz(6)
+
+  beginning_balance beginning_balances @relation(fields: [beginning_balance_id], references: [id], onDelete: Cascade)
+
+  @@unique([beginning_balance_id, ppkek_number])
+  @@index([beginning_balance_id])
+  @@index([ppkek_number])
 }
 
 // ============================================================================

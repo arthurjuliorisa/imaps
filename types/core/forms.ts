@@ -319,6 +319,7 @@ export interface BeginningBalanceFormData {
   qty: number;
   effective_date: Date | string;
   remarks?: string;
+  ppkek_numbers?: string[];
 }
 
 // ============================================================================

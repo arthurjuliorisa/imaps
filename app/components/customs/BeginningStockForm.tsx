@@ -34,6 +34,7 @@ export interface BeginningStockFormData {
   beginningDate: Dayjs | null;
   balance_date: Dayjs | null;
   remarks?: string;
+  ppkek_numbers?: string[];
 }
 
 interface Item {
@@ -76,6 +77,8 @@ export function BeginningStockForm({
   const [items, setItems] = useState<Item[]>([]);
   const [uoms, setUoms] = useState<UOM[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
+  const [ppkeks, setPpkeks] = useState<string[]>([]);
+  const [loadingPpkeks, setLoadingPpkeks] = useState(false);
   const [formData, setFormData] = useState<BeginningStockFormData>({
     itemId: undefined,
     item_code: '',
@@ -88,6 +91,7 @@ export function BeginningStockForm({
     beginningDate: dayjs(),
     balance_date: dayjs(),
     remarks: '',
+    ppkek_numbers: [],
   });
 
   // Reset form when dialog opens or initialData changes
@@ -95,7 +99,7 @@ export function BeginningStockForm({
     if (open) {
       // Fix Bug #1: Load data first, then set form values to avoid race condition
       const loadData = async () => {
-        await Promise.all([fetchItems(), fetchUOMs()]);
+        await Promise.all([fetchItems(), fetchUOMs(), fetchPpkeks()]);
 
         if (initialData && mode === 'edit') {
           setFormData(initialData);
@@ -143,6 +147,28 @@ export function BeginningStockForm({
       }
     } catch (error) {
       console.error('Error fetching UOMs:', error);
+    }
+  };
+
+  const fetchPpkeks = async () => {
+    setLoadingPpkeks(true);
+    try {
+      const response = await fetch('/api/master/ppkek/search?limit=1000');
+      if (response.ok) {
+        const data = await response.json();
+        const ppkekList = data.data || data;
+        if (Array.isArray(ppkekList)) {
+          // Extract ppkek_number from objects or use strings directly
+          const ppkekNumbers = ppkekList.map(item => 
+            typeof item === 'string' ? item : item.ppkek_number || item.number || item.code
+          );
+          setPpkeks(ppkekNumbers);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching PPKEKs:', error);
+    } finally {
+      setLoadingPpkeks(false);
     }
   };
 
@@ -295,7 +321,7 @@ export function BeginningStockForm({
               helperText="Enter the beginning balance quantity (must be greater than 0)"
             />
 
-            {/* Beginning Date */}
+            {/* Balance Date */}
             <DatePicker
               label="Balance Date"
               value={formData.balance_date}
@@ -308,6 +334,35 @@ export function BeginningStockForm({
                   helperText: 'Balance date cannot be in the future',
                 },
               }}
+            />
+
+            {/* PPKEK Numbers - Multiple Selection */}
+            <Autocomplete
+              multiple
+              options={ppkeks}
+              loading={loadingPpkeks}
+              value={formData.ppkek_numbers || []}
+              onChange={(_event, newValue) => setFormData((prev) => ({ ...prev, ppkek_numbers: newValue }))}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="PPKEK Numbers"
+                  placeholder="Select PPKEK numbers..."
+                  helperText="Select one or more PPKEK numbers (optional)"
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {loadingPpkeks ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+              freeSolo
+              filterSelectedOptions
+              sx={{ mb: 2 }}
             />
 
             {/* Info Box */}

@@ -92,6 +92,13 @@ export async function GET(request: NextRequest) {
       where,
       skip,
       take: pageSize,
+      include: {
+        ppkeks: {
+          select: {
+            ppkek_number: true
+          }
+        }
+      },
       orderBy: [
         { company_code: 'asc' },
         { item_code: 'asc' }
@@ -173,7 +180,7 @@ export async function POST(request: NextRequest) {
     });
     const nextId = (maxId._max.id || 0) + 1;
 
-    // Create beginning balance
+    // Create beginning balance with ppkeks
     const balance = await prisma.beginning_balances.create({
       data: {
         id: nextId,
@@ -183,9 +190,32 @@ export async function POST(request: NextRequest) {
         item_name: body.item_name,
         uom: body.uom,
         qty: body.qty,
-        balance_date: new Date(body.balance_date)
+        balance_date: new Date(body.balance_date),
+        remarks: body.remarks,
+        ...(body.ppkek_numbers && body.ppkek_numbers.length > 0 && {
+          ppkeks: {
+            createMany: {
+              data: body.ppkek_numbers.map(ppkek => ({
+                ppkek_number: ppkek
+              }))
+            }
+          }
+        })
+      },
+      include: {
+        ppkeks: {
+          select: {
+            ppkek_number: true
+          }
+        }
       }
     });
+
+    // Transform response
+    const responseData = {
+      ...balance,
+      ppkek_numbers: balance.ppkeks?.map(p => p.ppkek_number) || []
+    };
 
     // Log activity
     await logActivity({
@@ -194,7 +224,7 @@ export async function POST(request: NextRequest) {
       description: `Created beginning balance for ${body.item_code}`
     });
 
-    return successResponse(balance, 201);
+    return successResponse(responseData, 201);
   } catch (error) {
     console.error('Error creating beginning balance:', error);
 

@@ -34,6 +34,7 @@ interface ImportedRecord {
   uom: string;
   qty: number;
   balanceDate: string;
+  ppkekNumbers: string[];
   remarks: string;
   // Validation
   isValid: boolean;
@@ -142,6 +143,19 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
       }
     }
 
+    // PPKEK Numbers validation (optional)
+    if (row['PPKEK Numbers']) {
+      const ppkekStr = row['PPKEK Numbers'].toString().trim();
+      if (ppkekStr && ppkekStr.length > 0) {
+        // Validate that each ppkek number (separated by comma) is not empty
+        const ppkeks = ppkekStr.split(',').map((p: string) => p.trim());
+        const invalidPpkeks = ppkeks.some((p: string) => !p);
+        if (invalidPpkeks) {
+          errors.push('PPKEK Numbers format invalid (comma-separated values)');
+        }
+      }
+    }
+
     return {
       isValid: errors.length === 0,
       errors,
@@ -204,6 +218,12 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
       const processedRecords: ImportedRecord[] = jsonData.map((row: any) => {
         const validation = validateRecord(row);
         const qty = parseFloat(row['Qty']) || 0;
+        
+        // Parse PPKEK Numbers (comma-separated)
+        const ppkekStr = row['PPKEK Numbers'] ? row['PPKEK Numbers'].toString().trim() : '';
+        const ppkekNumbers = ppkekStr
+          ? ppkekStr.split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
+          : [];
 
         return {
           itemType: row['Item Type'] || '',
@@ -212,6 +232,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
           uom: row['UOM'] || '',
           qty,
           balanceDate: row['Balance Date'] ? dayjs(row['Balance Date']).format('DD/MM/YYYY') : '',
+          ppkekNumbers,
           remarks: row['Remarks'] || '',
           isValid: validation.isValid,
           errors: validation.errors,
@@ -370,7 +391,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
 
           <Alert severity="info" icon={false} sx={{ mb: 2, py: 0.75 }}>
             <Typography variant="caption" component="div">
-              <strong>Format:</strong> Item Type | Item Code | Item Name | UOM | Qty | Balance Date | Remarks
+              <strong>Format:</strong> Item Type | Item Code | Item Name | UOM | Qty | Balance Date | PPKEK Numbers | Remarks
             </Typography>
           </Alert>
 
@@ -439,6 +460,9 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     Balance Date
                   </TableCell>
                   <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                    PPKEK Numbers
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
                     Remarks
                   </TableCell>
                   <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
@@ -494,6 +518,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     <TableCell>
                       <Typography variant="body2" fontSize="0.875rem">
                         {record.balanceDate || '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontSize="0.875rem">
+                        {record.ppkekNumbers.length > 0 ? record.ppkekNumbers.join(', ') : '-'}
                       </Typography>
                     </TableCell>
                     <TableCell>

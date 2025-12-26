@@ -123,6 +123,7 @@ export async function POST(request: Request) {
       qty: number;
       balanceDate: Date;
       remarks: string | null;
+      ppkekNumbers: string[];
     }> = [];
 
     const today = getTodayUTC();
@@ -213,6 +214,18 @@ export async function POST(request: Request) {
       // Remarks (optional, no validation needed - will be stored as-is)
       const remarksValue = row.remarks ? String(row.remarks).trim() : null;
 
+      // Parse PPKEK Numbers (optional, comma-separated string)
+      let ppkekNumbers: string[] = [];
+      if (row.ppkekNumbers) {
+        const ppkekStr = String(row.ppkekNumbers).trim();
+        if (ppkekStr.length > 0) {
+          ppkekNumbers = ppkekStr
+            .split(',')
+            .map((p: string) => p.trim())
+            .filter((p: string) => p.length > 0);
+        }
+      }
+
       validRecords.push({
         row: rowNum,
         itemType: itemTypeCode,
@@ -222,6 +235,7 @@ export async function POST(request: Request) {
         qty: qtyValue,
         balanceDate: dateValue,
         remarks: remarksValue || null,
+        ppkekNumbers,
       });
     }
 
@@ -315,6 +329,33 @@ export async function POST(request: Request) {
         await tx.beginning_balances.createMany({
           data: insertData,
         });
+
+        // Create ppkek associations - fetch created records and link ppkeks
+        const createdWithIds = await tx.beginning_balances.findMany({
+          where: {
+            company_code: companyCodeInt,
+            item_code: { in: validRecords.map(r => r.itemCode) },
+            balance_date: { in: Array.from(uniqueBalanceDates).map(t => new Date(t)) }
+          },
+          select: { id: true, item_code: true, balance_date: true },
+        });
+
+        for (const record of validRecords) {
+          if (record.ppkekNumbers.length > 0) {
+            const createdRecord = createdWithIds.find(
+              cr => cr.item_code === record.itemCode && 
+              cr.balance_date.getTime() === record.balanceDate.getTime()
+            );
+            if (createdRecord) {
+              await tx.beginning_balance_ppkeks.createMany({
+                data: record.ppkekNumbers.map(ppkek => ({
+                  beginning_balance_id: createdRecord.id,
+                  ppkek_number: ppkek,
+                })),
+              });
+            }
+          }
+        }
 
         successCount = validRecords.length;
 
