@@ -108,6 +108,7 @@ export async function POST(request: Request) {
     const file = formData.get('file') as File;
     const transactionType = formData.get('transactionType') as string;
     const direction = formData.get('direction') as string;
+    const itemType = formData.get('itemType') as string | null;
 
     if (!file) {
       return NextResponse.json(
@@ -207,12 +208,21 @@ export async function POST(request: Request) {
         regDate
       );
     } else {
+      // Validate item type for capital goods
+      if (!itemType || !['HIBE_M', 'HIBE_E', 'HIBE_T'].includes(itemType)) {
+        return NextResponse.json(
+          { message: 'Item type is required for capital goods and must be one of: HIBE_M, HIBE_E, HIBE_T' },
+          { status: 400 }
+        );
+      }
+
       result = await importCapitalGoodsTransactions(
         companyCode,
         parsedData,
         validatedRequest.direction,
         docDate,
-        regDate
+        regDate,
+        itemType
       );
     }
 
@@ -444,7 +454,8 @@ async function importCapitalGoodsTransactions(
   data: ParsedCeisaData,
   direction: string,
   docDate: Date,
-  regDate: Date
+  regDate: Date,
+  itemType: string
 ) {
   return await prisma.$transaction(async (tx) => {
     const wmsId = generateWmsId('CAPITAL', direction);
@@ -475,12 +486,6 @@ async function importCapitalGoodsTransactions(
 
       // Create outgoing_good_items for each item
       for (const item of data.items) {
-        // Validate item type for capital goods
-        const itemType = data.itemType;
-        if (!['HIBE_M', 'HIBE_E', 'HIBE_T'].includes(itemType)) {
-          throw new Error(`Invalid item type for capital goods: ${itemType}. Must be HIBE_M, HIBE_E, or HIBE_T`);
-        }
-
         await tx.outgoing_good_items.create({
           data: {
             outgoing_good_id: outgoingGood.id,

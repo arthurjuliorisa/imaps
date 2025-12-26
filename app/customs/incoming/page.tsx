@@ -104,7 +104,7 @@ export default function IncomingGoodsReportPage() {
       No: index + 1,
       'Company Name': row.companyName,
       'Doc Type': row.documentType,
-      'PPKEK Number': row.ppkekNumber || '-',
+      'Nomor Pendaftaran': row.ppkekNumber || '-',
       'Registration Date': formatDate(row.registrationDate),
       'Doc Number': row.documentNumber,
       'Doc Date': formatDate(row.date),
@@ -202,7 +202,7 @@ export default function IncomingGoodsReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Doc Type</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>PPKEK Number</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Nomor Pendaftaran</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Reg Date</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Doc Number</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Doc Date</TableCell>
