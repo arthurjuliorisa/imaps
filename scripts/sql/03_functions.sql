@@ -85,6 +85,15 @@ BEGIN
             item_name,
             uom
         FROM (
+            -- Items from beginning balances (opening balance for the date)
+            SELECT item_type, item_code, item_name, uom 
+            FROM beginning_balances bb
+            WHERE bb.company_code = p_company_code 
+              AND bb.balance_date = p_snapshot_date
+              AND bb.deleted_at IS NULL
+            
+            UNION
+            
             -- Items from incoming
             SELECT item_type, item_code, item_name, uom 
             FROM incoming_good_items igi
@@ -145,8 +154,22 @@ BEGIN
               AND snapshot_date = p_snapshot_date - INTERVAL '1 day'
         ) items
     ),
-    -- Calculate opening balance (closing from previous day)
+    -- Calculate opening balance (from beginning_balances OR closing from previous day)
     opening_balances AS (
+        -- First, try to get opening balance from beginning_balances for this exact date
+        SELECT 
+            company_code,
+            item_type,
+            item_code,
+            qty AS opening_balance
+        FROM beginning_balances
+        WHERE company_code = p_company_code
+          AND balance_date = p_snapshot_date
+          AND deleted_at IS NULL
+        
+        UNION ALL
+        
+        -- If no beginning balance, use closing from previous day
         SELECT 
             company_code,
             item_type,
@@ -155,6 +178,15 @@ BEGIN
         FROM stock_daily_snapshot
         WHERE company_code = p_company_code
           AND snapshot_date = p_snapshot_date - INTERVAL '1 day'
+          -- Only include if not already in beginning_balances
+          AND NOT EXISTS (
+            SELECT 1 FROM beginning_balances bb
+            WHERE bb.company_code = p_company_code
+              AND bb.item_type = stock_daily_snapshot.item_type
+              AND bb.item_code = stock_daily_snapshot.item_code
+              AND bb.balance_date = p_snapshot_date
+              AND bb.deleted_at IS NULL
+          )
     ),
     -- Incoming quantities (from incoming_goods)
     incoming_quantities AS (

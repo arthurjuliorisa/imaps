@@ -7,6 +7,7 @@ import {
   ValidationError,
   getTodayUTC,
 } from '@/lib/api-utils';
+import { SnapshotRecalcRepository } from '@/lib/repositories/snapshot-recalc.repository';
 
 /**
  * Parse DD/MM/YYYY format to Date
@@ -255,21 +256,37 @@ export async function POST(request: Request) {
     // Import all records in a transaction
     let successCount = 0;
     const byType: Record<string, number> = {};
+    const uniqueBalanceDates = new Set(validRecords.map(r => r.balanceDate.getTime()));
 
     try {
       await prisma.$transaction(async (tx) => {
-        // Check for duplicates within the batch and with existing records
-        for (const record of validRecords) {
-          const existing = await tx.beginning_balances.findFirst({
-            where: {
-              company_code: companyCodeInt,
-              item_code: record.itemCode,
-              balance_date: record.balanceDate,
-            },
-          });
+        // OPTIMIZATION: Batch check for duplicates (single query instead of N+1)
+        const itemCodes = validRecords.map(r => r.itemCode);
+        const balanceDates = Array.from(uniqueBalanceDates).map(t => new Date(t));
+        
+        const existingRecords = await tx.beginning_balances.findMany({
+          where: {
+            company_code: companyCodeInt,
+            item_code: { in: itemCodes },
+            balance_date: { in: balanceDates },
+          },
+          select: {
+            item_code: true,
+            balance_date: true,
+          },
+        });
 
-          if (existing) {
-            errors.push({
+        // Build a set for O(1) lookup
+        const existingSet = new Set(
+          existingRecords.map(r => `${r.item_code}|${r.balance_date.getTime()}`)
+        );
+
+        // Check each record against the set
+        const duplicateErrors: Array<{ row: number; field: string; error: string }> = [];
+        for (const record of validRecords) {
+          const key = `${record.itemCode}|${record.balanceDate.getTime()}`;
+          if (existingSet.has(key)) {
+            duplicateErrors.push({
               row: record.row,
               field: 'Duplicate',
               error: `A beginning balance record for item '${record.itemCode}' on this date already exists`,
@@ -278,28 +295,31 @@ export async function POST(request: Request) {
         }
 
         // If duplicates found, throw error to rollback transaction
-        if (errors.length > 0) {
+        if (duplicateErrors.length > 0) {
+          errors.push(...duplicateErrors);
           throw new ValidationError('Duplicate records detected');
         }
 
-        // Insert all records
+        // OPTIMIZATION: Bulk insert all records at once instead of one-by-one
+        const insertData = validRecords.map(record => ({
+          company_code: companyCodeInt,
+          item_type: record.itemType,
+          item_code: record.itemCode,
+          item_name: record.itemName,
+          uom: record.uom,
+          qty: record.qty,
+          balance_date: record.balanceDate,
+          remarks: record.remarks,
+        }));
+
+        await tx.beginning_balances.createMany({
+          data: insertData,
+        });
+
+        successCount = validRecords.length;
+
+        // Count by type
         for (const record of validRecords) {
-          await tx.beginning_balances.create({
-            data: {
-              company_code: companyCodeInt,
-              item_type: record.itemType,
-              item_code: record.itemCode,
-              item_name: record.itemName,
-              uom: record.uom,
-              qty: record.qty,
-              balance_date: record.balanceDate,
-              remarks: record.remarks,
-            },
-          });
-
-          successCount++;
-
-          // Count by type
           if (!byType[record.itemType]) {
             byType[record.itemType] = 0;
           }
@@ -362,6 +382,69 @@ export async function POST(request: Request) {
         },
         { status: 500 }
       );
+    }
+
+    // Queue snapshot recalculation for each unique balance date
+    // Since beginning balance is backdated data (historical), we calculate immediately (non-blocking)
+    try {
+      const snapshotRecalcRepo = new SnapshotRecalcRepository();
+      const processedDates: string[] = [];
+
+      for (const balanceDate of uniqueBalanceDates) {
+        const date = new Date(balanceDate);
+        
+        // Queue the recalculation
+        const queueId = await snapshotRecalcRepo.queueRecalculation({
+          company_code: companyCodeInt,
+          recalc_date: date,
+          reason: `Beginning balance setup: ${successCount} item(s)`,
+          priority: 1, // High priority for opening balance
+        });
+
+        // Process immediately for backdated data (non-blocking try-catch)
+        try {
+          await snapshotRecalcRepo.processImmediately(
+            queueId,
+            companyCodeInt,
+            date
+          );
+          
+          processedDates.push(date.toISOString().split('T')[0]);
+          
+          console.log(
+            '[API Info] Snapshot recalculation processed immediately',
+            {
+              companyCode: companyCodeInt,
+              balanceDate: date.toISOString().split('T')[0],
+              successCount,
+            }
+          );
+        } catch (processError) {
+          // Log warning but continue - will be retried by background worker
+          console.warn(
+            '[API Warning] Immediate snapshot calculation failed (will retry via worker)',
+            {
+              companyCode: companyCodeInt,
+              balanceDate: date.toISOString().split('T')[0],
+              queueId: queueId.toString(),
+              errorMessage: processError instanceof Error ? processError.message : String(processError),
+            }
+          );
+          processedDates.push(`${date.toISOString().split('T')[0]} (queued)`);
+        }
+      }
+
+      console.log(
+        '[API Info] Beginning balance snapshot calculation completed',
+        {
+          companyCode: companyCodeInt,
+          processedDates,
+          totalCount: processedDates.length,
+        }
+      );
+    } catch (queueError) {
+      console.error('[API Warning] Failed to queue snapshot recalculation:', queueError);
+      // Continue anyway - recalculation can be triggered manually later
     }
 
     return NextResponse.json({

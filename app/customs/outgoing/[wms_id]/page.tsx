@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '@/app/components/ToastProvider';
+import { TraceabilityModal } from '@/app/components/customs/outgoing/TraceabilityModal';
 import {
   Box,
   Container,
@@ -23,9 +24,10 @@ import {
   TableRow,
   CircularProgress,
   Button,
-  Stack
+  Stack,
+  IconButton
 } from '@mui/material';
-import { NavigateNext, Home, Receipt, ArrowBack } from '@mui/icons-material';
+import { NavigateNext, Home, Receipt, ArrowBack, OpenInNew } from '@mui/icons-material';
 import { formatDate, formatCurrency } from '@/lib/exportUtils';
 import type { OutgoingHeader, OutgoingDetail } from '@/types/core';
 
@@ -43,6 +45,8 @@ export default function OutgoingDetailPage() {
 
   const [data, setData] = useState<OutgoingTransactionDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [traceabilityOpen, setTraceabilityOpen] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
 
   useEffect(() => {
     async function fetchData() {
@@ -286,6 +290,7 @@ export default function OutgoingDetailPage() {
                 <TableCell sx={{ fontWeight: 600 }} align="right">Amount</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Production Output WMS IDs</TableCell>
+                <TableCell sx={{ fontWeight: 600, textAlign: 'center' }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -323,6 +328,24 @@ export default function OutgoingDetailPage() {
                       </Box>
                     ) : '-'}
                   </TableCell>
+                  <TableCell sx={{ textAlign: 'center' }}>
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      title="View Traceability"
+                      onClick={() => {
+                        setSelectedItemIds([detail.id]);
+                        setTraceabilityOpen(true);
+                      }}
+                      sx={{
+                        '&:hover': {
+                          backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                        },
+                      }}
+                    >
+                      <OpenInNew fontSize="small" />
+                    </IconButton>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -352,6 +375,14 @@ export default function OutgoingDetailPage() {
           </Box>
         </Box>
       </Paper>
+
+      {/* Traceability Modal */}
+      <TraceabilityModal
+        open={traceabilityOpen}
+        onClose={() => setTraceabilityOpen(false)}
+        outgoingItemIds={selectedItemIds}
+        companyCode={data.header.company_code}
+      />
     </Container>
   );
 }

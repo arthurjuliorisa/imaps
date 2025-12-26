@@ -41,6 +41,7 @@ export async function GET(request: Request) {
     let query = `
       SELECT
         id,
+        wms_id,
         company_code,
         company_name,
         customs_document_type,
@@ -83,7 +84,7 @@ export async function GET(request: Request) {
     // Transform to expected format
     const transformedData = result.map((row: any) => ({
       id: `${row.id}-${row.item_code}`,
-      wmsId: row.id,
+      wmsId: row.wms_id,
       companyCode: row.company_code,
       companyName: row.company_name,
       documentType: row.customs_document_type,
