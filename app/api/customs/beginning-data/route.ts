@@ -81,6 +81,13 @@ export async function GET(request: Request) {
 
     const beginningBalances = await prisma.beginning_balances.findMany({
       where,
+      include: {
+        ppkeks: {
+          select: {
+            ppkek_number: true
+          }
+        }
+      },
       orderBy: [
         { balance_date: 'desc' },
         { item_code: 'asc' },
@@ -99,7 +106,8 @@ export async function GET(request: Request) {
       },
       beginningBalance: Number(balance.qty),
       beginningDate: balance.balance_date,
-      remarks: null,
+      remarks: balance.remarks || null,
+      ppkek_numbers: balance.ppkeks?.map(p => p.ppkek_number) || [],
       itemId: balance.item_code,
       uomId: balance.uom,
       itemType: balance.item_type,

@@ -198,6 +198,7 @@ export interface BeginningBalanceRequest {
   qty: number;
   balance_date: string;  // ISO date string
   remarks?: string;
+  ppkek_numbers?: string[];
 }
 
 // ============================================================================
