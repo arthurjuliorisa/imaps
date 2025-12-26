@@ -1,18 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Stack, Button } from '@mui/material';
-import { Add as AddIcon, UploadFile as UploadFileIcon, RemoveCircleOutline as RemoveIcon } from '@mui/icons-material';
+import { Box, Stack } from '@mui/material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { MutationReportTable, MutationData } from '@/app/components/customs/MutationReportTable';
-import { ScrapIncomingDialog } from '@/app/components/customs/ScrapIncomingDialog';
-import { ScrapOutgoingDialog } from '@/app/components/customs/ScrapOutgoingDialog';
-import { ExcelImportDialog } from '@/app/components/customs/ExcelImportDialog';
 import { useToast } from '@/app/components/ToastProvider';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
-import dayjs from 'dayjs';
 
 // Sample data - Replace with actual API call
 const sampleData: MutationData[] = [
@@ -60,9 +55,6 @@ export default function ScrapMutationPage() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [data, setData] = useState<MutationData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [incomingDialogOpen, setIncomingDialogOpen] = useState(false);
-  const [outgoingDialogOpen, setOutgoingDialogOpen] = useState(false);
-  const [excelImportOpen, setExcelImportOpen] = useState(false);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -170,109 +162,6 @@ export default function ScrapMutationPage() {
     fetchData();
   }, [fetchData]);
 
-  // Handle incoming scrap submission
-  const handleIncomingSubmit = async (formData: any) => {
-    try {
-      const response = await fetch('/api/customs/scrap/incoming', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          date: formData.date?.format('YYYY-MM-DD'),
-          scrapCode: formData.scrapCode,
-          qty: formData.qty,
-          currency: formData.currency,
-          amount: formData.amount,
-          remarks: formData.remarks || null,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to save data');
-      }
-
-      const result = await response.json();
-
-      toast.success('Incoming scrap transaction added successfully!');
-      await fetchData();
-    } catch (error: any) {
-      console.error('Error saving incoming scrap:', error);
-      toast.error(error.message || 'Failed to save incoming scrap. Please try again.');
-      throw error;
-    }
-  };
-
-  // Handle outgoing scrap submission
-  const handleOutgoingSubmit = async (formData: any) => {
-    try {
-      const response = await fetch('/api/customs/scrap/outgoing', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          date: formData.date?.format('YYYY-MM-DD'),
-          scrapCode: formData.scrapCode,
-          qty: formData.qty,
-          currency: formData.currency,
-          amount: formData.amount,
-          recipientName: formData.recipientName,
-          remarks: formData.remarks || null,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to save data');
-      }
-
-      const result = await response.json();
-
-      toast.success('Outgoing scrap transaction added successfully!');
-      await fetchData();
-    } catch (error: any) {
-      console.error('Error saving outgoing scrap:', error);
-      toast.error(error.message || 'Failed to save outgoing scrap. Please try again.');
-      throw error;
-    }
-  };
-
-  // Handle Excel import submission
-  const handleExcelImportSubmit = async (records: any[]) => {
-    try {
-      const response = await fetch('/api/customs/scrap/import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          records: records.map(r => ({
-            date: r.date,
-            scrapCode: r.scrapCode,
-            incoming: r.incoming,
-            remarks: r.remarks
-          }))
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to import data');
-      }
-
-      const result = await response.json();
-
-      toast.success(`Successfully imported ${records.length} incoming scrap record(s)!`);
-      // Refresh data
-      await fetchData();
-    } catch (error) {
-      console.error('Error importing data:', error);
-      toast.error('Failed to import records. Please try again.');
-      throw error;
-    }
-  };
-
   return (
     <ReportLayout
       title="LPJ Mutasi Barang Scrap"
@@ -286,51 +175,6 @@ export default function ScrapMutationPage() {
             onEndDateChange={setEndDate}
           />
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, flexWrap: 'wrap' }}>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => setIncomingDialogOpen(true)}
-              sx={{
-                textTransform: 'none',
-                borderRadius: 2,
-                bgcolor: 'success.main',
-                '&:hover': {
-                  bgcolor: 'success.dark',
-                },
-              }}
-            >
-              Add Incoming Scrap
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<RemoveIcon />}
-              onClick={() => setOutgoingDialogOpen(true)}
-              sx={{
-                textTransform: 'none',
-                borderRadius: 2,
-                bgcolor: 'warning.main',
-                '&:hover': {
-                  bgcolor: 'warning.dark',
-                },
-              }}
-            >
-              Add Outgoing Scrap
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<UploadFileIcon />}
-              onClick={() => setExcelImportOpen(true)}
-              sx={{
-                textTransform: 'none',
-                borderRadius: 2,
-                bgcolor: 'info.main',
-                '&:hover': {
-                  bgcolor: 'info.dark',
-                },
-              }}
-            >
-              Import from Excel
-            </Button>
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
@@ -352,27 +196,6 @@ export default function ScrapMutationPage() {
         hideRemarks={true}
         hideActions={true}
         hideValueAmount={true}
-      />
-
-      {/* Incoming Scrap Dialog */}
-      <ScrapIncomingDialog
-        open={incomingDialogOpen}
-        onClose={() => setIncomingDialogOpen(false)}
-        onSubmit={handleIncomingSubmit}
-      />
-
-      {/* Outgoing Scrap Dialog */}
-      <ScrapOutgoingDialog
-        open={outgoingDialogOpen}
-        onClose={() => setOutgoingDialogOpen(false)}
-        onSubmit={handleOutgoingSubmit}
-      />
-
-      {/* Excel Import Dialog */}
-      <ExcelImportDialog
-        open={excelImportOpen}
-        onClose={() => setExcelImportOpen(false)}
-        onSubmit={handleExcelImportSubmit}
       />
     </ReportLayout>
   );

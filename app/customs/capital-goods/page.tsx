@@ -2,15 +2,12 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/app/components/ToastProvider';
-import { Box, Stack, Button } from '@mui/material';
-import { Add as AddIcon, UploadFile } from '@mui/icons-material';
+import { Box, Stack } from '@mui/material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { MutationReportTable, MutationData } from '@/app/components/customs/MutationReportTable';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
-import { CapitalGoodsManualEntryDialog } from '@/app/components/customs/CapitalGoodsManualEntryDialog';
-import { CapitalGoodsExcelImportDialog } from '@/app/components/customs/CapitalGoodsExcelImportDialog';
 
 export default function CapitalGoodsMutationPage() {
   const toast = useToast();
@@ -26,8 +23,6 @@ export default function CapitalGoodsMutationPage() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [data, setData] = useState<MutationData[]>([]);
   const [loading, setLoading] = useState(false);
-  const [manualEntryOpen, setManualEntryOpen] = useState(false);
-  const [excelImportOpen, setExcelImportOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -133,14 +128,6 @@ export default function CapitalGoodsMutationPage() {
     // Implement view functionality
   };
 
-  const handleManualEntrySuccess = () => {
-    fetchData();
-  };
-
-  const handleExcelImportSuccess = () => {
-    fetchData();
-  };
-
   return (
     <>
       <ReportLayout
@@ -155,34 +142,6 @@ export default function CapitalGoodsMutationPage() {
               onEndDateChange={setEndDate}
             />
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5 }}>
-              <Button
-                variant="contained"
-                color="success"
-                startIcon={<AddIcon />}
-                onClick={() => setManualEntryOpen(true)}
-                sx={{
-                  textTransform: 'none',
-                  borderRadius: 2,
-                  px: 2,
-                  color: 'white',
-                }}
-              >
-                Add Outgoing
-              </Button>
-              <Button
-                variant="contained"
-                color="info"
-                startIcon={<UploadFile />}
-                onClick={() => setExcelImportOpen(true)}
-                sx={{
-                  textTransform: 'none',
-                  borderRadius: 2,
-                  px: 2,
-                  color: 'white',
-                }}
-              >
-                Import from Excel
-              </Button>
               <ExportButtons
                 onExportExcel={handleExportExcel}
                 onExportPDF={handleExportPDF}
@@ -206,18 +165,6 @@ export default function CapitalGoodsMutationPage() {
           hideValueAmount={true}
         />
       </ReportLayout>
-
-      <CapitalGoodsManualEntryDialog
-        open={manualEntryOpen}
-        onClose={() => setManualEntryOpen(false)}
-        onSuccess={handleManualEntrySuccess}
-      />
-
-      <CapitalGoodsExcelImportDialog
-        open={excelImportOpen}
-        onClose={() => setExcelImportOpen(false)}
-        onSuccess={handleExcelImportSuccess}
-      />
     </>
   );
 }
