@@ -696,16 +696,128 @@ SELECT * FROM fn_calculate_lpj_bahan_baku(
 COMMENT ON VIEW vw_lpj_barang_modal IS 'Report #6: Capital Goods Mutation Report - Incoming-based only (HIBE_M/E/T purchased) - YTD';
 
 -- ============================================================================
+-- FUNCTION 3: CALCULATE LPJ BARANG SISA (Scrap/Waste Mutations)
+-- ============================================================================
+-- This function calculates scrap mutations from scrap_transaction_items
+-- Sources: scrap_transactions (independent scrap tracking)
+-- Item types: SCRAP
+--
+-- Parameters:
+--   p_item_types: Array of item types to filter (e.g., ARRAY['SCRAP'])
+--   p_start_date: Start date for accumulation (NULL = from start of year)
+--   p_end_date: End date for accumulation (NULL = current date)
+--
+-- Return mode: Always returns aggregated records (1 row per company+item+date_range)
+--   with accumulated in/out between start and end dates
+-- Note: Scrap does NOT have snapshot storage, so all data comes from transactions
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION fn_calculate_lpj_barang_sisa(
+    p_item_types TEXT[],
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL
+)
+RETURNS TABLE (
+    no BIGINT,
+    company_code INTEGER,
+    company_name VARCHAR(200),
+    item_code VARCHAR(50),
+    item_name VARCHAR(200),
+    item_type VARCHAR(10),
+    unit_quantity VARCHAR(20),
+    snapshot_date DATE,
+    opening_balance NUMERIC(15,3),
+    quantity_received NUMERIC(15,3),
+    quantity_issued_outgoing NUMERIC(15,3),
+    adjustment NUMERIC(15,3),
+    closing_balance NUMERIC(15,3),
+    stock_count_result NUMERIC(15,3),
+    quantity_difference NUMERIC(15,3),
+    value_amount NUMERIC(18,4),
+    currency VARCHAR(3),
+    remarks TEXT
+) AS $$
+DECLARE
+    v_start_date DATE;
+    v_end_date DATE;
+BEGIN
+    -- Default: if date range not provided, use start of year to today
+    v_start_date := COALESCE(p_start_date, DATE_TRUNC('year', CURRENT_DATE)::DATE);
+    v_end_date := COALESCE(p_end_date, CURRENT_DATE);
+    
+    -- Return scrap mutation data based on provided or default date range
+    RETURN QUERY
+        WITH scrap_transactions_data AS (
+            -- Aggregate scrap transactions by type (IN/OUT)
+            SELECT
+                sti.scrap_transaction_company as company_code,
+                c.name as company_name,
+                sti.item_code,
+                sti.item_name,
+                sti.item_type,
+                sti.uom as unit_quantity,
+                st.transaction_type,
+                CASE 
+                    WHEN st.transaction_type = 'IN' THEN sti.qty
+                    ELSE 0::NUMERIC
+                END as incoming_qty,
+                CASE 
+                    WHEN st.transaction_type = 'OUT' THEN sti.qty
+                    ELSE 0::NUMERIC
+                END as outgoing_qty,
+                sti.amount as value_amount,
+                sti.currency,
+                st.transaction_date
+            FROM scrap_transaction_items sti
+            JOIN scrap_transactions st ON 
+                sti.scrap_transaction_company = st.company_code
+                AND sti.scrap_transaction_id = st.id
+                AND sti.scrap_transaction_date = st.transaction_date
+            JOIN companies c ON st.company_code = c.code
+            WHERE sti.item_type = ANY(p_item_types)
+              AND st.transaction_date BETWEEN v_start_date AND v_end_date
+              AND sti.deleted_at IS NULL
+              AND st.deleted_at IS NULL
+        )
+        SELECT
+            ROW_NUMBER() OVER (PARTITION BY std.company_code ORDER BY std.item_code) as no,
+            std.company_code,
+            std.company_name,
+            std.item_code,
+            std.item_name,
+            std.item_type,
+            std.unit_quantity,
+            v_end_date::DATE as snapshot_date,  -- Show as end date for aggregated view
+            0::NUMERIC(15,3) as opening_balance,  -- Scrap typically starts at 0
+            SUM(std.incoming_qty) as quantity_received,  -- Accumulated scrap received
+            SUM(std.outgoing_qty) as quantity_issued_outgoing,  -- Accumulated scrap disposed
+            0::NUMERIC(15,3) as adjustment,  -- No adjustments for scrap
+            SUM(std.incoming_qty) - SUM(std.outgoing_qty) as closing_balance,  -- Calculated final stock
+            NULL::NUMERIC(15,3) as stock_count_result,
+            NULL::NUMERIC(15,3) as quantity_difference,
+            SUM(std.value_amount) as value_amount,
+            (MAX(std.currency::VARCHAR))::VARCHAR(3) as currency,
+            ('SCRAP MUTATION: ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT) as remarks
+        FROM scrap_transactions_data std
+        GROUP BY std.company_code, std.company_name, std.item_code, std.item_name, std.item_type, std.unit_quantity
+        ORDER BY std.company_code, std.item_code;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+COMMENT ON FUNCTION fn_calculate_lpj_barang_sisa IS 'Calculate LPJ for scrap/waste (independent scrap transactions only)';
+
+-- ============================================================================
 -- REPORT #7: LPJ BARANG SISA / SCRAP (Scrap Mutation Report)
 -- ============================================================================
--- NOTE: Scrap table structure is still under development
--- This view is temporarily disabled until scrap transaction tables are created
--- Expected structure: scrap_mutations table with independent transaction tracking
--- 
--- CREATE OR REPLACE VIEW vw_lpj_barang_sisa AS
--- SELECT * FROM fn_calculate_lpj_barang_sisa(ARRAY['SCRAP']);
--- 
--- COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - Independent scrap transactions (SCRAP)';
+
+CREATE OR REPLACE VIEW vw_lpj_barang_sisa AS
+SELECT * FROM fn_calculate_lpj_barang_sisa(
+    ARRAY['SCRAP'],
+    DATE_TRUNC('year', CURRENT_DATE)::DATE,
+    CURRENT_DATE
+);
+
+COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - Independent scrap transactions (SCRAP) - YTD';
 
 -- ============================================================================
 -- ADDITIONAL HELPER VIEWS
