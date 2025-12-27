@@ -14,6 +14,7 @@ import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { AddInScrapDialog } from '@/app/components/customs/AddInScrapDialog';
 import { AddOutScrapDialog } from '@/app/components/customs/AddOutScrapDialog';
 import { ImportCeisaExcelDialog } from '@/app/components/customs/ImportCeisaExcelDialog';
+import { ImportScrapIncomingExcelDialog } from '@/app/components/customs/ImportScrapIncomingExcelDialog';
 import { useToast } from '@/app/components/ToastProvider';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 import type { ScrapTransaction } from '@/types/transaction';
@@ -35,7 +36,8 @@ export default function ScrapTransactionsPage() {
   });
   const [addInDialogOpen, setAddInDialogOpen] = useState(false);
   const [addOutDialogOpen, setAddOutDialogOpen] = useState(false);
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importIncomingDialogOpen, setImportIncomingDialogOpen] = useState(false);
+  const [importOutgoingDialogOpen, setImportOutgoingDialogOpen] = useState(false);
 
   const columns: GridColDef[] = [
     {
@@ -177,8 +179,12 @@ export default function ScrapTransactionsPage() {
     setAddOutDialogOpen(true);
   };
 
-  const handleImportExcel = () => {
-    setImportDialogOpen(true);
+  const handleImportIncoming = () => {
+    setImportIncomingDialogOpen(true);
+  };
+
+  const handleImportOutgoing = () => {
+    setImportOutgoingDialogOpen(true);
   };
 
   const handleDialogSuccess = () => {
@@ -297,13 +303,22 @@ export default function ScrapTransactionsPage() {
                 Add Out
               </Button>
               <Button
-                variant="contained"
-                color="warning"
+                variant="outlined"
+                color="success"
                 startIcon={<UploadFileIcon />}
-                onClick={handleImportExcel}
+                onClick={handleImportIncoming}
                 disabled={loading}
               >
-                Import from Excel
+                Import Incoming
+              </Button>
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<UploadFileIcon />}
+                onClick={handleImportOutgoing}
+                disabled={loading}
+              >
+                Import Outgoing
               </Button>
             </Stack>
             <ExportButtons
@@ -375,13 +390,19 @@ export default function ScrapTransactionsPage() {
         onSuccess={handleDialogSuccess}
       />
 
+      <ImportScrapIncomingExcelDialog
+        open={importIncomingDialogOpen}
+        onClose={() => setImportIncomingDialogOpen(false)}
+        onSuccess={handleDialogSuccess}
+      />
+
       <ImportCeisaExcelDialog
-        open={importDialogOpen}
-        onClose={() => setImportDialogOpen(false)}
+        open={importOutgoingDialogOpen}
+        onClose={() => setImportOutgoingDialogOpen(false)}
         onSuccess={handleDialogSuccess}
         transactionType="SCRAP"
         defaultDirection="OUT"
-        allowDirectionChange={true}
+        allowDirectionChange={false}
       />
     </ReportLayout>
   );
