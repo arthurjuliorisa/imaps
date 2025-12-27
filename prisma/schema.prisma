@@ -506,6 +506,7 @@ model outgoing_good_items {
   item_code                 String    @db.VarChar(50)
   item_name                 String    @db.VarChar(200)
   production_output_wms_ids String[]
+  incoming_ppkek_numbers    String[]  @default([])
   hs_code                   String?   @db.VarChar(20)
   uom                       String    @db.VarChar(20)
   qty                       Decimal   @db.Decimal(15, 3)
