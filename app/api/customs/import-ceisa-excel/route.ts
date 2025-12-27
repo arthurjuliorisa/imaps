@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { parseCeisa40Excel, validateParsedData, type ParsedCeisaData } from '@/lib/ceisa40ExcelParser';
+import { checkBatchStockAvailability } from '@/lib/utils/stock-checker';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
@@ -361,6 +362,26 @@ async function importScrapTransactions(
         items: importedItems,
       };
     } else {
+      // Validate stock availability for all items (all-or-nothing)
+      const itemsToValidate = data.items.map(item => ({
+        itemCode: item.itemCode,
+        itemType: 'SCRAP',
+        qtyRequested: item.quantity,
+      }));
+
+      const stockValidation = await checkBatchStockAvailability(
+        companyCode,
+        itemsToValidate
+      );
+
+      if (!stockValidation.allAvailable) {
+        const insufficientItems = stockValidation.results
+          .filter(r => !r.available)
+          .map(r => `${r.itemCode}: stock ${r.currentStock}, diminta ${r.qtyRequested}`);
+
+        throw new Error(`Import ditolak: stock tidak mencukupi untuk item berikut: ${insufficientItems.join('; ')}`);
+      }
+
       // Create outgoing_goods record
       const outgoingGood = await tx.outgoing_goods.create({
         data: {
@@ -466,6 +487,26 @@ async function importCapitalGoodsTransactions(
       // Only outgoing capital goods transactions are available
       throw new Error('Capital goods incoming transactions are not supported. Only outgoing transactions are available.');
     } else {
+      // Validate stock availability for all items (all-or-nothing)
+      const itemsToValidate = data.items.map(item => ({
+        itemCode: item.itemCode,
+        itemType: itemType,
+        qtyRequested: item.quantity,
+      }));
+
+      const stockValidation = await checkBatchStockAvailability(
+        companyCode,
+        itemsToValidate
+      );
+
+      if (!stockValidation.allAvailable) {
+        const insufficientItems = stockValidation.results
+          .filter(r => !r.available)
+          .map(r => `${r.itemCode}: stock ${r.currentStock}, diminta ${r.qtyRequested}`);
+
+        throw new Error(`Import ditolak: stock tidak mencukupi untuk item berikut: ${insufficientItems.join('; ')}`);
+      }
+
       // Create outgoing_goods record for capital goods
       const outgoingGood = await tx.outgoing_goods.create({
         data: {

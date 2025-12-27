@@ -16,6 +16,7 @@ import {
   Stack,
   MenuItem,
   Autocomplete,
+  Alert,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -78,6 +79,12 @@ export function AddOutScrapDialog({
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
+  const [stockCheckResult, setStockCheckResult] = useState<{
+    currentStock: number;
+    available: boolean;
+    shortfall?: number;
+  } | null>(null);
+  const [checkingStock, setCheckingStock] = useState(false);
 
   // Fetch scrap items from master
   useEffect(() => {
@@ -102,6 +109,59 @@ export function AddOutScrapDialog({
       setLoadingScrapItems(false);
     }
   };
+
+  const checkStockAvailability = async (itemCode: string, qty: number) => {
+    if (!itemCode || qty <= 0) {
+      setStockCheckResult(null);
+      return;
+    }
+
+    setCheckingStock(true);
+    try {
+      const response = await fetch('/api/customs/stock/check', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items: [
+            {
+              itemCode,
+              itemType: 'SCRAP',
+              qtyRequested: qty,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to check stock');
+      }
+
+      const result = await response.json();
+      const itemResult = result.results[0];
+      setStockCheckResult({
+        currentStock: itemResult.currentStock,
+        available: itemResult.available,
+        shortfall: itemResult.shortfall,
+      });
+    } catch (error) {
+      console.error('Error checking stock:', error);
+      toast.error('Failed to check stock availability');
+      setStockCheckResult(null);
+    } finally {
+      setCheckingStock(false);
+    }
+  };
+
+  // Check stock when scrap item or quantity changes
+  useEffect(() => {
+    if (formData.scrapCode && formData.qty > 0) {
+      checkStockAvailability(formData.scrapCode, formData.qty);
+    } else {
+      setStockCheckResult(null);
+    }
+  }, [formData.scrapCode, formData.qty]);
 
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
@@ -216,6 +276,7 @@ export function AddOutScrapDialog({
       remarks: '',
     });
     setErrors({});
+    setStockCheckResult(null);
   };
 
   const handleClose = () => {
@@ -233,7 +294,8 @@ export function AddOutScrapDialog({
     formData.currency !== '' &&
     formData.amount >= 0 &&
     formData.recipientName.trim() !== '' &&
-    formData.remarks.length <= 1000;
+    formData.remarks.length <= 1000 &&
+    stockCheckResult?.available === true;
 
   return (
     <Dialog
@@ -353,6 +415,31 @@ export function AddOutScrapDialog({
               error={!!errors.qty}
               helperText={errors.qty || 'Must be greater than 0'}
             />
+
+            {checkingStock && (
+              <Alert severity="info" icon={<CircularProgress size={20} />}>
+                Checking stock availability...
+              </Alert>
+            )}
+
+            {!checkingStock && stockCheckResult && (
+              <Alert
+                severity={stockCheckResult.available ? 'success' : 'error'}
+                sx={{ mt: 1 }}
+              >
+                {stockCheckResult.available ? (
+                  <Typography variant="body2">
+                    Stock tersedia: {stockCheckResult.currentStock.toLocaleString('id-ID', { minimumFractionDigits: 2 })} {formData.uom}
+                  </Typography>
+                ) : (
+                  <Typography variant="body2">
+                    Stock tidak mencukupi. Item {formData.scrapCode} memiliki stock{' '}
+                    {stockCheckResult.currentStock.toLocaleString('id-ID', { minimumFractionDigits: 2 })} {formData.uom}, tidak cukup untuk mengeluarkan{' '}
+                    {formData.qty.toLocaleString('id-ID', { minimumFractionDigits: 2 })} {formData.uom}
+                  </Typography>
+                )}
+              </Alert>
+            )}
 
             <TextField
               fullWidth

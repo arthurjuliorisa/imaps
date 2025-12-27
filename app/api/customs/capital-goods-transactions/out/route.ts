@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
+import { checkStockAvailability } from '@/lib/utils/stock-checker';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -148,6 +149,30 @@ export async function POST(request: Request) {
     if (date > today) {
       return NextResponse.json(
         { message: 'Transaction date cannot be in the future' },
+        { status: 400 }
+      );
+    }
+
+    // Check stock availability
+    const stockCheck = await checkStockAvailability(
+      companyCode,
+      itemCode,
+      itemType,
+      qty
+    );
+
+    if (!stockCheck.available) {
+      return NextResponse.json(
+        {
+          message: `Stock tidak cukup untuk ${itemCode}. Tersedia: ${stockCheck.currentStock}, Diminta: ${qty}`,
+          data: {
+            itemCode: itemCode,
+            itemType: itemType,
+            currentStock: stockCheck.currentStock,
+            requestedQty: qty,
+            shortfall: stockCheck.shortfall,
+          },
+        },
         { status: 400 }
       );
     }

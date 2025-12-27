@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
+import { checkBatchStockAvailability } from '@/lib/utils/stock-checker';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import validator from 'validator';
@@ -327,6 +328,40 @@ export async function POST(request: Request) {
         valueAmount: record.valueAmount,
         remarks: record.remarks,
       });
+    }
+
+    // Validate stock availability for all items (all-or-nothing)
+    const itemsToValidate = validRecords.map(record => {
+      const masterItem = itemMap.get(record.itemCode)!;
+      return {
+        itemCode: record.itemCode,
+        itemType: masterItem.item_type,
+        qtyRequested: record.qty,
+      };
+    });
+
+    const stockValidation = await checkBatchStockAvailability(
+      companyCode,
+      itemsToValidate
+    );
+
+    if (!stockValidation.allAvailable) {
+      const insufficientItems = stockValidation.results
+        .filter(r => !r.available)
+        .map(r => `${r.itemCode} (${r.itemType}): stock ${r.currentStock}, diminta ${r.qtyRequested}`);
+
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Import ditolak: stock tidak mencukupi untuk item berikut',
+          errors: insufficientItems.map((msg, idx) => ({
+            index: idx,
+            record: null,
+            error: msg,
+          })),
+        },
+        { status: 400 }
+      );
     }
 
     // Process all grouped transactions
