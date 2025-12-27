@@ -303,7 +303,7 @@ export default function ScrapTransactionsPage() {
                 onClick={handleImportExcel}
                 disabled={loading}
               >
-                Import Out (Excel)
+                Import from Excel
               </Button>
             </Stack>
             <ExportButtons
@@ -381,7 +381,7 @@ export default function ScrapTransactionsPage() {
         onSuccess={handleDialogSuccess}
         transactionType="SCRAP"
         defaultDirection="OUT"
-        allowDirectionChange={false}
+        allowDirectionChange={true}
       />
     </ReportLayout>
   );
