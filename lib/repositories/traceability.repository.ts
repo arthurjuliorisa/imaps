@@ -128,7 +128,9 @@ export class TraceabilityRepository {
           item_code: outgoingItem.item_code,
           item_name: outgoingItem.item_name,
           qty: Number(outgoingItem.qty),
+          source_type: 'production',
           work_orders: [],
+          incoming_ppkek_numbers: []
         };
       }
 
