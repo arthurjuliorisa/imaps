@@ -262,7 +262,10 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { message: 'Error importing Excel file', error: error.message },
+      {
+        message: error.message || 'Error importing Excel file',
+        error: error.message
+      },
       { status: 500 }
     );
   }
