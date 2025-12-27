@@ -1,0 +1,87 @@
+{
+  "info": {
+    "name": "iMAPS - Full Cycle Transaction Test",
+    "description": "Complete workflow: Incoming → Material Usage → Production → Adjustments → Outgoing",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "company_code",
+      "value": "1310",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Incoming Raw Materials",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"INC-1310-20251215-001\",\n  \"company_code\": 1310,\n  \"owner\": 1310,\n  \"customs_document_type\": \"BC23\",\n  \"ppkek_number\": \"PPKEK-1310-2025-0100\",\n  \"customs_registration_date\": \"2025-12-15\",\n  \"incoming_evidence_number\": \"EV-20251215-001\",\n  \"incoming_date\": \"2025-12-15\",\n  \"invoice_number\": \"INV-1310-IMP-2025-0001\",\n  \"invoice_date\": \"2025-12-10\",\n  \"shipper_name\": \"PT Global Textile Supplier\",\n  \"items\": [\n    {\n      \"item_type\": \"ROH\",\n      \"item_code\": \"RM-1310-001\",\n      \"item_name\": \"Polyester Yarn 150D White\",\n      \"hs_code\": \"570790\",\n      \"uom\": \"KG\",\n      \"qty\": 1000.00,\n      \"currency\": \"USD\",\n      \"amount\": 10000.00\n    },\n    {\n      \"item_type\": \"ROH\",\n      \"item_code\": \"RM-1310-002\",\n      \"item_name\": \"Polyester Yarn 300D Black\",\n      \"hs_code\": \"570790\",\n      \"uom\": \"KG\",\n      \"qty\": 800.00,\n      \"currency\": \"USD\",\n      \"amount\": 9600.00\n    }\n  ],\n  \"timestamp\": \"2025-12-15T10:00:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/incoming-goods",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "incoming-goods"]
+        },
+        "description": "Expected stock: RM-1310-001 = 1000, RM-1310-002 = 800"
+      }
+    },
+    {
+      "name": "02 - Incoming Semifinished Goods",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"INC-1310-20251215-002\",\n  \"company_code\": 1310,\n  \"owner\": 1310,\n  \"customs_document_type\": \"BC23\",\n  \"ppkek_number\": \"PPKEK-1310-2025-0101\",\n  \"customs_registration_date\": \"2025-12-15\",\n  \"incoming_evidence_number\": \"EV-20251215-002\",\n  \"incoming_date\": \"2025-12-15\",\n  \"invoice_number\": \"INV-1310-IMP-2025-0002\",\n  \"invoice_date\": \"2025-12-15\",\n  \"shipper_name\": \"PT Fabric Intermediate\",\n  \"items\": [\n    {\n      \"item_type\": \"HALB\",\n      \"item_code\": \"SA-1310-010\",\n      \"item_name\": \"Pre-cut Fabric Roll\",\n      \"hs_code\": \"521100\",\n      \"uom\": \"ROLL\",\n      \"qty\": 200.00,\n      \"currency\": \"IDR\",\n      \"amount\": 50000000.00\n    }\n  ],\n  \"timestamp\": \"2025-12-15T11:00:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/incoming-goods",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "incoming-goods"]
+        },
+        "description": "Expected stock: SA-1310-010 = 200"
+      }
+    },
+    {
+      "name": "03 - Incoming Capital Goods",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"INC-1310-20251215-003\",\n  \"company_code\": 1310,\n  \"owner\": 1310,\n  \"customs_document_type\": \"BC23\",\n  \"ppkek_number\": \"PPKEK-1310-2025-0102\",\n  \"customs_registration_date\": \"2025-12-15\",\n  \"incoming_evidence_number\": \"EV-20251215-003\",\n  \"incoming_date\": \"2025-12-15\",\n  \"invoice_number\": \"INV-1310-IMP-2025-0003\",\n  \"invoice_date\": \"2025-12-12\",\n  \"shipper_name\": \"PT Industrial Machinery Equipment\",\n  \"items\": [\n    {\n      \"item_type\": \"HIBE_M\",\n      \"item_code\": \"EQ-1310-001\",\n      \"item_name\": \"Industrial Weaving Machine Model X500\",\n      \"hs_code\": \"844810\",\n      \"uom\": \"UNIT\",\n      \"qty\": 2.00,\n      \"currency\": \"USD\",\n      \"amount\": 150000.00\n    }\n  ],\n  \"timestamp\": \"2025-12-15T12:00:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/incoming-goods",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "incoming-goods"]
+        },
+        "description": "Expected stock: EQ-1310-001 = 2"
+      }
+    }
+  ]
+}
