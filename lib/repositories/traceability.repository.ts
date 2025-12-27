@@ -59,7 +59,7 @@ export class TraceabilityRepository {
       }
 
       // Step 2: Check if incoming_ppkek_numbers is present (incoming-based scenario)
-      const incomingPPKEKArray = outgoingItem.incoming_ppkek_numbers || [];
+      const incomingPPKEKArray = (outgoingItem as any).incoming_ppkek_numbers || [];
       const hasIncomingPPKEK =
         Array.isArray(incomingPPKEKArray) && incomingPPKEKArray.length > 0;
 

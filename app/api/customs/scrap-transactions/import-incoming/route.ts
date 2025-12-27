@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { checkAuth } from '@/lib/auth';
-import prisma from '@/lib/db';
+import { checkAuth } from '@/lib/api-auth';
+import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import * as XLSX from 'xlsx';
 
 interface ExcelRow {
@@ -38,10 +39,14 @@ function calculatePriority(companyCode: number): number {
 
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await checkAuth(request);
-    if (!authResult.authenticated || !authResult.user) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    // Check authentication
+    const authCheck = await checkAuth();
+    if (!authCheck.authenticated) {
+      return authCheck.response;
     }
+
+    const { session } = authCheck as { authenticated: true; session: any };
+    const companyCode = session.user.companyCode;
 
     // Parse FormData
     const formData = await request.formData();
@@ -75,20 +80,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const companyCode = authResult.user.companyCode;
-
-    // Get company info
-    const company = await prisma.company.findUnique({
-      where: { company_code: companyCode },
-      select: { company_name: true },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { message: 'Company not found' },
-        { status: 404 }
-      );
-    }
 
     // Validate and transform data
     const validationErrors: string[] = [];
@@ -156,52 +147,71 @@ export async function POST(request: NextRequest) {
       const results = [];
 
       for (const item of items) {
-        const wmsId = generateWmsId('IN');
+        const timestamp = Date.now();
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        const documentNumber = `SCRAP-IN-${timestamp}-${random}`;
+        const date = new Date(item.date);
         const priority = calculatePriority(companyCode);
 
-        // Create scrap transaction
-        const transaction = await tx.scrap_transactions.create({
+        // Create scrap transaction header
+        const scrapTransaction = await tx.scrap_transactions.create({
           data: {
             company_code: companyCode,
-            company_name: company.company_name,
-            direction: 'IN',
-            doc_type: 'SCRAP-IN',
-            wms_id: wmsId,
-            created_by: authResult.user!.username,
-            updated_by: authResult.user!.username,
+            transaction_date: date,
+            transaction_type: 'IN',
+            document_number: documentNumber,
+            source: item.remarks || `Scrap incoming - ${item.currency} ${item.amount}`,
+            remarks: item.remarks,
+            timestamp: new Date(),
           },
         });
 
         // Create scrap transaction item
         await tx.scrap_transaction_items.create({
           data: {
-            transaction_id: transaction.id,
-            date: new Date(item.date),
+            scrap_transaction_id: scrapTransaction.id,
+            scrap_transaction_company: companyCode,
+            scrap_transaction_date: date,
             item_type: 'SCRAP',
             item_code: item.scrapCode,
             item_name: item.scrapName,
-            unit: item.uom,
-            in_qty: item.qty,
-            out_qty: 0,
-            currency: item.currency,
-            value_amount: item.amount,
-            remarks: item.remarks || '',
+            uom: item.uom,
+            qty: new Prisma.Decimal(item.qty),
+            currency: item.currency as 'USD' | 'IDR' | 'CNY' | 'EUR' | 'JPY',
+            amount: new Prisma.Decimal(item.amount),
+            scrap_reason: item.remarks,
           },
         });
 
         // Queue snapshot recalculation
-        await tx.snapshot_recalculation_queue.create({
-          data: {
+        await tx.snapshot_recalc_queue.upsert({
+          where: {
+            company_code_recalc_date_item_type_item_code: {
+              company_code: companyCode,
+              recalc_date: date,
+              item_type: 'SCRAP',
+              item_code: item.scrapCode,
+            },
+          },
+          create: {
             company_code: companyCode,
+            item_type: 'SCRAP',
+            item_code: item.scrapCode,
+            recalc_date: date,
+            status: 'PENDING',
             priority: priority,
-            status: 'pending',
-            triggered_by: `scrap_incoming_import:${wmsId}`,
-            created_at: new Date(),
+            reason: `Incoming scrap import: ${documentNumber}`,
+          },
+          update: {
+            status: 'PENDING',
+            priority: priority,
+            reason: `Incoming scrap import: ${documentNumber}`,
+            queued_at: new Date(),
           },
         });
 
         results.push({
-          wmsId,
+          documentNumber,
           scrapCode: item.scrapCode,
           qty: item.qty,
         });
