@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -43,13 +43,6 @@ interface TraceabilityMaterial {
   registration_number: string;
 }
 
-interface TraceabilityItem {
-  item_code: string;
-  item_name: string;
-  qty: number;
-  work_orders: TraceabilityWorkOrder[];
-}
-
 interface TraceabilityModalProps {
   open: boolean;
   onClose: () => void;
@@ -78,6 +71,58 @@ export function TraceabilityModal({
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TraceabilityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const normalizedData = useMemo(() => {
+    const grouped = new Map<string, TraceabilityItem>();
+
+    data.forEach((item) => {
+      const key = `${item.source_type}|${item.item_code}`;
+      const existing = grouped.get(key);
+
+      if (!existing) {
+        grouped.set(key, {
+          ...item,
+          work_orders: item.work_orders ? [...item.work_orders] : [],
+          incoming_ppkek_numbers: item.incoming_ppkek_numbers
+            ? [...item.incoming_ppkek_numbers]
+            : [],
+        });
+        return;
+      }
+
+      existing.qty += item.qty;
+
+      const workOrderMap = new Map<string, TraceabilityWorkOrder>();
+      existing.work_orders.forEach((wo) => {
+        workOrderMap.set(wo.work_order_number, {
+          ...wo,
+          materials: [...wo.materials],
+        });
+      });
+
+      item.work_orders.forEach((wo) => {
+        const current = workOrderMap.get(wo.work_order_number);
+        if (!current) {
+          workOrderMap.set(wo.work_order_number, {
+            ...wo,
+            materials: [...wo.materials],
+          });
+          return;
+        }
+        current.materials = current.materials.concat(wo.materials);
+      });
+
+      existing.work_orders = Array.from(workOrderMap.values());
+
+      if (item.incoming_ppkek_numbers.length > 0) {
+        const ppkekSet = new Set(existing.incoming_ppkek_numbers);
+        item.incoming_ppkek_numbers.forEach((ppkek) => ppkekSet.add(ppkek));
+        existing.incoming_ppkek_numbers = Array.from(ppkekSet);
+      }
+    });
+
+    return Array.from(grouped.values());
+  }, [data]);
 
   /**
    * Fetch traceability data
@@ -124,11 +169,13 @@ export function TraceabilityModal({
    * Compute row span for each item
    * Counts total rows including deduplicated materials with multiple PPKEK
    */
-  const getItemRowSpans = (): Map<string, { startRow: number; rowSpan: number }> => {
+  const getItemRowSpans = (
+    items: TraceabilityItem[]
+  ): Map<string, { startRow: number; rowSpan: number }> => {
     const spans = new Map<string, { startRow: number; rowSpan: number }>();
     let currentRow = 0;
 
-    data.forEach((item) => {
+    items.forEach((item) => {
       // Calculate total rows = sum of materials (dedup) × PPKEK rows
       let totalRows = 0;
       
@@ -172,9 +219,11 @@ export function TraceabilityModal({
    */
   const renderTableRows = () => {
     // Filter only production-based items
-    const productionItems = data.filter((item) => item.source_type === 'production');
+    const productionItems = normalizedData.filter(
+      (item) => item.source_type === 'production'
+    );
     
-    const itemRowSpans = getItemRowSpans();
+    const itemRowSpans = getItemRowSpans(productionItems);
     const rows: React.ReactNode[] = [];
     let globalRowIndex = 0;
 
@@ -463,14 +512,14 @@ export function TraceabilityModal({
         {!loading && data.length > 0 && (
           <Box>
             {/* Check if any item has incoming-based traceability */}
-            {data.some((item) => item.source_type === 'incoming') && (
+            {normalizedData.some((item) => item.source_type === 'incoming') && (
               <Alert severity="info" sx={{ mb: 2 }}>
                 Showing direct PPKEK registration numbers from incoming data
               </Alert>
             )}
 
             {/* Render table based on data source type */}
-            {data.some((item) => item.source_type === 'production') && (
+            {normalizedData.some((item) => item.source_type === 'production') && (
               <Box sx={{ mb: 3 }}>
                 <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
                   Production-based Traceability
@@ -543,10 +592,6 @@ export function TraceabilityModal({
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {renderTableRows().filter((_, idx) => {
-                        // Filter rows for production-based items only
-                        return true; // Will be handled in renderTableRows
-                      })}
                       {renderTableRows()}
                     </TableBody>
                   </Table>
@@ -555,7 +600,7 @@ export function TraceabilityModal({
             )}
 
             {/* Incoming-based Traceability Table */}
-            {data.filter((item) => item.source_type === 'incoming').length > 0 && (
+            {normalizedData.filter((item) => item.source_type === 'incoming').length > 0 && (
               <Box>
                 <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
                   Incoming-based Traceability
@@ -604,7 +649,7 @@ export function TraceabilityModal({
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {data
+                      {normalizedData
                         .filter((item) => item.source_type === 'incoming')
                         .map((item) => (
                           item.incoming_ppkek_numbers.length > 0 ? (
