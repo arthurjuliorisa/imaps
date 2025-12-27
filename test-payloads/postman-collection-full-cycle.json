@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "iMAPS - Full Cycle Transaction Test",
-    "description": "Complete workflow: Incoming → Material Usage → Production → Adjustments → Outgoing",
+    "description": "Complete workflow: Incoming → Material Usage → Production → Adjustments → Outgoing with Reversal scenarios",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -36,7 +36,7 @@
           "host": ["{{base_url}}"],
           "path": ["api", "v1", "incoming-goods"]
         },
-        "description": "Expected stock: RM-1310-001 = 1000, RM-1310-002 = 800"
+        "description": "Expected stock after: RM-1310-001 = 1000, RM-1310-002 = 800"
       }
     },
     {
@@ -58,7 +58,7 @@
           "host": ["{{base_url}}"],
           "path": ["api", "v1", "incoming-goods"]
         },
-        "description": "Expected stock: SA-1310-010 = 200"
+        "description": "Expected stock after: SA-1310-010 = 200"
       }
     },
     {
@@ -80,7 +80,227 @@
           "host": ["{{base_url}}"],
           "path": ["api", "v1", "incoming-goods"]
         },
-        "description": "Expected stock: EQ-1310-001 = 2"
+        "description": "Expected stock after: EQ-1310-001 = 2"
+      }
+    },
+    {
+      "name": "04 - Material Usage WO-001",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"MAT-1310-20251216-001\",\n  \"company_code\": 1310,\n  \"work_order_number\": \"WO-2025-001\",\n  \"cost_center_number\": null,\n  \"internal_evidence_number\": \"INT-MAT-1310-20251216-001\",\n  \"transaction_date\": \"2025-12-16\",\n  \"reversal\": null,\n  \"items\": [\n    {\n      \"item_type\": \"ROH\",\n      \"item_code\": \"RM-1310-001\",\n      \"item_name\": \"Polyester Yarn 150D White\",\n      \"uom\": \"KG\",\n      \"qty\": 300.00,\n      \"ppkek_number\": \"PPKEK-1310-2025-0100\"\n    },\n    {\n      \"item_type\": \"HALB\",\n      \"item_code\": \"SA-1310-010\",\n      \"item_name\": \"Pre-cut Fabric Roll\",\n      \"uom\": \"ROLL\",\n      \"qty\": 50.00,\n      \"ppkek_number\": \"PPKEK-1310-2025-0101\"\n    }\n  ],\n  \"timestamp\": \"2025-12-16T08:30:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/material-usage",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "material-usage"]
+        },
+        "description": "Expected stock after: RM-1310-001 = 700, SA-1310-010 = 150"
+      }
+    },
+    {
+      "name": "05 - Material Usage WO-002",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"MAT-1310-20251216-002\",\n  \"company_code\": 1310,\n  \"work_order_number\": \"WO-2025-002\",\n  \"cost_center_number\": null,\n  \"internal_evidence_number\": \"INT-MAT-1310-20251216-002\",\n  \"transaction_date\": \"2025-12-16\",\n  \"reversal\": null,\n  \"items\": [\n    {\n      \"item_type\": \"ROH\",\n      \"item_code\": \"RM-1310-002\",\n      \"item_name\": \"Polyester Yarn 300D Black\",\n      \"uom\": \"KG\",\n      \"qty\": 300.00,\n      \"ppkek_number\": \"PPKEK-1310-2025-0100\"\n    },\n    {\n      \"item_type\": \"HALB\",\n      \"item_code\": \"SA-1310-010\",\n      \"item_name\": \"Pre-cut Fabric Roll\",\n      \"uom\": \"ROLL\",\n      \"qty\": 50.00,\n      \"ppkek_number\": \"PPKEK-1310-2025-0101\"\n    }\n  ],\n  \"timestamp\": \"2025-12-16T09:15:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/material-usage",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "material-usage"]
+        },
+        "description": "Expected stock after: RM-1310-002 = 500, SA-1310-010 = 100"
+      }
+    },
+    {
+      "name": "06 - Production Output",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"PROD-1310-20251216-001\",\n  \"company_code\": 1310,\n  \"internal_evidence_number\": \"INT-PROD-1310-20251216-001\",\n  \"transaction_date\": \"2025-12-16\",\n  \"reversal\": null,\n  \"items\": [\n    {\n      \"item_type\": \"FERT\",\n      \"item_code\": \"FG-1310-001\",\n      \"item_name\": \"Polyester Fabric Roll 100x150cm Grade A\",\n      \"uom\": \"ROLL\",\n      \"qty\": 200.00,\n      \"work_order_numbers\": [\"WO-2025-001\", \"WO-2025-002\"]\n    }\n  ],\n  \"timestamp\": \"2025-12-16T15:30:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/production-output",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "production-output"]
+        },
+        "description": "Expected stock after: FG-1310-001 = 200"
+      }
+    },
+    {
+      "name": "07 - Material Usage REVERSAL (Return)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"MAT-1310-20251217-001\",\n  \"company_code\": 1310,\n  \"work_order_number\": \"WO-2025-001\",\n  \"cost_center_number\": null,\n  \"internal_evidence_number\": \"INT-MAT-1310-20251217-001\",\n  \"transaction_date\": \"2025-12-17\",\n  \"reversal\": \"Y\",\n  \"items\": [\n    {\n      \"item_type\": \"ROH\",\n      \"item_code\": \"RM-1310-001\",\n      \"item_name\": \"Polyester Yarn 150D White\",\n      \"uom\": \"KG\",\n      \"qty\": 100.00,\n      \"ppkek_number\": \"PPKEK-1310-2025-0100\"\n    },\n    {\n      \"item_type\": \"HALB\",\n      \"item_code\": \"SA-1310-010\",\n      \"item_name\": \"Pre-cut Fabric Roll\",\n      \"uom\": \"ROLL\",\n      \"qty\": 100.00,\n      \"ppkek_number\": \"PPKEK-1310-2025-0101\"\n    }\n  ],\n  \"timestamp\": \"2025-12-17T10:00:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/material-usage",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "material-usage"]
+        },
+        "description": "REVERSAL='Y' means materials RETURNED to warehouse. Expected stock after: RM-1310-001 = 800, SA-1310-010 = 200"
+      }
+    },
+    {
+      "name": "08 - Production Output REVERSAL (Rework)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"PROD-1310-20251217-001\",\n  \"company_code\": 1310,\n  \"internal_evidence_number\": \"INT-PROD-1310-20251217-001\",\n  \"transaction_date\": \"2025-12-17\",\n  \"reversal\": \"Y\",\n  \"items\": [\n    {\n      \"item_type\": \"FERT\",\n      \"item_code\": \"FG-1310-001\",\n      \"item_name\": \"Polyester Fabric Roll 100x150cm Grade A\",\n      \"uom\": \"ROLL\",\n      \"qty\": 50.00,\n      \"work_order_numbers\": [\"WO-2025-001\"]\n    }\n  ],\n  \"timestamp\": \"2025-12-17T14:00:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/production-output",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "production-output"]
+        },
+        "description": "REVERSAL='Y' means goods PULLED BACK from warehouse for rework. Expected stock after: FG-1310-001 = 150"
+      }
+    },
+    {
+      "name": "09 - Rework Completed",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"PROD-1310-20251218-001\",\n  \"company_code\": 1310,\n  \"internal_evidence_number\": \"INT-PROD-1310-20251218-001\",\n  \"transaction_date\": \"2025-12-18\",\n  \"reversal\": null,\n  \"items\": [\n    {\n      \"item_type\": \"FERT\",\n      \"item_code\": \"FG-1310-001\",\n      \"item_name\": \"Polyester Fabric Roll 100x150cm Grade A\",\n      \"uom\": \"ROLL\",\n      \"qty\": 50.00,\n      \"work_order_numbers\": [\"WO-2025-001\"]\n    }\n  ],\n  \"timestamp\": \"2025-12-18T16:30:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/production-output",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "production-output"]
+        },
+        "description": "Rework completed, 50 rolls back to inventory. Expected stock after: FG-1310-001 = 200"
+      }
+    },
+    {
+      "name": "10 - Adjustment LOSS",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"ADJ-1310-20251218-001\",\n  \"company_code\": 1310,\n  \"wms_doc_type\": \"Physical Count Adjustment\",\n  \"internal_evidence_number\": \"INT-ADJ-1310-20251218-001\",\n  \"transaction_date\": \"2025-12-18\",\n  \"items\": [\n    {\n      \"adjustment_type\": \"LOSS\",\n      \"item_type\": \"ROH\",\n      \"item_code\": \"RM-1310-002\",\n      \"item_name\": \"Polyester Yarn 300D Black\",\n      \"uom\": \"KG\",\n      \"qty\": 350.00,\n      \"reason\": \"Physical count found - warehouse damage from humidity\"\n    }\n  ],\n  \"timestamp\": \"2025-12-18T17:00:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/adjustments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "adjustments"]
+        },
+        "description": "Adjustment LOSS reduces stock. Expected stock after: RM-1310-002 = 150"
+      }
+    },
+    {
+      "name": "11-A - Outgoing (CONSERVATIVE)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"OUT-1310-20251219-002\",\n  \"company_code\": 1310,\n  \"owner\": 1310,\n  \"customs_document_type\": \"BC30\",\n  \"ppkek_number\": \"PPKEK-1310-2025-0100\",\n  \"customs_registration_date\": \"2025-12-19\",\n  \"outgoing_evidence_number\": \"SJ-1310-OUT-20251219-002\",\n  \"outgoing_date\": \"2025-12-19\",\n  \"invoice_number\": \"INV-1310-EXP-2025-0051\",\n  \"invoice_date\": \"2025-12-18\",\n  \"recipient_name\": \"Global Textile Imports LLC\",\n  \"items\": [\n    {\n      \"item_type\": \"FERT\",\n      \"item_code\": \"FG-1310-001\",\n      \"item_name\": \"Polyester Fabric Roll 100x150cm Grade A\",\n      \"production_output_wms_ids\": [\"PROD-1310-20251216-001\", \"PROD-1310-20251218-001\"],\n      \"hs_code\": \"5407.42.00\",\n      \"uom\": \"ROLL\",\n      \"qty\": 150.00,\n      \"currency\": \"USD\",\n      \"amount\": 30000.00\n    },\n    {\n      \"item_type\": \"ROH\",\n      \"item_code\": \"RM-1310-001\",\n      \"item_name\": \"Polyester Yarn 150D White\",\n      \"hs_code\": \"570790\",\n      \"uom\": \"KG\",\n      \"qty\": 200.00,\n      \"currency\": \"USD\",\n      \"amount\": 2000.00\n    }\n  ],\n  \"timestamp\": \"2025-12-19T09:15:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/outgoing-goods",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "outgoing-goods"]
+        },
+        "description": "RECOMMENDED: Conservative shipment respecting available stock. Expected stock after: RM-1310-001 = 600, RM-1310-002 = 150, FG-1310-001 = 50"
+      }
+    },
+    {
+      "name": "11-B - Outgoing (NEGATIVE STOCK TEST)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"OUT-1310-20251219-001\",\n  \"company_code\": 1310,\n  \"owner\": 1310,\n  \"customs_document_type\": \"BC30\",\n  \"ppkek_number\": \"PPKEK-1310-2025-0100\",\n  \"customs_registration_date\": \"2025-12-19\",\n  \"outgoing_evidence_number\": \"SJ-1310-OUT-20251219-001\",\n  \"outgoing_date\": \"2025-12-19\",\n  \"invoice_number\": \"INV-1310-EXP-2025-0050\",\n  \"invoice_date\": \"2025-12-18\",\n  \"recipient_name\": \"Global Textile Imports LLC\",\n  \"items\": [\n    {\n      \"item_type\": \"FERT\",\n      \"item_code\": \"FG-1310-001\",\n      \"item_name\": \"Polyester Fabric Roll 100x150cm Grade A\",\n      \"production_output_wms_ids\": [\"PROD-1310-20251216-001\", \"PROD-1310-20251218-001\"],\n      \"hs_code\": \"5407.42.00\",\n      \"uom\": \"ROLL\",\n      \"qty\": 150.00,\n      \"currency\": \"USD\",\n      \"amount\": 30000.00\n    },\n    {\n      \"item_type\": \"ROH\",\n      \"item_code\": \"RM-1310-001\",\n      \"item_name\": \"Polyester Yarn 150D White\",\n      \"hs_code\": \"570790\",\n      \"uom\": \"KG\",\n      \"qty\": 200.00,\n      \"currency\": \"USD\",\n      \"amount\": 2000.00\n    },\n    {\n      \"item_type\": \"ROH\",\n      \"item_code\": \"RM-1310-002\",\n      \"item_name\": \"Polyester Yarn 300D Black\",\n      \"hs_code\": \"570790\",\n      \"uom\": \"KG\",\n      \"qty\": 350.00,\n      \"currency\": \"USD\",\n      \"amount\": 4200.00\n    }\n  ],\n  \"timestamp\": \"2025-12-19T09:00:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/outgoing-goods",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "outgoing-goods"]
+        },
+        "description": "⚠️ EDGE CASE: RM-1310-002 qty (350) exceeds available (150). Will cause negative stock. Use ONLY for testing negative stock warnings. Expected: RM-1310-002 = -200"
+      }
+    },
+    {
+      "name": "12 - Idempotency Test (OPTIONAL)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wms_id\": \"OUT-1310-20251219-001\",\n  \"company_code\": 1310,\n  \"owner\": 1310,\n  \"customs_document_type\": \"BC30\",\n  \"ppkek_number\": \"PPKEK-1310-2025-0100\",\n  \"customs_registration_date\": \"2025-12-19\",\n  \"outgoing_evidence_number\": \"SJ-1310-OUT-20251219-001\",\n  \"outgoing_date\": \"2025-12-19\",\n  \"invoice_number\": \"INV-1310-EXP-2025-0050\",\n  \"invoice_date\": \"2025-12-18\",\n  \"recipient_name\": \"Global Textile Imports LLC\",\n  \"items\": [\n    {\n      \"item_type\": \"FERT\",\n      \"item_code\": \"FG-1310-001\",\n      \"item_name\": \"Polyester Fabric Roll 100x150cm Grade A\",\n      \"production_output_wms_ids\": [\"PROD-1310-20251216-001\", \"PROD-1310-20251218-001\"],\n      \"hs_code\": \"5407.42.00\",\n      \"uom\": \"ROLL\",\n      \"qty\": 150.00,\n      \"currency\": \"USD\",\n      \"amount\": 30000.00\n    },\n    {\n      \"item_type\": \"ROH\",\n      \"item_code\": \"RM-1310-001\",\n      \"item_name\": \"Polyester Yarn 150D White\",\n      \"hs_code\": \"570790\",\n      \"uom\": \"KG\",\n      \"qty\": 200.00,\n      \"currency\": \"USD\",\n      \"amount\": 2000.00\n    },\n    {\n      \"item_type\": \"ROH\",\n      \"item_code\": \"RM-1310-002\",\n      \"item_name\": \"Polyester Yarn 300D Black\",\n      \"hs_code\": \"570790\",\n      \"uom\": \"KG\",\n      \"qty\": 150.00,\n      \"currency\": \"USD\",\n      \"amount\": 1800.00\n    }\n  ],\n  \"timestamp\": \"2025-12-19T09:30:00+07:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/outgoing-goods",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "outgoing-goods"]
+        },
+        "description": "⚠️ OPTIONAL: Same wms_id as 11-B but with CORRECTED qty for RM-002 (150 instead of 350). Tests duplicate wms_id handling. Expected: RM-1310-002 = 0"
       }
     }
   ]
