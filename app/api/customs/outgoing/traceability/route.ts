@@ -4,7 +4,7 @@
  * Endpoint: GET /api/customs/outgoing/traceability?item_ids=1,2,3&company_code=1001
  *
  * Returns traceability chain:
- * Outgoing Item -> Production Output -> Work Order -> PPKEK Numbers
+ * Outgoing Item -> Production Output -> Work Order -> ROH/HALB Materials -> Registration Numbers
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -108,10 +108,18 @@ export async function GET(request: NextRequest) {
 
           item.work_orders.forEach((wo) => {
             if (existingWOs.has(wo.work_order_number)) {
-              // Merge PPKEK numbers
-              const existingPPKEK = new Set(existingWOs.get(wo.work_order_number)!.ppkek_numbers);
-              wo.ppkek_numbers.forEach((p) => existingPPKEK.add(p));
-              existingWOs.get(wo.work_order_number)!.ppkek_numbers = Array.from(existingPPKEK).sort();
+              // Merge materials
+              const existingMaterials = existingWOs.get(wo.work_order_number)!.materials;
+              const materialSet = new Map(existingMaterials.map((m) => [m.item_code, m]));
+              
+              wo.materials.forEach((material) => {
+                // Use item_code as unique key for materials
+                if (!materialSet.has(material.item_code)) {
+                  materialSet.set(material.item_code, material);
+                }
+              });
+              
+              existingWOs.get(wo.work_order_number)!.materials = Array.from(materialSet.values());
             } else {
               existingWOs.set(wo.work_order_number, wo);
             }
