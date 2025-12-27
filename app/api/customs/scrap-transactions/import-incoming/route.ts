@@ -144,80 +144,113 @@ export async function POST(request: NextRequest) {
 
     // Process all items in a transaction
     const importedItems = await prisma.$transaction(async (tx) => {
-      const results = [];
+      const now = new Date();
 
-      for (const item of items) {
-        const timestamp = Date.now();
+      // Prepare transaction headers
+      const transactionHeaders = items.map((item, index) => {
+        const timestamp = Date.now() + index;
         const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
         const documentNumber = `SCRAP-IN-${timestamp}-${random}`;
         const date = new Date(item.date);
+
+        return {
+          company_code: companyCode,
+          transaction_date: date,
+          transaction_type: 'IN' as const,
+          document_number: documentNumber,
+          source: item.remarks || `Scrap incoming - ${item.currency} ${item.amount}`,
+          remarks: item.remarks,
+          timestamp: now,
+          _documentNumber: documentNumber,
+          _date: date,
+          _item: item,
+        };
+      });
+
+      // Create all transaction headers using createMany
+      await tx.scrap_transactions.createMany({
+        data: transactionHeaders.map(({ _documentNumber, _date, _item, ...header }) => header),
+      });
+
+      // Get created transactions to get their IDs
+      const createdTransactions = await tx.scrap_transactions.findMany({
+        where: {
+          company_code: companyCode,
+          document_number: {
+            in: transactionHeaders.map(h => h.document_number),
+          },
+        },
+        orderBy: { id: 'asc' },
+      });
+
+      // Create transaction items using createMany
+      const transactionItems = transactionHeaders.map((header, index) => {
+        const transaction = createdTransactions[index];
+        return {
+          scrap_transaction_id: transaction.id,
+          scrap_transaction_company: companyCode,
+          scrap_transaction_date: header._date,
+          item_type: 'SCRAP',
+          item_code: header._item.scrapCode,
+          item_name: header._item.scrapName,
+          uom: header._item.uom,
+          qty: new Prisma.Decimal(header._item.qty),
+          currency: header._item.currency as 'USD' | 'IDR' | 'CNY' | 'EUR' | 'JPY',
+          amount: new Prisma.Decimal(header._item.amount),
+          scrap_reason: header._item.remarks,
+        };
+      });
+
+      await tx.scrap_transaction_items.createMany({
+        data: transactionItems,
+      });
+
+      // Queue snapshot recalculation for unique item-date combinations
+      const uniqueRecalcEntries = new Map<string, any>();
+
+      for (const header of transactionHeaders) {
+        const key = `${companyCode}-${header._date.toISOString()}-SCRAP-${header._item.scrapCode}`;
         const priority = calculatePriority(companyCode);
 
-        // Create scrap transaction header
-        const scrapTransaction = await tx.scrap_transactions.create({
-          data: {
+        if (!uniqueRecalcEntries.has(key)) {
+          uniqueRecalcEntries.set(key, {
             company_code: companyCode,
-            transaction_date: date,
-            transaction_type: 'IN',
-            document_number: documentNumber,
-            source: item.remarks || `Scrap incoming - ${item.currency} ${item.amount}`,
-            remarks: item.remarks,
-            timestamp: new Date(),
-          },
-        });
-
-        // Create scrap transaction item
-        await tx.scrap_transaction_items.create({
-          data: {
-            scrap_transaction_id: scrapTransaction.id,
-            scrap_transaction_company: companyCode,
-            scrap_transaction_date: date,
             item_type: 'SCRAP',
-            item_code: item.scrapCode,
-            item_name: item.scrapName,
-            uom: item.uom,
-            qty: new Prisma.Decimal(item.qty),
-            currency: item.currency as 'USD' | 'IDR' | 'CNY' | 'EUR' | 'JPY',
-            amount: new Prisma.Decimal(item.amount),
-            scrap_reason: item.remarks,
-          },
-        });
+            item_code: header._item.scrapCode,
+            recalc_date: header._date,
+            status: 'PENDING',
+            priority: priority,
+            reason: `Incoming scrap import: ${header.document_number}`,
+          });
+        }
+      }
 
-        // Queue snapshot recalculation
+      // Upsert snapshot recalc queue entries
+      for (const entry of uniqueRecalcEntries.values()) {
         await tx.snapshot_recalc_queue.upsert({
           where: {
             company_code_recalc_date_item_type_item_code: {
-              company_code: companyCode,
-              recalc_date: date,
-              item_type: 'SCRAP',
-              item_code: item.scrapCode,
+              company_code: entry.company_code,
+              recalc_date: entry.recalc_date,
+              item_type: entry.item_type,
+              item_code: entry.item_code,
             },
           },
-          create: {
-            company_code: companyCode,
-            item_type: 'SCRAP',
-            item_code: item.scrapCode,
-            recalc_date: date,
-            status: 'PENDING',
-            priority: priority,
-            reason: `Incoming scrap import: ${documentNumber}`,
-          },
+          create: entry,
           update: {
-            status: 'PENDING',
-            priority: priority,
-            reason: `Incoming scrap import: ${documentNumber}`,
+            status: entry.status,
+            priority: entry.priority,
+            reason: entry.reason,
             queued_at: new Date(),
           },
         });
-
-        results.push({
-          documentNumber,
-          scrapCode: item.scrapCode,
-          qty: item.qty,
-        });
       }
 
-      return results;
+      return transactionHeaders.map(header => ({
+        documentNumber: header.document_number,
+        scrapCode: header._item.scrapCode,
+        qty: header._item.qty,
+      }));
     });
 
     return NextResponse.json({

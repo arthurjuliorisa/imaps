@@ -304,42 +304,44 @@ async function importScrapTransactions(
         },
       });
 
-      // Create incoming_good_items for each item
-      for (const item of data.items) {
-        await tx.incoming_good_items.create({
-          data: {
-            incoming_good_id: incomingGood.id,
-            incoming_good_company: companyCode,
-            incoming_good_date: docDate,
-            item_type: 'SCRAP',
-            item_code: item.itemCode,
-            item_name: item.itemName,
-            hs_code: null,
-            uom: item.unit,
-            qty: new Prisma.Decimal(item.quantity),
-            currency: data.currency as any,
-            amount: new Prisma.Decimal(item.valueAmount),
-          },
-        });
+      // Prepare all incoming_good_items data
+      const incomingGoodItemsData = data.items.map(item => ({
+        incoming_good_id: incomingGood.id,
+        incoming_good_company: companyCode,
+        incoming_good_date: docDate,
+        item_type: 'SCRAP',
+        item_code: item.itemCode,
+        item_name: item.itemName,
+        hs_code: null,
+        uom: item.unit,
+        qty: new Prisma.Decimal(item.quantity),
+        currency: data.currency as any,
+        amount: new Prisma.Decimal(item.valueAmount),
+      }));
 
+      // Create all incoming_good_items at once
+      await tx.incoming_good_items.createMany({
+        data: incomingGoodItemsData,
+      });
+
+      // Prepare imported items response
+      data.items.forEach(item => {
         importedItems.push({
           itemCode: item.itemCode,
           itemName: item.itemName,
           quantity: item.quantity,
         });
+      });
 
-        // Queue snapshot recalculation
-        const priority = calculatePriority(docDate);
-        await tx.snapshot_recalc_queue.upsert({
-          where: {
-            company_code_recalc_date_item_type_item_code: {
-              company_code: companyCode,
-              recalc_date: docDate,
-              item_type: 'SCRAP',
-              item_code: item.itemCode,
-            },
-          },
-          create: {
+      // Queue snapshot recalculation for unique item-date combinations
+      const uniqueRecalcEntries = new Map<string, any>();
+      const priority = calculatePriority(docDate);
+
+      for (const item of data.items) {
+        const key = `${companyCode}-${docDate.toISOString()}-SCRAP-${item.itemCode}`;
+
+        if (!uniqueRecalcEntries.has(key)) {
+          uniqueRecalcEntries.set(key, {
             company_code: companyCode,
             item_type: 'SCRAP',
             item_code: item.itemCode,
@@ -347,11 +349,26 @@ async function importScrapTransactions(
             status: 'PENDING',
             priority: priority,
             reason: `Excel import: ${wmsId}`,
+          });
+        }
+      }
+
+      // Upsert snapshot recalc queue entries
+      for (const entry of uniqueRecalcEntries.values()) {
+        await tx.snapshot_recalc_queue.upsert({
+          where: {
+            company_code_recalc_date_item_type_item_code: {
+              company_code: entry.company_code,
+              recalc_date: entry.recalc_date,
+              item_type: entry.item_type,
+              item_code: entry.item_code,
+            },
           },
+          create: entry,
           update: {
-            status: 'PENDING',
-            priority: priority,
-            reason: `Excel import: ${wmsId}`,
+            status: entry.status,
+            priority: entry.priority,
+            reason: entry.reason,
             queued_at: new Date(),
           },
         });
@@ -403,42 +420,44 @@ async function importScrapTransactions(
         },
       });
 
-      // Create outgoing_good_items for each item
-      for (const item of data.items) {
-        await tx.outgoing_good_items.create({
-          data: {
-            outgoing_good_id: outgoingGood.id,
-            outgoing_good_company: companyCode,
-            outgoing_good_date: docDate,
-            item_type: 'SCRAP',
-            item_code: item.itemCode,
-            item_name: item.itemName,
-            hs_code: null,
-            uom: item.unit,
-            qty: new Prisma.Decimal(item.quantity),
-            currency: data.currency as any,
-            amount: new Prisma.Decimal(item.valueAmount),
-          },
-        });
+      // Prepare all outgoing_good_items data
+      const outgoingGoodItemsData = data.items.map(item => ({
+        outgoing_good_id: outgoingGood.id,
+        outgoing_good_company: companyCode,
+        outgoing_good_date: docDate,
+        item_type: 'SCRAP',
+        item_code: item.itemCode,
+        item_name: item.itemName,
+        hs_code: null,
+        uom: item.unit,
+        qty: new Prisma.Decimal(item.quantity),
+        currency: data.currency as any,
+        amount: new Prisma.Decimal(item.valueAmount),
+      }));
 
+      // Create all outgoing_good_items at once
+      await tx.outgoing_good_items.createMany({
+        data: outgoingGoodItemsData,
+      });
+
+      // Prepare imported items response
+      data.items.forEach(item => {
         importedItems.push({
           itemCode: item.itemCode,
           itemName: item.itemName,
           quantity: item.quantity,
         });
+      });
 
-        // Queue snapshot recalculation
-        const priority = calculatePriority(docDate);
-        await tx.snapshot_recalc_queue.upsert({
-          where: {
-            company_code_recalc_date_item_type_item_code: {
-              company_code: companyCode,
-              recalc_date: docDate,
-              item_type: 'SCRAP',
-              item_code: item.itemCode,
-            },
-          },
-          create: {
+      // Queue snapshot recalculation for unique item-date combinations
+      const uniqueRecalcEntries = new Map<string, any>();
+      const priority = calculatePriority(docDate);
+
+      for (const item of data.items) {
+        const key = `${companyCode}-${docDate.toISOString()}-SCRAP-${item.itemCode}`;
+
+        if (!uniqueRecalcEntries.has(key)) {
+          uniqueRecalcEntries.set(key, {
             company_code: companyCode,
             item_type: 'SCRAP',
             item_code: item.itemCode,
@@ -446,11 +465,26 @@ async function importScrapTransactions(
             status: 'PENDING',
             priority: priority,
             reason: `Excel import: ${wmsId}`,
+          });
+        }
+      }
+
+      // Upsert snapshot recalc queue entries
+      for (const entry of uniqueRecalcEntries.values()) {
+        await tx.snapshot_recalc_queue.upsert({
+          where: {
+            company_code_recalc_date_item_type_item_code: {
+              company_code: entry.company_code,
+              recalc_date: entry.recalc_date,
+              item_type: entry.item_type,
+              item_code: entry.item_code,
+            },
           },
+          create: entry,
           update: {
-            status: 'PENDING',
-            priority: priority,
-            reason: `Excel import: ${wmsId}`,
+            status: entry.status,
+            priority: entry.priority,
+            reason: entry.reason,
             queued_at: new Date(),
           },
         });
@@ -528,44 +562,46 @@ async function importCapitalGoodsTransactions(
         },
       });
 
-      // Create outgoing_good_items for each item
-      for (const item of data.items) {
-        await tx.outgoing_good_items.create({
-          data: {
-            outgoing_good_id: outgoingGood.id,
-            outgoing_good_company: companyCode,
-            outgoing_good_date: docDate,
-            item_type: itemType,
-            item_code: item.itemCode,
-            item_name: item.itemName,
-            production_output_wms_ids: [],
-            hs_code: null,
-            uom: item.unit,
-            qty: new Prisma.Decimal(item.quantity),
-            currency: data.currency as any,
-            amount: new Prisma.Decimal(item.valueAmount),
-          },
-        });
+      // Prepare all outgoing_good_items data
+      const outgoingGoodItemsData = data.items.map(item => ({
+        outgoing_good_id: outgoingGood.id,
+        outgoing_good_company: companyCode,
+        outgoing_good_date: docDate,
+        item_type: itemType,
+        item_code: item.itemCode,
+        item_name: item.itemName,
+        production_output_wms_ids: [],
+        hs_code: null,
+        uom: item.unit,
+        qty: new Prisma.Decimal(item.quantity),
+        currency: data.currency as any,
+        amount: new Prisma.Decimal(item.valueAmount),
+      }));
 
+      // Create all outgoing_good_items at once
+      await tx.outgoing_good_items.createMany({
+        data: outgoingGoodItemsData,
+      });
+
+      // Prepare imported items response
+      data.items.forEach(item => {
         importedItems.push({
           itemCode: item.itemCode,
           itemName: item.itemName,
           itemType: itemType,
           quantity: item.quantity,
         });
+      });
 
-        // Queue snapshot recalculation
-        const priority = calculatePriority(docDate);
-        await tx.snapshot_recalc_queue.upsert({
-          where: {
-            company_code_recalc_date_item_type_item_code: {
-              company_code: companyCode,
-              recalc_date: docDate,
-              item_type: itemType,
-              item_code: item.itemCode,
-            },
-          },
-          create: {
+      // Queue snapshot recalculation for unique item-date combinations
+      const uniqueRecalcEntries = new Map<string, any>();
+      const priority = calculatePriority(docDate);
+
+      for (const item of data.items) {
+        const key = `${companyCode}-${docDate.toISOString()}-${itemType}-${item.itemCode}`;
+
+        if (!uniqueRecalcEntries.has(key)) {
+          uniqueRecalcEntries.set(key, {
             company_code: companyCode,
             item_type: itemType,
             item_code: item.itemCode,
@@ -573,11 +609,26 @@ async function importCapitalGoodsTransactions(
             status: 'PENDING',
             priority: priority,
             reason: `Excel import: ${wmsId}`,
+          });
+        }
+      }
+
+      // Upsert snapshot recalc queue entries
+      for (const entry of uniqueRecalcEntries.values()) {
+        await tx.snapshot_recalc_queue.upsert({
+          where: {
+            company_code_recalc_date_item_type_item_code: {
+              company_code: entry.company_code,
+              recalc_date: entry.recalc_date,
+              item_type: entry.item_type,
+              item_code: entry.item_code,
+            },
           },
+          create: entry,
           update: {
-            status: 'PENDING',
-            priority: priority,
-            reason: `Excel import: ${wmsId}`,
+            status: entry.status,
+            priority: entry.priority,
+            reason: entry.reason,
             queued_at: new Date(),
           },
         });
