@@ -33,7 +33,7 @@
       "sequence": 1,
       "type": "INCOMING_GOODS",
       "description": "Raw Materials arrival from overseas supplier",
-      "endpoint": "POST /api/v1/incoming-goods",
+      "endpoint": "/api/v1/incoming-goods",
       "payload": {
         "wms_id": "INC-1310-20251215-001",
         "company_code": 1310,
@@ -81,7 +81,7 @@
       "sequence": 2,
       "type": "INCOMING_GOODS",
       "description": "Semifinished goods (HALB) arrival from local supplier",
-      "endpoint": "POST /api/v1/incoming-goods",
+      "endpoint": "/api/v1/incoming-goods",
       "payload": {
         "wms_id": "INC-1310-20251215-002",
         "company_code": 1310,
@@ -120,7 +120,7 @@
       "sequence": 3,
       "type": "INCOMING_GOODS",
       "description": "Capital goods machinery arrival for production facility",
-      "endpoint": "POST /api/v1/incoming-goods",
+      "endpoint": "/api/v1/incoming-goods",
       "payload": {
         "wms_id": "INC-1310-20251215-003",
         "company_code": 1310,
@@ -160,7 +160,7 @@
       "sequence": 4,
       "type": "MATERIAL_USAGE",
       "description": "Material consumption for production - Work Order WO-001",
-      "endpoint": "POST /api/v1/material-usage",
+      "endpoint": "/api/v1/material-usage",
       "payload": {
         "wms_id": "MAT-1310-20251216-001",
         "company_code": 1310,
@@ -202,7 +202,7 @@
       "sequence": 5,
       "type": "MATERIAL_USAGE",
       "description": "Material consumption for production - Work Order WO-002",
-      "endpoint": "POST /api/v1/material-usage",
+      "endpoint": "/api/v1/material-usage",
       "payload": {
         "wms_id": "MAT-1310-20251216-002",
         "company_code": 1310,
@@ -244,7 +244,7 @@
       "sequence": 6,
       "type": "PRODUCTION_OUTPUT",
       "description": "Finished goods production from WO-001 and WO-002",
-      "endpoint": "POST /api/v1/production-output",
+      "endpoint": "/api/v1/production-output",
       "payload": {
         "wms_id": "PROD-1310-20251216-001",
         "company_code": 1310,
@@ -277,7 +277,7 @@
       "sequence": 7,
       "type": "MATERIAL_USAGE_REVERSAL",
       "description": "Material return from production - unused materials",
-      "endpoint": "POST /api/v1/material-usage",
+      "endpoint": "/api/v1/material-usage",
       "payload": {
         "wms_id": "MAT-1310-20251217-001",
         "company_code": 1310,
@@ -320,7 +320,7 @@
       "sequence": 8,
       "type": "PRODUCTION_OUTPUT_REVERSAL",
       "description": "Finished goods returned for rework - quality hold",
-      "endpoint": "POST /api/v1/production-output",
+      "endpoint": "/api/v1/production-output",
       "payload": {
         "wms_id": "PROD-1310-20251217-001",
         "company_code": 1310,
@@ -353,7 +353,7 @@
       "sequence": 9,
       "type": "PRODUCTION_OUTPUT",
       "description": "Reworked finished goods completed and returned to warehouse",
-      "endpoint": "POST /api/v1/production-output",
+      "endpoint": "/api/v1/production-output",
       "payload": {
         "wms_id": "PROD-1310-20251218-001",
         "company_code": 1310,
@@ -386,7 +386,7 @@
       "sequence": 10,
       "type": "ADJUSTMENTS",
       "description": "Physical count adjustment - stock variance correction",
-      "endpoint": "POST /api/v1/adjustments",
+      "endpoint": "/api/v1/adjustments",
       "payload": {
         "wms_id": "ADJ-1310-20251218-001",
         "company_code": 1310,
@@ -420,7 +420,7 @@
       "sequence": 11,
       "type": "OUTGOING_GOODS",
       "description": "Export shipment - finished goods and excess materials",
-      "endpoint": "POST /api/v1/outgoing-goods",
+      "endpoint": "/api/v1/outgoing-goods",
       "payload": {
         "wms_id": "OUT-1310-20251219-001",
         "company_code": 1310,
@@ -482,7 +482,7 @@
       "sequence": "11-ALTERNATIVE",
       "type": "OUTGOING_GOODS_ALTERNATIVE",
       "description": "ALTERNATIVE: Conservative export shipment - with valid quantities only",
-      "endpoint": "POST /api/v1/outgoing-goods",
+      "endpoint": "/api/v1/outgoing-goods",
       "payload": {
         "wms_id": "OUT-1310-20251219-002",
         "company_code": 1310,
@@ -534,7 +534,7 @@
       "sequence": 12,
       "type": "OUTGOING_GOODS_IDEMPOTENCY",
       "description": "IDEMPOTENCY TEST: WMS retries same wms_id with corrected quantities after realizing negative stock issue",
-      "endpoint": "POST /api/v1/outgoing-goods",
+      "endpoint": "/api/v1/outgoing-goods",
       "payload": {
         "wms_id": "OUT-1310-20251219-001",
         "company_code": 1310,
@@ -669,3 +669,4 @@
     }
   }
 }
+
