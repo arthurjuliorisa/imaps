@@ -59,7 +59,7 @@ export default function ScrapTransactionsPage() {
     },
     {
       field: 'ppkekNumber',
-      headerName: 'PPKEK Number',
+      headerName: 'Nomor Pendaftaran',
       width: 140,
     },
     {
@@ -190,7 +190,7 @@ export default function ScrapTransactionsPage() {
       No: index + 1,
       'Company Name': row.companyName,
       'Doc Type': row.docType,
-      'PPKEK Number': row.ppkekNumber,
+      'Nomor Pendaftaran': row.ppkekNumber,
       'Reg Date': formatDate(row.regDate),
       'Doc Number': row.docNumber,
       'Doc Date': formatDate(row.docDate),
@@ -239,7 +239,7 @@ export default function ScrapTransactionsPage() {
       { header: 'No', dataKey: 'no' },
       { header: 'Company', dataKey: 'companyName' },
       { header: 'Doc Type', dataKey: 'docType' },
-      { header: 'PPKEK Number', dataKey: 'ppkekNumber' },
+      { header: 'Nomor Pendaftaran', dataKey: 'ppkekNumber' },
       { header: 'Reg Date', dataKey: 'regDate' },
       { header: 'Doc Number', dataKey: 'docNumber' },
       { header: 'Doc Date', dataKey: 'docDate' },
