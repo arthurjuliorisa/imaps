@@ -359,7 +359,7 @@ export default function CapitalGoodsTransactionsPage() {
         onSuccess={handleDialogSuccess}
         transactionType="CAPITAL_GOODS"
         defaultDirection="OUT"
-        allowDirectionChange={true}
+        allowDirectionChange={false}
       />
     </ReportLayout>
   );
