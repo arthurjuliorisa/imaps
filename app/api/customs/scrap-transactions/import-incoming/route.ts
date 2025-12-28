@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth } from '@/lib/api-auth';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 interface ExcelRow {
   Date?: string | number;
@@ -66,12 +66,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Read and parse Excel file
+    // Read and parse Excel file using ExcelJS
     const arrayBuffer = await file.arrayBuffer();
-    const workbook = XLSX.read(arrayBuffer);
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json<ExcelRow>(worksheet);
+    const buffer = Buffer.from(arrayBuffer);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
+      return NextResponse.json(
+        { message: 'Excel file is empty or invalid' },
+        { status: 400 }
+      );
+    }
+
+    // Convert worksheet to JSON
+    const jsonData: ExcelRow[] = [];
+    const headers: string[] = [];
+
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) {
+        // First row is headers
+        row.eachCell((cell) => {
+          headers.push(cell.value?.toString() || '');
+        });
+      } else {
+        // Data rows
+        const rowData: any = {};
+        row.eachCell((cell, colNumber) => {
+          const header = headers[colNumber - 1];
+          if (header) {
+            // ExcelJS automatically converts dates to Date objects
+            rowData[header] = cell.value;
+          }
+        });
+        if (Object.keys(rowData).length > 0) {
+          jsonData.push(rowData as ExcelRow);
+        }
+      }
+    });
 
     if (jsonData.length === 0) {
       return NextResponse.json(
@@ -80,24 +114,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-
-    // Helper function to parse Excel date
-    const parseExcelDate = (dateValue: string | number): Date | null => {
+    // Helper function to parse date values
+    const parseExcelDate = (dateValue: any): Date | null => {
       if (!dateValue) return null;
 
-      // If it's a number, it's an Excel serial date
-      if (typeof dateValue === 'number') {
-        // Excel serial date (days since 1900-01-01)
-        // JavaScript Date uses milliseconds since 1970-01-01
-        const excelEpoch = new Date(1900, 0, 1);
-        const date = new Date(excelEpoch.getTime() + (dateValue - 2) * 24 * 60 * 60 * 1000);
-        return date;
+      // ExcelJS returns Date objects for date cells
+      if (dateValue instanceof Date) {
+        return dateValue;
       }
 
       // If it's a string, try to parse it
-      const parsed = new Date(dateValue);
-      if (!isNaN(parsed.getTime())) {
-        return parsed;
+      if (typeof dateValue === 'string') {
+        const parsed = new Date(dateValue);
+        if (!isNaN(parsed.getTime())) {
+          return parsed;
+        }
       }
 
       return null;
