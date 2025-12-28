@@ -154,7 +154,8 @@ export async function POST(request: Request) {
       companyCode,
       scrapCode,
       'SCRAP',
-      qty
+      qty,
+      date
     );
 
     if (!stockCheck.available) {

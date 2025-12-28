@@ -158,7 +158,8 @@ export async function POST(request: Request) {
       companyCode,
       itemCode,
       itemType,
-      qty
+      qty,
+      date
     );
 
     if (!stockCheck.available) {

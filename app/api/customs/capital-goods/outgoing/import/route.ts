@@ -330,38 +330,55 @@ export async function POST(request: Request) {
       });
     }
 
-    // Validate stock availability for all items (all-or-nothing)
-    const itemsToValidate = validRecords.map(record => {
-      const masterItem = itemMap.get(record.itemCode)!;
-      return {
-        itemCode: record.itemCode,
-        itemType: masterItem.item_type,
-        qtyRequested: record.qty,
-      };
-    });
+    // Validate stock availability for all items grouped by date
+    // Since different records can have different dates, validate per-date
+    const recordsByDate = new Map<string, typeof validRecords>();
+    
+    for (const record of validRecords) {
+      const dateKey = record.date.toISOString().split('T')[0]; // YYYY-MM-DD
+      if (!recordsByDate.has(dateKey)) {
+        recordsByDate.set(dateKey, []);
+      }
+      recordsByDate.get(dateKey)!.push(record);
+    }
 
-    const stockValidation = await checkBatchStockAvailability(
-      companyCode,
-      itemsToValidate
-    );
+    // Validate stock for each date group
+    for (const [dateStr, recordsForDate] of recordsByDate) {
+      const dateObj = new Date(dateStr);
+      
+      const itemsToValidate = recordsForDate.map(record => {
+        const masterItem = itemMap.get(record.itemCode)!;
+        return {
+          itemCode: record.itemCode,
+          itemType: masterItem.item_type,
+          qtyRequested: record.qty,
+        };
+      });
 
-    if (!stockValidation.allAvailable) {
-      const insufficientItems = stockValidation.results
-        .filter(r => !r.available)
-        .map(r => `${r.itemCode} (${r.itemType}): stock ${r.currentStock}, diminta ${r.qtyRequested}`);
-
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Import ditolak: stock tidak mencukupi untuk item berikut',
-          errors: insufficientItems.map((msg, idx) => ({
-            index: idx,
-            record: null,
-            error: msg,
-          })),
-        },
-        { status: 400 }
+      const stockValidation = await checkBatchStockAvailability(
+        companyCode,
+        itemsToValidate,
+        dateObj  // ✅ Pass transaction date for historical stock validation
       );
+
+      if (!stockValidation.allAvailable) {
+        const insufficientItems = stockValidation.results
+          .filter(r => !r.available)
+          .map(r => `${r.itemCode} (${r.itemType}): stock pada ${dateStr} adalah ${r.currentStock}, diminta ${r.qtyRequested}`);
+
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Import ditolak: stock tidak mencukupi pada tanggal ${dateStr} untuk item berikut`,
+            errors: insufficientItems.map((msg, idx) => ({
+              index: idx,
+              record: null,
+              error: msg,
+            })),
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Process all grouped transactions

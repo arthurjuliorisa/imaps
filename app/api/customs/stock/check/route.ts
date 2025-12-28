@@ -46,10 +46,14 @@ export async function POST(request: Request) {
     const body = await request.json();
     const validatedData = StockCheckRequestSchema.parse(body);
 
-    // Check stock for all items
+    // Check stock for all items as of today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
     const result = await checkBatchStockAvailability(
       companyCode,
-      validatedData.items as StockCheckItem[]
+      validatedData.items as StockCheckItem[],
+      today  // ✅ Default to current date
     );
 
     return NextResponse.json(result, { status: 200 });
