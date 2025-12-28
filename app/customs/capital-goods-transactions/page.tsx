@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Stack, Button, CircularProgress, Typography } from '@mui/material';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Box, Stack, Button, CircularProgress, Typography, TextField, InputAdornment } from '@mui/material';
 import {
   RemoveCircleOutline as RemoveIcon,
   UploadFile as UploadFileIcon,
+  Search as SearchIcon
 } from '@mui/icons-material';
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
@@ -27,6 +28,7 @@ export default function CapitalGoodsTransactionsPage() {
   const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
   const [data, setData] = useState<CapitalGoodsTransaction[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
@@ -178,8 +180,32 @@ export default function CapitalGoodsTransactionsPage() {
     fetchData();
   };
 
+  // Filter data based on search query
+  const filteredData = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return data;
+    }
+
+    const query = searchQuery.toLowerCase();
+    return data.filter((row) => {
+      return (
+        row.companyName?.toLowerCase().includes(query) ||
+        row.docType?.toLowerCase().includes(query) ||
+        row.ppkekNumber?.toLowerCase().includes(query) ||
+        row.docNumber?.toLowerCase().includes(query) ||
+        row.recipientName?.toLowerCase().includes(query) ||
+        row.itemType?.toLowerCase().includes(query) ||
+        row.itemCode?.toLowerCase().includes(query) ||
+        row.itemName?.toLowerCase().includes(query) ||
+        row.unit?.toLowerCase().includes(query) ||
+        row.currency?.toLowerCase().includes(query) ||
+        row.remarks?.toLowerCase().includes(query)
+      );
+    });
+  }, [data, searchQuery]);
+
   const handleExportExcel = () => {
-    const exportData = data.map((row, index) => ({
+    const exportData = filteredData.map((row, index) => ({
       No: index + 1,
       'Company Name': row.companyName,
       'Doc Type': row.docType,
@@ -208,7 +234,7 @@ export default function CapitalGoodsTransactionsPage() {
   };
 
   const handleExportPDF = () => {
-    const exportData = data.map((row, index) => ({
+    const exportData = filteredData.map((row, index) => ({
       no: index + 1,
       companyName: row.companyName,
       docType: row.docType,
@@ -269,6 +295,20 @@ export default function CapitalGoodsTransactionsPage() {
             onStartDateChange={setStartDate}
             onEndDateChange={setEndDate}
           />
+          <TextField
+            placeholder="Search transactions..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            size="small"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+            sx={{ maxWidth: 400 }}
+          />
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
             <Stack direction="row" spacing={2}>
               <Button
@@ -293,7 +333,7 @@ export default function CapitalGoodsTransactionsPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={data.length === 0 || loading}
+              disabled={filteredData.length === 0 || loading}
             />
           </Box>
         </Stack>
@@ -301,7 +341,7 @@ export default function CapitalGoodsTransactionsPage() {
     >
       <Box sx={{ width: '100%' }}>
         <DataGrid
-          rows={data}
+          rows={filteredData}
           columns={columns}
           paginationModel={paginationModel}
           onPaginationModelChange={setPaginationModel}
