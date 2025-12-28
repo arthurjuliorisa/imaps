@@ -147,6 +147,15 @@ BEGIN
             
             UNION
             
+            -- Items from scrap transactions (IN/OUT)
+            SELECT item_type, item_code, item_name, uom 
+            FROM scrap_transaction_items sti
+            JOIN scrap_transactions st ON sti.scrap_transaction_id = st.id
+            WHERE st.company_code = p_company_code 
+              AND st.transaction_date = p_snapshot_date
+            
+            UNION
+            
             -- Items with opening balance (from previous day)
             SELECT item_type, item_code, item_name, uom 
             FROM stock_daily_snapshot 
@@ -217,6 +226,34 @@ BEGIN
           AND og.deleted_at IS NULL
           AND ogi.deleted_at IS NULL
         GROUP BY og.company_code, ogi.item_type, ogi.item_code
+    ),
+    -- Scrap incoming quantities (from scrap_transactions with transaction_type = 'IN')
+    scrap_incoming_quantities AS (
+        SELECT 
+            st.company_code,
+            sti.item_type,
+            sti.item_code,
+            SUM(sti.qty) AS scrap_incoming_qty
+        FROM scrap_transactions st
+        JOIN scrap_transaction_items sti ON st.id = sti.scrap_transaction_id
+        WHERE st.company_code = p_company_code
+          AND st.transaction_date = p_snapshot_date
+          AND st.transaction_type = 'IN'
+        GROUP BY st.company_code, sti.item_type, sti.item_code
+    ),
+    -- Scrap outgoing quantities (from scrap_transactions with transaction_type = 'OUT')
+    scrap_outgoing_quantities AS (
+        SELECT 
+            st.company_code,
+            sti.item_type,
+            sti.item_code,
+            SUM(sti.qty) AS scrap_outgoing_qty
+        FROM scrap_transactions st
+        JOIN scrap_transaction_items sti ON st.id = sti.scrap_transaction_id
+        WHERE st.company_code = p_company_code
+          AND st.transaction_date = p_snapshot_date
+          AND st.transaction_type = 'OUT'
+        GROUP BY st.company_code, sti.item_type, sti.item_code
     ),
     -- Material usage quantities (from material_usages)
     material_usage_quantities AS (
@@ -331,8 +368,8 @@ BEGIN
             -- SCRAP: opening + incoming - outgoing +/- adjustment
             WHEN ai.item_type = 'SCRAP' THEN
                 COALESCE(ob.opening_balance, 0) +
-                COALESCE(inc.incoming_qty, 0) -
-                COALESCE(out.outgoing_qty, 0) +
+                COALESCE(sinc.scrap_incoming_qty, 0) -
+                COALESCE(sout.scrap_outgoing_qty, 0) +
                 COALESCE(adj.adjustment_qty, 0)
             
             -- Default formula for any other item types: opening + incoming - material_usage - outgoing +/- adjustment +/- production
@@ -344,9 +381,15 @@ BEGIN
                 COALESCE(prod.production_qty, 0) +
                 COALESCE(adj.adjustment_qty, 0)
         END AS closing_balance,
-        -- Transaction quantities
-        COALESCE(inc.incoming_qty, 0) AS incoming_qty,
-        COALESCE(out.outgoing_qty, 0) AS outgoing_qty,
+        -- Transaction quantities (conditional by item type)
+        CASE 
+            WHEN ai.item_type = 'SCRAP' THEN COALESCE(sinc.scrap_incoming_qty, 0)
+            ELSE COALESCE(inc.incoming_qty, 0)
+        END AS incoming_qty,
+        CASE 
+            WHEN ai.item_type = 'SCRAP' THEN COALESCE(sout.scrap_outgoing_qty, 0)
+            ELSE COALESCE(out.outgoing_qty, 0)
+        END AS outgoing_qty,
         COALESCE(prod.production_qty, 0) AS production_qty,
         COALESCE(mat.material_usage_qty, 0) AS material_usage_qty,
         COALESCE(adj.adjustment_qty, 0) AS adjustment_qty,
@@ -363,9 +406,15 @@ BEGIN
     LEFT JOIN incoming_quantities inc ON ai.company_code = inc.company_code 
         AND ai.item_type = inc.item_type 
         AND ai.item_code = inc.item_code
+    LEFT JOIN scrap_incoming_quantities sinc ON ai.company_code = sinc.company_code 
+        AND ai.item_type = sinc.item_type 
+        AND ai.item_code = sinc.item_code
     LEFT JOIN outgoing_quantities out ON ai.company_code = out.company_code 
         AND ai.item_type = out.item_type 
         AND ai.item_code = out.item_code
+    LEFT JOIN scrap_outgoing_quantities sout ON ai.company_code = sout.company_code 
+        AND ai.item_type = sout.item_type 
+        AND ai.item_code = sout.item_code
     LEFT JOIN material_usage_quantities mat ON ai.company_code = mat.company_code 
         AND ai.item_type = mat.item_type 
         AND ai.item_code = mat.item_code

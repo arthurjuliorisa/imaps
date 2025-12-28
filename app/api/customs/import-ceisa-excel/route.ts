@@ -382,7 +382,7 @@ async function importScrapTransactions(
         items: importedItems,
       };
     } else {
-      // Validate stock availability for all items (all-or-nothing)
+      // Validate stock availability for all items as of transaction date (all-or-nothing)
       const itemsToValidate = data.items.map(item => ({
         itemCode: item.itemCode,
         itemType: 'SCRAP',
@@ -391,15 +391,16 @@ async function importScrapTransactions(
 
       const stockValidation = await checkBatchStockAvailability(
         companyCode,
-        itemsToValidate
+        itemsToValidate,
+        docDate  // ✅ Pass transaction date for historical stock validation
       );
 
       if (!stockValidation.allAvailable) {
         const insufficientItems = stockValidation.results
           .filter(r => !r.available)
-          .map(r => `${r.itemCode}: stock ${r.currentStock}, diminta ${r.qtyRequested}`);
+          .map(r => `${r.itemCode}: stock pada ${docDate.toLocaleDateString('id-ID')} adalah ${r.currentStock}, diminta ${r.qtyRequested}`);
 
-        throw new Error(`Import ditolak: stock tidak mencukupi untuk item berikut: ${insufficientItems.join('; ')}`);
+        throw new Error(`Import ditolak: stock tidak mencukupi pada tanggal ${docDate.toLocaleDateString('id-ID')} untuk item berikut: ${insufficientItems.join('; ')}`);
       }
 
       // Create outgoing_goods record
@@ -524,7 +525,7 @@ async function importCapitalGoodsTransactions(
       // Only outgoing capital goods transactions are available
       throw new Error('Capital goods incoming transactions are not supported. Only outgoing transactions are available.');
     } else {
-      // Validate stock availability for all items (all-or-nothing)
+      // Validate stock availability for all items as of transaction date (all-or-nothing)
       const itemsToValidate = data.items.map(item => ({
         itemCode: item.itemCode,
         itemType: itemType,
@@ -533,15 +534,16 @@ async function importCapitalGoodsTransactions(
 
       const stockValidation = await checkBatchStockAvailability(
         companyCode,
-        itemsToValidate
+        itemsToValidate,
+        docDate  // ✅ Pass transaction date for historical stock validation
       );
 
       if (!stockValidation.allAvailable) {
         const insufficientItems = stockValidation.results
           .filter(r => !r.available)
-          .map(r => `${r.itemCode}: stock ${r.currentStock}, diminta ${r.qtyRequested}`);
+          .map(r => `${r.itemCode}: stock pada ${docDate.toLocaleDateString('id-ID')} adalah ${r.currentStock}, diminta ${r.qtyRequested}`);
 
-        throw new Error(`Import ditolak: stock tidak mencukupi untuk item berikut: ${insufficientItems.join('; ')}`);
+        throw new Error(`Import ditolak: stock tidak mencukupi pada tanggal ${docDate.toLocaleDateString('id-ID')} untuk item berikut: ${insufficientItems.join('; ')}`);
       }
 
       // Create outgoing_goods record for capital goods

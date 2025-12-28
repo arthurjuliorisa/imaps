@@ -14,6 +14,7 @@ export interface StockCheckResult {
   qtyRequested: number;
   available: boolean;
   shortfall?: number;
+  validationDate?: Date;
 }
 
 export interface BatchStockCheckResult {
@@ -22,45 +23,60 @@ export interface BatchStockCheckResult {
 }
 
 /**
- * Check stock availability for a single item
+ * Normalize date to UTC midnight for comparison
+ */
+function normalizeDate(date: Date): Date {
+  return new Date(Date.UTC(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    0, 0, 0, 0
+  ));
+}
+
+/**
+ * Check stock availability for a single item at a specific date
+ * - For historical dates: uses stock_daily_snapshot only
+ * - For current date: combines snapshot + live transactions
+ *
+ * SCRAP:
+ *   Incoming: scrap_transactions (transaction_type='IN')
+ *   Outgoing: outgoing_goods (item_type='SCRAP')
+ *
+ * CG (HIBE_M/E/T):
+ *   Incoming: incoming_goods (item_type='HIBE_*')
+ *   Outgoing: outgoing_goods (item_type='HIBE_*')
  */
 export async function checkStockAvailability(
   companyCode: number,
   itemCode: string,
   itemType: string,
-  qtyRequested: number
+  qtyRequested: number,
+  asOfDate: Date
 ): Promise<StockCheckResult> {
   let currentStock = 0;
 
   try {
-    if (itemType === 'SCRAP') {
-      // Query vw_lpj_barang_sisa for scrap items
-      const result = await prisma.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
-        SELECT closing_balance
-        FROM vw_lpj_barang_sisa
-        WHERE company_code = ${companyCode}
-          AND item_code = ${itemCode}
-        LIMIT 1
-      `;
+    const normalizedDate = normalizeDate(asOfDate);
+    const today = normalizeDate(new Date());
+    const isCurrentDate = normalizedDate.getTime() === today.getTime();
 
-      if (result.length > 0) {
-        currentStock = Number(result[0].closing_balance);
-      }
-    } else if (['HIBE_M', 'HIBE_E', 'HIBE_T'].includes(itemType)) {
-      // Query vw_lpj_barang_modal for capital goods items
-      const result = await prisma.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
-        SELECT closing_balance
-        FROM vw_lpj_barang_modal
-        WHERE company_code = ${companyCode}
-          AND item_code = ${itemCode}
-        LIMIT 1
-      `;
-
-      if (result.length > 0) {
-        currentStock = Number(result[0].closing_balance);
-      }
+    if (isCurrentDate) {
+      // Real-time validation: snapshot + live transactions for today
+      currentStock = await calculateRealTimeStock(
+        companyCode,
+        itemCode,
+        itemType,
+        normalizedDate
+      );
     } else {
-      throw new Error(`Unsupported item type: ${itemType}`);
+      // Historical validation: snapshot only for past dates
+      currentStock = await getSnapshotBalance(
+        companyCode,
+        itemCode,
+        itemType,
+        normalizedDate
+      );
     }
 
     const available = currentStock >= qtyRequested;
@@ -73,19 +89,157 @@ export async function checkStockAvailability(
       qtyRequested,
       available,
       shortfall,
+      validationDate: asOfDate,
     };
   } catch (error) {
-    console.error(`[Stock Check Error] Failed to check stock for ${itemCode}:`, error);
+    console.error(
+      `[Stock Check Error] Failed to check stock for ${itemCode} on ${asOfDate.toISOString()}:`,
+      error
+    );
     throw error;
   }
 }
 
 /**
- * Check stock availability for multiple items (batch)
+ * Get snapshot balance for a specific date
+ */
+async function getSnapshotBalance(
+  companyCode: number,
+  itemCode: string,
+  itemType: string,
+  snapshotDate: Date
+): Promise<number> {
+  const result = await prisma.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
+    SELECT closing_balance
+    FROM stock_daily_snapshot
+    WHERE company_code = ${companyCode}
+      AND item_type = ${itemType}
+      AND item_code = ${itemCode}
+      AND snapshot_date = ${snapshotDate}
+    LIMIT 1
+  `;
+
+  if (result.length > 0) {
+    return Number(result[0].closing_balance);
+  }
+
+  // If no snapshot exists, stock is considered 0 (conservative approach)
+  return 0;
+}
+
+/**
+ * Calculate real-time stock for current date
+ * = snapshot (from yesterday) + incoming today - outgoing today
+ */
+async function calculateRealTimeStock(
+  companyCode: number,
+  itemCode: string,
+  itemType: string,
+  currentDate: Date
+): Promise<number> {
+  // Get snapshot from yesterday (or day before last available snapshot)
+  const yesterday = new Date(currentDate);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const snapshotBalance = await getSnapshotBalance(
+    companyCode,
+    itemCode,
+    itemType,
+    yesterday
+  );
+
+  let incomingToday = 0;
+  let outgoingToday = 0;
+
+  if (itemType === 'SCRAP') {
+    // SCRAP: Incoming from scrap_transactions
+    const incomingResult = await prisma.$queryRaw<Array<{ total_qty: Prisma.Decimal }>>`
+      SELECT COALESCE(SUM(sti.qty), 0) as total_qty
+      FROM scrap_transaction_items sti
+      JOIN scrap_transactions st ON 
+        sti.scrap_transaction_company = st.company_code
+        AND sti.scrap_transaction_id = st.id
+        AND sti.scrap_transaction_date = st.transaction_date
+      WHERE sti.scrap_transaction_company = ${companyCode}
+        AND sti.item_code = ${itemCode}
+        AND sti.item_type = ${itemType}
+        AND st.transaction_type = 'IN'
+        AND st.transaction_date = ${currentDate}
+        AND sti.deleted_at IS NULL
+        AND st.deleted_at IS NULL
+    `;
+
+    incomingToday = incomingResult.length > 0 ? Number(incomingResult[0].total_qty) : 0;
+
+    // SCRAP: Outgoing from outgoing_goods
+    const outgoingResult = await prisma.$queryRaw<Array<{ total_qty: Prisma.Decimal }>>`
+      SELECT COALESCE(SUM(ogi.qty), 0) as total_qty
+      FROM outgoing_good_items ogi
+      JOIN outgoing_goods og ON 
+        ogi.outgoing_good_id = og.id
+        AND ogi.outgoing_good_company = og.company_code
+        AND ogi.outgoing_good_date = og.outgoing_date
+      WHERE ogi.outgoing_good_company = ${companyCode}
+        AND ogi.item_code = ${itemCode}
+        AND ogi.item_type = ${itemType}
+        AND og.outgoing_date = ${currentDate}
+        AND ogi.deleted_at IS NULL
+        AND og.deleted_at IS NULL
+    `;
+
+    outgoingToday = outgoingResult.length > 0 ? Number(outgoingResult[0].total_qty) : 0;
+  } else if (['HIBE_M', 'HIBE_E', 'HIBE_T'].includes(itemType)) {
+    // CG: Incoming from incoming_goods
+    const incomingResult = await prisma.$queryRaw<Array<{ total_qty: Prisma.Decimal }>>`
+      SELECT COALESCE(SUM(igi.qty), 0) as total_qty
+      FROM incoming_good_items igi
+      JOIN incoming_goods ig ON 
+        igi.incoming_good_id = ig.id
+        AND igi.incoming_good_company = ig.company_code
+        AND igi.incoming_good_date = ig.incoming_date
+      WHERE igi.incoming_good_company = ${companyCode}
+        AND igi.item_code = ${itemCode}
+        AND igi.item_type = ${itemType}
+        AND ig.incoming_date = ${currentDate}
+        AND igi.deleted_at IS NULL
+        AND ig.deleted_at IS NULL
+    `;
+
+    incomingToday = incomingResult.length > 0 ? Number(incomingResult[0].total_qty) : 0;
+
+    // CG: Outgoing from outgoing_goods
+    const outgoingResult = await prisma.$queryRaw<Array<{ total_qty: Prisma.Decimal }>>`
+      SELECT COALESCE(SUM(ogi.qty), 0) as total_qty
+      FROM outgoing_good_items ogi
+      JOIN outgoing_goods og ON 
+        ogi.outgoing_good_id = og.id
+        AND ogi.outgoing_good_company = og.company_code
+        AND ogi.outgoing_good_date = og.outgoing_date
+      WHERE ogi.outgoing_good_company = ${companyCode}
+        AND ogi.item_code = ${itemCode}
+        AND ogi.item_type = ${itemType}
+        AND og.outgoing_date = ${currentDate}
+        AND ogi.deleted_at IS NULL
+        AND og.deleted_at IS NULL
+    `;
+
+    outgoingToday = outgoingResult.length > 0 ? Number(outgoingResult[0].total_qty) : 0;
+  } else {
+    throw new Error(`Unsupported item type: ${itemType}`);
+  }
+
+  // Real-time balance = snapshot + incoming - outgoing
+  return snapshotBalance + incomingToday - outgoingToday;
+}
+
+/**
+ * Check stock availability for multiple items (batch) at a specific date
+ * Validates all items exist in stock as of the transaction date
  */
 export async function checkBatchStockAvailability(
   companyCode: number,
-  items: StockCheckItem[]
+  items: StockCheckItem[],
+  asOfDate: Date
 ): Promise<BatchStockCheckResult> {
   const results: StockCheckResult[] = [];
 
@@ -94,7 +248,8 @@ export async function checkBatchStockAvailability(
       companyCode,
       item.itemCode,
       item.itemType,
-      item.qtyRequested
+      item.qtyRequested,
+      asOfDate
     );
     results.push(result);
   }
