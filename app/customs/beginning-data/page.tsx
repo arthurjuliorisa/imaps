@@ -104,6 +104,7 @@ export default function BeginningDataPage() {
         beginningBalance: item.beginningBalance,
         beginningDate: item.beginningDate,
         remarks: item.remarks,
+        ppkek_numbers: item.ppkek_numbers || [],
         // Keep item and uom IDs for edit functionality
         itemId: item.itemId,
         uomId: item.uomId,
@@ -239,6 +240,7 @@ export default function BeginningDataPage() {
             uom: r.uom,
             qty: r.qty,
             balanceDate: r.balanceDate,
+            ppkekNumbers: r.ppkekNumbers,
             remarks: r.remarks,
           })),
         }),

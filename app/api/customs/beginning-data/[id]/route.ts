@@ -36,6 +36,13 @@ export async function GET(
 
     const beginningBalance = await prisma.beginning_balances.findUnique({
       where: { id: recordId },
+      include: {
+        ppkeks: {
+          select: {
+            ppkek_number: true
+          }
+        }
+      }
     });
 
     if (!beginningBalance) {
@@ -57,7 +64,8 @@ export async function GET(
       },
       beginningBalance: Number(beginningBalance.qty),
       beginningDate: beginningBalance.balance_date,
-      remarks: null,
+      remarks: beginningBalance.remarks || null,
+      ppkek_numbers: beginningBalance.ppkeks?.map(p => p.ppkek_number) || [],
       itemId: beginningBalance.item_code,
       uomId: beginningBalance.uom,
       itemType: beginningBalance.item_type,

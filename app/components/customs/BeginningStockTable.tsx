@@ -19,11 +19,18 @@ import {
   TextField,
   InputAdornment,
   Stack,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  Chip,
 } from '@mui/material';
 import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Search as SearchIcon,
+  Visibility as ViewIcon,
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -39,6 +46,7 @@ export interface BeginningStockData {
   beginningBalance: number;
   beginningDate: string;
   remarks?: string;
+  ppkek_numbers?: string[];
   // Added for edit functionality
   itemId?: string;
   uomId?: string;
@@ -66,6 +74,9 @@ export function BeginningStockTable({
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState<Dayjs | null>(null);
+  const [ppkekDialogOpen, setPpkekDialogOpen] = useState(false);
+  const [selectedPpkeks, setSelectedPpkeks] = useState<string[]>([]);
+  const [selectedItemInfo, setSelectedItemInfo] = useState<{ code: string; name: string } | null>(null);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -87,6 +98,18 @@ export function BeginningStockTable({
     setFilterDate(newDate);
     setPage(0);
     onDateFilter?.(newDate ? newDate.format('YYYY-MM-DD') : null);
+  };
+
+  const handleViewPpkeks = (ppkekNumbers: string[] | undefined, itemCode: string, itemName: string) => {
+    setSelectedPpkeks(ppkekNumbers || []);
+    setSelectedItemInfo({ code: itemCode, name: itemName });
+    setPpkekDialogOpen(true);
+  };
+
+  const handleClosePpkekDialog = () => {
+    setPpkekDialogOpen(false);
+    setSelectedPpkeks([]);
+    setSelectedItemInfo(null);
   };
 
   const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
@@ -279,6 +302,16 @@ export function BeginningStockTable({
                     </Typography>
                   </TableCell>
                   <TableCell align="center">
+                    <Tooltip title="View PPKEK Numbers">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleViewPpkeks(row.ppkek_numbers, row.itemCode, row.itemName)}
+                        color="info"
+                        sx={{ mr: 0.5 }}
+                      >
+                        <ViewIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="Edit">
                       <IconButton
                         size="small"
@@ -314,6 +347,82 @@ export function BeginningStockTable({
         onPageChange={handleChangePage}
         onRowsPerPageChange={handleChangeRowsPerPage}
       />
+
+      {/* PPKEK Numbers Detail Dialog */}
+      <Dialog
+        open={ppkekDialogOpen}
+        onClose={handleClosePpkekDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            bgcolor: alpha(theme.palette.info.main, 0.08),
+            borderBottom: `1px solid ${alpha(theme.palette.info.main, 0.1)}`,
+          }}
+        >
+          <Box>
+            <Typography component="div" fontWeight="bold" color="info.main" sx={{ fontSize: '1.125rem' }}>
+              PPKEK Numbers Details
+            </Typography>
+            {selectedItemInfo && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Item: {selectedItemInfo.code} - {selectedItemInfo.name}
+              </Typography>
+            )}
+          </Box>
+        </DialogTitle>
+
+        <DialogContent sx={{ mt: 2, minHeight: '150px' }}>
+          {selectedPpkeks.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No PPKEK numbers assigned
+            </Typography>
+          ) : (
+            <Stack spacing={1.5}>
+              <Typography variant="subtitle2" fontWeight="bold">
+                Associated PPKEK Numbers:
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {selectedPpkeks.map((ppkek, index) => (
+                  <Chip
+                    key={index}
+                    label={ppkek}
+                    color="info"
+                    variant="outlined"
+                    sx={{
+                      fontWeight: 600,
+                      fontSize: '0.875rem',
+                    }}
+                  />
+                ))}
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                Total: {selectedPpkeks.length} PPKEK number(s)
+              </Typography>
+            </Stack>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, py: 2, borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}>
+          <Button
+            onClick={handleClosePpkekDialog}
+            variant="contained"
+            sx={{
+              textTransform: 'none',
+              borderRadius: 1,
+            }}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
     </Box>
   );
 }
