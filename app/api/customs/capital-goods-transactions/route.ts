@@ -161,8 +161,8 @@ export async function GET(request: Request) {
       itemCode: row.item_code,
       itemName: row.item_name,
       unit: row.unit,
-      quantityIn: 0, // Always 0 for outgoing only
-      quantityOut: Number(row.quantity_out || 0),
+      inQty: 0, // Always 0 for outgoing only
+      outQty: Number(row.quantity_out || 0),
       currency: row.currency,
       valueAmount: Number(row.value_amount || 0),
       remarks: row.remarks,
