@@ -137,23 +137,50 @@ export function ImportCeisaExcelDialog({
         formData.append('itemType', itemType);
       }
 
+      console.log('[Import] Starting import with:', {
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size,
+        transactionType,
+        direction,
+        itemType: transactionType === 'CAPITAL_GOODS' ? itemType : undefined,
+      });
+
       const response = await fetch('/api/customs/import-ceisa-excel', {
         method: 'POST',
         body: formData,
       });
 
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch (parseError) {
+        console.error('[Import] Failed to parse response JSON:', parseError);
+        setErrors(['Server returned invalid response. Please contact support.']);
+        toast.error('Invalid server response');
+        return;
+      }
 
       if (!response.ok) {
+        console.error('[Import] Request failed with status:', response.status, result);
+        
         if (result.errors && Array.isArray(result.errors)) {
           setErrors(result.errors.map((e: any) => typeof e === 'string' ? e : e.message || JSON.stringify(e)));
         } else {
           setErrors([result.message || 'Import failed']);
         }
-        toast.error(result.message || 'Failed to import Excel file');
+        
+        // User-friendly error message
+        let userMessage = result.message || 'Failed to import Excel file';
+        if (result.message && result.message.includes('stock tidak mencukupi')) {
+          userMessage = `Stock tidak cukup untuk tanggal dokumen. Pastikan tanggal dokumen di Excel sudah benar dan item memiliki stock yang cukup pada tanggal tersebut.`;
+        }
+        
+        toast.error(userMessage);
         return;
       }
 
+      console.log('[Import] Success:', result);
+      
       toast.success(
         `Successfully imported ${result.data.itemCount} item(s) with WMS ID: ${result.data.wmsId}`
       );
@@ -161,9 +188,13 @@ export function ImportCeisaExcelDialog({
       handleClose();
       onSuccess();
     } catch (error) {
-      console.error('Import error:', error);
-      toast.error('An unexpected error occurred during import');
-      setErrors(['An unexpected error occurred. Please try again.']);
+      console.error('[Import] Error:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      toast.error('Terjadi kesalahan saat import. Silakan coba lagi.');
+      setErrors([
+        'Gagal terhubung ke server atau terjadi kesalahan saat pemrosesan.',
+        'Silakan periksa koneksi internet Anda dan coba lagi.',
+      ]);
     } finally {
       setLoading(false);
     }

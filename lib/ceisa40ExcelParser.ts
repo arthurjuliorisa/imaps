@@ -270,7 +270,27 @@ function parseExcelDate(value: any): string {
 
   // If it's already a string in date format, return it
   if (typeof value === 'string') {
-    return value;
+    const trimmed = value.trim();
+    
+    // Check if it's already YYYY-MM-DD format
+    const isoMatch = trimmed.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if (isoMatch) {
+      const year = isoMatch[1];
+      const month = isoMatch[2].padStart(2, '0');
+      const day = isoMatch[3].padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    // Try to parse DD/MM/YYYY or DD-MM-YYYY formats
+    const slashMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (slashMatch) {
+      const day = slashMatch[1];
+      const month = slashMatch[2];
+      const year = slashMatch[3];
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    
+    return trimmed;
   }
 
   // If it's a Date object (ExcelJS automatically converts Excel dates to Date objects)

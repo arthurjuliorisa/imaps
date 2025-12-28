@@ -69,8 +69,8 @@ export async function GET(request: Request) {
     console.log('[WIP API] Query result count:', result.length);
 
     // Transform to match vw_lpj_wip structure
-    const transformedData = result.map((row: any) => ({
-      id: `${row.item_code}-${row.stock_date}`,
+    const transformedData = result.map((row: any, index: number) => ({
+      id: `${row.item_code}-${row.stock_date}-${index}`,
       no: Number(row.no),
       companyName: row.company_name,
       itemCode: row.item_code,

@@ -74,8 +74,8 @@ export async function GET(request: Request) {
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
     // Transform to expected format
-    const transformedData = result.map((row: any) => ({
-      id: `${row.item_code}-${row.snapshot_date}`,
+    const transformedData = result.map((row: any, index: number) => ({
+      id: `${row.item_code}-${row.snapshot_date}-${index}`,
       rowNumber: row.no,
       companyCode: row.company_code,
       companyName: row.company_name,
