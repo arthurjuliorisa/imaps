@@ -356,21 +356,23 @@ export default function ScrapTransactionsPage() {
         </Stack>
       }
     >
-      <Box sx={{ width: '100%', mt: 3 }}>
-        <TextField
-          placeholder="Search transactions..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          size="small"
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-          }}
-          sx={{ mb: 3, maxWidth: 400 }}
-        />
+      <Box sx={{ width: '100%', mt: 3, px: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
+          <TextField
+            placeholder="Search transactions..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            size="small"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+            sx={{ maxWidth: 400 }}
+          />
+        </Box>
         <DataGrid
           rows={filteredData}
           columns={columns}
