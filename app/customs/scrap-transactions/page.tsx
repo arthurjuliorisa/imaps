@@ -356,7 +356,7 @@ export default function ScrapTransactionsPage() {
         </Stack>
       }
     >
-      <Box sx={{ width: '100%' }}>
+      <Box sx={{ width: '100%', mt: 3 }}>
         <TextField
           placeholder="Search transactions..."
           value={searchQuery}
@@ -369,7 +369,7 @@ export default function ScrapTransactionsPage() {
               </InputAdornment>
             ),
           }}
-          sx={{ mb: 2, maxWidth: 400 }}
+          sx={{ mb: 3, maxWidth: 400 }}
         />
         <DataGrid
           rows={filteredData}
