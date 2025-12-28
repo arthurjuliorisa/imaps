@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { session } = authCheck as { authenticated: true; session: any };
-    const companyCode = session.user.companyCode;
+    const companyCode = Number(session.user.companyCode);
 
     // Parse FormData
     const formData = await request.formData();
@@ -81,6 +81,28 @@ export async function POST(request: NextRequest) {
     }
 
 
+    // Helper function to parse Excel date
+    const parseExcelDate = (dateValue: string | number): Date | null => {
+      if (!dateValue) return null;
+
+      // If it's a number, it's an Excel serial date
+      if (typeof dateValue === 'number') {
+        // Excel serial date (days since 1900-01-01)
+        // JavaScript Date uses milliseconds since 1970-01-01
+        const excelEpoch = new Date(1900, 0, 1);
+        const date = new Date(excelEpoch.getTime() + (dateValue - 2) * 24 * 60 * 60 * 1000);
+        return date;
+      }
+
+      // If it's a string, try to parse it
+      const parsed = new Date(dateValue);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+
+      return null;
+    };
+
     // Validate and transform data
     const validationErrors: string[] = [];
     const items: ImportItem[] = [];
@@ -88,9 +110,12 @@ export async function POST(request: NextRequest) {
     jsonData.forEach((row, index) => {
       const rowNumber = index + 2; // +2 because row 1 is header
 
+      // Parse date
+      const parsedDate = row.Date ? parseExcelDate(row.Date) : null;
+
       // Validate required fields
-      if (!row.Date) {
-        validationErrors.push(`Row ${rowNumber}: Date is required`);
+      if (!row.Date || !parsedDate) {
+        validationErrors.push(`Row ${rowNumber}: Date is required or invalid`);
       }
       if (!row['Scrap Code']) {
         validationErrors.push(`Row ${rowNumber}: Scrap Code is required`);
@@ -121,7 +146,7 @@ export async function POST(request: NextRequest) {
 
       // Add to items array
       items.push({
-        date: row.Date ? String(row.Date) : '',
+        date: parsedDate ? parsedDate.toISOString() : '',
         scrapCode: row['Scrap Code'] || '',
         scrapName: row['Scrap Name'] || '',
         uom: row.UOM || '',
