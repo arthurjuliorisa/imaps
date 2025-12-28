@@ -356,8 +356,8 @@ export default function ScrapTransactionsPage() {
         </Stack>
       }
     >
-      <Box sx={{ width: '100%', mt: 3, px: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
+      <Box sx={{ width: '100%', mt: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3, px: 3 }}>
           <TextField
             placeholder="Search transactions..."
             value={searchQuery}
