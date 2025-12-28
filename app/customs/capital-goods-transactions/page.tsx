@@ -295,20 +295,6 @@ export default function CapitalGoodsTransactionsPage() {
             onStartDateChange={setStartDate}
             onEndDateChange={setEndDate}
           />
-          <TextField
-            placeholder="Search transactions..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            size="small"
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-            }}
-            sx={{ maxWidth: 400 }}
-          />
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
             <Stack direction="row" spacing={2}>
               <Button
@@ -340,6 +326,20 @@ export default function CapitalGoodsTransactionsPage() {
       }
     >
       <Box sx={{ width: '100%' }}>
+        <TextField
+          placeholder="Search transactions..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          size="small"
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+          sx={{ mb: 2, maxWidth: 400 }}
+        />
         <DataGrid
           rows={filteredData}
           columns={columns}
