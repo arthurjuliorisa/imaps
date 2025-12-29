@@ -34,6 +34,22 @@ const OutgoingCapitalGoodsSchema = z.object({
   amount: z.number().nonnegative('Amount must be non-negative'),
   recipientName: z.string().min(1, 'Recipient name is required').trim(),
   remarks: z.string().optional().nullable(),
+  ppkekNumber: z.string().optional().nullable(),
+  registrationDate: z.string().or(z.date()).optional().nullable().transform((val) => {
+    if (!val) return null;
+    const parsed = new Date(val);
+    if (isNaN(parsed.getTime())) {
+      throw new Error('Invalid registration date format');
+    }
+    // Normalize to UTC midnight
+    return new Date(Date.UTC(
+      parsed.getFullYear(),
+      parsed.getMonth(),
+      parsed.getDate(),
+      0, 0, 0, 0
+    ));
+  }),
+  documentType: z.enum(['BC25', 'BC27']).optional().nullable(),
 });
 
 type OutgoingCapitalGoodsInput = z.infer<typeof OutgoingCapitalGoodsSchema>;
@@ -135,7 +151,7 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    const { date, itemType, itemCode, itemName, uom, qty, currency, amount, recipientName, remarks } = validatedData;
+    const { date, itemType, itemCode, itemName, uom, qty, currency, amount, recipientName, remarks, ppkekNumber, registrationDate, documentType } = validatedData;
 
     // Validate date is not in the future
     const now = new Date();
@@ -184,18 +200,15 @@ export async function POST(request: Request) {
       const wmsId = generateWmsId(itemType);
       const invoiceNumber = generateInvoiceNumber();
 
-      // 2. Get company default ppkek_number (for now, use empty string)
-      const ppkekNumber = '';
-
-      // 3. Create outgoing_goods record
+      // 2. Create outgoing_goods record
       const outgoingGood = await tx.outgoing_goods.create({
         data: {
           wms_id: wmsId,
           company_code: companyCode,
           owner: companyCode,
-          customs_document_type: 'BC27',
-          ppkek_number: ppkekNumber,
-          customs_registration_date: date,
+          customs_document_type: documentType || 'BC27',
+          ppkek_number: ppkekNumber || '',
+          customs_registration_date: registrationDate || date,
           outgoing_evidence_number: wmsId,
           outgoing_date: date,
           invoice_number: invoiceNumber,
@@ -205,7 +218,7 @@ export async function POST(request: Request) {
         },
       });
 
-      // 4. Create outgoing_good_items record
+      // 3. Create outgoing_good_items record
       await tx.outgoing_good_items.create({
         data: {
           outgoing_good_id: outgoingGood.id,
@@ -223,7 +236,7 @@ export async function POST(request: Request) {
         },
       });
 
-      // 5. Queue snapshot recalculation
+      // 4. Queue snapshot recalculation
       const priority = calculatePriority(date);
 
       await tx.snapshot_recalc_queue.upsert({

@@ -35,6 +35,9 @@ interface FormData {
   amount: number;
   recipientName: string;
   remarks: string;
+  ppkekNumber: string;
+  registrationDate: Dayjs | null;
+  documentType: string;
 }
 
 interface AddOutCapitalGoodsDialogProps {
@@ -45,6 +48,7 @@ interface AddOutCapitalGoodsDialogProps {
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
 const ITEM_TYPES = ['HIBE_M', 'HIBE_E', 'HIBE_T'];
+const DOCUMENT_TYPES = ['BC25', 'BC27'];
 
 export function AddOutCapitalGoodsDialog({
   open,
@@ -65,6 +69,9 @@ export function AddOutCapitalGoodsDialog({
     amount: 0,
     recipientName: '',
     remarks: '',
+    ppkekNumber: '',
+    registrationDate: null,
+    documentType: '',
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -212,6 +219,9 @@ export function AddOutCapitalGoodsDialog({
           amount: formData.amount,
           recipientName: formData.recipientName,
           remarks: formData.remarks || undefined,
+          ppkekNumber: formData.ppkekNumber || undefined,
+          registrationDate: formData.registrationDate?.format('YYYY-MM-DD') || undefined,
+          documentType: formData.documentType || undefined,
         }),
       });
 
@@ -244,6 +254,9 @@ export function AddOutCapitalGoodsDialog({
       amount: 0,
       recipientName: '',
       remarks: '',
+      ppkekNumber: '',
+      registrationDate: null,
+      documentType: '',
     });
     setErrors({});
     setStockCheckResult(null);
@@ -474,6 +487,68 @@ export function AddOutCapitalGoodsDialog({
                 errors.remarks || `${formData.remarks.length}/1000 characters`
               }
             />
+
+            <Box
+              sx={{
+                p: 2,
+                bgcolor: alpha(theme.palette.warning.main, 0.05),
+                borderRadius: 1,
+                border: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
+              }}
+            >
+              <Typography variant="subtitle2" fontWeight="bold" color="warning.main" gutterBottom>
+                Customs Information (Optional)
+              </Typography>
+
+              <Stack spacing={2} sx={{ mt: 2 }}>
+                <TextField
+                  fullWidth
+                  label="PPKEK Number"
+                  value={formData.ppkekNumber}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, ppkekNumber: e.target.value }));
+                    setErrors((prev) => ({ ...prev, ppkekNumber: undefined }));
+                  }}
+                  placeholder="e.g., PPKEK-123456"
+                  helperText="Enter PPKEK number if applicable"
+                />
+
+                <DatePicker
+                  label="Registration Date"
+                  value={formData.registrationDate}
+                  onChange={(newValue) => {
+                    setFormData((prev) => ({ ...prev, registrationDate: newValue }));
+                    setErrors((prev) => ({ ...prev, registrationDate: undefined }));
+                  }}
+                  maxDate={dayjs()}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      error: !!errors.registrationDate,
+                      helperText: errors.registrationDate || 'Customs registration date',
+                    },
+                  }}
+                />
+
+                <TextField
+                  fullWidth
+                  select
+                  label="Document Type"
+                  value={formData.documentType}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, documentType: e.target.value }));
+                    setErrors((prev) => ({ ...prev, documentType: undefined }));
+                  }}
+                  helperText="Select customs document type"
+                >
+                  {DOCUMENT_TYPES.map((type) => (
+                    <MenuItem key={type} value={type}>
+                      {type}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
+            </Box>
 
             <Box
               sx={{
