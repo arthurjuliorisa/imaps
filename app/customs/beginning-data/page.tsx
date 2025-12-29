@@ -199,10 +199,11 @@ export default function BeginningDataPage() {
         },
         body: JSON.stringify({
           itemType: selectedItemType,
-          itemId: formData.itemId,
-          uomId: formData.uomId,
-          beginningBalance: formData.beginningBalance,
-          beginningDate: formData.beginningDate?.format('YYYY-MM-DD'),
+          itemCode: formData.item_code,
+          itemName: formData.item_name,
+          uom: formData.uom,
+          qty: formData.qty,
+          balanceDate: formData.beginningDate?.format('YYYY-MM-DD'),
           remarks: formData.remarks,
         }),
       });

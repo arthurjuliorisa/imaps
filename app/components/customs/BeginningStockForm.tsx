@@ -37,24 +37,6 @@ export interface BeginningStockFormData {
   ppkek_numbers?: string[];
 }
 
-interface Item {
-  id: string;
-  code: string;
-  name: string;
-  type: string;
-  uom?: {
-    id: string;
-    code: string;
-    name: string;
-  };
-}
-
-interface UOM {
-  id: string;
-  code: string;
-  name: string;
-}
-
 interface BeginningStockFormProps {
   open: boolean;
   onClose: () => void;
@@ -74,9 +56,6 @@ export function BeginningStockForm({
 }: BeginningStockFormProps) {
   const theme = useTheme();
   const [loading, setLoading] = useState(false);
-  const [items, setItems] = useState<Item[]>([]);
-  const [uoms, setUoms] = useState<UOM[]>([]);
-  const [loadingItems, setLoadingItems] = useState(false);
   const [ppkeks, setPpkeks] = useState<string[]>([]);
   const [loadingPpkeks, setLoadingPpkeks] = useState(false);
   const [formData, setFormData] = useState<BeginningStockFormData>({
@@ -97,9 +76,9 @@ export function BeginningStockForm({
   // Reset form when dialog opens or initialData changes
   useEffect(() => {
     if (open) {
-      // Fix Bug #1: Load data first, then set form values to avoid race condition
+      // Load data first, then set form values to avoid race condition
       const loadData = async () => {
-        await Promise.all([fetchItems(), fetchUOMs(), fetchPpkeks()]);
+        await Promise.all([fetchPpkeks()]);
 
         if (initialData && mode === 'edit') {
           setFormData(initialData);
@@ -108,7 +87,7 @@ export function BeginningStockForm({
             itemId: undefined,
             item_code: '',
             item_name: '',
-            item_type: '',
+            item_type: itemType,
             uomId: undefined,
             uom: '',
             beginningBalance: 0,
@@ -121,34 +100,7 @@ export function BeginningStockForm({
       };
       loadData();
     }
-  }, [open, initialData, mode]);
-
-  const fetchItems = async () => {
-    setLoadingItems(true);
-    try {
-      const response = await fetch(`/api/master/item?itemType=${itemType}`);
-      if (response.ok) {
-        const data = await response.json();
-        setItems(data);
-      }
-    } catch (error) {
-      console.error('Error fetching items:', error);
-    } finally {
-      setLoadingItems(false);
-    }
-  };
-
-  const fetchUOMs = async () => {
-    try {
-      const response = await fetch('/api/master/uom');
-      if (response.ok) {
-        const data = await response.json();
-        setUoms(data);
-      }
-    } catch (error) {
-      console.error('Error fetching UOMs:', error);
-    }
-  };
+  }, [open, initialData, mode, itemType]);
 
   const fetchPpkeks = async () => {
     setLoadingPpkeks(true);
@@ -169,30 +121,6 @@ export function BeginningStockForm({
       console.error('Error fetching PPKEKs:', error);
     } finally {
       setLoadingPpkeks(false);
-    }
-  };
-
-  const handleItemSelect = (item: Item | null) => {
-    if (item) {
-      setFormData((prev) => ({
-        ...prev,
-        itemId: item.id,
-        item_code: item.code,
-        item_name: item.name,
-        item_type: item.type,
-        uomId: item.uom?.id,
-        uom: item.uom?.code || '',
-      }));
-    } else {
-      setFormData((prev) => ({
-        ...prev,
-        itemId: undefined,
-        item_code: '',
-        item_name: '',
-        item_type: '',
-        uomId: undefined,
-        uom: '',
-      }));
     }
   };
 
@@ -231,8 +159,9 @@ export function BeginningStockForm({
 
   const isFormValid =
     formData.balance_date !== null &&
-    formData.item_code !== '' &&
-    formData.uom !== '' &&
+    formData.item_code.trim() !== '' &&
+    formData.item_name.trim() !== '' &&
+    formData.uom.trim() !== '' &&
     formData.qty > 0 &&
     (formData.balance_date.isBefore(dayjs()) || formData.balance_date.isSame(dayjs(), 'day'));
 
@@ -271,42 +200,39 @@ export function BeginningStockForm({
       <DialogContent sx={{ mt: 3 }}>
         <LocalizationProvider dateAdapter={AdapterDayjs}>
           <Stack spacing={3}>
-            {/* Item Selection - Disabled in edit mode */}
-            <Autocomplete
-              options={items}
-              loading={loadingItems}
-              getOptionLabel={(option) => `${option.code} - ${option.name}`}
-              onChange={(_event, newValue) => handleItemSelect(newValue)}
-              value={items.find((item) => item.code === formData.item_code) || null}
+            {/* Item Code - Manual Input */}
+            <TextField
+              fullWidth
+              label="Item Code"
+              value={formData.item_code}
+              onChange={(e) => setFormData((prev) => ({ ...prev, item_code: e.target.value }))}
               disabled={mode === 'edit'}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label={`${getItemTypeLabel()} Item`}
-                  placeholder="Search item..."
-                  required
-                  InputProps={{
-                    ...params.InputProps,
-                    endAdornment: (
-                      <>
-                        {loadingItems ? <CircularProgress color="inherit" size={20} /> : null}
-                        {params.InputProps.endAdornment}
-                      </>
-                    ),
-                  }}
-                  helperText={mode === 'edit' ? 'Item cannot be changed in edit mode' : ''}
-                />
-              )}
+              required
+              placeholder="Enter item code..."
+              helperText={mode === 'edit' ? 'Item cannot be changed in edit mode' : 'Enter the item code'}
             />
 
-            {/* UOM - Auto-filled from selected item */}
+            {/* Item Name - Manual Input */}
+            <TextField
+              fullWidth
+              label="Item Name"
+              value={formData.item_name}
+              onChange={(e) => setFormData((prev) => ({ ...prev, item_name: e.target.value }))}
+              disabled={mode === 'edit'}
+              required
+              placeholder="Enter item name..."
+              helperText={mode === 'edit' ? 'Item cannot be changed in edit mode' : 'Enter the item name'}
+            />
+
+            {/* UOM - Manual Input */}
             <TextField
               fullWidth
               label="Unit of Measure (UOM)"
               value={formData.uom}
-              disabled={true}
+              onChange={(e) => setFormData((prev) => ({ ...prev, uom: e.target.value }))}
               required
-              helperText="Auto-filled from selected item"
+              placeholder="Enter UOM (e.g., PCS, KG, SET)..."
+              helperText="Enter the unit of measure"
             />
 
             {/* Beginning Balance */}
