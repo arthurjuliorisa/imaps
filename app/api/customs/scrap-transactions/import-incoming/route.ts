@@ -32,9 +32,26 @@ function generateWmsId(type: 'IN' | 'OUT'): string {
   return `SCRAP-${type}-${timestamp}-${random}`;
 }
 
-function calculatePriority(companyCode: number): number {
-  const companyString = companyCode.toString().padStart(4, '0');
-  return parseInt(companyString);
+/**
+ * Calculate priority for snapshot recalculation queue
+ * Backdated transactions (date < today) should have priority 0
+ * Same-day transactions (date = today) should have priority -1
+ */
+function calculatePriority(transactionDate: Date): number {
+  const now = new Date();
+  const today = new Date(Date.UTC(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0, 0, 0, 0
+  ));
+
+  if (transactionDate < today) {
+    return 0; // Backdated transaction
+  } else if (transactionDate.getTime() === today.getTime()) {
+    return -1; // Same-day transaction
+  }
+  return -1; // Default to same-day priority
 }
 
 export async function POST(request: NextRequest) {
@@ -266,7 +283,7 @@ export async function POST(request: NextRequest) {
 
       for (const header of transactionHeaders) {
         const key = `${companyCode}-${header._date.toISOString()}-SCRAP-${header._item.scrapCode}`;
-        const priority = calculatePriority(companyCode);
+        const priority = calculatePriority(header._date);
 
         if (!uniqueRecalcEntries.has(key)) {
           uniqueRecalcEntries.set(key, {
