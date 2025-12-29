@@ -186,7 +186,7 @@ export default function CapitalGoodsMutationPage() {
           </Stack>
         }
       >
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3, px: 3, gap: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3, mb: 3, px: 3, gap: 2 }}>
           <TextField
             select
             label="Item Type"
