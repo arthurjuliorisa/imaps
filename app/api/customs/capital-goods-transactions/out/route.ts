@@ -49,7 +49,7 @@ const OutgoingCapitalGoodsSchema = z.object({
       0, 0, 0, 0
     ));
   }),
-  documentType: z.enum(['BC25', 'BC27']).optional().nullable(),
+  documentType: z.enum(['BC25', 'BC27', 'BC41']).optional().nullable(),
 });
 
 type OutgoingCapitalGoodsInput = z.infer<typeof OutgoingCapitalGoodsSchema>;

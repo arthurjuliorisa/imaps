@@ -20,6 +20,7 @@ enum CustomsDocumentType {
   BC40 // Local Purchase from Non-Bonded Zone
   BC30 // Export Declaration
   BC25 // Local Sales to Non-Bonded Zone
+  BC41 // Local Sales to Non-Bonded Zone from Local Purchase (BC40)
   BC261 // Subcontracting - Incoming
   BC262 // Subcontracting - Outgoing
 }
