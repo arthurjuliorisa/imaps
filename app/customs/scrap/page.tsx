@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Stack } from '@mui/material';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Box, Stack, TextField, InputAdornment, MenuItem } from '@mui/material';
+import { Search as SearchIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
@@ -55,6 +56,41 @@ export default function ScrapMutationPage() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [data, setData] = useState<MutationData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
+
+  // Get unique item types from data
+  const uniqueItemTypes = useMemo(() => {
+    const types = new Set(data.map(item => item.itemType).filter(Boolean));
+    return Array.from(types).sort();
+  }, [data]);
+
+  // Filter data based on search query and item type filter
+  const filteredData = useMemo(() => {
+    let filtered = data;
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((row) => {
+        return (
+          row.companyName?.toLowerCase().includes(query) ||
+          row.itemCode?.toLowerCase().includes(query) ||
+          row.itemName?.toLowerCase().includes(query) ||
+          row.itemType?.toLowerCase().includes(query) ||
+          row.unit?.toLowerCase().includes(query) ||
+          row.remarks?.toLowerCase().includes(query)
+        );
+      });
+    }
+
+    // Apply item type filter
+    if (itemTypeFilter) {
+      filtered = filtered.filter(row => row.itemType === itemTypeFilter);
+    }
+
+    return filtered;
+  }, [data, searchQuery, itemTypeFilter]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -66,7 +102,7 @@ export default function ScrapMutationPage() {
   };
 
   const handleExportExcel = () => {
-    const exportData = data.map((row, index) => ({
+    const exportData = filteredData.map((row, index) => ({
       No: index + 1,
       'Item Code': row.itemCode,
       'Item Name': row.itemName,
@@ -88,7 +124,7 @@ export default function ScrapMutationPage() {
   };
 
   const handleExportPDF = () => {
-    const exportData = data.map((row, index) => ({
+    const exportData = filteredData.map((row, index) => ({
       no: index + 1,
       itemCode: row.itemCode,
       itemName: row.itemName,
@@ -178,14 +214,45 @@ export default function ScrapMutationPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={data.length === 0}
+              disabled={filteredData.length === 0 || loading}
             />
           </Box>
         </Stack>
       }
     >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3, px: 3, gap: 2 }}>
+        <TextField
+          select
+          label="Item Type"
+          value={itemTypeFilter}
+          onChange={(e) => setItemTypeFilter(e.target.value)}
+          size="small"
+          sx={{ minWidth: 200 }}
+        >
+          <MenuItem value="">All Item Types</MenuItem>
+          {uniqueItemTypes.map((type) => (
+            <MenuItem key={type} value={type}>
+              {type}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          placeholder="Search transactions..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          size="small"
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+          sx={{ maxWidth: 400 }}
+        />
+      </Box>
       <MutationReportTable
-        data={data}
+        data={filteredData}
         page={page}
         rowsPerPage={rowsPerPage}
         onPageChange={handleChangePage}

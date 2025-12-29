@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/app/components/ToastProvider';
 import {
   Box,
@@ -18,10 +17,11 @@ import {
   useTheme,
   Chip,
   CircularProgress,
-  IconButton,
-  Tooltip,
+  TextField,
+  InputAdornment,
+  MenuItem,
 } from '@mui/material';
-import { Visibility } from '@mui/icons-material';
+import { Search as SearchIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
@@ -51,7 +51,6 @@ interface IncomingReportData {
 export default function IncomingGoodsReportPage() {
   const theme = useTheme();
   const toast = useToast();
-  const router = useRouter();
 
   // Default date range: last 30 days to today
   const now = new Date();
@@ -64,6 +63,8 @@ export default function IncomingGoodsReportPage() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [data, setData] = useState<IncomingReportData[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -90,6 +91,43 @@ export default function IncomingGoodsReportPage() {
     fetchData();
   }, [fetchData]);
 
+  // Get unique item types from data
+  const uniqueItemTypes = useMemo(() => {
+    const types = new Set(data.map(item => item.typeCode));
+    return Array.from(types).sort();
+  }, [data]);
+
+  // Filter data based on search query and item type filter
+  const filteredData = useMemo(() => {
+    let filtered = data;
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((row) => {
+        return (
+          row.companyName?.toLowerCase().includes(query) ||
+          row.documentType?.toLowerCase().includes(query) ||
+          row.ppkekNumber?.toLowerCase().includes(query) ||
+          row.documentNumber?.toLowerCase().includes(query) ||
+          row.shipperName?.toLowerCase().includes(query) ||
+          row.typeCode?.toLowerCase().includes(query) ||
+          row.itemCode?.toLowerCase().includes(query) ||
+          row.itemName?.toLowerCase().includes(query) ||
+          row.unit?.toLowerCase().includes(query) ||
+          row.currency?.toLowerCase().includes(query)
+        );
+      });
+    }
+
+    // Apply item type filter
+    if (itemTypeFilter) {
+      filtered = filtered.filter(row => row.typeCode === itemTypeFilter);
+    }
+
+    return filtered;
+  }, [data, searchQuery, itemTypeFilter]);
+
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
   };
@@ -100,7 +138,7 @@ export default function IncomingGoodsReportPage() {
   };
 
   const handleExportExcel = () => {
-    const exportData = data.map((row, index) => ({
+    const exportData = filteredData.map((row, index) => ({
       No: index + 1,
       'Company Name': row.companyName,
       'Doc Type': row.documentType,
@@ -127,7 +165,7 @@ export default function IncomingGoodsReportPage() {
   };
 
   const handleExportPDF = () => {
-    const exportData = data.map((row, index) => ({
+    const exportData = filteredData.map((row, index) => ({
       no: index + 1,
       docType: row.documentType,
       docNumber: row.documentNumber,
@@ -162,7 +200,7 @@ export default function IncomingGoodsReportPage() {
     );
   };
 
-  const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const paginatedData = filteredData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   return (
     <ReportLayout
@@ -180,12 +218,43 @@ export default function IncomingGoodsReportPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={data.length === 0 || loading}
+              disabled={filteredData.length === 0 || loading}
             />
           </Box>
         </Stack>
       }
     >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3, px: 3, gap: 2 }}>
+        <TextField
+          select
+          label="Item Type"
+          value={itemTypeFilter}
+          onChange={(e) => setItemTypeFilter(e.target.value)}
+          size="small"
+          sx={{ minWidth: 200 }}
+        >
+          <MenuItem value="">All Item Types</MenuItem>
+          {uniqueItemTypes.map((type) => (
+            <MenuItem key={type} value={type}>
+              {type}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          placeholder="Search transactions..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          size="small"
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+          sx={{ maxWidth: 400 }}
+        />
+      </Box>
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 8 }}>
           <CircularProgress />
@@ -215,13 +284,12 @@ export default function IncomingGoodsReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Value Amount</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Created Date</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="center">Action</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={17} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={16} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -284,17 +352,6 @@ export default function IncomingGoodsReportPage() {
                       </Typography>
                     </TableCell>
                     <TableCell>{formatDate(row.createdAt)}</TableCell>
-                    <TableCell align="center">
-                      <Tooltip title="View Details">
-                        <IconButton
-                          size="small"
-                          color="primary"
-                          onClick={() => router.push(`/customs/incoming/${row.wmsId}`)}
-                        >
-                          <Visibility fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -305,7 +362,7 @@ export default function IncomingGoodsReportPage() {
       <TablePagination
         rowsPerPageOptions={[5, 10, 25, 50]}
         component="div"
-        count={data.length}
+        count={filteredData.length}
         rowsPerPage={rowsPerPage}
         page={page}
         onPageChange={handleChangePage}
