@@ -137,8 +137,8 @@ export async function GET(request: Request) {
           st.company_code,
           c.name as company_name,
           st.transaction_type as doc_type,
-          '' as ppkek_number,
-          st.transaction_date as reg_date,
+          COALESCE(st.ppkek_number, '') as ppkek_number,
+          COALESCE(st.customs_registration_date, st.transaction_date) as reg_date,
           st.document_number as doc_number,
           st.transaction_date as doc_date,
           CASE

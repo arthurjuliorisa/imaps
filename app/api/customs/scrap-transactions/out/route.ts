@@ -31,6 +31,22 @@ const OutgoingScrapSchema = z.object({
   amount: z.number().nonnegative('Amount must be non-negative'),
   recipientName: z.string().min(1, 'Recipient name is required').trim(),
   remarks: z.string().optional().nullable(),
+  ppkekNumber: z.string().optional().nullable(),
+  registrationDate: z.string().or(z.date()).optional().nullable().transform((val) => {
+    if (!val) return null;
+    const parsed = new Date(val);
+    if (isNaN(parsed.getTime())) {
+      throw new Error('Invalid registration date format');
+    }
+    // Normalize to UTC midnight
+    return new Date(Date.UTC(
+      parsed.getFullYear(),
+      parsed.getMonth(),
+      parsed.getDate(),
+      0, 0, 0, 0
+    ));
+  }),
+  documentType: z.enum(['BC25', 'BC27', 'BC41']).optional().nullable(),
 });
 
 type OutgoingScrapInput = z.infer<typeof OutgoingScrapSchema>;
@@ -131,7 +147,7 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    const { date, scrapCode, scrapName, uom, qty, currency, amount, recipientName, remarks } = validatedData;
+    const { date, scrapCode, scrapName, uom, qty, currency, amount, recipientName, remarks, ppkekNumber, registrationDate, documentType } = validatedData;
 
     // Validate date is not in the future
     const now = new Date();
@@ -190,6 +206,9 @@ export async function POST(request: Request) {
           recipient_name: recipientName,
           disposal_method: 'Sold as scrap',
           remarks: remarks,
+          ppkek_number: ppkekNumber || null,
+          customs_registration_date: registrationDate || null,
+          customs_document_type: documentType || null,
           timestamp: new Date(),
         },
       });

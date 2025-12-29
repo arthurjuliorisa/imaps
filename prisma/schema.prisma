@@ -599,19 +599,22 @@ model adjustment_items {
 // ============================================================================
 
 model scrap_transactions {
-  id               Int                       @id @default(autoincrement())
-  company_code     Int
-  transaction_date DateTime                  @db.Date
-  transaction_type String                    @db.VarChar(10) // 'IN' or 'OUT'
-  document_number  String                    @db.VarChar(100)
-  source           String?                   @db.VarChar(200) // For IN transactions
-  recipient_name   String?                   @db.VarChar(200) // For OUT transactions
-  disposal_method  String?                   @db.VarChar(100) // For OUT: "Sold as scrap", "Destroyed", "Donated"
-  remarks          String?                   @db.VarChar(1000)
-  timestamp        DateTime                  @default(now()) @db.Timestamptz(6)
-  created_at       DateTime                  @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime                  @updatedAt @db.Timestamptz(6)
-  deleted_at       DateTime?                 @db.Timestamptz(6)
+  id                        Int                       @id @default(autoincrement())
+  company_code              Int
+  transaction_date          DateTime                  @db.Date
+  transaction_type          String                    @db.VarChar(10) // 'IN' or 'OUT'
+  document_number           String                    @db.VarChar(100)
+  source                    String?                   @db.VarChar(200) // For IN transactions
+  recipient_name            String?                   @db.VarChar(200) // For OUT transactions
+  disposal_method           String?                   @db.VarChar(100) // For OUT: "Sold as scrap", "Destroyed", "Donated"
+  remarks                   String?                   @db.VarChar(1000)
+  ppkek_number              String?                   @db.VarChar(50) // Customs registration number (for OUT transactions)
+  customs_registration_date DateTime?                 @db.Date // Customs registration date (for OUT transactions)
+  customs_document_type     String?                   @db.VarChar(10) // BC25, BC27, BC41 (for OUT transactions)
+  timestamp                 DateTime                  @default(now()) @db.Timestamptz(6)
+  created_at                DateTime                  @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime                  @updatedAt @db.Timestamptz(6)
+  deleted_at                DateTime?                 @db.Timestamptz(6)
 
   company companies                   @relation(fields: [company_code], references: [code])
   items   scrap_transaction_items[]

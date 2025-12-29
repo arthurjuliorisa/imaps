@@ -45,6 +45,9 @@ interface FormData {
   amount: number;
   recipientName: string;
   remarks: string;
+  ppkekNumber: string;
+  registrationDate: Dayjs | null;
+  documentType: string;
 }
 
 interface AddOutScrapDialogProps {
@@ -54,6 +57,7 @@ interface AddOutScrapDialogProps {
 }
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
+const DOCUMENT_TYPES = ['BC25', 'BC27', 'BC41'];
 
 export function AddOutScrapDialog({
   open,
@@ -76,6 +80,9 @@ export function AddOutScrapDialog({
     amount: 0,
     recipientName: '',
     remarks: '',
+    ppkekNumber: '',
+    registrationDate: null,
+    documentType: 'BC27',
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -242,6 +249,9 @@ export function AddOutScrapDialog({
           amount: formData.amount,
           recipientName: formData.recipientName,
           remarks: formData.remarks || undefined,
+          ppkekNumber: formData.ppkekNumber || undefined,
+          registrationDate: formData.registrationDate?.format('YYYY-MM-DD') || undefined,
+          documentType: formData.documentType || undefined,
         }),
       });
 
@@ -274,6 +284,9 @@ export function AddOutScrapDialog({
       amount: 0,
       recipientName: '',
       remarks: '',
+      ppkekNumber: '',
+      registrationDate: null,
+      documentType: 'BC27',
     });
     setErrors({});
     setStockCheckResult(null);
@@ -345,6 +358,65 @@ export function AddOutScrapDialog({
                 },
               }}
             />
+
+            {/* Customs Information Section */}
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: 'divider',
+                bgcolor: alpha(theme.palette.primary.main, 0.02),
+              }}
+            >
+              <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                Customs Information (Optional)
+              </Typography>
+              <Stack spacing={2} sx={{ mt: 2 }}>
+                <TextField
+                  fullWidth
+                  label="PPKEK Number"
+                  value={formData.ppkekNumber}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, ppkekNumber: e.target.value }));
+                  }}
+                  placeholder="e.g., PPKEK-123456"
+                  helperText="Nomor pendaftaran PPKEK (customs registration number)"
+                />
+
+                <DatePicker
+                  label="Registration Date"
+                  value={formData.registrationDate}
+                  onChange={(newValue) => {
+                    setFormData((prev) => ({ ...prev, registrationDate: newValue }));
+                  }}
+                  maxDate={dayjs()}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      helperText: 'Customs registration date',
+                    },
+                  }}
+                />
+
+                <TextField
+                  fullWidth
+                  select
+                  label="Document Type"
+                  value={formData.documentType}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, documentType: e.target.value }));
+                  }}
+                  helperText="Customs document type"
+                >
+                  {DOCUMENT_TYPES.map((docType) => (
+                    <MenuItem key={docType} value={docType}>
+                      {docType}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
+            </Box>
 
             <Autocomplete
               options={scrapItems}
