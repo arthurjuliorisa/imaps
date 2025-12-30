@@ -241,8 +241,8 @@ export async function POST(request: Request) {
           company_code_recalc_date_item_type_item_code: {
             company_code: companyCode,
             recalc_date: date,
-            item_type: null,
-            item_code: null,
+            item_type: null as any,
+            item_code: null as any,
           },
         },
         create: {
