@@ -260,6 +260,9 @@ export function ImportScrapIncomingExcelDialog({
                 <li><strong>Remarks</strong> - Optional notes</li>
               </ul>
             </Typography>
+            <Typography variant="body2" component="div" sx={{ mt: 1 }}>
+              <strong>Note:</strong> Data harus dimulai dari baris ke-3 (Row 3). Baris 1 adalah header, baris 2 adalah format hint.
+            </Typography>
           </Alert>
         </Box>
       </DialogContent>
