@@ -242,32 +242,42 @@ export async function POST(request: Request) {
       // recalculates ALL items for that date anyway
       const priority = calculatePriority(date);
 
-      await tx.snapshot_recalc_queue.upsert({
+      // NOTE: Cannot use upsert() with null values in unique constraint
+      // Use findFirst + create/update pattern instead
+      const existingQueue = await tx.snapshot_recalc_queue.findFirst({
         where: {
-          // Use NULL values to match the unique constraint for company-date only
-          company_code_recalc_date_item_type_item_code: {
-            company_code: companyCode,
-            recalc_date: date,
-            item_type: null as any,
-            item_code: null as any,
-          },
-        },
-        create: {
           company_code: companyCode,
+          recalc_date: date,
           item_type: null,
           item_code: null,
-          recalc_date: date,
-          status: 'PENDING',
-          priority: priority,
-          reason: `Outgoing capital goods batch for ${date.toISOString().split('T')[0]}`,
-        },
-        update: {
-          status: 'PENDING',
-          priority: priority,
-          reason: `Outgoing capital goods batch for ${date.toISOString().split('T')[0]}`,
-          queued_at: new Date(),
         },
       });
+
+      if (existingQueue) {
+        // Update existing queue entry
+        await tx.snapshot_recalc_queue.update({
+          where: { id: existingQueue.id },
+          data: {
+            status: 'PENDING',
+            priority: priority,
+            reason: `Outgoing capital goods batch for ${date.toISOString().split('T')[0]}`,
+            queued_at: new Date(),
+          },
+        });
+      } else {
+        // Create new queue entry
+        await tx.snapshot_recalc_queue.create({
+          data: {
+            company_code: companyCode,
+            item_type: null,
+            item_code: null,
+            recalc_date: date,
+            status: 'PENDING',
+            priority: priority,
+            reason: `Outgoing capital goods batch for ${date.toISOString().split('T')[0]}`,
+          },
+        });
+      }
 
       return {
         wmsId,

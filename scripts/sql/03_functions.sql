@@ -163,7 +163,7 @@ BEGIN
               AND snapshot_date = p_snapshot_date - INTERVAL '1 day'
         ) items
     ),
-    -- Calculate opening balance (from beginning_balances OR closing from previous day)
+    -- Calculate opening balance (from beginning_balances OR closing from latest available date before snapshot)
     opening_balances AS (
         -- First, try to get opening balance from beginning_balances for this exact date
         SELECT 
@@ -178,21 +178,30 @@ BEGIN
         
         UNION ALL
         
-        -- If no beginning balance, use closing from previous day
+        -- If no beginning balance, use closing from LATEST available snapshot before this date
+        -- This ensures we pick up the most recent closing balance, even if there are gaps
         SELECT 
-            company_code,
-            item_type,
-            item_code,
-            closing_balance AS opening_balance
-        FROM stock_daily_snapshot
-        WHERE company_code = p_company_code
-          AND snapshot_date = p_snapshot_date - INTERVAL '1 day'
+            sds.company_code,
+            sds.item_type,
+            sds.item_code,
+            sds.closing_balance AS opening_balance
+        FROM stock_daily_snapshot sds
+        WHERE sds.company_code = p_company_code
+          AND sds.snapshot_date = (
+              -- Find the LATEST snapshot date before p_snapshot_date for this item
+              SELECT MAX(snapshot_date)
+              FROM stock_daily_snapshot
+              WHERE company_code = p_company_code
+                AND item_type = sds.item_type
+                AND item_code = sds.item_code
+                AND snapshot_date < p_snapshot_date
+          )
           -- Only include if not already in beginning_balances
           AND NOT EXISTS (
             SELECT 1 FROM beginning_balances bb
             WHERE bb.company_code = p_company_code
-              AND bb.item_type = stock_daily_snapshot.item_type
-              AND bb.item_code = stock_daily_snapshot.item_code
+              AND bb.item_type = sds.item_type
+              AND bb.item_code = sds.item_code
               AND bb.balance_date = p_snapshot_date
               AND bb.deleted_at IS NULL
           )
