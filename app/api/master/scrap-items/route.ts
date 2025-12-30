@@ -193,7 +193,7 @@ export async function POST(request: Request) {
       description: `Created scrap item: ${scrapItem.scrap_name} (${scrapItem.scrap_code})`,
       status: 'success',
       metadata: {
-        scrapId: scrapItem.id,
+        scrapId: scrapItem.id.toString(),
         scrapCode: scrapItem.scrap_code,
         scrapName: scrapItem.scrap_name,
         companyCode,

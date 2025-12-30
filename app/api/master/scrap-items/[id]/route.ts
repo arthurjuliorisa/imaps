@@ -221,7 +221,7 @@ export async function PUT(
       description: `Updated scrap item: ${updatedItem.scrap_name} (${updatedItem.scrap_code})`,
       status: 'success',
       metadata: {
-        scrapId: updatedItem.id,
+        scrapId: updatedItem.id.toString(),
         scrapCode: updatedItem.scrap_code,
         scrapName: updatedItem.scrap_name,
         companyCode,
@@ -306,7 +306,7 @@ export async function DELETE(
       description: `Deleted scrap item: ${existing.scrap_name} (${existing.scrap_code})`,
       status: 'success',
       metadata: {
-        scrapId: existing.id,
+        scrapId: existing.id.toString(),
         scrapCode: existing.scrap_code,
         scrapName: existing.scrap_name,
         companyCode,

@@ -267,7 +267,7 @@ export async function POST(request: Request) {
       description: `Created beginning balance: ${newRecord.item_name} (${newRecord.item_code}) - ${newRecord.qty} ${newRecord.uom}`,
       status: 'success',
       metadata: {
-        recordId: newRecord.id,
+        recordId: newRecord.id.toString(),
         itemCode: newRecord.item_code,
         itemName: newRecord.item_name,
         itemType: newRecord.item_type,

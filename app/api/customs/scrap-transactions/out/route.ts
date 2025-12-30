@@ -286,7 +286,7 @@ export async function POST(request: Request) {
       status: 'success',
       metadata: {
         documentNumber: result.documentNumber,
-        transactionId: result.transactionId,
+        transactionId: result.transactionId.toString(),
         itemCode: result.scrapCode,
         itemName: result.scrapName,
         qty: result.qty,
