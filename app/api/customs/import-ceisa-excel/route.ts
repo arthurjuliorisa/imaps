@@ -62,6 +62,40 @@ function normalizeDate(dateStr: string): Date {
 }
 
 /**
+ * Validate scrap items against scrap_items table
+ * Checks if scrap_code exists, scrap_name matches, and UOM matches
+ */
+async function validateScrapItems(
+  tx: any,
+  items: Array<{ itemCode: string; itemName: string; unit: string }>
+): Promise<void> {
+  for (const item of items) {
+    const scrapItem = await tx.scrap_items.findUnique({
+      where: { scrap_code: item.itemCode },
+      select: { scrap_code: true, scrap_name: true, uom: true },
+    });
+
+    if (!scrapItem) {
+      throw new Error(
+        `Scrap code '${item.itemCode}' tidak ditemukan di database scrap_items`
+      );
+    }
+
+    if (scrapItem.scrap_name !== item.itemName) {
+      throw new Error(
+        `Scrap name tidak sesuai untuk kode '${item.itemCode}': Excel="${item.itemName}", Database="${scrapItem.scrap_name}"`
+      );
+    }
+
+    if (scrapItem.uom !== item.unit) {
+      throw new Error(
+        `UOM tidak sesuai untuk scrap '${item.itemCode}': Excel="${item.unit}", Database="${scrapItem.uom}"`
+      );
+    }
+  }
+}
+
+/**
  * Map document type code to enum value
  * Converts "25" to "BC25", "27" to "BC27", "41" to "BC41", etc.
  * Valid document types for outgoing transactions: BC25, BC27, BC41
@@ -298,6 +332,9 @@ async function importScrapTransactions(
   regDate: Date
 ) {
   return await prisma.$transaction(async (tx) => {
+    // Validate scrap items against scrap_items table
+    await validateScrapItems(tx, data.items);
+
     const wmsId = generateWmsId('SCRAP', direction);
     const importedItems: any[] = [];
 
@@ -349,43 +386,44 @@ async function importScrapTransactions(
         });
       });
 
-      // Queue snapshot recalculation for unique item-date combinations
-      const uniqueRecalcEntries = new Map<string, any>();
+      // Queue snapshot recalculation for the transaction date
+      // Note: item_type and item_code are set to NULL because calculate_stock_snapshot
+      // recalculates ALL items for a given company+date, not per-item
       const priority = calculatePriority(docDate);
 
-      for (const item of data.items) {
-        const key = `${companyCode}-${docDate.toISOString()}-SCRAP-${item.itemCode}`;
+      // NOTE: Cannot use upsert() with null values in unique constraint
+      // Use findFirst + create/update pattern instead
+      const existingQueueIn = await tx.snapshot_recalc_queue.findFirst({
+        where: {
+          company_code: companyCode,
+          recalc_date: docDate,
+          item_type: null,
+          item_code: null,
+        },
+      });
 
-        if (!uniqueRecalcEntries.has(key)) {
-          uniqueRecalcEntries.set(key, {
+      if (existingQueueIn) {
+        // Update existing queue entry
+        await tx.snapshot_recalc_queue.update({
+          where: { id: existingQueueIn.id },
+          data: {
+            status: 'PENDING',
+            priority: priority,
+            reason: `Excel import: ${wmsId}`,
+            queued_at: new Date(),
+          },
+        });
+      } else {
+        // Create new queue entry
+        await tx.snapshot_recalc_queue.create({
+          data: {
             company_code: companyCode,
-            item_type: 'SCRAP',
-            item_code: item.itemCode,
+            item_type: null,
+            item_code: null,
             recalc_date: docDate,
             status: 'PENDING',
             priority: priority,
             reason: `Excel import: ${wmsId}`,
-          });
-        }
-      }
-
-      // Upsert snapshot recalc queue entries
-      for (const entry of uniqueRecalcEntries.values()) {
-        await tx.snapshot_recalc_queue.upsert({
-          where: {
-            company_code_recalc_date_item_type_item_code: {
-              company_code: entry.company_code,
-              recalc_date: entry.recalc_date,
-              item_type: entry.item_type,
-              item_code: entry.item_code,
-            },
-          },
-          create: entry,
-          update: {
-            status: entry.status,
-            priority: entry.priority,
-            reason: entry.reason,
-            queued_at: new Date(),
           },
         });
       }
@@ -466,43 +504,44 @@ async function importScrapTransactions(
         });
       });
 
-      // Queue snapshot recalculation for unique item-date combinations
-      const uniqueRecalcEntries = new Map<string, any>();
+      // Queue snapshot recalculation for the transaction date
+      // Note: item_type and item_code are set to NULL because calculate_stock_snapshot
+      // recalculates ALL items for a given company+date, not per-item
       const priority = calculatePriority(docDate);
 
-      for (const item of data.items) {
-        const key = `${companyCode}-${docDate.toISOString()}-SCRAP-${item.itemCode}`;
+      // NOTE: Cannot use upsert() with null values in unique constraint
+      // Use findFirst + create/update pattern instead
+      const existingQueueScrapOut = await tx.snapshot_recalc_queue.findFirst({
+        where: {
+          company_code: companyCode,
+          recalc_date: docDate,
+          item_type: null,
+          item_code: null,
+        },
+      });
 
-        if (!uniqueRecalcEntries.has(key)) {
-          uniqueRecalcEntries.set(key, {
+      if (existingQueueScrapOut) {
+        // Update existing queue entry
+        await tx.snapshot_recalc_queue.update({
+          where: { id: existingQueueScrapOut.id },
+          data: {
+            status: 'PENDING',
+            priority: priority,
+            reason: `Excel import: ${wmsId}`,
+            queued_at: new Date(),
+          },
+        });
+      } else {
+        // Create new queue entry
+        await tx.snapshot_recalc_queue.create({
+          data: {
             company_code: companyCode,
-            item_type: 'SCRAP',
-            item_code: item.itemCode,
+            item_type: null,
+            item_code: null,
             recalc_date: docDate,
             status: 'PENDING',
             priority: priority,
             reason: `Excel import: ${wmsId}`,
-          });
-        }
-      }
-
-      // Upsert snapshot recalc queue entries
-      for (const entry of uniqueRecalcEntries.values()) {
-        await tx.snapshot_recalc_queue.upsert({
-          where: {
-            company_code_recalc_date_item_type_item_code: {
-              company_code: entry.company_code,
-              recalc_date: entry.recalc_date,
-              item_type: entry.item_type,
-              item_code: entry.item_code,
-            },
-          },
-          create: entry,
-          update: {
-            status: entry.status,
-            priority: entry.priority,
-            reason: entry.reason,
-            queued_at: new Date(),
           },
         });
       }
@@ -611,43 +650,44 @@ async function importCapitalGoodsTransactions(
         });
       });
 
-      // Queue snapshot recalculation for unique item-date combinations
-      const uniqueRecalcEntries = new Map<string, any>();
+      // Queue snapshot recalculation for the transaction date
+      // Note: item_type and item_code are set to NULL because calculate_stock_snapshot
+      // recalculates ALL items for a given company+date, not per-item
       const priority = calculatePriority(docDate);
 
-      for (const item of data.items) {
-        const key = `${companyCode}-${docDate.toISOString()}-${itemType}-${item.itemCode}`;
+      // NOTE: Cannot use upsert() with null values in unique constraint
+      // Use findFirst + create/update pattern instead
+      const existingQueueCG = await tx.snapshot_recalc_queue.findFirst({
+        where: {
+          company_code: companyCode,
+          recalc_date: docDate,
+          item_type: null,
+          item_code: null,
+        },
+      });
 
-        if (!uniqueRecalcEntries.has(key)) {
-          uniqueRecalcEntries.set(key, {
+      if (existingQueueCG) {
+        // Update existing queue entry
+        await tx.snapshot_recalc_queue.update({
+          where: { id: existingQueueCG.id },
+          data: {
+            status: 'PENDING',
+            priority: priority,
+            reason: `Excel import: ${wmsId}`,
+            queued_at: new Date(),
+          },
+        });
+      } else {
+        // Create new queue entry
+        await tx.snapshot_recalc_queue.create({
+          data: {
             company_code: companyCode,
-            item_type: itemType,
-            item_code: item.itemCode,
+            item_type: null,
+            item_code: null,
             recalc_date: docDate,
             status: 'PENDING',
             priority: priority,
             reason: `Excel import: ${wmsId}`,
-          });
-        }
-      }
-
-      // Upsert snapshot recalc queue entries
-      for (const entry of uniqueRecalcEntries.values()) {
-        await tx.snapshot_recalc_queue.upsert({
-          where: {
-            company_code_recalc_date_item_type_item_code: {
-              company_code: entry.company_code,
-              recalc_date: entry.recalc_date,
-              item_type: entry.item_type,
-              item_code: entry.item_code,
-            },
-          },
-          create: entry,
-          update: {
-            status: entry.status,
-            priority: entry.priority,
-            reason: entry.reason,
-            queued_at: new Date(),
           },
         });
       }

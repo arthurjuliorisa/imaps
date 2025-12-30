@@ -182,6 +182,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Fetch all valid scrap items for this company
+    let validScrapItems: Array<{ scrap_code: string; scrap_name: string }> = [];
+    try {
+      validScrapItems = await prisma.scrap_items.findMany({
+        where: {
+          company_code: companyCode,
+          is_active: true,
+        },
+        select: {
+          scrap_code: true,
+          scrap_name: true,
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching scrap items:', error);
+      return NextResponse.json(
+        { 
+          message: 'Failed to validate scrap items',
+          errors: ['Unable to verify scrap items in the system. Please try again.']
+        },
+        { status: 400 }
+      );
+    }
+
+    // Create a map for quick lookup
+    const scrapItemMap = new Map(validScrapItems.map(item => [item.scrap_code, item.scrap_name]));
+
     // Helper function to parse date values
     const parseExcelDate = (dateValue: any): Date | null => {
       if (!dateValue) return null;
@@ -219,6 +246,24 @@ export async function POST(request: NextRequest) {
       if (!row['Scrap Code']) {
         validationErrors.push(`Row ${rowNumber}: Scrap Code is required`);
       }
+      
+      // Validate scrap code exists in scrap_items
+      if (row['Scrap Code'] && !scrapItemMap.has(row['Scrap Code'])) {
+        validationErrors.push(
+          `Row ${rowNumber}: Scrap Code '${row['Scrap Code']}' does not exist in the system. Please add it to the Scrap Items master data first.`
+        );
+      }
+      
+      // Validate scrap name matches the one in database
+      if (row['Scrap Code'] && row['Scrap Name'] && scrapItemMap.has(row['Scrap Code'])) {
+        const expectedName = scrapItemMap.get(row['Scrap Code']);
+        if (row['Scrap Name'] !== expectedName) {
+          validationErrors.push(
+            `Row ${rowNumber}: Scrap Name '${row['Scrap Name']}' does not match the registered name '${expectedName}' for code '${row['Scrap Code']}'`
+          );
+        }
+      }
+      
       if (!row['Scrap Name']) {
         validationErrors.push(`Row ${rowNumber}: Scrap Name is required`);
       }
@@ -354,22 +399,28 @@ export async function POST(request: NextRequest) {
           throw new Error('Failed to create transaction items. Please check your data and try again.');
         }
 
-        // Queue snapshot recalculation for unique item-date combinations
+        // Queue snapshot recalculation for the transaction date
+        // Note: item_type and item_code are set to NULL because calculate_stock_snapshot
+        // recalculates ALL items for a given company+date, not per-item
+        // Use findFirst + create/update pattern to handle NULL values in unique constraint
         const uniqueRecalcEntries = new Map<string, any>();
+        const processedDates = new Set<string>();
 
         for (const header of transactionHeaders) {
-          const key = `${companyCode}-${header._date.toISOString()}-SCRAP-${header._item.scrapCode}`;
+          const dateKey = `${companyCode}-${header._date.toISOString()}`;
           const priority = calculatePriority(header._date);
 
-          if (!uniqueRecalcEntries.has(key)) {
-            uniqueRecalcEntries.set(key, {
+          // Only create one entry per (company, date) combination
+          if (!processedDates.has(dateKey)) {
+            processedDates.add(dateKey);
+            uniqueRecalcEntries.set(dateKey, {
               company_code: companyCode,
-              item_type: 'SCRAP',
-              item_code: header._item.scrapCode,
+              item_type: null,
+              item_code: null,
               recalc_date: header._date,
               status: 'PENDING',
               priority: priority,
-              reason: `Incoming scrap import: ${header.document_number}`,
+              reason: `Incoming scrap batch for ${header._date.toISOString().split('T')[0]}`,
             });
           }
         }
@@ -382,8 +433,8 @@ export async function POST(request: NextRequest) {
               where: {
                 company_code: entry.company_code,
                 recalc_date: entry.recalc_date,
-                item_type: entry.item_type,
-                item_code: entry.item_code,
+                item_type: null,
+                item_code: null,
               },
             });
 

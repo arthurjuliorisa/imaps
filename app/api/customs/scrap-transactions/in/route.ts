@@ -185,33 +185,45 @@ export async function POST(request: Request) {
       });
 
       // 4. Queue snapshot recalculation
+      // Note: item_type and item_code are set to NULL because calculate_stock_snapshot
+      // recalculates ALL items for a given company+date, not per-item
+      // Use findFirst + create/update pattern to handle NULL values in unique constraint
       const priority = calculatePriority(date);
 
-      await tx.snapshot_recalc_queue.upsert({
+      const existingQueue = await tx.snapshot_recalc_queue.findFirst({
         where: {
-          company_code_recalc_date_item_type_item_code: {
-            company_code: companyCode,
-            recalc_date: date,
-            item_type: 'SCRAP',
-            item_code: scrapCode,
-          },
-        },
-        create: {
           company_code: companyCode,
-          item_type: 'SCRAP',
-          item_code: scrapCode,
           recalc_date: date,
-          status: 'PENDING',
-          priority: priority,
-          reason: `Incoming scrap transaction: ${documentNumber}`,
-        },
-        update: {
-          status: 'PENDING',
-          priority: priority,
-          reason: `Incoming scrap transaction: ${documentNumber}`,
-          queued_at: new Date(),
+          item_type: null,
+          item_code: null,
         },
       });
+
+      if (existingQueue) {
+        // Update existing queue entry
+        await tx.snapshot_recalc_queue.update({
+          where: { id: existingQueue.id },
+          data: {
+            status: 'PENDING',
+            priority: priority,
+            reason: `Incoming scrap batch for ${date.toISOString().split('T')[0]}`,
+            queued_at: new Date(),
+          },
+        });
+      } else {
+        // Create new queue entry
+        await tx.snapshot_recalc_queue.create({
+          data: {
+            company_code: companyCode,
+            item_type: null,
+            item_code: null,
+            recalc_date: date,
+            status: 'PENDING',
+            priority: priority,
+            reason: `Incoming scrap batch for ${date.toISOString().split('T')[0]}`,
+          },
+        });
+      }
 
       return {
         documentNumber,
