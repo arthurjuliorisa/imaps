@@ -80,9 +80,10 @@ export async function GET(request: Request) {
     const data = logs.map(log => ({
       id: serializeBigInt(log.id),
       userId: log.user_id,
-      username: log.users?.username || 'System',
-      email: log.users?.email || null,
-      fullName: log.users?.full_name || null,
+      user: {
+        username: log.users?.username || 'System',
+        email: log.users?.email || '-',
+      },
       action: log.action,
       description: log.description,
       status: log.status,
