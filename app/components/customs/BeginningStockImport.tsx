@@ -79,7 +79,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
 
       // Get filename from Content-Disposition header or use default
       const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = 'Beginning_Data_Template.xlsx';
+      let filename = 'BeginningDataTemplate.xlsx';
 
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
@@ -392,6 +392,9 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
           <Alert severity="info" icon={false} sx={{ mb: 2, py: 0.75 }}>
             <Typography variant="caption" component="div">
               <strong>Format:</strong> Item Type | Item Code | Item Name | UOM | Qty | Balance Date | PPKEK Numbers | Remarks
+            </Typography>
+            <Typography variant="caption" component="div" sx={{ mt: 0.5 }}>
+              <strong>Note:</strong> Data harus dimulai dari baris ke-3 (Row 3). Baris 1 adalah header, baris 2 adalah format hint.
             </Typography>
           </Alert>
 

@@ -252,7 +252,7 @@ export async function PUT(
       description: `Updated beginning balance: ${updated.item_name} (${updated.item_code}) - ${updated.qty} ${updated.uom}`,
       status: 'success',
       metadata: {
-        recordId: updated.id,
+        recordId: updated.id.toString(),
         itemCode: updated.item_code,
         itemName: updated.item_name,
         itemType: updated.item_type,
@@ -351,7 +351,7 @@ export async function DELETE(
       description: `Deleted beginning balance: ${existing.item_name} (${existing.item_code})`,
       status: 'success',
       metadata: {
-        recordId: existing.id,
+        recordId: existing.id.toString(),
         itemCode: existing.item_code,
         itemName: existing.item_name,
         itemType: existing.item_type,

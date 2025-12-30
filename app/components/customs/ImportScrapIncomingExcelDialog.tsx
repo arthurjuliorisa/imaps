@@ -16,6 +16,7 @@ import {
 import {
   CloudUpload as CloudUploadIcon,
   CheckCircle as CheckCircleIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
 
@@ -73,6 +74,37 @@ export function ImportScrapIncomingExcelDialog({
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await fetch('/api/customs/scrap-transactions/import-incoming/template');
+
+      if (!response.ok) {
+        toast.error('Failed to download template');
+        return;
+      }
+
+      // Get the blob from response
+      const blob = await response.blob();
+
+      // Create a download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Incoming_Scrap_Template_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+
+      // Cleanup
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success('Template downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      toast.error('Failed to download template');
+    }
   };
 
   const handleImport = async () => {
@@ -228,11 +260,22 @@ export function ImportScrapIncomingExcelDialog({
                 <li><strong>Remarks</strong> - Optional notes</li>
               </ul>
             </Typography>
+            <Typography variant="body2" component="div" sx={{ mt: 1 }}>
+              <strong>Note:</strong> Data harus dimulai dari baris ke-3 (Row 3). Baris 1 adalah header, baris 2 adalah format hint.
+            </Typography>
           </Alert>
         </Box>
       </DialogContent>
 
       <DialogActions>
+        <Button
+          onClick={handleDownloadTemplate}
+          disabled={loading}
+          startIcon={<DownloadIcon />}
+          sx={{ mr: 'auto' }}
+        >
+          Download Template
+        </Button>
         <Button onClick={handleClose} disabled={loading}>
           Cancel
         </Button>

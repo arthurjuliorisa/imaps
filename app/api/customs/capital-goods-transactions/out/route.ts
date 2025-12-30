@@ -303,7 +303,7 @@ export async function POST(request: Request) {
       status: 'success',
       metadata: {
         wmsId: result.wmsId,
-        outgoingGoodId: result.outgoingGoodId,
+        outgoingGoodId: result.outgoingGoodId.toString(),
         itemType: result.itemType,
         itemCode: result.itemCode,
         itemName: result.itemName,
