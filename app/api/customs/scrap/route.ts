@@ -23,8 +23,12 @@ export async function GET(request: Request) {
     }
     const { companyCode } = companyValidation;
 
-    // Query from vw_lpj_barang_sisa view with date filtering
-    let query = `
+    // Query function directly with custom date range
+    // This allows flexible date filtering instead of hardcoded view behavior
+    let startDateParam = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), 0, 1); // Default: Jan 1
+    let endDateParam = endDate ? new Date(endDate) : new Date(); // Default: Today
+
+    const query = `
       SELECT
         no,
         company_code,
@@ -44,32 +48,29 @@ export async function GET(request: Request) {
         value_amount,
         currency,
         remarks
-      FROM vw_lpj_barang_sisa
-      WHERE company_code = $1
+      FROM fn_calculate_lpj_barang_sisa(
+        ARRAY['SCRAP'],
+        $1::DATE,
+        $2::DATE
+      )
+      WHERE company_code = $3
+      ORDER BY item_code
     `;
 
-    const params: any[] = [companyCode];
-    let paramIndex = 2;
-
-    if (startDate) {
-      query += ` AND snapshot_date >= $${paramIndex}`;
-      params.push(new Date(startDate));
-      paramIndex++;
-    }
-    if (endDate) {
-      query += ` AND snapshot_date <= $${paramIndex}`;
-      params.push(new Date(endDate));
-      paramIndex++;
-    }
-
-    query += ` ORDER BY snapshot_date DESC, item_code`;
+    const params = [startDateParam, endDateParam, companyCode];
 
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+
+    console.log('[DEBUG] Raw result count:', result.length);
+    if (result.length > 0) {
+      console.log('[DEBUG] First record keys:', Object.keys(result[0]));
+    }
+
 
     // Transform to expected format
     const transformedData = result.map((row: any, index: number) => ({
       id: `${row.item_code}-${row.snapshot_date}-${index}`,
-      rowNumber: row.no,
+      rowNumber: row.no || (index + 1),
       companyCode: row.company_code,
       companyName: row.company_name,
       itemCode: row.item_code,
@@ -93,7 +94,7 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error('[API Error] Failed to fetch scrap mutations:', error);
     return NextResponse.json(
-      { message: 'Error fetching scrap mutations' },
+      { message: 'Error fetching scrap mutations', error: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

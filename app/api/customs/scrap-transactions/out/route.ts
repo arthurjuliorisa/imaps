@@ -72,6 +72,18 @@ function generateInvoiceNumber(): string {
 }
 
 /**
+ * Map document type to enum value if not already prefixed with BC
+ */
+function mapDocumentTypeToEnum(docType: string | null | undefined): string {
+  if (!docType) return 'BC27'; // Default
+  const cleanType = docType.trim();
+  if (cleanType.startsWith('BC')) {
+    return cleanType;
+  }
+  return `BC${cleanType}`;
+}
+
+/**
  * Calculate priority for snapshot recalculation queue
  * Backdated transactions (date < today) should have priority 0
  * Same-day transactions (date = today) should have priority -1
@@ -192,7 +204,8 @@ export async function POST(request: Request) {
 
     // Execute transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Generate document number
+      // 1. Generate WMS ID and document number
+      const wmsId = generateWmsId();
       const timestamp = Date.now();
       const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
       const documentNumber = `SCRAP-OUT-${timestamp}-${random}`;
@@ -231,7 +244,42 @@ export async function POST(request: Request) {
         },
       });
 
-      // 4. Queue snapshot recalculation
+      // 4. Create outgoing_goods record (for integration with WMS)
+      const outgoingGood = await tx.outgoing_goods.create({
+        data: {
+          wms_id: wmsId,
+          company_code: companyCode,
+          owner: companyCode,
+          customs_document_type: mapDocumentTypeToEnum(documentType) as any,
+          ppkek_number: ppkekNumber || 'N/A',
+          customs_registration_date: registrationDate || new Date(),
+          outgoing_evidence_number: documentNumber,
+          outgoing_date: date,
+          invoice_number: documentNumber,
+          invoice_date: date,
+          recipient_name: recipientName,
+          timestamp: new Date(),
+        },
+      });
+
+      // 5. Create outgoing_good_items record
+      await tx.outgoing_good_items.create({
+        data: {
+          outgoing_good_id: outgoingGood.id,
+          outgoing_good_company: companyCode,
+          outgoing_good_date: date,
+          item_type: 'SCRAP',
+          item_code: scrapCode,
+          item_name: scrapName,
+          hs_code: null,
+          uom: uom,
+          qty: new Prisma.Decimal(qty),
+          currency: currency,
+          amount: new Prisma.Decimal(amount),
+        },
+      });
+
+      // 6. Queue snapshot recalculation
       // Use SINGLE queue entry per (company, date) since calculate_stock_snapshot
       // recalculates ALL items for that date anyway
       const priority = calculatePriority(date);
@@ -274,8 +322,10 @@ export async function POST(request: Request) {
       }
 
       return {
+        wmsId,
         documentNumber,
         transactionId: scrapTransaction.id,
+        outgoingGoodId: outgoingGood.id,
         date,
         scrapCode,
         scrapName,
@@ -295,8 +345,10 @@ export async function POST(request: Request) {
       description: `Created outgoing scrap transaction: ${result.documentNumber} - ${result.scrapName} (${result.qty} ${uom}) to ${result.recipientName}`,
       status: 'success',
       metadata: {
+        wmsId: result.wmsId,
         documentNumber: result.documentNumber,
         transactionId: result.transactionId.toString(),
+        outgoingGoodId: result.outgoingGoodId.toString(),
         itemCode: result.scrapCode,
         itemName: result.scrapName,
         qty: result.qty,
