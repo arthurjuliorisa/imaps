@@ -81,21 +81,48 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
     const {
       action,
       description,
-      status,
+      status = 'success',
       metadata = null,
       userId: providedUserId,
     } = params;
 
-    // TODO: Re-implement activity logging when activity_logs table is added to schema
-    // The current schema only has audit_logs which is for database record auditing
-    // For now, just log to console
-    console.log('[Activity Log]', {
-      action,
-      description,
-      status,
-      userId: providedUserId,
-      timestamp: new Date().toISOString(),
+    // Get user ID from session if not provided
+    let userId = providedUserId;
+    if (!userId) {
+      try {
+        const session = await getServerSession(authOptions);
+        userId = session?.user?.id || null;
+      } catch {
+        // Session might not be available in all contexts
+        userId = null;
+      }
+    }
+
+    // Get request headers for IP and user agent
+    let ipAddress: string | null = null;
+    let userAgent: string | null = null;
+    try {
+      const headersList = await headers();
+      ipAddress = getIpAddress(headersList);
+      userAgent = getUserAgent(headersList);
+    } catch {
+      // Headers might not be available in all contexts
+    }
+
+    // Write to activity_logs table
+    await prisma.activity_logs.create({
+      data: {
+        user_id: userId,
+        action,
+        description,
+        status,
+        metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : null,
+        ip_address: ipAddress,
+        user_agent: userAgent,
+      },
     });
+
+    console.log('[Activity Log] Logged:', { action, userId, status });
   } catch (error) {
     // Log the error but don't throw - we don't want logging failures to break the app
     console.error('[logActivity] Failed to log activity:', error);

@@ -4,6 +4,7 @@ import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { parseCeisa40Excel, validateParsedData, type ParsedCeisaData } from '@/lib/ceisa40ExcelParser';
 import { checkBatchStockAvailability } from '@/lib/utils/stock-checker';
+import { logActivity } from '@/lib/log-activity';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
@@ -226,6 +227,21 @@ export async function POST(request: Request) {
         itemType
       );
     }
+
+    // Log activity
+    await logActivity({
+      action: `IMPORT_${validatedRequest.transactionType}_${validatedRequest.direction}_FROM_EXCEL`,
+      description: `Imported ${validatedRequest.transactionType} ${validatedRequest.direction} transactions from Excel: ${file.name}`,
+      status: 'success',
+      metadata: {
+        fileName: file.name,
+        transactionType: validatedRequest.transactionType,
+        direction: validatedRequest.direction,
+        itemType: itemType || 'N/A',
+        companyCode,
+        result,
+      },
+    });
 
     return NextResponse.json(
       {

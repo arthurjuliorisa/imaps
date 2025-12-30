@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
+import { logActivity } from '@/lib/log-activity';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -225,6 +226,23 @@ export async function POST(request: Request) {
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30000,
+    });
+
+    // Log activity
+    await logActivity({
+      action: 'ADD_IN_SCRAP_TRANSACTION',
+      description: `Created incoming scrap transaction: ${result.documentNumber} - ${result.scrapName} (${result.qty} ${uom})`,
+      status: 'success',
+      metadata: {
+        documentNumber: result.documentNumber,
+        transactionId: result.transactionId,
+        itemCode: result.scrapCode,
+        itemName: result.scrapName,
+        qty: result.qty,
+        currency: result.currency,
+        amount: result.amount,
+        companyCode,
+      },
     });
 
     return NextResponse.json(

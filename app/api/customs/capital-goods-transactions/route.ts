@@ -110,7 +110,8 @@ export async function GET(request: Request) {
         og.wms_id,
         og.company_code,
         c.name as company_name,
-        og.customs_document_type as doc_type,
+        'OUT' as transaction_type,
+        COALESCE(og.customs_document_type::varchar, '') as doc_type,
         og.ppkek_number,
         og.customs_registration_date as reg_date,
         og.outgoing_evidence_number as doc_number,
@@ -151,7 +152,8 @@ export async function GET(request: Request) {
       wmsId: row.wms_id,
       companyCode: row.company_code,
       companyName: row.company_name,
-      docType: row.doc_type,
+      transactionType: row.transaction_type,
+      docType: row.doc_type || '',
       ppkekNumber: row.ppkek_number,
       regDate: row.reg_date,
       docNumber: row.doc_number,
@@ -167,7 +169,6 @@ export async function GET(request: Request) {
       valueAmount: Number(row.value_amount || 0),
       remarks: row.remarks,
       createdAt: row.created_at,
-      transactionType: 'OUT',
     }));
 
     return NextResponse.json(

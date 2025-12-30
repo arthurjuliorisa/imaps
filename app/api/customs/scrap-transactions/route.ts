@@ -136,7 +136,8 @@ export async function GET(request: Request) {
           st.document_number as wms_id,
           st.company_code,
           c.name as company_name,
-          COALESCE(st.customs_document_type, st.transaction_type) as doc_type,
+          st.transaction_type,
+          COALESCE(st.customs_document_type, '') as doc_type,
           COALESCE(st.ppkek_number, '') as ppkek_number,
           COALESCE(st.customs_registration_date, st.transaction_date) as reg_date,
           st.document_number as doc_number,
@@ -155,7 +156,6 @@ export async function GET(request: Request) {
           sti.amount as value_amount,
           st.remarks,
           st.created_at,
-          st.transaction_type,
           st.transaction_date as sort_date
         FROM scrap_transactions st
         JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
@@ -176,7 +176,8 @@ export async function GET(request: Request) {
           og.wms_id,
           og.company_code,
           c.name as company_name,
-          og.customs_document_type as doc_type,
+          'OUT' as transaction_type,
+          COALESCE(og.customs_document_type::varchar, '') as doc_type,
           og.ppkek_number,
           og.customs_registration_date as reg_date,
           og.outgoing_evidence_number as doc_number,
@@ -192,7 +193,6 @@ export async function GET(request: Request) {
           ogi.amount as value_amount,
           NULL::varchar as remarks,
           og.created_at,
-          'OUT' as transaction_type,
           og.outgoing_date as sort_date
         FROM outgoing_goods og
         JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
@@ -220,7 +220,8 @@ export async function GET(request: Request) {
       wmsId: row.wms_id,
       companyCode: row.company_code,
       companyName: row.company_name,
-      docType: row.doc_type,
+      transactionType: row.transaction_type,
+      docType: row.doc_type || '',
       ppkekNumber: row.ppkek_number,
       regDate: row.reg_date,
       docNumber: row.doc_number,
@@ -236,7 +237,6 @@ export async function GET(request: Request) {
       valueAmount: Number(row.value_amount || 0),
       remarks: row.remarks,
       createdAt: row.created_at,
-      transactionType: row.transaction_type,
     }));
 
     return NextResponse.json(

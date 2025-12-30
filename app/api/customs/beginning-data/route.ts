@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
+import { logActivity } from '@/lib/log-activity';
 import {
   parseAndNormalizeDate,
   validateDateNotFuture,
@@ -259,6 +260,22 @@ export async function POST(request: Request) {
       uomId: newRecord.uom,
       itemType: newRecord.item_type,
     };
+
+    // Log activity
+    await logActivity({
+      action: 'ADD_BEGINNING_DATA',
+      description: `Created beginning balance: ${newRecord.item_name} (${newRecord.item_code}) - ${newRecord.qty} ${newRecord.uom}`,
+      status: 'success',
+      metadata: {
+        recordId: newRecord.id,
+        itemCode: newRecord.item_code,
+        itemName: newRecord.item_name,
+        itemType: newRecord.item_type,
+        qty: newRecord.qty,
+        balanceDate: newRecord.balance_date,
+        companyCode,
+      },
+    });
 
     return NextResponse.json(transformedRecord, { status: 201 });
   } catch (error: any) {

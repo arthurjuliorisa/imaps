@@ -1,18 +1,21 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Box, Stack, Button, CircularProgress, Typography, TextField, InputAdornment } from '@mui/material';
+import { Box, Stack, Button, CircularProgress, Typography, TextField, InputAdornment, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
 import {
   RemoveCircleOutline as RemoveIcon,
   UploadFile as UploadFileIcon,
-  Search as SearchIcon
+  Search as SearchIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon
 } from '@mui/icons-material';
-import { DataGrid, GridColDef } from '@mui/x-data-grid';
+import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { AddOutCapitalGoodsDialog } from '@/app/components/customs/AddOutCapitalGoodsDialog';
 import { ImportCeisaExcelDialog } from '@/app/components/customs/ImportCeisaExcelDialog';
+import { EditCapitalGoodsTransactionDialog } from '@/app/components/customs/EditCapitalGoodsTransactionDialog';
 import { useToast } from '@/app/components/ToastProvider';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 import type { CapitalGoodsTransaction } from '@/types/transaction';
@@ -35,6 +38,10 @@ export default function CapitalGoodsTransactionsPage() {
   });
   const [addOutDialogOpen, setAddOutDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<CapitalGoodsTransaction | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const columns: GridColDef[] = [
     {
@@ -52,9 +59,14 @@ export default function CapitalGoodsTransactionsPage() {
       width: 150,
     },
     {
+      field: 'transactionType',
+      headerName: 'Type',
+      width: 80,
+    },
+    {
       field: 'docType',
       headerName: 'Doc Type',
-      width: 120,
+      width: 100,
     },
     {
       field: 'ppkekNumber',
@@ -140,6 +152,35 @@ export default function CapitalGoodsTransactionsPage() {
       width: 160,
       valueFormatter: (value) => value ? formatDate(value) : '',
     },
+    {
+      field: 'actions',
+      headerName: 'Actions',
+      width: 120,
+      sortable: false,
+      filterable: false,
+      renderCell: (params: GridRenderCellParams) => (
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Tooltip title="Edit">
+            <IconButton
+              size="small"
+              color="primary"
+              onClick={() => handleEdit(params.row)}
+            >
+              <EditIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Delete">
+            <IconButton
+              size="small"
+              color="error"
+              onClick={() => handleDeleteClick(params.row)}
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      ),
+    },
   ];
 
   const fetchData = useCallback(async () => {
@@ -180,6 +221,46 @@ export default function CapitalGoodsTransactionsPage() {
     fetchData();
   };
 
+  const handleEdit = (transaction: CapitalGoodsTransaction) => {
+    setSelectedTransaction(transaction);
+    setEditDialogOpen(true);
+  };
+
+  const handleDeleteClick = (transaction: CapitalGoodsTransaction) => {
+    setSelectedTransaction(transaction);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedTransaction) return;
+
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/customs/capital-goods-transactions/${selectedTransaction.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete transaction');
+      }
+
+      toast.success('Transaction deleted successfully');
+      setDeleteDialogOpen(false);
+      setSelectedTransaction(null);
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting transaction:', error);
+      toast.error('Failed to delete transaction');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialogOpen(false);
+    setSelectedTransaction(null);
+  };
+
   // Filter data based on search query
   const filteredData = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -190,6 +271,7 @@ export default function CapitalGoodsTransactionsPage() {
     return data.filter((row) => {
       return (
         row.companyName?.toLowerCase().includes(query) ||
+        row.transactionType?.toLowerCase().includes(query) ||
         row.docType?.toLowerCase().includes(query) ||
         row.ppkekNumber?.toLowerCase().includes(query) ||
         row.docNumber?.toLowerCase().includes(query) ||
@@ -208,7 +290,8 @@ export default function CapitalGoodsTransactionsPage() {
     const exportData = filteredData.map((row, index) => ({
       No: index + 1,
       'Company Name': row.companyName,
-      'Doc Type': row.docType,
+      'Type': row.transactionType,
+      'Doc Type': row.docType || '-',
       'Nomor Pendaftaran': row.ppkekNumber,
       'Reg Date': formatDate(row.regDate),
       'Doc Number': row.docNumber,
@@ -237,7 +320,8 @@ export default function CapitalGoodsTransactionsPage() {
     const exportData = filteredData.map((row, index) => ({
       no: index + 1,
       companyName: row.companyName,
-      docType: row.docType,
+      transactionType: row.transactionType,
+      docType: row.docType || '-',
       ppkekNumber: row.ppkekNumber,
       regDate: formatDate(row.regDate),
       docNumber: row.docNumber,
@@ -257,6 +341,7 @@ export default function CapitalGoodsTransactionsPage() {
     const pdfColumns = [
       { header: 'No', dataKey: 'no' },
       { header: 'Company', dataKey: 'companyName' },
+      { header: 'Type', dataKey: 'transactionType' },
       { header: 'Doc Type', dataKey: 'docType' },
       { header: 'Nomor Pendaftaran', dataKey: 'ppkekNumber' },
       { header: 'Reg Date', dataKey: 'regDate' },
@@ -403,6 +488,44 @@ export default function CapitalGoodsTransactionsPage() {
         defaultDirection="OUT"
         allowDirectionChange={false}
       />
+
+      <EditCapitalGoodsTransactionDialog
+        open={editDialogOpen}
+        transaction={selectedTransaction}
+        onClose={() => {
+          setEditDialogOpen(false);
+          setSelectedTransaction(null);
+        }}
+        onSuccess={handleDialogSuccess}
+      />
+
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleDeleteCancel}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete this capital goods transaction?
+            {selectedTransaction && (
+              <>
+                <br /><br />
+                <strong>Doc Number:</strong> {selectedTransaction.docNumber}<br />
+                <strong>Item:</strong> {selectedTransaction.itemName}<br />
+                <strong>Type:</strong> {selectedTransaction.transactionType}
+              </>
+            )}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={deleting}>
+            {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </ReportLayout>
   );
 }

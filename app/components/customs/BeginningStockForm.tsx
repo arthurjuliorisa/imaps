@@ -10,7 +10,6 @@ import {
   TextField,
   Box,
   Typography,
-  Autocomplete,
   CircularProgress,
   alpha,
   useTheme,
@@ -21,6 +20,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { Dayjs } from 'dayjs';
 import { Save, Close } from '@mui/icons-material';
+import { ChipInput } from './ChipInput';
 
 export interface BeginningStockFormData {
   itemId?: string;
@@ -56,8 +56,6 @@ export function BeginningStockForm({
 }: BeginningStockFormProps) {
   const theme = useTheme();
   const [loading, setLoading] = useState(false);
-  const [ppkeks, setPpkeks] = useState<string[]>([]);
-  const [loadingPpkeks, setLoadingPpkeks] = useState(false);
   const [formData, setFormData] = useState<BeginningStockFormData>({
     itemId: undefined,
     item_code: '',
@@ -76,53 +74,26 @@ export function BeginningStockForm({
   // Reset form when dialog opens or initialData changes
   useEffect(() => {
     if (open) {
-      // Load data first, then set form values to avoid race condition
-      const loadData = async () => {
-        await Promise.all([fetchPpkeks()]);
-
-        if (initialData && mode === 'edit') {
-          setFormData(initialData);
-        } else {
-          setFormData({
-            itemId: undefined,
-            item_code: '',
-            item_name: '',
-            item_type: itemType,
-            uomId: undefined,
-            uom: '',
-            beginningBalance: 0,
-            qty: 0,
-            beginningDate: dayjs(),
-            balance_date: dayjs(),
-            remarks: '',
-          });
-        }
-      };
-      loadData();
+      if (initialData && mode === 'edit') {
+        setFormData(initialData);
+      } else {
+        setFormData({
+          itemId: undefined,
+          item_code: '',
+          item_name: '',
+          item_type: itemType,
+          uomId: undefined,
+          uom: '',
+          beginningBalance: 0,
+          qty: 0,
+          beginningDate: dayjs(),
+          balance_date: dayjs(),
+          remarks: '',
+          ppkek_numbers: [],
+        });
+      }
     }
   }, [open, initialData, mode, itemType]);
-
-  const fetchPpkeks = async () => {
-    setLoadingPpkeks(true);
-    try {
-      const response = await fetch('/api/master/ppkek/search?limit=1000');
-      if (response.ok) {
-        const data = await response.json();
-        const ppkekList = data.data || data;
-        if (Array.isArray(ppkekList)) {
-          // Extract ppkek_number from objects or use strings directly
-          const ppkekNumbers = ppkekList.map(item => 
-            typeof item === 'string' ? item : item.ppkek_number || item.number || item.code
-          );
-          setPpkeks(ppkekNumbers);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching PPKEKs:', error);
-    } finally {
-      setLoadingPpkeks(false);
-    }
-  };
 
   const handleNumberChange = (value: string) => {
     if (value === '') {
@@ -262,33 +233,13 @@ export function BeginningStockForm({
               }}
             />
 
-            {/* PPKEK Numbers - Multiple Selection */}
-            <Autocomplete
-              multiple
-              options={ppkeks}
-              loading={loadingPpkeks}
+            {/* PPKEK Numbers - Tag/Chip Input */}
+            <ChipInput
+              label="PPKEK Numbers"
               value={formData.ppkek_numbers || []}
-              onChange={(_event, newValue) => setFormData((prev) => ({ ...prev, ppkek_numbers: newValue }))}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="PPKEK Numbers"
-                  placeholder="Select PPKEK numbers..."
-                  helperText="Select one or more PPKEK numbers (optional)"
-                  InputProps={{
-                    ...params.InputProps,
-                    endAdornment: (
-                      <>
-                        {loadingPpkeks ? <CircularProgress color="inherit" size={20} /> : null}
-                        {params.InputProps.endAdornment}
-                      </>
-                    ),
-                  }}
-                />
-              )}
-              freeSolo
-              filterSelectedOptions
-              sx={{ mb: 2 }}
+              onChange={(newValue) => setFormData((prev) => ({ ...prev, ppkek_numbers: newValue }))}
+              placeholder="Type PPKEK number and press Enter or comma to add"
+              helperText="Enter one or more PPKEK numbers (optional). Press Enter or comma to add."
             />
 
             {/* Info Box */}

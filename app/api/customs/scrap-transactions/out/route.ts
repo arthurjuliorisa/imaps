@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { checkStockAvailability } from '@/lib/utils/stock-checker';
+import { logActivity } from '@/lib/log-activity';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -276,6 +277,24 @@ export async function POST(request: Request) {
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30000,
+    });
+
+    // Log activity
+    await logActivity({
+      action: 'ADD_OUT_SCRAP_TRANSACTION',
+      description: `Created outgoing scrap transaction: ${result.documentNumber} - ${result.scrapName} (${result.qty} ${uom}) to ${result.recipientName}`,
+      status: 'success',
+      metadata: {
+        documentNumber: result.documentNumber,
+        transactionId: result.transactionId,
+        itemCode: result.scrapCode,
+        itemName: result.scrapName,
+        qty: result.qty,
+        currency: result.currency,
+        amount: result.amount,
+        recipientName: result.recipientName,
+        companyCode,
+      },
     });
 
     return NextResponse.json(

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
+import { logActivity } from '@/lib/log-activity';
 import { z } from 'zod';
 
 // Validation schema for scrap item creation/update
@@ -184,6 +185,19 @@ export async function POST(request: Request) {
       });
 
       return item;
+    });
+
+    // Log activity
+    await logActivity({
+      action: 'ADD_SCRAP_MASTER',
+      description: `Created scrap item: ${scrapItem.scrap_name} (${scrapItem.scrap_code})`,
+      status: 'success',
+      metadata: {
+        scrapId: scrapItem.id,
+        scrapCode: scrapItem.scrap_code,
+        scrapName: scrapItem.scrap_name,
+        companyCode,
+      },
     });
 
     return NextResponse.json(

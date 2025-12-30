@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
+import { logActivity } from '@/lib/log-activity';
 import { z } from 'zod';
 
 // Validation schema
@@ -214,6 +215,19 @@ export async function PUT(
       return item;
     });
 
+    // Log activity
+    await logActivity({
+      action: 'EDIT_SCRAP_MASTER',
+      description: `Updated scrap item: ${updatedItem.scrap_name} (${updatedItem.scrap_code})`,
+      status: 'success',
+      metadata: {
+        scrapId: updatedItem.id,
+        scrapCode: updatedItem.scrap_code,
+        scrapName: updatedItem.scrap_name,
+        companyCode,
+      },
+    });
+
     return NextResponse.json({
       message: 'Scrap item updated successfully',
       data: {
@@ -283,6 +297,19 @@ export async function DELETE(
       where: { id },
       data: {
         deleted_at: new Date(),
+      },
+    });
+
+    // Log activity
+    await logActivity({
+      action: 'DELETE_SCRAP_MASTER',
+      description: `Deleted scrap item: ${existing.scrap_name} (${existing.scrap_code})`,
+      status: 'success',
+      metadata: {
+        scrapId: existing.id,
+        scrapCode: existing.scrap_code,
+        scrapName: existing.scrap_name,
+        companyCode,
       },
     });
 

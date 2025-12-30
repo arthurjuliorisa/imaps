@@ -2,6 +2,7 @@ import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { compare } from 'bcryptjs';
 import { prisma } from './prisma';
+import { logActivity } from './log-activity';
 
 // Validate NEXTAUTH_SECRET on startup
 function validateNextAuthSecret(): string {
@@ -86,6 +87,40 @@ export const authOptions: NextAuthOptions = {
         session.user.companyCode = token.companyCode as string | undefined;
       }
       return session;
+    },
+  },
+  events: {
+    async signIn({ user }) {
+      try {
+        await logActivity({
+          action: 'USER_LOGIN',
+          description: `User logged in: ${user.email}`,
+          status: 'success',
+          userId: user.id,
+          metadata: {
+            email: user.email,
+            username: (user as any).username,
+            role: (user as any).role,
+          },
+        });
+      } catch (error) {
+        console.error('[Auth] Failed to log login activity:', error);
+      }
+    },
+    async signOut({ token }) {
+      try {
+        await logActivity({
+          action: 'USER_LOGOUT',
+          description: `User logged out`,
+          status: 'success',
+          userId: token.id as string,
+          metadata: {
+            email: token.email as string,
+          },
+        });
+      } catch (error) {
+        console.error('[Auth] Failed to log logout activity:', error);
+      }
     },
   },
   pages: {

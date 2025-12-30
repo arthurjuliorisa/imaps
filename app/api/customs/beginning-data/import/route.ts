@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
+import { logActivity } from '@/lib/log-activity';
 import { Prisma } from '@prisma/client';
 import {
   validatePositiveNumber,
@@ -487,6 +488,18 @@ export async function POST(request: Request) {
       console.error('[API Warning] Failed to queue snapshot recalculation:', queueError);
       // Continue anyway - recalculation can be triggered manually later
     }
+
+    // Log activity
+    await logActivity({
+      action: 'IMPORT_BEGINNING_DATA_FROM_EXCEL',
+      description: `Imported ${successCount} beginning balance record(s) from Excel`,
+      status: 'success',
+      metadata: {
+        successCount,
+        byType,
+        companyCode,
+      },
+    });
 
     return NextResponse.json({
       success: true,

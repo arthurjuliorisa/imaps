@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth } from '@/lib/api-auth';
 import { prisma } from '@/lib/prisma';
+import { logActivity } from '@/lib/log-activity';
 import { Prisma } from '@prisma/client';
 import ExcelJS from 'exceljs';
 
@@ -324,6 +325,18 @@ export async function POST(request: NextRequest) {
         scrapCode: header._item.scrapCode,
         qty: header._item.qty,
       }));
+    });
+
+    // Log activity
+    await logActivity({
+      action: 'IMPORT_SCRAP_TRANSACTIONS',
+      description: `Imported ${importedItems.length} incoming scrap transaction(s) from Excel`,
+      status: 'success',
+      metadata: {
+        importedCount: importedItems.length,
+        fileName: file.name,
+        companyCode,
+      },
     });
 
     return NextResponse.json({

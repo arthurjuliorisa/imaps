@@ -1,6 +1,7 @@
 export interface ScrapTransaction {
   id: string;
   companyName: string;
+  transactionType: string;
   docType: string;
   ppkekNumber: string;
   regDate: string;
@@ -22,6 +23,7 @@ export interface ScrapTransaction {
 export interface CapitalGoodsTransaction {
   id: string;
   companyName: string;
+  transactionType: string;
   docType: string;
   ppkekNumber: string;
   regDate: string;

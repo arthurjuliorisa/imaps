@@ -138,6 +138,7 @@ model users {
   // Relations
   company           companies?          @relation(fields: [company_code], references: [code], onDelete: NoAction, onUpdate: NoAction)
   user_access_menus user_access_menus[]
+  activity_logs     activity_logs[]
 
   @@index([username])
   @@index([email])
@@ -281,6 +282,25 @@ model audit_logs {
   @@index([record_id])
   @@index([action])
   @@index([changed_at])
+}
+
+model activity_logs {
+  id          BigInt   @id @default(autoincrement())
+  user_id     String?  @db.VarChar(100)
+  action      String   @db.VarChar(100)
+  description String   @db.Text
+  status      String   @default("success") @db.VarChar(20)
+  metadata    Json?
+  ip_address  String?  @db.VarChar(50)
+  user_agent  String?  @db.VarChar(500)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  users users? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id])
+  @@index([action])
+  @@index([status])
+  @@index([created_at])
 }
 
 // ============================================================================

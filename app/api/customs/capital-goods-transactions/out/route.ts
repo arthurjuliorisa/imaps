@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { checkStockAvailability } from '@/lib/utils/stock-checker';
+import { logActivity } from '@/lib/log-activity';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -283,6 +284,25 @@ export async function POST(request: Request) {
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30000,
+    });
+
+    // Log activity
+    await logActivity({
+      action: 'ADD_OUT_CAPITAL_GOODS_TRANSACTION',
+      description: `Created outgoing capital goods transaction: ${result.wmsId} - ${result.itemName} (${result.qty} ${uom}) to ${result.recipientName}`,
+      status: 'success',
+      metadata: {
+        wmsId: result.wmsId,
+        outgoingGoodId: result.outgoingGoodId,
+        itemType: result.itemType,
+        itemCode: result.itemCode,
+        itemName: result.itemName,
+        qty: result.qty,
+        currency: result.currency,
+        amount: result.amount,
+        recipientName: result.recipientName,
+        companyCode,
+      },
     });
 
     return NextResponse.json(
