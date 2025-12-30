@@ -237,30 +237,33 @@ export async function POST(request: Request) {
       });
 
       // 4. Queue snapshot recalculation
+      // Use SINGLE queue entry per (company, date) since calculate_stock_snapshot
+      // recalculates ALL items for that date anyway
       const priority = calculatePriority(date);
 
       await tx.snapshot_recalc_queue.upsert({
         where: {
+          // Use NULL values to match the unique constraint for company-date only
           company_code_recalc_date_item_type_item_code: {
             company_code: companyCode,
             recalc_date: date,
-            item_type: itemType,
-            item_code: itemCode,
+            item_type: null,
+            item_code: null,
           },
         },
         create: {
           company_code: companyCode,
-          item_type: itemType,
-          item_code: itemCode,
+          item_type: null,
+          item_code: null,
           recalc_date: date,
           status: 'PENDING',
           priority: priority,
-          reason: `Outgoing capital goods transaction: ${wmsId}`,
+          reason: `Outgoing capital goods batch for ${date.toISOString().split('T')[0]}`,
         },
         update: {
           status: 'PENDING',
           priority: priority,
-          reason: `Outgoing capital goods transaction: ${wmsId}`,
+          reason: `Outgoing capital goods batch for ${date.toISOString().split('T')[0]}`,
           queued_at: new Date(),
         },
       });

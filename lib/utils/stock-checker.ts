@@ -23,6 +23,16 @@ export interface BatchStockCheckResult {
 }
 
 /**
+ * Convert Date to YYYY-MM-DD string format for SQL comparison
+ */
+function formatDateForSql(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Normalize date to UTC midnight for comparison
  */
 function normalizeDate(date: Date): Date {
@@ -63,6 +73,7 @@ export async function checkStockAvailability(
 
     if (isCurrentDate) {
       // Real-time validation: snapshot + live transactions for today
+      console.log(`[Stock Check] Using REAL-TIME validation (today)`);
       currentStock = await calculateRealTimeStock(
         companyCode,
         itemCode,
@@ -71,16 +82,19 @@ export async function checkStockAvailability(
       );
     } else {
       // Historical validation: snapshot only for past dates
-      currentStock = await getSnapshotBalance(
+      const snapshotBalance = await getSnapshotBalance(
         companyCode,
         itemCode,
         itemType,
         normalizedDate
       );
+      currentStock = snapshotBalance;
     }
 
     const available = currentStock >= qtyRequested;
     const shortfall = available ? undefined : qtyRequested - currentStock;
+
+    console.log(`[Stock Check] Result - currentStock: ${currentStock}, requested: ${qtyRequested}, available: ${available}`);
 
     return {
       itemCode,
@@ -102,6 +116,9 @@ export async function checkStockAvailability(
 
 /**
  * Get snapshot balance for a specific date
+ * - If exact date snapshot exists: use it
+ * - If not: fallback to nearest snapshot BEFORE that date (if available)
+ * - If no snapshot found at all: return 0 (conservative)
  */
 async function getSnapshotBalance(
   companyCode: number,
@@ -109,27 +126,47 @@ async function getSnapshotBalance(
   itemType: string,
   snapshotDate: Date
 ): Promise<number> {
-  const result = await prisma.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
+  const dateStr = formatDateForSql(snapshotDate);
+  
+  // First, try to find exact date
+  const exactResult = await prisma.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
     SELECT closing_balance
     FROM stock_daily_snapshot
     WHERE company_code = ${companyCode}
       AND item_type = ${itemType}
       AND item_code = ${itemCode}
-      AND snapshot_date = ${snapshotDate}
+      AND snapshot_date = ${dateStr}::DATE
     LIMIT 1
   `;
 
-  if (result.length > 0) {
-    return Number(result[0].closing_balance);
+  if (exactResult.length > 0) {
+    return Number(exactResult[0].closing_balance);
   }
 
-  // If no snapshot exists, stock is considered 0 (conservative approach)
+  // Fallback: Find nearest snapshot BEFORE the requested date
+  const nearestResult = await prisma.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
+    SELECT closing_balance
+    FROM stock_daily_snapshot
+    WHERE company_code = ${companyCode}
+      AND item_type = ${itemType}
+      AND item_code = ${itemCode}
+      AND snapshot_date < ${dateStr}::DATE
+    ORDER BY snapshot_date DESC
+    LIMIT 1
+  `;
+
+  if (nearestResult.length > 0) {
+    return Number(nearestResult[0].closing_balance);
+  }
+
+  // No snapshot found at all - return 0 (conservative approach)
   return 0;
 }
 
 /**
  * Calculate real-time stock for current date
- * = snapshot (from yesterday) + incoming today - outgoing today
+ * Priority: Use snapshot for current date if available
+ * Fallback: Use snapshot from yesterday + today's transactions
  */
 async function calculateRealTimeStock(
   companyCode: number,
@@ -137,15 +174,17 @@ async function calculateRealTimeStock(
   itemType: string,
   currentDate: Date
 ): Promise<number> {
-  // Get snapshot from yesterday (or day before last available snapshot)
-  const yesterday = new Date(currentDate);
-  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayDate = new Date(currentDate);
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
 
+  const dateStr = formatDateForSql(currentDate);
+
+  // Get snapshot balance (will use nearest snapshot before today)
   const snapshotBalance = await getSnapshotBalance(
     companyCode,
     itemCode,
     itemType,
-    yesterday
+    yesterdayDate
   );
 
   let incomingToday = 0;
@@ -164,7 +203,7 @@ async function calculateRealTimeStock(
         AND sti.item_code = ${itemCode}
         AND sti.item_type = ${itemType}
         AND st.transaction_type = 'IN'
-        AND st.transaction_date = ${currentDate}
+        AND st.transaction_date = ${dateStr}::DATE
         AND sti.deleted_at IS NULL
         AND st.deleted_at IS NULL
     `;
@@ -182,7 +221,7 @@ async function calculateRealTimeStock(
       WHERE ogi.outgoing_good_company = ${companyCode}
         AND ogi.item_code = ${itemCode}
         AND ogi.item_type = ${itemType}
-        AND og.outgoing_date = ${currentDate}
+        AND og.outgoing_date = ${dateStr}::DATE
         AND ogi.deleted_at IS NULL
         AND og.deleted_at IS NULL
     `;
@@ -200,7 +239,7 @@ async function calculateRealTimeStock(
       WHERE igi.incoming_good_company = ${companyCode}
         AND igi.item_code = ${itemCode}
         AND igi.item_type = ${itemType}
-        AND ig.incoming_date = ${currentDate}
+        AND ig.incoming_date = ${dateStr}::DATE
         AND igi.deleted_at IS NULL
         AND ig.deleted_at IS NULL
     `;
@@ -218,7 +257,7 @@ async function calculateRealTimeStock(
       WHERE ogi.outgoing_good_company = ${companyCode}
         AND ogi.item_code = ${itemCode}
         AND ogi.item_type = ${itemType}
-        AND og.outgoing_date = ${currentDate}
+        AND og.outgoing_date = ${dateStr}::DATE
         AND ogi.deleted_at IS NULL
         AND og.deleted_at IS NULL
     `;
@@ -229,7 +268,9 @@ async function calculateRealTimeStock(
   }
 
   // Real-time balance = snapshot + incoming - outgoing
-  return snapshotBalance + incomingToday - outgoingToday;
+  const calculatedBalance = snapshotBalance + incomingToday - outgoingToday;
+  
+  return Math.max(0, calculatedBalance); // Ensure non-negative
 }
 
 /**

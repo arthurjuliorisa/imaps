@@ -21,7 +21,8 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { Dayjs } from 'dayjs';
-import { Save, Close } from '@mui/icons-material';
+import { Save, Close, Info as InfoIcon, Warning as WarningIcon } from '@mui/icons-material';
+import { useToast } from '@/app/components/ToastProvider';
 
 interface FormData {
   date: Dayjs | null;
@@ -48,13 +49,24 @@ interface ScrapItem {
   uom: string;
 }
 
+interface StockCheckResult {
+  available: boolean;
+  currentStock: number;
+  requestedQty: number;
+  shortfall?: number;
+  message: string;
+}
+
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
 
 export function ScrapOutgoingDialog({ open, onClose, onSubmit }: ScrapOutgoingDialogProps) {
   const theme = useTheme();
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [scrapItems, setScrapItems] = useState<ScrapItem[]>([]);
   const [loadingScrapItems, setLoadingScrapItems] = useState(false);
+  const [stockCheckLoading, setStockCheckLoading] = useState(false);
+  const [stockCheckResult, setStockCheckResult] = useState<StockCheckResult | null>(null);
   const [formData, setFormData] = useState<FormData>({
     date: dayjs(),
     scrapItemId: '',
@@ -73,8 +85,21 @@ export function ScrapOutgoingDialog({ open, onClose, onSubmit }: ScrapOutgoingDi
     if (open) {
       fetchScrapItems();
       setErrors({});
+      setStockCheckResult(null);
     }
   }, [open]);
+
+  /**
+   * Trigger stock check when qty or date changes
+   * Add delay to avoid too many requests while user is typing
+   */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      checkStockAvailability();
+    }, 500); // 500ms delay after user stops typing
+
+    return () => clearTimeout(timer);
+  }, [formData.qty, formData.date?.format('YYYY-MM-DD'), formData.scrapCode]);
 
   const fetchScrapItems = async () => {
     setLoadingScrapItems(true);
@@ -88,6 +113,82 @@ export function ScrapOutgoingDialog({ open, onClose, onSubmit }: ScrapOutgoingDi
       console.error('Error fetching scrap items:', error);
     } finally {
       setLoadingScrapItems(false);
+    }
+  };
+
+  /**
+   * Pre-check stock availability when qty or date changes
+   */
+  const checkStockAvailability = async () => {
+    // Only check if we have required data
+    if (!formData.scrapCode || !formData.qty || !formData.date) {
+      setStockCheckResult(null);
+      return;
+    }
+
+    setStockCheckLoading(true);
+    try {
+      // Format date correctly: use local date components to avoid timezone issues
+      const dateObj = formData.date.toDate(); // Convert dayjs to JS Date
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
+      const selectedDateFormatted = formData.date.format('YYYY-MM-DD');
+
+      console.log('[Stock Check] Sending request:', {
+        itemCode: formData.scrapCode,
+        itemType: 'SCRAP',
+        qtyRequested: formData.qty,
+        dateStr: dateStr,
+        selectedDateFormatted: selectedDateFormatted,
+      });
+
+      const response = await fetch('/api/customs/stock/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: [
+            {
+              itemCode: formData.scrapCode,
+              itemType: 'SCRAP',
+              qtyRequested: formData.qty,
+            }
+          ],
+          date: dateStr,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        // Extract single item result from batch response
+        const itemResult = result.results[0];
+        setStockCheckResult({
+          available: itemResult.available,
+          currentStock: itemResult.currentStock,
+          requestedQty: itemResult.qtyRequested,
+          shortfall: itemResult.shortfall,
+          message: itemResult.available 
+            ? `Stock available: ${itemResult.currentStock} units`
+            : `Stock tidak cukup. Tersedia: ${itemResult.currentStock}, Diminta: ${itemResult.qtyRequested}, Kurang: ${itemResult.shortfall}`,
+        });
+        
+        console.log('[Stock Check] Result:', itemResult);
+        
+        // Show warning toast if stock not available
+        if (!itemResult.available) {
+          console.warn('[Stock Check] Insufficient stock:', itemResult.message);
+        }
+      } else {
+        console.error('[Stock Check] API returned error:', response.status);
+        setStockCheckResult(null);
+      }
+    } catch (error) {
+      console.error('[Stock Check] Error:', error);
+      setStockCheckResult(null);
+    } finally {
+      setStockCheckLoading(false);
     }
   };
 
@@ -233,6 +334,10 @@ export function ScrapOutgoingDialog({ open, onClose, onSubmit }: ScrapOutgoingDi
               label="Date"
               value={formData.date}
               onChange={(newValue) => {
+                console.log('[DatePicker] Date changed:', {
+                  newValue: newValue?.format('YYYY-MM-DD'),
+                  newValueISO: newValue?.toISOString(),
+                });
                 setFormData((prev) => ({ ...prev, date: newValue }));
                 setErrors((prev) => ({ ...prev, date: '' }));
               }}
@@ -298,6 +403,51 @@ export function ScrapOutgoingDialog({ open, onClose, onSubmit }: ScrapOutgoingDi
               error={!!errors.qty}
               helperText={errors.qty || 'Enter quantity (must be greater than 0)'}
             />
+
+            {/* Stock Check Result Display */}
+            {stockCheckLoading && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
+                <CircularProgress size={20} />
+                <Typography variant="body2" color="text.secondary">
+                  Checking stock...
+                </Typography>
+              </Box>
+            )}
+
+            {stockCheckResult && !stockCheckLoading && (
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 1,
+                  border: `1px solid ${stockCheckResult.available ? alpha(theme.palette.success.main, 0.3) : alpha(theme.palette.error.main, 0.3)}`,
+                  bgcolor: stockCheckResult.available ? alpha(theme.palette.success.main, 0.08) : alpha(theme.palette.error.main, 0.08),
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+                  {stockCheckResult.available ? (
+                    <InfoIcon sx={{ color: 'success.main', mt: 0.5, flexShrink: 0 }} />
+                  ) : (
+                    <WarningIcon sx={{ color: 'error.main', mt: 0.5, flexShrink: 0 }} />
+                  )}
+                  <Box sx={{ flex: 1 }}>
+                    <Typography
+                      variant="subtitle2"
+                      fontWeight="bold"
+                      color={stockCheckResult.available ? 'success.main' : 'error.main'}
+                      gutterBottom
+                    >
+                      {stockCheckResult.available ? 'Stock Available' : 'Stock Insufficient'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {stockCheckResult.message}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                      Date: {formData.date?.format('DD/MM/YYYY') || '-'}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            )}
 
             <TextField
               fullWidth

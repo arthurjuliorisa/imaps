@@ -16,12 +16,13 @@ import {
   useTheme,
   Stack,
   MenuItem,
+  Alert,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { Dayjs } from 'dayjs';
-import { Save, Close } from '@mui/icons-material';
+import { Save, Close, Info as InfoIcon, Warning as WarningIcon } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
 
 interface FormData {
@@ -76,12 +77,28 @@ export function CapitalGoodsManualEntryDialog({
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
+  const [stockCheckResult, setStockCheckResult] = useState<any>(null);
+  const [checkingStock, setCheckingStock] = useState(false);
 
   useEffect(() => {
     if (open) {
       fetchItems();
+      setErrors({});
+      setStockCheckResult(null);
     }
   }, [open]);
+
+  /**
+   * Trigger stock check when qty or date changes
+   * Add delay to avoid too many requests while user is typing
+   */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      checkStockAvailability();
+    }, 500); // 500ms delay after user stops typing
+
+    return () => clearTimeout(timer);
+  }, [formData.itemCode, formData.qty, formData.date?.format('YYYY-MM-DD')]);
 
   const fetchItems = async () => {
     setLoadingItems(true);
@@ -131,12 +148,113 @@ export function CapitalGoodsManualEntryDialog({
     }
   };
 
+  /**
+   * Pre-check stock availability when qty or date changes
+   */
+  const checkStockAvailability = async () => {
+    // Only check if we have required data
+    if (!formData.itemCode || !formData.qty || !formData.date) {
+      setStockCheckResult(null);
+      return;
+    }
+
+    setCheckingStock(true);
+    try {
+      // Format date correctly: use local date components to avoid timezone issues
+      const dateObj = formData.date.toDate(); // Convert dayjs to JS Date
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
+      const selectedDateFormatted = formData.date.format('YYYY-MM-DD');
+
+      console.log('[Stock Check] Sending request:', {
+        itemCode: formData.itemCode,
+        itemType: 'HIBE_M',
+        qtyRequested: formData.qty,
+        dateStr: dateStr,
+        selectedDateFormatted: selectedDateFormatted,
+      });
+
+      const response = await fetch('/api/customs/stock/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: [
+            {
+              itemCode: formData.itemCode,
+              itemType: 'HIBE_M',
+              qtyRequested: formData.qty,
+            }
+          ],
+          date: dateStr,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        // Extract single item result from batch response
+        const itemResult = result.results[0];
+        setStockCheckResult({
+          available: itemResult.available,
+          currentStock: itemResult.currentStock,
+          requestedQty: itemResult.qtyRequested,
+          shortfall: itemResult.shortfall,
+          message: itemResult.available 
+            ? `Stock available: ${itemResult.currentStock} units`
+            : `Stock tidak cukup. Tersedia: ${itemResult.currentStock}, Diminta: ${itemResult.qtyRequested}, Kurang: ${itemResult.shortfall}`,
+        });
+        
+        console.log('[Stock Check] Result:', itemResult);
+        
+        // Show warning if stock not available
+        if (!itemResult.available) {
+          console.warn('[Stock Check] Insufficient stock:', itemResult.message);
+        }
+      } else {
+        let errorData: any = null;
+        const statusCode = response.status;
+        const statusText = response.statusText;
+        
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          // Response body is not JSON, try getting text
+          try {
+            errorData = await response.text();
+          } catch (e2) {
+            errorData = null;
+          }
+        }
+        
+        const errorMsg = errorData?.message || errorData?.error || statusText || 'Failed to check stock';
+        
+        console.error(`[Stock Check] API Error (${statusCode} ${statusText}):`, errorMsg, {
+          status: statusCode,
+          statusText: statusText,
+          data: errorData,
+        });
+        
+        toast.error(`Stock check failed: ${errorMsg}`);
+        setStockCheckResult(null);
+      }
+    } catch (error) {
+      console.error('[Stock Check] Exception:', error instanceof Error ? error.message : String(error));
+      const errorMessage = error instanceof Error ? error.message : 'Failed to check stock availability';
+      toast.error(errorMessage);
+      setStockCheckResult(null);
+    } finally {
+      setCheckingStock(false);
+    }
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
 
     if (!formData.date) {
       newErrors.date = 'Date is required';
-    } else if (formData.date.isAfter(dayjs())) {
+    } else if (formData.date.isAfter(dayjs(), 'day')) {
       newErrors.date = 'Date cannot be in the future';
     }
 
@@ -228,6 +346,7 @@ export function CapitalGoodsManualEntryDialog({
       remarks: '',
     });
     setErrors({});
+    setStockCheckResult(null);
   };
 
   const handleClose = () => {
@@ -353,6 +472,51 @@ export function CapitalGoodsManualEntryDialog({
               error={!!errors.qty}
               helperText={errors.qty || 'Must be greater than 0'}
             />
+
+            {/* Stock Check Result Display */}
+            {checkingStock && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
+                <CircularProgress size={20} />
+                <Typography variant="body2" color="text.secondary">
+                  Checking stock...
+                </Typography>
+              </Box>
+            )}
+
+            {stockCheckResult && !checkingStock && (
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 1,
+                  border: `1px solid ${stockCheckResult.available ? alpha(theme.palette.success.main, 0.3) : alpha(theme.palette.error.main, 0.3)}`,
+                  bgcolor: stockCheckResult.available ? alpha(theme.palette.success.main, 0.08) : alpha(theme.palette.error.main, 0.08),
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+                  {stockCheckResult.available ? (
+                    <InfoIcon sx={{ color: 'success.main', mt: 0.5, flexShrink: 0 }} />
+                  ) : (
+                    <WarningIcon sx={{ color: 'error.main', mt: 0.5, flexShrink: 0 }} />
+                  )}
+                  <Box sx={{ flex: 1 }}>
+                    <Typography
+                      variant="subtitle2"
+                      fontWeight="bold"
+                      color={stockCheckResult.available ? 'success.main' : 'error.main'}
+                      gutterBottom
+                    >
+                      {stockCheckResult.available ? 'Stock Available' : 'Stock Insufficient'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {stockCheckResult.message}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                      Date: {formData.date?.format('DD/MM/YYYY') || '-'}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            )}
 
             <TextField
               fullWidth

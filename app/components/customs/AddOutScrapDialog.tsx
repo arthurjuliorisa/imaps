@@ -123,8 +123,28 @@ export function AddOutScrapDialog({
       return;
     }
 
+    // Need transaction date for stock validation
+    if (!formData.date) {
+      setStockCheckResult(null);
+      return;
+    }
+
     setCheckingStock(true);
     try {
+      // Format date correctly to avoid timezone issues
+      const dateObj = formData.date.toDate();
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
+      console.log('[Stock Check] Checking stock:', {
+        itemCode,
+        qty,
+        dateStr,
+        formDateFormatted: formData.date.format('YYYY-MM-DD'),
+      });
+
       const response = await fetch('/api/customs/stock/check', {
         method: 'POST',
         headers: {
@@ -138,6 +158,7 @@ export function AddOutScrapDialog({
               qtyRequested: qty,
             },
           ],
+          date: dateStr,
         }),
       });
 
@@ -161,14 +182,14 @@ export function AddOutScrapDialog({
     }
   };
 
-  // Check stock when scrap item or quantity changes
+  // Check stock when scrap item, quantity, or date changes
   useEffect(() => {
-    if (formData.scrapCode && formData.qty > 0) {
+    if (formData.scrapCode && formData.qty > 0 && formData.date) {
       checkStockAvailability(formData.scrapCode, formData.qty);
     } else {
       setStockCheckResult(null);
     }
-  }, [formData.scrapCode, formData.qty]);
+  }, [formData.scrapCode, formData.qty, formData.date?.format('YYYY-MM-DD')]);
 
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};

@@ -15,6 +15,7 @@ const StockCheckRequestSchema = z.object({
       qtyRequested: z.number().positive('Quantity must be positive'),
     })
   ).min(1, 'At least one item is required'),
+  date: z.string().optional().or(z.date().optional()),
 });
 
 /**
@@ -46,14 +47,44 @@ export async function POST(request: Request) {
     const body = await request.json();
     const validatedData = StockCheckRequestSchema.parse(body);
 
-    // Check stock for all items as of today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Determine check date
+    let checkDate: Date;
+    if (validatedData.date) {
+      // Parse provided date
+      const parsedDate = new Date(validatedData.date);
+      if (isNaN(parsedDate.getTime())) {
+        return NextResponse.json(
+          { message: 'Invalid date format' },
+          { status: 400 }
+        );
+      }
+      checkDate = new Date(Date.UTC(
+        parsedDate.getFullYear(),
+        parsedDate.getMonth(),
+        parsedDate.getDate(),
+        0, 0, 0, 0
+      ));
+    } else {
+      // Default to current date
+      const today = new Date();
+      checkDate = new Date(Date.UTC(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+        0, 0, 0, 0
+      ));
+    }
+
+    console.log('[Stock Check API] Checking stock', {
+      itemCount: validatedData.items.length,
+      checkDate: checkDate.toISOString(),
+      dateProvided: !!validatedData.date,
+    });
     
     const result = await checkBatchStockAvailability(
       companyCode,
       validatedData.items as StockCheckItem[],
-      today  // ✅ Default to current date
+      checkDate  // ✅ Use provided or default date
     );
 
     return NextResponse.json(result, { status: 200 });

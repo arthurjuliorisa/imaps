@@ -16,6 +16,7 @@ import {
   Stack,
   MenuItem,
   Alert,
+  Autocomplete,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -24,8 +25,18 @@ import dayjs, { Dayjs } from 'dayjs';
 import { Save, Close } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
 
+interface CapitalGoodsItem {
+  id: number;
+  itemCode: string;
+  itemName: string;
+  itemType: string;
+  uom: string;
+  isActive: boolean;
+}
+
 interface FormData {
   date: Dayjs | null;
+  capitalGoodsItem: CapitalGoodsItem | null;
   itemCode: string;
   itemName: string;
   itemType: string;
@@ -58,8 +69,11 @@ export function AddOutCapitalGoodsDialog({
   const theme = useTheme();
   const toast = useToast();
   const [loading, setLoading] = useState(false);
+  const [capitalGoodsItems, setCapitalGoodsItems] = useState<CapitalGoodsItem[]>([]);
+  const [loadingCapitalGoodsItems, setLoadingCapitalGoodsItems] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     date: dayjs(),
+    capitalGoodsItem: null,
     itemCode: '',
     itemName: '',
     itemType: '',
@@ -82,14 +96,67 @@ export function AddOutCapitalGoodsDialog({
   } | null>(null);
   const [checkingStock, setCheckingStock] = useState(false);
 
-  const checkStockAvailability = async (itemCode: string, itemType: string, qty: number) => {
-    if (!itemCode || !itemType || qty <= 0) {
+  // Fetch capital goods items from master
+  useEffect(() => {
+    if (open) {
+      fetchCapitalGoodsItems();
+    }
+  }, [open]);
+
+  const fetchCapitalGoodsItems = async () => {
+    setLoadingCapitalGoodsItems(true);
+    try {
+      const response = await fetch('/api/master/capital-goods-items');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[Capital Goods] API Error ${response.status}:`, errorText);
+        throw new Error(`Failed to fetch capital goods items (${response.status})`);
+      }
+      const data = await response.json();
+      console.log('[Capital Goods] Items loaded:', data.length, 'items', data);
+      setCapitalGoodsItems(data);
+      
+      if (data.length === 0) {
+        toast.warning('No capital goods items available in master');
+      }
+    } catch (error) {
+      console.error('Error fetching capital goods items:', error);
+      toast.error(`Failed to load capital goods items: ${error instanceof Error ? error.message : String(error)}`);
+      setCapitalGoodsItems([]);
+    } finally {
+      setLoadingCapitalGoodsItems(false);
+    }
+  };
+
+  /**
+   * Pre-check stock availability when qty or date changes
+   */
+  const checkStockAvailability = async () => {
+    // Only check if we have required data
+    if (!formData.itemCode || !formData.itemType || !formData.qty || !formData.date) {
       setStockCheckResult(null);
       return;
     }
 
     setCheckingStock(true);
     try {
+      // Format date correctly: use local date components to avoid timezone issues
+      const dateObj = formData.date.toDate(); // Convert dayjs to JS Date
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
+      const selectedDateFormatted = formData.date.format('YYYY-MM-DD');
+
+      console.log('[Stock Check] Sending request:', {
+        itemCode: formData.itemCode,
+        itemType: formData.itemType,
+        qtyRequested: formData.qty,
+        dateStr: dateStr,
+        selectedDateFormatted: selectedDateFormatted,
+      });
+
       const response = await fetch('/api/customs/stock/check', {
         method: 'POST',
         headers: {
@@ -98,49 +165,85 @@ export function AddOutCapitalGoodsDialog({
         body: JSON.stringify({
           items: [
             {
-              itemCode,
-              itemType,
-              qtyRequested: qty,
+              itemCode: formData.itemCode,
+              itemType: formData.itemType,
+              qtyRequested: formData.qty,
             },
           ],
+          date: dateStr,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to check stock');
+      if (response.ok) {
+        const result = await response.json();
+        const itemResult = result.results[0];
+        setStockCheckResult({
+          currentStock: itemResult.currentStock,
+          available: itemResult.available,
+          shortfall: itemResult.shortfall,
+        });
+        
+        console.log('[Stock Check] Result:', itemResult);
+        
+        // Show warning if stock not available
+        if (!itemResult.available) {
+          console.warn('[Stock Check] Insufficient stock:', itemResult);
+        }
+      } else {
+        let errorData: any = null;
+        const statusCode = response.status;
+        const statusText = response.statusText;
+        
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          // Response body is not JSON, try getting text
+          try {
+            errorData = await response.text();
+          } catch (e2) {
+            errorData = null;
+          }
+        }
+        
+        const errorMsg = errorData?.message || errorData?.error || statusText || 'Failed to check stock';
+        
+        console.error(`[Stock Check] API Error (${statusCode} ${statusText}):`, errorMsg, {
+          status: statusCode,
+          statusText: statusText,
+          data: errorData,
+        });
+        
+        toast.error(`Stock check failed: ${errorMsg}`);
+        setStockCheckResult(null);
       }
-
-      const result = await response.json();
-      const itemResult = result.results[0];
-      setStockCheckResult({
-        currentStock: itemResult.currentStock,
-        available: itemResult.available,
-        shortfall: itemResult.shortfall,
-      });
     } catch (error) {
-      console.error('Error checking stock:', error);
-      toast.error('Failed to check stock availability');
+      console.error('[Stock Check] Exception:', error instanceof Error ? error.message : String(error));
+      const errorMessage = error instanceof Error ? error.message : 'Failed to check stock availability';
+      toast.error(errorMessage);
       setStockCheckResult(null);
     } finally {
       setCheckingStock(false);
     }
   };
 
-  // Check stock when item code, item type, or quantity changes
+  /**
+   * Trigger stock check when qty, date, or item changes
+   * Add delay to avoid too many requests while user is typing
+   */
   useEffect(() => {
-    if (formData.itemCode && formData.itemType && formData.qty > 0) {
-      checkStockAvailability(formData.itemCode, formData.itemType, formData.qty);
-    } else {
-      setStockCheckResult(null);
-    }
-  }, [formData.itemCode, formData.itemType, formData.qty]);
+    const timer = setTimeout(() => {
+      checkStockAvailability();
+    }, 500); // 500ms delay after user stops typing
+
+    return () => clearTimeout(timer);
+  }, [formData.itemCode, formData.itemType, formData.qty, formData.date?.format('YYYY-MM-DD')]);
 
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
 
     if (!formData.date) {
       newErrors.date = 'Date is required';
-    } else if (formData.date.startOf('day').isAfter(dayjs().startOf('day'))) {
+    } else if (formData.date.isAfter(dayjs(), 'day')) {
       newErrors.date = 'Date cannot be in the future';
     }
 
@@ -245,6 +348,7 @@ export function AddOutCapitalGoodsDialog({
   const resetForm = () => {
     setFormData({
       date: dayjs(),
+      capitalGoodsItem: null,
       itemCode: '',
       itemName: '',
       itemType: '',
@@ -330,63 +434,134 @@ export function AddOutCapitalGoodsDialog({
               }}
             />
 
-            <TextField
-              fullWidth
-              label="Item Code"
-              value={formData.itemCode}
-              onChange={(e) => {
-                setFormData((prev) => ({ ...prev, itemCode: e.target.value }));
-                setErrors((prev) => ({ ...prev, itemCode: undefined }));
+            {/* Customs Information Section */}
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: 'divider',
+                bgcolor: alpha(theme.palette.primary.main, 0.02),
               }}
-              required
-              error={!!errors.itemCode}
-              helperText={errors.itemCode}
+            >
+              <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                Customs Information (Optional)
+              </Typography>
+              <Stack spacing={2} sx={{ mt: 2 }}>
+                <TextField
+                  fullWidth
+                  label="PPKEK Number"
+                  value={formData.ppkekNumber}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, ppkekNumber: e.target.value }));
+                  }}
+                  placeholder="e.g., PPKEK-123456"
+                  helperText="Nomor pendaftaran PPKEK (customs registration number)"
+                />
+
+                <DatePicker
+                  label="Registration Date"
+                  value={formData.registrationDate}
+                  onChange={(newValue) => {
+                    setFormData((prev) => ({ ...prev, registrationDate: newValue }));
+                  }}
+                  maxDate={dayjs()}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      helperText: 'Customs registration date',
+                    },
+                  }}
+                />
+
+                <TextField
+                  fullWidth
+                  select
+                  label="Document Type"
+                  value={formData.documentType}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, documentType: e.target.value }));
+                  }}
+                  helperText="Customs document type"
+                >
+                  {DOCUMENT_TYPES.map((docType) => (
+                    <MenuItem key={docType} value={docType}>
+                      {docType}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
+            </Box>
+
+            <Autocomplete
+              options={capitalGoodsItems}
+              getOptionLabel={(option) => `${option.itemCode} - ${option.itemName}`}
+              value={formData.capitalGoodsItem}
+              onChange={(event, newValue) => {
+                console.log('[Capital Goods Autocomplete] Selected:', newValue);
+                setFormData((prev) => ({
+                  ...prev,
+                  capitalGoodsItem: newValue,
+                  itemCode: newValue?.itemCode || '',
+                  itemName: newValue?.itemName || '',
+                  itemType: newValue?.itemType || '',
+                  uom: newValue?.uom || '',
+                }));
+                setErrors((prev) => ({
+                  ...prev,
+                  itemCode: undefined,
+                  itemName: undefined,
+                  itemType: undefined,
+                  uom: undefined,
+                }));
+              }}
+              loading={loadingCapitalGoodsItems}
+              noOptionsText={capitalGoodsItems.length === 0 ? 'No items loaded' : 'No matching items'}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Item Code"
+                  required
+                  error={!!errors.itemCode}
+                  helperText={errors.itemCode || `Select capital goods item from master (${capitalGoodsItems.length} items available)`}
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {loadingCapitalGoodsItems ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
             />
 
             <TextField
               fullWidth
               label="Item Name"
               value={formData.itemName}
-              onChange={(e) => {
-                setFormData((prev) => ({ ...prev, itemName: e.target.value }));
-                setErrors((prev) => ({ ...prev, itemName: undefined }));
-              }}
+              disabled
               required
-              error={!!errors.itemName}
-              helperText={errors.itemName}
+              helperText="Auto-filled from selected item"
             />
 
             <TextField
               fullWidth
-              select
               label="Item Type"
               value={formData.itemType}
-              onChange={(e) => {
-                setFormData((prev) => ({ ...prev, itemType: e.target.value }));
-                setErrors((prev) => ({ ...prev, itemType: undefined }));
-              }}
+              disabled
               required
-              error={!!errors.itemType}
-              helperText={errors.itemType}
-            >
-              {ITEM_TYPES.map((type) => (
-                <MenuItem key={type} value={type}>
-                  {type}
-                </MenuItem>
-              ))}
-            </TextField>
+              helperText="Auto-filled from selected item"
+            />
 
             <TextField
               fullWidth
               label="UOM"
               value={formData.uom}
-              onChange={(e) => {
-                setFormData((prev) => ({ ...prev, uom: e.target.value }));
-                setErrors((prev) => ({ ...prev, uom: undefined }));
-              }}
+              disabled
               required
-              error={!!errors.uom}
-              helperText={errors.uom}
+              helperText="Auto-filled from selected item"
             />
 
             <TextField
@@ -401,6 +576,7 @@ export function AddOutCapitalGoodsDialog({
               helperText={errors.qty || 'Must be greater than 0'}
             />
 
+            {/* Stock Check Result Display */}
             {checkingStock && (
               <Alert severity="info" icon={<CircularProgress size={20} />}>
                 Checking stock availability...
