@@ -3,56 +3,109 @@ import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
 /**
- * Proxy to protect API routes
- * Runs before API routes are executed
+ * Protected routes that require menu access permission
+ * These routes will be checked against user's accessible menus
  */
-export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+const PROTECTED_ROUTES = [
+  '/master/companies',
+  '/master/item-types',
+  '/master/scrap-items',
+  '/customs/incoming',
+  '/customs/outgoing',
+  '/customs/wip',
+  '/customs/raw-material',
+  '/customs/production',
+  '/customs/scrap',
+  '/customs/capital-goods',
+  '/customs/scrap-transactions',
+  '/customs/capital-goods-transactions',
+  '/customs/beginning-data',
+  '/settings/users',
+  '/settings/access-menu',
+  '/settings/log-activity',
+];
 
-  // Protected API routes
-  const protectedApiRoutes = [
-    '/api/master',
-    '/api/settings',
-    '/api/dashboard',
-    '/api/admin',
-  ];
+/**
+ * Fetch user's accessible menu paths
+ */
+async function fetchUserMenuPaths(request: NextRequest): Promise<Set<string>> {
+  try {
+    const response = await fetch(
+      new URL('/api/settings/access-menu/current-user-menus', request.url),
+      {
+        headers: {
+          cookie: request.headers.get('cookie') || '',
+        },
+      }
+    );
 
-  // Check if the request is for a protected API route
-  const isProtectedApi = protectedApiRoutes.some((route) =>
-    pathname.startsWith(route)
-  );
-
-  if (isProtectedApi) {
-    // Get the session token
-    const token = await getToken({
-      req: request,
-      secret: process.env.NEXTAUTH_SECRET,
-    });
-
-    // If no token, return 401 Unauthorized
-    if (!token) {
-      return NextResponse.json(
-        { message: 'Unauthorized - Please log in to access this resource' },
-        { status: 401 }
-      );
+    if (!response.ok) {
+      return new Set();
     }
 
-    // Token exists, continue to the API route
+    const menus = await response.json();
+    return new Set(
+      menus
+        .filter((menu: any) => menu.menuPath !== null)
+        .map((menu: any) => menu.menuPath as string)
+    );
+  } catch (error) {
+    console.error('[Middleware] Error fetching user menus:', error);
+    return new Set();
+  }
+}
+
+export default async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Skip middleware for non-protected routes
+  const isProtectedRoute = PROTECTED_ROUTES.some((route) => pathname.startsWith(route));
+
+  if (!isProtectedRoute) {
     return NextResponse.next();
   }
 
-  // Not a protected route, continue
+  // Check if user is authenticated
+  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+
+  if (!token) {
+    // Redirect to login if not authenticated
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('callbackUrl', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // Admin users bypass all menu permission checks
+  if (token.role === 'ADMIN') {
+    return NextResponse.next();
+  }
+
+  // For non-admin users, check menu access
+  const accessiblePaths = await fetchUserMenuPaths(request);
+
+  // Check if user has access to the current path
+  const hasAccess = accessiblePaths.has(pathname);
+
+  if (!hasAccess) {
+    // Redirect to access denied page
+    return NextResponse.redirect(new URL('/access-denied', request.url));
+  }
+
   return NextResponse.next();
 }
 
-/**
- * Configure which routes the proxy should run on
- */
 export const config = {
   matcher: [
-    '/api/master/:path*',
-    '/api/settings/:path*',
-    '/api/dashboard/:path*',
-    '/api/admin/:path*',
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - login (login page)
+     * - access-denied (access denied page)
+     * - dashboard (dashboard is accessible to all authenticated users)
+     */
+    '/((?!api|_next/static|_next/image|favicon.ico|login|access-denied|dashboard|logo.png).*)',
   ],
 };

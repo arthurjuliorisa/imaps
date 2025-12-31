@@ -85,25 +85,10 @@ function QuickLinkCard({ title, description, icon, href, gradient }: QuickLinkCa
   );
 }
 
-interface UserMenu {
-  id: string;
-  menuName: string;
-  menuPath: string | null;
-  menuIcon: string | null;
-  parentId: string | null;
-  menuOrder: number | null;
-  canView: boolean;
-  canCreate: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-}
-
 export default function DashboardPage() {
   const theme = useTheme();
   const { data: session } = useSession();
   const [companyName, setCompanyName] = useState<string>('PT. Polygroup Manufaktur Indonesia');
-  const [accessibleMenuPaths, setAccessibleMenuPaths] = useState<Set<string>>(new Set());
-  const [isLoadingMenus, setIsLoadingMenus] = useState(true);
 
   useEffect(() => {
     const fetchCompanyName = async () => {
@@ -125,31 +110,6 @@ export default function DashboardPage() {
 
     fetchCompanyName();
   }, [session?.user?.companyCode]);
-
-  useEffect(() => {
-    const fetchUserMenus = async () => {
-      try {
-        setIsLoadingMenus(true);
-        const response = await fetch('/api/settings/access-menu/current-user-menus');
-
-        if (response.ok) {
-          const menus: UserMenu[] = await response.json();
-          const paths = new Set(
-            menus
-              .filter((menu) => menu.menuPath !== null)
-              .map((menu) => menu.menuPath as string)
-          );
-          setAccessibleMenuPaths(paths);
-        }
-      } catch (error) {
-        console.error('Error fetching user menus:', error);
-      } finally {
-        setIsLoadingMenus(false);
-      }
-    };
-
-    fetchUserMenus();
-  }, []);
 
   const quickLinks: QuickLinkCardProps[] = [
     {
@@ -255,21 +215,11 @@ export default function DashboardPage() {
         </Typography>
 
         <Grid container spacing={3}>
-          {isLoadingMenus ? (
-            <Grid size={{ xs: 12 }}>
-              <Typography variant="body2" color="text.secondary" textAlign="center" py={4}>
-                Loading...
-              </Typography>
+          {quickLinks.map((link) => (
+            <Grid key={link.title} size={{ xs: 12, sm: 6, md: 4 }}>
+              <QuickLinkCard {...link} />
             </Grid>
-          ) : (
-            quickLinks
-              .filter((link) => accessibleMenuPaths.has(link.href))
-              .map((link) => (
-                <Grid key={link.title} size={{ xs: 12, sm: 6, md: 4 }}>
-                  <QuickLinkCard {...link} />
-                </Grid>
-              ))
-          )}
+          ))}
         </Grid>
       </Box>
     </Box>
