@@ -84,7 +84,7 @@ export async function GET() {
     });
 
     // Filter only menus that user has access to (where can_view = true)
-    const accessibleMenus = menus
+    const menusWithAccess = menus
       .filter((menu) => menu.user_access_menus.length > 0)
       .map((menu): MenuResponse => {
         const access = menu.user_access_menus[0];
@@ -101,6 +101,20 @@ export async function GET() {
           canDelete: access.can_delete,
         };
       });
+
+    // Create a Set of accessible menu IDs for quick lookup
+    const accessibleMenuIds = new Set(menusWithAccess.map(m => m.id));
+
+    // Filter out child menus whose parent is not accessible
+    // If a menu has a parent, that parent must also be in the accessible list
+    const accessibleMenus = menusWithAccess.filter((menu) => {
+      // If menu has no parent, it's a top-level menu - include it
+      if (!menu.parentId) {
+        return true;
+      }
+      // If menu has a parent, check if parent is accessible
+      return accessibleMenuIds.has(menu.parentId);
+    });
 
     return NextResponse.json(accessibleMenus);
   } catch (error: any) {
