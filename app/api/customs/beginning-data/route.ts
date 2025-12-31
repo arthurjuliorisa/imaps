@@ -139,6 +139,24 @@ export async function GET(request: Request) {
  * - remarks: string (optional, max 1000 chars) - Additional remarks
  * - ppkekNumbers: string[] (optional) - Array of PPKEK numbers
  */
+
+function calculatePriority(balanceDate: Date): number {
+  const now = new Date();
+  const today = new Date(Date.UTC(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0, 0, 0, 0
+  ));
+
+  if (balanceDate < today) {
+    return 0; // Backdated balance
+  } else if (balanceDate.getTime() === today.getTime()) {
+    return -1; // Same-day balance
+  }
+  return -1; // Default to same-day priority
+}
+
 export async function POST(request: Request) {
   try {
     const authCheck = await checkAuth();
@@ -260,6 +278,44 @@ export async function POST(request: Request) {
           skipDuplicates: true,
         });
       }
+    }
+
+    // Queue snapshot recalculation for the item on the balance date
+    const priority = calculatePriority(normalizedDate);
+    
+    // Check if queue entry already exists
+    const existingQueueEntry = await prisma.snapshot_recalc_queue.findFirst({
+      where: {
+        company_code: companyCode,
+        recalc_date: normalizedDate,
+        item_type: null,
+        item_code: null,
+      },
+    });
+
+    if (existingQueueEntry) {
+      // Update existing queue entry
+      await prisma.snapshot_recalc_queue.update({
+        where: { id: existingQueueEntry.id },
+        data: {
+          status: 'PENDING',
+          priority,
+          reason: 'Beginning balance updated',
+        },
+      });
+    } else {
+      // Create new queue entry
+      await prisma.snapshot_recalc_queue.create({
+        data: {
+          company_code: companyCode,
+          item_type: null,
+          item_code: null,
+          recalc_date: normalizedDate,
+          status: 'PENDING',
+          priority,
+          reason: 'Beginning balance created',
+        },
+      });
     }
 
     // Fetch the created record with ppkeks to return complete data

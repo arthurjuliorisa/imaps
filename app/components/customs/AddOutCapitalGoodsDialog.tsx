@@ -113,7 +113,6 @@ export function AddOutCapitalGoodsDialog({
         throw new Error(`Failed to fetch capital goods items (${response.status})`);
       }
       const data = await response.json();
-      console.log('[Capital Goods] Items loaded:', data.length, 'items', data);
       setCapitalGoodsItems(data);
       
       if (data.length === 0) {
@@ -147,16 +146,6 @@ export function AddOutCapitalGoodsDialog({
       const day = String(dateObj.getDate()).padStart(2, '0');
       const dateStr = `${year}-${month}-${day}`;
 
-      const selectedDateFormatted = formData.date.format('YYYY-MM-DD');
-
-      console.log('[Stock Check] Sending request:', {
-        itemCode: formData.itemCode,
-        itemType: formData.itemType,
-        qtyRequested: formData.qty,
-        dateStr: dateStr,
-        selectedDateFormatted: selectedDateFormatted,
-      });
-
       const response = await fetch('/api/customs/stock/check', {
         method: 'POST',
         headers: {
@@ -182,13 +171,6 @@ export function AddOutCapitalGoodsDialog({
           available: itemResult.available,
           shortfall: itemResult.shortfall,
         });
-        
-        console.log('[Stock Check] Result:', itemResult);
-        
-        // Show warning if stock not available
-        if (!itemResult.available) {
-          console.warn('[Stock Check] Insufficient stock:', itemResult);
-        }
       } else {
         let errorData: any = null;
         const statusCode = response.status;
@@ -519,7 +501,6 @@ export function AddOutCapitalGoodsDialog({
               getOptionLabel={(option) => `${option.itemCode} - ${option.itemName}`}
               value={formData.capitalGoodsItem}
               onChange={(event, newValue) => {
-                console.log('[Capital Goods Autocomplete] Selected:', newValue);
                 setFormData((prev) => ({
                   ...prev,
                   capitalGoodsItem: newValue,
