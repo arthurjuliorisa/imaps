@@ -208,15 +208,18 @@ export async function GET() {
     const buffer = await workbook.xlsx.writeBuffer();
 
     // Create filename with timestamp
-    const timestamp = new Date().toISOString().split('T')[0];
-    const filename = `Beginning_Data_Template_${timestamp}.xlsx`;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const date = String(now.getDate()).padStart(2, '0');
+    const filename = `Beginning_Data_Template_${year}${month}${date}.xlsx`;
 
     // Return the file as a downloadable response
     return new Response(buffer, {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `attachment; filename=${filename}`,
         'Content-Length': buffer.byteLength.toString(),
       },
     });
