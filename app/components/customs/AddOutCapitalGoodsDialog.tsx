@@ -283,6 +283,18 @@ export function AddOutCapitalGoodsDialog({
       newErrors.remarks = 'Remarks cannot exceed 1000 characters';
     }
 
+    if (!formData.ppkekNumber.trim()) {
+      newErrors.ppkekNumber = 'PPKEK Number is required';
+    }
+
+    if (!formData.registrationDate) {
+      newErrors.registrationDate = 'Registration Date is required';
+    }
+
+    if (!formData.documentType) {
+      newErrors.documentType = 'Document Type is required';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -445,7 +457,7 @@ export function AddOutCapitalGoodsDialog({
               }}
             >
               <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                Customs Information (Optional)
+                Customs Information
               </Typography>
               <Stack spacing={2} sx={{ mt: 2 }}>
                 <TextField
@@ -454,9 +466,12 @@ export function AddOutCapitalGoodsDialog({
                   value={formData.ppkekNumber}
                   onChange={(e) => {
                     setFormData((prev) => ({ ...prev, ppkekNumber: e.target.value }));
+                    setErrors((prev) => ({ ...prev, ppkekNumber: undefined }));
                   }}
                   placeholder="e.g., PPKEK-123456"
-                  helperText="Nomor pendaftaran PPKEK (customs registration number)"
+                  required
+                  error={!!errors.ppkekNumber}
+                  helperText={errors.ppkekNumber || 'Nomor pendaftaran PPKEK (customs registration number)'}
                 />
 
                 <DatePicker
@@ -464,12 +479,15 @@ export function AddOutCapitalGoodsDialog({
                   value={formData.registrationDate}
                   onChange={(newValue) => {
                     setFormData((prev) => ({ ...prev, registrationDate: newValue }));
+                    setErrors((prev) => ({ ...prev, registrationDate: undefined }));
                   }}
                   maxDate={dayjs()}
                   slotProps={{
                     textField: {
                       fullWidth: true,
-                      helperText: 'Customs registration date',
+                      required: true,
+                      error: !!errors.registrationDate,
+                      helperText: errors.registrationDate || 'Customs registration date',
                     },
                   }}
                 />
@@ -481,8 +499,11 @@ export function AddOutCapitalGoodsDialog({
                   value={formData.documentType}
                   onChange={(e) => {
                     setFormData((prev) => ({ ...prev, documentType: e.target.value }));
+                    setErrors((prev) => ({ ...prev, documentType: undefined }));
                   }}
-                  helperText="Customs document type"
+                  required
+                  error={!!errors.documentType}
+                  helperText={errors.documentType || 'Customs document type'}
                 >
                   {DOCUMENT_TYPES.map((docType) => (
                     <MenuItem key={docType} value={docType}>
@@ -663,68 +684,6 @@ export function AddOutCapitalGoodsDialog({
                 errors.remarks || `${formData.remarks.length}/1000 characters`
               }
             />
-
-            <Box
-              sx={{
-                p: 2,
-                bgcolor: alpha(theme.palette.warning.main, 0.05),
-                borderRadius: 1,
-                border: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
-              }}
-            >
-              <Typography variant="subtitle2" fontWeight="bold" color="warning.main" gutterBottom>
-                Customs Information (Optional)
-              </Typography>
-
-              <Stack spacing={2} sx={{ mt: 2 }}>
-                <TextField
-                  fullWidth
-                  label="PPKEK Number"
-                  value={formData.ppkekNumber}
-                  onChange={(e) => {
-                    setFormData((prev) => ({ ...prev, ppkekNumber: e.target.value }));
-                    setErrors((prev) => ({ ...prev, ppkekNumber: undefined }));
-                  }}
-                  placeholder="e.g., PPKEK-123456"
-                  helperText="Enter PPKEK number if applicable"
-                />
-
-                <DatePicker
-                  label="Registration Date"
-                  value={formData.registrationDate}
-                  onChange={(newValue) => {
-                    setFormData((prev) => ({ ...prev, registrationDate: newValue }));
-                    setErrors((prev) => ({ ...prev, registrationDate: undefined }));
-                  }}
-                  maxDate={dayjs()}
-                  slotProps={{
-                    textField: {
-                      fullWidth: true,
-                      error: !!errors.registrationDate,
-                      helperText: errors.registrationDate || 'Customs registration date',
-                    },
-                  }}
-                />
-
-                <TextField
-                  fullWidth
-                  select
-                  label="Document Type"
-                  value={formData.documentType}
-                  onChange={(e) => {
-                    setFormData((prev) => ({ ...prev, documentType: e.target.value }));
-                    setErrors((prev) => ({ ...prev, documentType: undefined }));
-                  }}
-                  helperText="Select customs document type"
-                >
-                  {DOCUMENT_TYPES.map((type) => (
-                    <MenuItem key={type} value={type}>
-                      {type}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Stack>
-            </Box>
 
             <Box
               sx={{
