@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Drawer,
   List,
@@ -49,7 +49,39 @@ interface MenuSection {
   items: MenuItem[];
 }
 
-// Flattened menu structure with sections
+interface ApiMenu {
+  id: string;
+  menuName: string;
+  menuPath: string | null;
+  menuIcon: string | null;
+  parentId: string | null;
+  menuOrder: number | null;
+  canView: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
+// Map icon name to icon component
+const getIconComponent = (iconName: string | null): React.ReactNode => {
+  if (!iconName) return <DescriptionIcon />;
+
+  const iconMap: Record<string, React.ReactNode> = {
+    Dashboard: <DashboardIcon />,
+    Description: <DescriptionIcon />,
+    Settings: <SettingsIcon />,
+    Category: <CategoryIcon />,
+    People: <PeopleIcon />,
+    LocalShipping: <LocalShippingIcon />,
+    AttachMoney: <AttachMoneyIcon />,
+    History: <HistoryIcon />,
+    Recycling: <RecyclingIcon />,
+  };
+
+  return iconMap[iconName] || <DescriptionIcon />;
+};
+
+// Flattened menu structure with sections (DEPRECATED - will be replaced by dynamic menus)
 const menuSections: MenuSection[] = [
   {
     items: [
@@ -159,6 +191,69 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
   const pathname = usePathname();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [dynamicMenuSections, setDynamicMenuSections] = useState<MenuSection[]>([]);
+  const [isLoadingMenus, setIsLoadingMenus] = useState(true);
+
+  // Fetch user's accessible menus
+  useEffect(() => {
+    const fetchUserMenus = async () => {
+      try {
+        setIsLoadingMenus(true);
+        const response = await fetch('/api/settings/access-menu/current-user-menus');
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch menus');
+        }
+
+        const menus: ApiMenu[] = await response.json();
+
+        // Group menus by parent
+        const parentMenus = menus.filter((m) => m.parentId === null);
+        const childMenus = menus.filter((m) => m.parentId !== null);
+
+        // Build menu sections
+        const sections: MenuSection[] = parentMenus.map((parent) => {
+          // Get children of this parent
+          const children = childMenus.filter((child) => child.parentId === parent.id);
+
+          // If parent has a path, it's a standalone menu item
+          if (parent.menuPath && children.length === 0) {
+            return {
+              items: [
+                {
+                  title: parent.menuName,
+                  icon: getIconComponent(parent.menuIcon),
+                  path: parent.menuPath,
+                },
+              ],
+            };
+          }
+
+          // If parent has children, it's a section
+          return {
+            title: parent.menuName,
+            items: children
+              .filter((child) => child.menuPath !== null)
+              .map((child) => ({
+                title: child.menuName,
+                icon: getIconComponent(child.menuIcon),
+                path: child.menuPath!,
+              })),
+          };
+        });
+
+        setDynamicMenuSections(sections);
+      } catch (error) {
+        console.error('Error fetching user menus:', error);
+        // Fallback to empty menus on error
+        setDynamicMenuSections([]);
+      } finally {
+        setIsLoadingMenus(false);
+      }
+    };
+
+    fetchUserMenus();
+  }, []);
 
   const renderMenuItem = (item: MenuItem) => {
     const isActive = item.path === pathname;
@@ -336,12 +431,26 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
       </Toolbar>
       <Box sx={{ py: 2, overflowY: 'auto', overflowX: 'hidden', height: 'calc(100vh - 88px)' }}>
         <List component="nav" sx={{ px: collapsed ? 0.5 : 0.5 }}>
-          {menuSections.map((section, sectionIndex) => (
-            <React.Fragment key={`section-${sectionIndex}`}>
-              {section.title && renderSectionDivider(section.title)}
-              {section.items.map((item) => renderMenuItem(item))}
-            </React.Fragment>
-          ))}
+          {isLoadingMenus ? (
+            <Box sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                Loading menus...
+              </Typography>
+            </Box>
+          ) : dynamicMenuSections.length > 0 ? (
+            dynamicMenuSections.map((section, sectionIndex) => (
+              <React.Fragment key={`section-${sectionIndex}`}>
+                {section.title && renderSectionDivider(section.title)}
+                {section.items.map((item) => renderMenuItem(item))}
+              </React.Fragment>
+            ))
+          ) : (
+            <Box sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                No menus available
+              </Typography>
+            </Box>
+          )}
         </List>
       </Box>
     </>
