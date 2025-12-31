@@ -188,6 +188,31 @@ export default function DashboardPage() {
               <Typography variant="body1" sx={{ opacity: 0.9, mt: 2 }}>
                 Integrated Material Administration and Planning System
               </Typography>
+              {session?.user?.email && (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    opacity: 0.85,
+                    mt: 1.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                  }}
+                >
+                  <Box
+                    component="span"
+                    sx={{
+                      bgcolor: 'rgba(255, 255, 255, 0.2)',
+                      px: 2,
+                      py: 0.5,
+                      borderRadius: 2,
+                      fontSize: '0.875rem',
+                    }}
+                  >
+                    {session.user.email}
+                  </Box>
+                </Typography>
+              )}
             </Grid>
             <Grid size={{ xs: 12, md: 4 }}>
               <Box
