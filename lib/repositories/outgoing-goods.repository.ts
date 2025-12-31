@@ -1,6 +1,6 @@
 import { logger } from '@/lib/utils/logger';
 import { prisma } from '@/lib/prisma';
-import type { OutgoingGoodsRequest } from '@/lib/validators/outgoing-goods.validator';
+import type { OutgoingGoodRequestInput } from '@/lib/validators/schemas/outgoing-goods.schema';
 import { Prisma } from '@prisma/client';
 import { BaseTransactionRepository } from './base-transaction.repository';
 
@@ -22,7 +22,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
    * Insert outgoing goods asynchronously (non-blocking)
    * This is called AFTER the response is returned to the client
    */
-  async insertOutgoingGoodsAsync(data: OutgoingGoodsRequest): Promise<void> {
+  async insertOutgoingGoodsAsync(data: OutgoingGoodRequestInput): Promise<void> {
     const repositoryLogger = logger.child({
       repository: 'OutgoingGoodsRepository',
       method: 'insertOutgoingGoodsAsync',

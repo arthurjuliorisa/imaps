@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { BaseTransactionRepository } from './base-transaction.repository';
 import { logger } from '../utils/logger';
-import type { IncomingGoodsValidated } from '../validators/incoming-goods.validator';
+import type { IncomingGoodRequestInput } from '../validators/schemas/incoming-goods.schema';
 
 export interface IncomingGoodsCreateResult {
   id: number;
@@ -16,7 +16,7 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
   /**
    * Create or update incoming goods with items (Upsert pattern for idempotency)
    */
-  async createOrUpdate(data: IncomingGoodsValidated): Promise<IncomingGoodsCreateResult> {
+  async createOrUpdate(data: IncomingGoodRequestInput): Promise<IncomingGoodsCreateResult> {
     const requestLogger = logger.child({ wmsId: data.wms_id });
 
     try {
@@ -172,7 +172,6 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
       return [];
     }
   }
-
   /**
    * Check if company exists and is active
    */

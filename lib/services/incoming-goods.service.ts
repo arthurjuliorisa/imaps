@@ -1,6 +1,6 @@
 import { IncomingGoodsRepository } from '../repositories/incoming-goods.repository';
-import { validateIncomingGoods } from '../validators/incoming-goods.validator';
-import type { IncomingGoodsValidated } from '../validators/incoming-goods.validator';
+import { validateIncomingGoodRequest, validateItemTypes } from '../validators/schemas/incoming-goods.schema';
+import type { IncomingGoodRequestInput } from '../validators/schemas/incoming-goods.schema';
 import type { ErrorDetail, SuccessResponse } from '../types/api-response';
 import { logger } from '../utils/logger';
 
@@ -24,20 +24,43 @@ export class IncomingGoodsService {
 
     try {
       // 1. Validate payload
-      const validationResult = validateIncomingGoods(payload);
+      const validationResult = validateIncomingGoodRequest(payload);
 
       if (!validationResult.success) {
         requestLogger.warn(
           'Validation failed',
           { errors: validationResult.errors }
         );
-        return { success: false, errors: validationResult.errors };
+        return { success: false, errors: validationResult.errors || [] };
       }
 
       const data = validationResult.data;
+      if (!data) {
+        requestLogger.error('Validation passed but data is undefined');
+        return { 
+          success: false, 
+          errors: [{
+            location: 'header' as const,
+            field: 'payload',
+            code: 'INTERNAL_ERROR',
+            message: 'Validation passed but data is undefined'
+          }] 
+        };
+      }
+
       requestLogger.info('Validation passed', { wmsId: data.wms_id });
 
-      // 2. Business validations (database checks)
+      // 2. Validate item types
+      const itemTypeErrors = await validateItemTypes(data);
+      if (itemTypeErrors.length > 0) {
+        requestLogger.warn(
+          'Item type validation failed',
+          { errors: itemTypeErrors }
+        );
+        return { success: false, errors: itemTypeErrors };
+      }
+
+      // 3. Business validations (database checks)
       const businessErrors = await this.validateBusiness(data);
       if (businessErrors.length > 0) {
         requestLogger.warn(
@@ -47,7 +70,7 @@ export class IncomingGoodsService {
         return { success: false, errors: businessErrors };
       }
 
-      // 3. Save to database
+      // 4. Save to database
       const result = await this.repository.createOrUpdate(data);
 
       requestLogger.info(
@@ -116,7 +139,7 @@ export class IncomingGoodsService {
    * - Item_code validation is NOT required (WMS is source of truth)
    * - Item_type validation is handled by WMS
    */
-  private async validateBusiness(data: IncomingGoodsValidated): Promise<ErrorDetail[]> {
+  private async validateBusiness(data: IncomingGoodRequestInput): Promise<ErrorDetail[]> {
     const errors: ErrorDetail[] = [];
 
     // Optimization: Batch query both company_code and owner in one database call

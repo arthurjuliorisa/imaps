@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { ProductionOutputBatch, ProductionOutputItem } from '@/lib/validators/production-output.validator';
+import type { ProductionOutputBatchRequestInput, ProductionOutputItemInput } from '@/lib/validators/schemas/production-output.schema';
 import { logger } from '@/lib/utils/logger';
 import { BaseTransactionRepository } from './base-transaction.repository';
 
@@ -30,7 +30,7 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
    * - 100 records = ~10x faster than sequential
    * - Handles failures gracefully (continues on error)
    */
-  async create(data: ProductionOutputBatch): Promise<any> {
+  async create(data: ProductionOutputBatchRequestInput): Promise<any> {
     const log = logger.child({
       scope: 'ProductionOutputRepository.create',
       wmsId: data.wms_id,

@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { AdjustmentBatch, AdjustmentItem } from '@/lib/validators/adjustment.validator';
+import type { AdjustmentBatchRequestInput, AdjustmentItemInput } from '@/lib/validators/schemas/adjustment.schema';
 import { logger } from '@/lib/utils/logger';
 import { BaseTransactionRepository } from './base-transaction.repository';
 
@@ -22,7 +22,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
    * Create adjustment transaction
    * INSERT ONLY pattern - no updates allowed
    */
-  async create(data: AdjustmentBatch): Promise<any> {
+  async create(data: AdjustmentBatchRequestInput): Promise<any> {
     const log = logger.child({
       scope: 'AdjustmentsRepository.create',
       wmsId: data.wms_id,

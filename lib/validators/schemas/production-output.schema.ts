@@ -1,28 +1,16 @@
-// lib/validators/schemas/incoming-goods.schema.ts
+// lib/validators/schemas/production-output.schema.ts
 
 /**
- * Incoming Goods Validation Schema
+ * Production Output Validation Schema
  * 
  * Purpose:
- * - Validate incoming goods request payload
- * - Enforce business rules and data constraints
- * - Provide detailed error messages
- * 
- * Version: 2.0 - Updated with ItemType enum validation
- * 
- * Validation Layers:
- * 1. Schema validation (Zod) - format, required fields, data types
- * 2. Business rules - date logic, conditional fields, enum values
- * 3. Database constraints - unique keys, foreign keys
- * 
- * Changes from v1.0:
- * - item_type validation now uses ItemType enum values
- * - Explicit enum validation with all valid values
- * - Better error messages showing allowed enum values
+ * - Validate production output request payload
+ * - Support FERT (Finished goods) and HALB (Semifinished goods)
+ * - Support reversal transactions
+ * - Multiple work orders per item
  */
 
 import { z } from 'zod';
-import { Currency } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 
 // =============================================================================
@@ -31,29 +19,9 @@ import { prisma } from '@/lib/db/prisma';
 
 const VALID_COMPANY_CODES = [1370, 1310, 1380] as const;
 
-// CustomsDocumentType enum values for incoming goods
-const INCOMING_CUSTOMS_TYPES = ['BC23', 'BC27', 'BC40'] as const;
-
-// Currency enum values - MANUALLY DEFINED for build-time safety
-const VALID_CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'] as const;
-
 // =============================================================================
 // REUSABLE SCHEMAS
 // =============================================================================
-
-/**
- * Date string schema (YYYY-MM-DD format)
- */
-const dateStringSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format')
-  .refine(
-    (dateStr: string) => {
-      const date = new Date(dateStr);
-      return !isNaN(date.getTime());
-    },
-    { message: 'Invalid date value' }
-  );
 
 /**
  * ISO 8601 datetime schema
@@ -69,26 +37,47 @@ const iso8601Schema = z
   );
 
 /**
+ * Date string schema (ISO 8601 datetime)
+ */
+const transactionDateSchema = z
+  .string()
+  .refine(
+    (val) => !isNaN(Date.parse(val)),
+    { message: 'Invalid date format' }
+  )
+  .refine(
+    (dateStr: string) => {
+      const transactionDate = new Date(dateStr);
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      return transactionDate <= today;
+    },
+    { message: 'Transaction date cannot be in the future' }
+  );
+
+/**
  * Company code schema
  */
 const companyCodeSchema = z
   .number()
   .int('Company code must be an integer')
-  .refine(
-    (code: number) => VALID_COMPANY_CODES.includes(code as any),
-    {
-      message: `Company code must be one of: ${VALID_COMPANY_CODES.join(', ')}`,
-    }
-  );
+  .min(1, 'Company code must be greater than 0');
+
+/**
+ * Work order numbers schema
+ */
+const workOrderNumbersSchema = z
+  .array(z.string().trim().min(1, 'Work order number cannot be empty').max(50))
+  .min(1, 'At least one work order number is required');
 
 // =============================================================================
 // ITEM SCHEMA
 // =============================================================================
 
 /**
- * Single item schema with item_type string validation
+ * Single production output item schema
  */
-export const incomingGoodItemSchema = z.object({
+export const productionOutputItemSchema = z.object({
   item_type: z
     .string()
     .min(1, 'Item type is required')
@@ -107,13 +96,6 @@ export const incomingGoodItemSchema = z.object({
     .max(200, 'Item name must not exceed 200 characters')
     .trim(),
   
-  hs_code: z
-    .string()
-    .max(20, 'HS code must not exceed 20 characters')
-    .trim()
-    .nullable()
-    .optional(),
-  
   uom: z
     .string()
     .min(1, 'UOM is required')
@@ -123,45 +105,21 @@ export const incomingGoodItemSchema = z.object({
   qty: z
     .number()
     .positive('Quantity must be greater than 0')
-    .finite('Quantity must be a finite number')
-    .refine(
-      (val: number) => {
-        const decimalPlaces = val.toString().split('.')[1]?.length || 0;
-        return decimalPlaces <= 3;
-      },
-      { message: 'Quantity must have maximum 3 decimal places' }
-    ),
+    .finite('Quantity must be a finite number'),
   
-  currency: z.enum(
-    VALID_CURRENCIES,
-    {
-      message: `Currency must be one of: ${VALID_CURRENCIES.join(', ')}`,
-    }
-  ) as z.ZodType<Currency>, // Type assertion for Currency enum
-  
-  amount: z
-    .number()
-    .nonnegative('Amount must be greater than or equal to 0')
-    .finite('Amount must be a finite number')
-    .refine(
-      (val: number) => {
-        const decimalPlaces = val.toString().split('.')[1]?.length || 0;
-        return decimalPlaces <= 4;
-      },
-      { message: 'Amount must have maximum 4 decimal places' }
-    ),
+  work_order_numbers: workOrderNumbersSchema,
 });
 
-export type IncomingGoodItemInput = z.infer<typeof incomingGoodItemSchema>;
+export type ProductionOutputItemInput = z.infer<typeof productionOutputItemSchema>;
 
 // =============================================================================
-// MAIN REQUEST SCHEMA
+// BATCH REQUEST SCHEMA
 // =============================================================================
 
 /**
- * Complete incoming goods request schema
+ * Production output batch request schema
  */
-export const incomingGoodRequestSchema = z
+export const productionOutputBatchRequestSchema = z
   .object({
     wms_id: z
       .string()
@@ -170,86 +128,39 @@ export const incomingGoodRequestSchema = z
       .trim(),
     
     company_code: companyCodeSchema,
-    owner: companyCodeSchema,
     
-    customs_document_type: z.enum(INCOMING_CUSTOMS_TYPES, {
-        message: `Customs document type must be one of: ${INCOMING_CUSTOMS_TYPES.join(', ')}`,
-      }),
-    
-    ppkek_number: z
+    internal_evidence_number: z
       .string()
-      .min(1, 'PPKEK number is required')
-      .max(50, 'PPKEK number must not exceed 50 characters')
+      .min(1, 'Internal evidence number is required')
+      .max(50, 'Internal evidence number must not exceed 50 characters')
       .trim(),
     
-    customs_registration_date: dateStringSchema,
+    transaction_date: transactionDateSchema,
     
-    incoming_evidence_number: z
-      .string()
-      .min(1, 'Incoming evidence number is required')
-      .max(50, 'Incoming evidence number must not exceed 50 characters')
-      .trim(),
-    
-    incoming_date: dateStringSchema,
-    
-    invoice_number: z
-      .string()
-      .min(1, 'Invoice number is required')
-      .max(50, 'Invoice number must not exceed 50 characters')
-      .trim(),
-    
-    invoice_date: dateStringSchema,
-    
-    shipper_name: z
-      .string()
-      .min(1, 'Shipper name is required')
-      .max(200, 'Shipper name must not exceed 200 characters')
-      .trim(),
+    reversal: z.enum(['Y']).nullable().optional(),
     
     items: z
-      .array(incomingGoodItemSchema)
+      .array(productionOutputItemSchema)
       .min(1, 'At least one item is required')
       .max(10000, 'Maximum 10,000 items per request'),
     
     timestamp: iso8601Schema,
   })
-  // Business rule: customs_registration_date <= incoming_date
+  // Business rule: Reversal must have items
   .refine(
     (data: any) => {
-      const customsDate = new Date(data.customs_registration_date);
-      const incomingDate = new Date(data.incoming_date);
-
-      return customsDate <= incomingDate;
-    },
-    {
-      message: 'Customs registration date cannot be after incoming date',
-      path: ['customs_registration_date'],
-    }
-  )
-  // Business rule: incoming_date cannot be in the future (environment-based)
-  .refine(
-    (data: any) => {
-      // Skip validation in development/staging for testing purposes
-      const isDevelopment = process.env.NODE_ENV === 'development' || 
-                           process.env.ALLOW_FUTURE_DATES === 'true';
-      
-      if (isDevelopment) {
-        return true; // Allow any date in development
+      if (data.reversal === 'Y' && (!data.items || data.items.length === 0)) {
+        return false;
       }
-      
-      const incomingDate = new Date(data.incoming_date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      return incomingDate <= today;
+      return true;
     },
     {
-      message: 'Incoming date cannot be in the future',
-      path: ['incoming_date'],
+      message: 'Reversal transaction must include at least one item',
+      path: ['items'],
     }
   );
 
-export type IncomingGoodRequestInput = z.infer<typeof incomingGoodRequestSchema>;
+export type ProductionOutputBatchRequestInput = z.infer<typeof productionOutputBatchRequestSchema>;
 
 // =============================================================================
 // VALIDATION FUNCTION
@@ -272,18 +183,18 @@ interface ValidationErrorDetail {
  */
 interface ValidationResult {
   success: boolean;
-  data?: IncomingGoodRequestInput;
+  data?: ProductionOutputBatchRequestInput;
   errors?: ValidationErrorDetail[];
 }
 
 /**
- * Validate incoming good request
+ * Validate production output batch request
  * 
  * @param data - Request payload
  * @returns Validation result with detailed errors
  */
-export function validateIncomingGoodRequest(data: unknown): ValidationResult {
-  const result = incomingGoodRequestSchema.safeParse(data);
+export function validateProductionOutputBatch(data: unknown): ValidationResult {
+  const result = productionOutputBatchRequestSchema.safeParse(data);
   
   if (result.success) {
     return {
@@ -340,7 +251,7 @@ export function validateIncomingGoodRequest(data: unknown): ValidationResult {
  * @param data - Validated request data
  * @returns Array of validation errors (empty if all valid)
  */
-export async function validateItemTypes(data: IncomingGoodRequestInput): Promise<ValidationErrorDetail[]> {
+export async function validateItemTypes(data: ProductionOutputBatchRequestInput): Promise<ValidationErrorDetail[]> {
   const errors: ValidationErrorDetail[] = [];
 
   // Collect unique item_types

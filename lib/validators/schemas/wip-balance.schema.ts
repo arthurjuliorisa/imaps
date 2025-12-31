@@ -19,6 +19,7 @@
  */
 
 import { z } from 'zod';
+import { prisma } from '@/lib/db/prisma';
 
 // =============================================================================
 // CONSTANTS
@@ -171,6 +172,9 @@ export const WipBalanceRecordSchema = z.object({
 
 export type WipBalanceRecordInput = z.infer<typeof WipBalanceRecordSchema>;
 
+// Type alias for compatibility with service layer
+export type WipBalanceRecordValidated = WipBalanceRecordInput;
+
 // =============================================================================
 // BATCH REQUEST SCHEMA
 // =============================================================================
@@ -208,7 +212,7 @@ export type WipBalanceBatchRequestInput = z.infer<typeof WipBalanceBatchRequestS
 /**
  * Validation error detail
  */
-interface ValidationErrorDetail {
+export interface ValidationErrorDetail {
   location: 'header' | 'record';
   field: string;
   code: string;
@@ -217,10 +221,13 @@ interface ValidationErrorDetail {
   wms_id?: string;
 }
 
+// Type alias for backward compatibility
+export type BatchValidationError = ValidationErrorDetail;
+
 /**
  * Validation result
  */
-interface ValidationResult {
+export interface ValidationResult {
   success: boolean;
   data?: WipBalanceBatchRequestInput;
   errors?: ValidationErrorDetail[];
@@ -232,7 +239,7 @@ interface ValidationResult {
  * @param data - Request payload
  * @returns Validation result with detailed errors
  */
-export function validateWipBalanceBatch(data: unknown): ValidationResult {
+export function validateWIPBalanceBatch(data: unknown): ValidationResult {
   const result = WipBalanceBatchRequestSchema.safeParse(data);
   
   if (result.success) {
@@ -319,4 +326,52 @@ export function validateWipBalanceRecord(data: unknown): ValidationResult {
     success: false,
     errors,
   };
+}
+
+/**
+ * Validate item_types exist and are active in database
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors (empty if all valid)
+ */
+export async function validateItemTypes(data: WipBalanceBatchRequestInput): Promise<ValidationErrorDetail[]> {
+  const errors: ValidationErrorDetail[] = [];
+
+  // Collect unique item_types
+  const itemTypes = [...new Set(data.records.map(record => record.item_type))];
+
+  // Query database for valid item_types
+  try {
+    const validItemTypes = await prisma.item_types.findMany({
+      where: {
+        item_type_code: {
+          in: itemTypes,
+        },
+        is_active: true,
+      },
+      select: {
+        item_type_code: true,
+      },
+    });
+
+    const validCodes = new Set(validItemTypes.map(t => t.item_type_code));
+
+    // Check each record's item_type
+    data.records.forEach((record, recordIndex) => {
+      if (!validCodes.has(record.item_type)) {
+        errors.push({
+          location: 'record',
+          field: 'item_type',
+          code: 'INVALID_ITEM_TYPE',
+          message: `Item type ${record.item_type} is not valid or not active`,
+          record_index: recordIndex,
+        });
+      }
+    });
+  } catch (error) {
+    // If database query fails, log error but don't block validation
+    console.error('Error validating item_types:', error);
+  }
+
+  return errors;
 }

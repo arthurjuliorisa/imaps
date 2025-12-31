@@ -15,9 +15,11 @@
 import { WipBalanceRepository } from '../repositories/wip-balance.repository';
 import {
   validateWIPBalanceBatch,
-  type WIPBalanceRecordValidated,
+  validateItemTypes,
+  type WipBalanceRecordInput,
+  type WipBalanceRecordValidated,
   type BatchValidationError,
-} from '../validators/wip-balance.validator';
+} from '../validators/schemas/wip-balance.schema';
 import type {
   BatchSuccessResponse,
   BatchFailedRecord,
@@ -64,7 +66,7 @@ export class WIPBalanceService {
           { errors: validationResult.errors }
         );
         // Convert BatchValidationError to ErrorDetail for response
-        const errorDetails = validationResult.errors.map((err) => ({
+        const errorDetails = (validationResult.errors || []).map((err) => ({
           location: 'item' as const,
           field: err.field,
           code: err.code,
@@ -73,13 +75,39 @@ export class WIPBalanceService {
         return { success: false, errors: errorDetails };
       }
 
+      if (!validationResult.data) {
+        requestLogger.error('Batch validation successful but data is undefined');
+        return { success: false, errors: [{ location: 'header' as const, field: 'data', code: 'INTERNAL_ERROR', message: 'Validation data missing' }] };
+      }
+
       const batch = validationResult.data;
       requestLogger.info('Batch schema validated', {
         recordCount: batch.records.length,
       });
 
-      // 2. Optimize: Pre-fetch company cache for all unique companies
-      const successRecords: WIPBalanceRecordValidated[] = [];
+      // 2. Validate item types
+      const itemTypeErrors = await validateItemTypes(batch);
+      if (itemTypeErrors.length > 0) {
+        requestLogger.warn(
+          'Item type validation failed',
+          { errors: itemTypeErrors }
+        );
+        const errorDetails = itemTypeErrors.map((err) => ({
+          location: err.location,
+          field: err.field,
+          code: err.code,
+          message: err.message,
+          ...(err.record_index !== undefined && { record_index: err.record_index }),
+        }));
+        return { success: false, errors: errorDetails as ErrorDetail[] };
+      }
+
+      requestLogger.info('Item types validated', {
+        recordCount: batch.records.length,
+      });
+
+      // 3. Optimize: Pre-fetch company cache for all unique companies
+      const successRecords: WipBalanceRecordValidated[] = [];
       const failedRecords: BatchFailedRecord[] = [];
 
       // Get unique company codes to minimize database queries
@@ -94,10 +122,11 @@ export class WIPBalanceService {
         const businessErrors: BatchValidationError[] = [];
         if (!companyExists) {
           businessErrors.push({
-            location: `records[${i}]`,
+            location: 'record' as const,
             field: 'company_code',
             code: 'INVALID_COMPANY_CODE',
             message: `Company code ${record.company_code} is not active or does not exist`,
+            record_index: i,
           });
         }
 
@@ -226,7 +255,7 @@ export class WIPBalanceService {
    * - Item_type validation is handled by WMS
    */
   private async validateBusiness(
-    record: WIPBalanceRecordValidated,
+    record: WipBalanceRecordValidated,
     rowIndex: number
   ): Promise<BatchValidationError[]> {
     const errors: BatchValidationError[] = [];
@@ -238,19 +267,21 @@ export class WIPBalanceService {
       );
       if (!companyExists) {
         errors.push({
-          location: `records[${rowIndex - 1}]`,
+          location: 'record' as const,
           field: 'company_code',
           code: 'INVALID_COMPANY_CODE',
           message: `Company code ${record.company_code} is not active or does not exist`,
+          record_index: rowIndex,
         });
       }
     } catch (error) {
       // Treat validation errors as business logic errors
       errors.push({
-        location: `records[${rowIndex - 1}]`,
+        location: 'record' as const,
         field: 'company_code',
         code: 'VALIDATION_ERROR',
         message: 'Failed to validate company code',
+        record_index: rowIndex,
       });
     }
 
@@ -266,7 +297,7 @@ export class WIPBalanceService {
    * Fire and forget - no need to wait
    */
   private async queueForDatabaseInsert(
-    records: WIPBalanceRecordValidated[],
+    records: WipBalanceRecordValidated[],
     requestLogger: any
   ): Promise<void> {
     try {
