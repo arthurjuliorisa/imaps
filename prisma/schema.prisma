@@ -23,6 +23,9 @@ enum CustomsDocumentType {
   BC41 // Local Sales to Non-Bonded Zone from Local Purchase (BC40)
   BC261 // Subcontracting - Incoming
   BC262 // Subcontracting - Outgoing
+  PPKEKTLDDP // PPKEK incoming for TLDDP
+  PPKEKLDIN // PPKEK incoming for LDP
+  PPKEKLDPOUT  // PPKEK outgoing for LDP
 }
 
 // ============================================================================
