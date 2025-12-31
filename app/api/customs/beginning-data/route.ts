@@ -136,7 +136,8 @@ export async function GET(request: Request) {
  * - uom: string (required) - Unit of measure
  * - qty: number (required, must be > 0) - Beginning balance quantity
  * - balanceDate: string (required, ISO date format) - Balance date
- * - remarks: string (optional, max 1000 chars)
+ * - remarks: string (optional, max 1000 chars) - Additional remarks
+ * - ppkekNumbers: string[] (optional) - Array of PPKEK numbers
  */
 export async function POST(request: Request) {
   try {
@@ -147,7 +148,7 @@ export async function POST(request: Request) {
 
     const { session } = authCheck as { authenticated: true; session: any };
     const body = await request.json();
-    const { itemType, itemCode, itemName, uom, qty, balanceDate, remarks } = body;
+    const { itemType, itemCode, itemName, uom, qty, balanceDate, remarks, ppkekNumbers } = body;
 
     // Validate required fields
     if (!itemType || !itemCode || !itemName || !uom || qty === undefined || qty === null || !balanceDate) {
@@ -240,6 +241,36 @@ export async function POST(request: Request) {
         uom: String(uom).trim(),
         qty: qtyValue,
         balance_date: normalizedDate,
+        remarks: sanitizedRemarks,
+      },
+    });
+
+    // Insert PPKEK numbers if provided
+    if (ppkekNumbers && Array.isArray(ppkekNumbers) && ppkekNumbers.length > 0) {
+      const ppkekRecords = ppkekNumbers
+        .filter((num: string) => num && String(num).trim() !== '')
+        .map((ppkekNumber: string) => ({
+          beginning_balance_id: newRecord.id,
+          ppkek_number: String(ppkekNumber).trim(),
+        }));
+
+      if (ppkekRecords.length > 0) {
+        await prisma.beginning_balance_ppkeks.createMany({
+          data: ppkekRecords,
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    // Fetch the created record with ppkeks to return complete data
+    const recordWithPpkeks = await prisma.beginning_balances.findUnique({
+      where: { id: newRecord.id },
+      include: {
+        ppkeks: {
+          select: {
+            ppkek_number: true,
+          },
+        },
       },
     });
 
@@ -255,7 +286,8 @@ export async function POST(request: Request) {
       },
       beginningBalance: Number(newRecord.qty),
       beginningDate: newRecord.balance_date,
-      remarks: sanitizedRemarks,
+      remarks: newRecord.remarks || null,
+      ppkek_numbers: recordWithPpkeks?.ppkeks?.map(p => p.ppkek_number) || [],
       itemId: newRecord.item_code,
       uomId: newRecord.uom,
       itemType: newRecord.item_type,

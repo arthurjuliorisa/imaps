@@ -205,6 +205,7 @@ export default function BeginningDataPage() {
           qty: formData.qty,
           balanceDate: formData.beginningDate?.format('YYYY-MM-DD'),
           remarks: formData.remarks,
+          ppkekNumbers: formData.ppkek_numbers,
         }),
       });
 

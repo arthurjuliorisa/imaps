@@ -242,6 +242,19 @@ export function BeginningStockForm({
               helperText="Enter one or more PPKEK numbers (optional). Press Enter or comma to add."
             />
 
+            {/* Remarks */}
+            <TextField
+              fullWidth
+              label="Remarks"
+              value={formData.remarks || ''}
+              onChange={(e) => setFormData((prev) => ({ ...prev, remarks: e.target.value }))}
+              multiline
+              rows={3}
+              placeholder="Enter additional notes or remarks (optional)..."
+              helperText="Optional notes about this beginning balance entry (max 1000 characters)"
+              inputProps={{ maxLength: 1000 }}
+            />
+
             {/* Info Box */}
             <Box
               sx={{
