@@ -72,7 +72,7 @@ async function fetchUserMenuPaths(
       }
 
       const menus = await response.json();
-      const accessiblePaths = new Set(
+      const accessiblePaths: Set<string> = new Set(
         menus
           .filter((menu: any) => menu.menuPath !== null)
           .map((menu: any) => menu.menuPath as string)
