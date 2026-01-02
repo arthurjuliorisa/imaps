@@ -75,188 +75,213 @@ BEGIN
     
     -- Return aggregated view based on provided or default date range
     RETURN QUERY
-    WITH
-    -- Get opening balance from last snapshot before start date, or earliest if none before start
-    opening_balances AS (
-        SELECT 
-            sds.company_code,
-            sds.item_code,
-            sds.closing_balance as opening_balance,
-            sds.item_type,
-            sds.item_name,
-            c.name as company_name,
-            sds.uom
-        FROM stock_daily_snapshot sds
-        JOIN companies c ON sds.company_code = c.code
-        INNER JOIN (
-            -- Try to get snapshot before start_date; if none exist, use earliest snapshot
-            SELECT 
-                sds_inner.company_code, 
-                sds_inner.item_code, 
-                COALESCE(
-                    MAX(CASE WHEN sds_inner.snapshot_date < v_start_date THEN sds_inner.snapshot_date END),
-                    MIN(sds_inner.snapshot_date)
-                ) as max_snapshot_date
-            FROM stock_daily_snapshot sds_inner
-            GROUP BY sds_inner.company_code, sds_inner.item_code
-        ) last_snap ON sds.company_code = last_snap.company_code 
-                    AND sds.item_code = last_snap.item_code 
-                    AND sds.snapshot_date = last_snap.max_snapshot_date
-        WHERE sds.item_type = ANY(p_item_types)
-    ),
-    -- Aggregate all transactions within date range (with UOM tracking)
-    transactions_summary AS (
-        -- Incoming goods
-        SELECT
-            ig.company_code,
-            igi.item_code,
-            igi.uom,
-            SUM(igi.qty) as received,
-            0::NUMERIC(15,3) as issued,
-            0::NUMERIC(15,3) as material_used,
-            0::NUMERIC(15,3) as adjustment_val
-        FROM incoming_goods ig
-        JOIN incoming_good_items igi ON 
-            ig.company_code = igi.incoming_good_company
-            AND ig.id = igi.incoming_good_id
-            AND ig.incoming_date = igi.incoming_good_date
-        WHERE ig.deleted_at IS NULL 
-          AND igi.deleted_at IS NULL
-          AND igi.item_type = ANY(p_item_types)
-          AND ig.incoming_date BETWEEN v_start_date AND v_end_date
-        GROUP BY ig.company_code, igi.item_code, igi.uom
-
-        UNION ALL
-
-        -- Outgoing goods
-        SELECT
-            og.company_code,
-            ogi.item_code,
-            ogi.uom,
-            0::NUMERIC(15,3) as received,
-            SUM(ogi.qty) as issued,
-            0::NUMERIC(15,3) as material_used,
-            0::NUMERIC(15,3) as adjustment_val
-        FROM outgoing_goods og
-        JOIN outgoing_good_items ogi ON 
-            og.company_code = ogi.outgoing_good_company
-            AND og.id = ogi.outgoing_good_id
-            AND og.outgoing_date = ogi.outgoing_good_date
-        WHERE og.deleted_at IS NULL 
-          AND ogi.deleted_at IS NULL
-          AND ogi.item_type = ANY(p_item_types)
-          AND og.outgoing_date BETWEEN v_start_date AND v_end_date
-        GROUP BY og.company_code, ogi.item_code, ogi.uom
-
-        UNION ALL
-
-        -- Material usage
-        SELECT
-            mu.company_code,
-            mui.item_code,
-            mui.uom,
-            0::NUMERIC(15,3) as received,
-            0::NUMERIC(15,3) as issued,
-            SUM(CASE 
-                WHEN mu.reversal = 'Y' THEN -mui.qty
-                ELSE mui.qty 
-            END) as material_used,
-            0::NUMERIC(15,3) as adjustment_val
-        FROM material_usages mu
-        JOIN material_usage_items mui ON 
-            mu.company_code = mui.material_usage_company
-            AND mu.id = mui.material_usage_id
-            AND mu.transaction_date = mui.material_usage_date
-        WHERE mu.deleted_at IS NULL 
-          AND mui.deleted_at IS NULL
-          AND mui.item_type = ANY(p_item_types)
-          AND mu.transaction_date BETWEEN v_start_date AND v_end_date
-        GROUP BY mu.company_code, mui.item_code, mui.uom
-
-        UNION ALL
-
-        -- Adjustments
-        SELECT
-            a.company_code,
-            ai.item_code,
-            ai.uom,
-            0::NUMERIC(15,3) as received,
-            0::NUMERIC(15,3) as issued,
-            0::NUMERIC(15,3) as material_used,
-            SUM(CASE 
-                WHEN ai.adjustment_type = 'GAIN' THEN ai.qty
-                ELSE -ai.qty
-            END) as adjustment_val
-        FROM adjustments a
-        JOIN adjustment_items ai ON 
-            a.company_code = ai.adjustment_company
-            AND a.id = ai.adjustment_id
-            AND a.transaction_date = ai.adjustment_date
-        WHERE a.deleted_at IS NULL 
-          AND ai.deleted_at IS NULL
-          AND ai.item_type = ANY(p_item_types)
-          AND a.transaction_date BETWEEN v_start_date AND v_end_date
-        GROUP BY a.company_code, ai.item_code, ai.uom
-    ),
-    -- Combine opening balance with transactions
-    -- Priority for UOM: snapshot.uom → transaction.uom → items.uom → 'UNIT'
-    period_summary AS (
-        SELECT
-            COALESCE(ob.company_code, ts_agg.agg_company_code) as company_code,
-            COALESCE(ob.company_name, c.name) as company_name,
-            COALESCE(ob.item_code, ts_agg.agg_item_code) as item_code,
-            COALESCE(ob.item_name, '') as item_name,
-            ob.item_type,
-            COALESCE(ob.uom, ts_agg.agg_uom, 'UNIT') as uom,
-            COALESCE(ob.opening_balance, 0)::NUMERIC(15,3) as opening_balance,
-            COALESCE(ts_agg.total_received, 0)::NUMERIC(15,3) as total_received,
-            COALESCE(ts_agg.total_issued, 0)::NUMERIC(15,3) as total_issued,
-            COALESCE(ts_agg.total_material_used, 0)::NUMERIC(15,3) as total_material_used,
-            COALESCE(ts_agg.total_adjustment, 0)::NUMERIC(15,3) as total_adjustment
-        FROM opening_balances ob
-        FULL OUTER JOIN (
+        WITH
+        daily_data AS (
+            -- Get daily records within the specified date range
             SELECT
-                ts.company_code as agg_company_code,
-                ts.item_code as agg_item_code,
-                MIN(ts.uom) as agg_uom,
-                SUM(ts.received) as total_received,
-                SUM(ts.issued) as total_issued,
-                SUM(ts.material_used) as total_material_used,
-                SUM(ts.adjustment_val) as total_adjustment
-            FROM transactions_summary ts
-            GROUP BY ts.company_code, ts.item_code
-        ) ts_agg ON 
-            ob.company_code = ts_agg.agg_company_code 
-            AND ob.item_code = ts_agg.agg_item_code
-        LEFT JOIN companies c ON COALESCE(ob.company_code, ts_agg.agg_company_code) = c.code
-        WHERE ob.item_type = ANY(p_item_types)
-    )
-    SELECT
-        ROW_NUMBER() OVER (PARTITION BY ps.company_code ORDER BY ps.item_code) as no,
-        ps.company_code,
-        ps.company_name,
-        ps.item_code,
-        ps.item_name,
-        ps.item_type,
-        ps.uom,
-        v_end_date::DATE as snapshot_date,
-        ps.opening_balance,
-        ps.total_received as quantity_received,
-        (ps.total_issued + ps.total_material_used) as quantity_issued_outgoing,
-        ps.total_adjustment as adjustment,
-        ps.opening_balance + ps.total_received - ps.total_issued - ps.total_material_used + ps.total_adjustment as closing_balance,
-        NULL::NUMERIC(15,3) as stock_count_result,
-        NULL::NUMERIC(15,3) as quantity_difference,
-        NULL::NUMERIC(18,4) as value_amount,
-        NULL::VARCHAR(3) as currency,
-        'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
-    FROM period_summary ps
-    WHERE ps.opening_balance <> 0 
-       OR ps.total_received <> 0 
-       OR ps.total_issued <> 0 
-       OR ps.total_material_used <> 0 
-       OR ps.total_adjustment <> 0
-    ORDER BY ps.company_code, ps.item_code;
+                combined.company_code,
+                combined.company_name,
+                combined.item_code,
+                combined.item_name,
+                combined.item_type,
+                combined.unit_quantity,
+                combined.snapshot_date,
+                combined.opening_balance,
+                combined.quantity_received,
+                combined.quantity_issued_outgoing,
+                combined.adjustment,
+                combined.closing_balance
+            FROM (
+                -- Historical data from snapshot
+                SELECT
+                    sds.company_code,
+                    c.name as company_name,
+                    sds.item_code,
+                    sds.item_name,
+                    sds.item_type,
+                    COALESCE(i.uom, 'UNIT') as unit_quantity,
+                    sds.snapshot_date,
+                    sds.opening_balance,
+                    sds.incoming_qty as quantity_received,
+                    (sds.outgoing_qty + sds.material_usage_qty) as quantity_issued_outgoing,
+                    sds.adjustment_qty as adjustment,
+                    sds.closing_balance
+                FROM stock_daily_snapshot sds
+                JOIN companies c ON sds.company_code = c.code
+                LEFT JOIN items i ON sds.company_code = i.company_code AND sds.item_code = i.item_code
+                WHERE sds.item_type = ANY(p_item_types)
+                  AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
+                  
+                UNION ALL
+                
+                -- Recent data from transactions
+                SELECT
+                    calc.company_code,
+                    calc.company_name,
+                    calc.item_code,
+                    calc.item_name,
+                    calc.item_type,
+                    calc.uom as unit_quantity,
+                    calc.snapshot_date,
+                    calc.opening_balance,
+                    calc.quantity_received,
+                    calc.quantity_issued_outgoing,
+                    calc.adjustment,
+                    calc.closing_balance
+                FROM (
+                    SELECT 
+                        i.company_code,
+                        co.name as company_name,
+                        i.item_code,
+                        i.item_name,
+                        i.item_type,
+                        i.uom,
+                        dates.snapshot_date::DATE as snapshot_date,
+                        COALESCE(
+                            LAG(
+                                COALESCE(opening.closing_balance, 0) +
+                                COALESCE(inc.incoming_qty, 0) -
+                                COALESCE(out.outgoing_qty, 0) -
+                                COALESCE(mat.material_usage_qty, 0) +
+                                COALESCE(adj.adjustment_qty, 0)
+                            ) OVER (PARTITION BY i.company_code, i.item_code ORDER BY dates.snapshot_date),
+                            COALESCE(opening.closing_balance, 0)
+                        ) as opening_balance,
+                        COALESCE(inc.incoming_qty, 0) as quantity_received,
+                        COALESCE(out.outgoing_qty, 0) + COALESCE(mat.material_usage_qty, 0) as quantity_issued_outgoing,
+                        COALESCE(adj.adjustment_qty, 0) as adjustment,
+                        COALESCE(opening.closing_balance, 0) +
+                        COALESCE(inc.incoming_qty, 0) -
+                        COALESCE(out.outgoing_qty, 0) -
+                        COALESCE(mat.material_usage_qty, 0) +
+                        COALESCE(adj.adjustment_qty, 0) as closing_balance
+                    FROM items i
+                    JOIN companies co ON i.company_code = co.code
+                    -- Find the last snapshot before start date for opening balance
+                    LEFT JOIN LATERAL (
+                        SELECT MAX(sds2.snapshot_date) as last_snapshot_date
+                        FROM stock_daily_snapshot sds2
+                        WHERE sds2.company_code = i.company_code
+                          AND sds2.item_code = i.item_code
+                          AND sds2.item_type = ANY(p_item_types)
+                          AND sds2.snapshot_date < v_start_date
+                    ) AS last_snap ON TRUE
+                    -- Generate date series from start_date to end_date
+                    CROSS JOIN LATERAL (
+                        SELECT generate_series::DATE as snapshot_date
+                        FROM generate_series(v_start_date, v_end_date, '1 day'::INTERVAL)
+                    ) AS dates
+                    -- Opening balance (from last snapshot before range)
+                    LEFT JOIN stock_daily_snapshot opening ON 
+                        i.company_code = opening.company_code AND
+                        i.item_code = opening.item_code AND
+                        opening.snapshot_date = last_snap.last_snapshot_date
+                    -- Incoming quantities
+                    LEFT JOIN (
+                        SELECT 
+                            ig.company_code,
+                            igi.item_code,
+                            ig.incoming_date as trx_date,
+                            SUM(igi.qty) as incoming_qty
+                        FROM incoming_goods ig
+                        JOIN incoming_good_items igi ON ig.company_code = igi.incoming_good_company
+                            AND ig.id = igi.incoming_good_id
+                            AND ig.incoming_date = igi.incoming_good_date
+                        WHERE ig.deleted_at IS NULL AND igi.deleted_at IS NULL
+                        GROUP BY ig.company_code, igi.item_code, ig.incoming_date
+                    ) inc ON i.company_code = inc.company_code 
+                        AND i.item_code = inc.item_code 
+                        AND inc.trx_date = dates.snapshot_date
+                    -- Outgoing quantities
+                    LEFT JOIN (
+                        SELECT 
+                            og.company_code,
+                            ogi.item_code,
+                            og.outgoing_date as trx_date,
+                            SUM(ogi.qty) as outgoing_qty
+                        FROM outgoing_goods og
+                        JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
+                            AND og.id = ogi.outgoing_good_id
+                            AND og.outgoing_date = ogi.outgoing_good_date
+                        WHERE og.deleted_at IS NULL AND ogi.deleted_at IS NULL
+                        GROUP BY og.company_code, ogi.item_code, og.outgoing_date
+                    ) out ON i.company_code = out.company_code 
+                        AND i.item_code = out.item_code 
+                        AND out.trx_date = dates.snapshot_date
+                    -- Material usage quantities
+                    LEFT JOIN (
+                        SELECT 
+                            mu.company_code,
+                            mui.item_code,
+                            mu.transaction_date as trx_date,
+                            SUM(CASE 
+                                WHEN mu.reversal = 'Y' THEN -mui.qty
+                                ELSE mui.qty 
+                            END) as material_usage_qty
+                        FROM material_usages mu
+                        JOIN material_usage_items mui ON mu.company_code = mui.material_usage_company
+                            AND mu.id = mui.material_usage_id
+                            AND mu.transaction_date = mui.material_usage_date
+                        WHERE mu.deleted_at IS NULL AND mui.deleted_at IS NULL
+                        GROUP BY mu.company_code, mui.item_code, mu.transaction_date
+                    ) mat ON i.company_code = mat.company_code 
+                        AND i.item_code = mat.item_code 
+                        AND mat.trx_date = dates.snapshot_date
+                    -- Adjustment quantities
+                    LEFT JOIN (
+                        SELECT 
+                            a.company_code,
+                            ai.item_code,
+                            a.transaction_date as trx_date,
+                            SUM(CASE 
+                                WHEN ai.adjustment_type = 'GAIN' THEN ai.qty
+                                ELSE -ai.qty
+                            END) as adjustment_qty
+                        FROM adjustments a
+                        JOIN adjustment_items ai ON a.company_code = ai.adjustment_company
+                            AND a.id = ai.adjustment_id
+                            AND a.transaction_date = ai.adjustment_date
+                        WHERE a.deleted_at IS NULL AND ai.deleted_at IS NULL
+                        GROUP BY a.company_code, ai.item_code, a.transaction_date
+                    ) adj ON i.company_code = adj.company_code 
+                        AND i.item_code = adj.item_code 
+                        AND adj.trx_date = dates.snapshot_date
+                    WHERE i.item_type = ANY(p_item_types)
+                      AND i.deleted_at IS NULL
+                      AND dates.snapshot_date NOT IN (
+                          SELECT sds3.snapshot_date FROM stock_daily_snapshot sds3
+                          WHERE sds3.company_code = i.company_code
+                            AND sds3.item_code = i.item_code
+                            AND sds3.snapshot_date BETWEEN v_start_date AND v_end_date
+                      )
+                ) calc
+            ) combined
+        )
+        SELECT
+            ROW_NUMBER() OVER (PARTITION BY dd.company_code ORDER BY dd.item_code) as no,
+            dd.company_code,
+            dd.company_name,
+            dd.item_code,
+            dd.item_name,
+            dd.item_type,
+            dd.unit_quantity,
+            v_end_date::DATE as snapshot_date,  -- Show as end date for aggregated view
+            (ARRAY_AGG(dd.opening_balance ORDER BY dd.snapshot_date ASC) FILTER (WHERE dd.opening_balance IS NOT NULL))[1] as opening_balance,  -- First day opening
+            SUM(dd.quantity_received) as quantity_received,  -- Accumulated in
+            SUM(dd.quantity_issued_outgoing) as quantity_issued_outgoing,  -- Accumulated out
+            SUM(dd.adjustment) as adjustment,  -- Accumulated adjustments
+            (ARRAY_AGG(dd.opening_balance ORDER BY dd.snapshot_date ASC) FILTER (WHERE dd.opening_balance IS NOT NULL))[1] + 
+            SUM(dd.quantity_received) - 
+            SUM(dd.quantity_issued_outgoing) + 
+            SUM(dd.adjustment) as closing_balance,  -- Calculated final closing
+            NULL::NUMERIC(15,3) as stock_count_result,
+            NULL::NUMERIC(15,3) as quantity_difference,
+            NULL::NUMERIC(18,4) as value_amount,
+            NULL::VARCHAR(3) as currency,
+            'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
+        FROM daily_data dd
+        GROUP BY dd.company_code, dd.company_name, dd.item_code, dd.item_name, dd.item_type, dd.unit_quantity
+        ORDER BY dd.company_code, dd.item_code;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
@@ -313,166 +338,195 @@ BEGIN
     
     -- Return aggregated view based on provided or default date range
     RETURN QUERY
-    WITH
-    -- Get opening balance from last snapshot before start date, or earliest if none before start
-    opening_balances AS (
-        SELECT 
-            sds.company_code,
-            sds.item_code,
-            sds.closing_balance as opening_balance,
-            sds.item_type,
-            sds.item_name,
-            c.name as company_name,
-            sds.uom
-        FROM stock_daily_snapshot sds
-        JOIN companies c ON sds.company_code = c.code
-        INNER JOIN (
-            -- Try to get snapshot before start_date; if none exist, use earliest snapshot
-            SELECT 
-                sds_inner.company_code, 
-                sds_inner.item_code, 
-                COALESCE(
-                    MAX(CASE WHEN sds_inner.snapshot_date < v_start_date THEN sds_inner.snapshot_date END),
-                    MIN(sds_inner.snapshot_date)
-                ) as max_snapshot_date
-            FROM stock_daily_snapshot sds_inner
-            GROUP BY sds_inner.company_code, sds_inner.item_code
-        ) last_snap ON sds.company_code = last_snap.company_code 
-                    AND sds.item_code = last_snap.item_code 
-                    AND sds.snapshot_date = last_snap.max_snapshot_date
-        WHERE sds.item_type = ANY(p_item_types)
-    ),
-    -- Aggregate all transactions within date range (with UOM tracking)
-    transactions_summary AS (
-        -- Production output
-        SELECT
-            po.company_code,
-            poi.item_code,
-            poi.uom,
-            SUM(CASE 
-                WHEN po.reversal = 'Y' THEN -poi.qty
-                ELSE poi.qty 
-            END) as received,
-            0::NUMERIC(15,3) as issued,
-            0::NUMERIC(15,3) as material_used,
-            0::NUMERIC(15,3) as adjustment_val
-        FROM production_outputs po
-        JOIN production_output_items poi ON 
-            po.company_code = poi.production_output_company
-            AND po.id = poi.production_output_id
-            AND po.transaction_date = poi.production_output_date
-        WHERE po.deleted_at IS NULL 
-          AND poi.deleted_at IS NULL
-          AND poi.item_type = ANY(p_item_types)
-          AND po.transaction_date BETWEEN v_start_date AND v_end_date
-        GROUP BY po.company_code, poi.item_code, poi.uom
-
-        UNION ALL
-
-        -- Outgoing goods
-        SELECT
-            og.company_code,
-            ogi.item_code,
-            ogi.uom,
-            0::NUMERIC(15,3) as received,
-            SUM(ogi.qty) as issued,
-            0::NUMERIC(15,3) as material_used,
-            0::NUMERIC(15,3) as adjustment_val
-        FROM outgoing_goods og
-        JOIN outgoing_good_items ogi ON 
-            og.company_code = ogi.outgoing_good_company
-            AND og.id = ogi.outgoing_good_id
-            AND og.outgoing_date = ogi.outgoing_good_date
-        WHERE og.deleted_at IS NULL 
-          AND ogi.deleted_at IS NULL
-          AND ogi.item_type = ANY(p_item_types)
-          AND og.outgoing_date BETWEEN v_start_date AND v_end_date
-        GROUP BY og.company_code, ogi.item_code, ogi.uom
-
-        UNION ALL
-
-        -- Adjustments
-        SELECT
-            a.company_code,
-            ai.item_code,
-            ai.uom,
-            0::NUMERIC(15,3) as received,
-            0::NUMERIC(15,3) as issued,
-            0::NUMERIC(15,3) as material_used,
-            SUM(CASE 
-                WHEN ai.adjustment_type = 'GAIN' THEN ai.qty
-                ELSE -ai.qty
-            END) as adjustment_val
-        FROM adjustments a
-        JOIN adjustment_items ai ON 
-            a.company_code = ai.adjustment_company
-            AND a.id = ai.adjustment_id
-            AND a.transaction_date = ai.adjustment_date
-        WHERE a.deleted_at IS NULL 
-          AND ai.deleted_at IS NULL
-          AND ai.item_type = ANY(p_item_types)
-          AND a.transaction_date BETWEEN v_start_date AND v_end_date
-        GROUP BY a.company_code, ai.item_code, ai.uom
-    ),
-    -- Combine opening balance with transactions
-    -- Priority for UOM: snapshot.uom → transaction.uom → items.uom → 'UNIT'
-    period_summary AS (
-        SELECT
-            COALESCE(ob.company_code, ts_agg.agg_company_code) as company_code,
-            COALESCE(ob.company_name, c.name) as company_name,
-            COALESCE(ob.item_code, ts_agg.agg_item_code) as item_code,
-            COALESCE(ob.item_name, '') as item_name,
-            ob.item_type,
-            COALESCE(ob.uom, ts_agg.agg_uom, 'UNIT') as uom,
-            COALESCE(ob.opening_balance, 0)::NUMERIC(15,3) as opening_balance,
-            COALESCE(ts_agg.total_received, 0)::NUMERIC(15,3) as total_received,
-            COALESCE(ts_agg.total_issued, 0)::NUMERIC(15,3) as total_issued,
-            COALESCE(ts_agg.total_material_used, 0)::NUMERIC(15,3) as total_material_used,
-            COALESCE(ts_agg.total_adjustment, 0)::NUMERIC(15,3) as total_adjustment
-        FROM opening_balances ob
-        FULL OUTER JOIN (
+        WITH
+        daily_data AS (
+            -- Get daily records within the specified date range
             SELECT
-                ts.company_code as agg_company_code,
-                ts.item_code as agg_item_code,
-                MIN(ts.uom) as agg_uom,
-                SUM(ts.received) as total_received,
-                SUM(ts.issued) as total_issued,
-                SUM(ts.material_used) as total_material_used,
-                SUM(ts.adjustment_val) as total_adjustment
-            FROM transactions_summary ts
-            GROUP BY ts.company_code, ts.item_code
-        ) ts_agg ON 
-            ob.company_code = ts_agg.agg_company_code 
-            AND ob.item_code = ts_agg.agg_item_code
-        LEFT JOIN companies c ON COALESCE(ob.company_code, ts_agg.agg_company_code) = c.code
-        WHERE ob.item_type = ANY(p_item_types)
-    )
-    SELECT
-        ROW_NUMBER() OVER (PARTITION BY ps.company_code ORDER BY ps.item_code) as no,
-        ps.company_code,
-        ps.company_name,
-        ps.item_code,
-        ps.item_name,
-        ps.item_type,
-        ps.uom,
-        v_end_date::DATE as snapshot_date,
-        ps.opening_balance,
-        ps.total_received as quantity_received,
-        (ps.total_issued + ps.total_material_used) as quantity_issued_outgoing,
-        ps.total_adjustment as adjustment,
-        ps.opening_balance + ps.total_received - ps.total_issued - ps.total_material_used + ps.total_adjustment as closing_balance,
-        NULL::NUMERIC(15,3) as stock_count_result,
-        NULL::NUMERIC(15,3) as quantity_difference,
-        NULL::NUMERIC(18,4) as value_amount,
-        NULL::VARCHAR(3) as currency,
-        'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
-    FROM period_summary ps
-    WHERE ps.opening_balance <> 0 
-       OR ps.total_received <> 0 
-       OR ps.total_issued <> 0 
-       OR ps.total_material_used <> 0 
-       OR ps.total_adjustment <> 0
-    ORDER BY ps.company_code, ps.item_code;
+                combined.company_code,
+                combined.company_name,
+                combined.item_code,
+                combined.item_name,
+                combined.item_type,
+                combined.unit_quantity,
+                combined.snapshot_date,
+                combined.opening_balance,
+                combined.quantity_received,
+                combined.quantity_issued_outgoing,
+                combined.adjustment,
+                combined.closing_balance
+            FROM (
+                -- Historical data from snapshot
+                SELECT
+                    sds.company_code,
+                    c.name as company_name,
+                    sds.item_code,
+                    sds.item_name,
+                    sds.item_type,
+                    COALESCE(i.uom, 'UNIT') as unit_quantity,
+                    sds.snapshot_date,
+                    sds.opening_balance,
+                    sds.production_qty as quantity_received,
+                    sds.outgoing_qty as quantity_issued_outgoing,
+                    sds.adjustment_qty as adjustment,
+                    sds.closing_balance
+                FROM stock_daily_snapshot sds
+                JOIN companies c ON sds.company_code = c.code
+                LEFT JOIN items i ON sds.company_code = i.company_code AND sds.item_code = i.item_code
+                WHERE sds.item_type = ANY(p_item_types)
+                  AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
+                  
+                UNION ALL
+                
+                -- Recent data from transactions
+                SELECT
+                    calc.company_code,
+                    calc.company_name,
+                    calc.item_code,
+                    calc.item_name,
+                    calc.item_type,
+                    calc.uom as unit_quantity,
+                    calc.snapshot_date,
+                    calc.opening_balance,
+                    calc.quantity_received,
+                    calc.quantity_issued_outgoing,
+                    calc.adjustment,
+                    calc.closing_balance
+                FROM (
+                    SELECT 
+                        i.company_code,
+                        co.name as company_name,
+                        i.item_code,
+                        i.item_name,
+                        i.item_type,
+                        i.uom,
+                        dates.snapshot_date::DATE as snapshot_date,
+                        COALESCE(
+                            LAG(
+                                COALESCE(opening.closing_balance, 0) +
+                                COALESCE(prod.production_qty, 0) -
+                                COALESCE(out.outgoing_qty, 0) +
+                                COALESCE(adj.adjustment_qty, 0)
+                            ) OVER (PARTITION BY i.company_code, i.item_code ORDER BY dates.snapshot_date),
+                            COALESCE(opening.closing_balance, 0)
+                        ) as opening_balance,
+                        COALESCE(prod.production_qty, 0) as quantity_received,
+                        COALESCE(out.outgoing_qty, 0) as quantity_issued_outgoing,
+                        COALESCE(adj.adjustment_qty, 0) as adjustment,
+                        COALESCE(opening.closing_balance, 0) +
+                        COALESCE(prod.production_qty, 0) -
+                        COALESCE(out.outgoing_qty, 0) +
+                        COALESCE(adj.adjustment_qty, 0) as closing_balance
+                    FROM items i
+                    JOIN companies co ON i.company_code = co.code
+                    -- Find the last snapshot before start date for opening balance
+                    LEFT JOIN LATERAL (
+                        SELECT MAX(sds2.snapshot_date) as last_snapshot_date
+                        FROM stock_daily_snapshot sds2
+                        WHERE sds2.company_code = i.company_code
+                          AND sds2.item_code = i.item_code
+                          AND sds2.item_type = ANY(p_item_types)
+                          AND sds2.snapshot_date < v_start_date
+                    ) AS last_snap ON TRUE
+                    -- Generate date series from start_date to end_date
+                    CROSS JOIN LATERAL (
+                        SELECT generate_series::DATE as snapshot_date
+                        FROM generate_series(v_start_date, v_end_date, '1 day'::INTERVAL)
+                    ) AS dates
+                    -- Opening balance (from last snapshot before range)
+                    LEFT JOIN stock_daily_snapshot opening ON 
+                        i.company_code = opening.company_code AND
+                        i.item_code = opening.item_code AND
+                        opening.snapshot_date = last_snap.last_snapshot_date
+                    -- Production quantities
+                    LEFT JOIN (
+                        SELECT 
+                            po.company_code,
+                            poi.item_code,
+                            po.transaction_date as trx_date,
+                            SUM(CASE 
+                                WHEN po.reversal = 'Y' THEN -poi.qty
+                                ELSE poi.qty 
+                            END) as production_qty
+                        FROM production_outputs po
+                        JOIN production_output_items poi ON po.company_code = poi.production_output_company
+                            AND po.id = poi.production_output_id
+                            AND po.transaction_date = poi.production_output_date
+                        WHERE po.deleted_at IS NULL AND poi.deleted_at IS NULL
+                        GROUP BY po.company_code, poi.item_code, po.transaction_date
+                    ) prod ON i.company_code = prod.company_code 
+                        AND i.item_code = prod.item_code 
+                        AND prod.trx_date = dates.snapshot_date
+                    -- Outgoing quantities
+                    LEFT JOIN (
+                        SELECT 
+                            og.company_code,
+                            ogi.item_code,
+                            og.outgoing_date as trx_date,
+                            SUM(ogi.qty) as outgoing_qty
+                        FROM outgoing_goods og
+                        JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
+                            AND og.id = ogi.outgoing_good_id
+                            AND og.outgoing_date = ogi.outgoing_good_date
+                        WHERE og.deleted_at IS NULL AND ogi.deleted_at IS NULL
+                        GROUP BY og.company_code, ogi.item_code, og.outgoing_date
+                    ) out ON i.company_code = out.company_code 
+                        AND i.item_code = out.item_code 
+                        AND out.trx_date = dates.snapshot_date
+                    -- Adjustment quantities
+                    LEFT JOIN (
+                        SELECT 
+                            a.company_code,
+                            ai.item_code,
+                            a.transaction_date as trx_date,
+                            SUM(CASE 
+                                WHEN ai.adjustment_type = 'GAIN' THEN ai.qty
+                                ELSE -ai.qty
+                            END) as adjustment_qty
+                        FROM adjustments a
+                        JOIN adjustment_items ai ON a.company_code = ai.adjustment_company
+                            AND a.id = ai.adjustment_id
+                            AND a.transaction_date = ai.adjustment_date
+                        WHERE a.deleted_at IS NULL AND ai.deleted_at IS NULL
+                        GROUP BY a.company_code, ai.item_code, a.transaction_date
+                    ) adj ON i.company_code = adj.company_code 
+                        AND i.item_code = adj.item_code 
+                        AND adj.trx_date = dates.snapshot_date
+                    WHERE i.item_type = ANY(p_item_types)
+                      AND i.deleted_at IS NULL
+                      AND dates.snapshot_date NOT IN (
+                          SELECT sds3.snapshot_date FROM stock_daily_snapshot sds3
+                          WHERE sds3.company_code = i.company_code
+                            AND sds3.item_code = i.item_code
+                            AND sds3.snapshot_date BETWEEN v_start_date AND v_end_date
+                      )
+                ) calc
+            ) combined
+        )
+        SELECT
+            ROW_NUMBER() OVER (PARTITION BY dd.company_code ORDER BY dd.item_code) as no,
+            dd.company_code,
+            dd.company_name,
+            dd.item_code,
+            dd.item_name,
+            dd.item_type,
+            dd.unit_quantity,
+            v_end_date::DATE as snapshot_date,  -- Show as end date for aggregated view
+            (ARRAY_AGG(dd.opening_balance ORDER BY dd.snapshot_date ASC) FILTER (WHERE dd.opening_balance IS NOT NULL))[1] as opening_balance,  -- First day opening
+            SUM(dd.quantity_received) as quantity_received,  -- Accumulated production
+            SUM(dd.quantity_issued_outgoing) as quantity_issued_outgoing,  -- Accumulated out
+            SUM(dd.adjustment) as adjustment,  -- Accumulated adjustments
+            (ARRAY_AGG(dd.opening_balance ORDER BY dd.snapshot_date ASC) FILTER (WHERE dd.opening_balance IS NOT NULL))[1] + 
+            SUM(dd.quantity_received) - 
+            SUM(dd.quantity_issued_outgoing) + 
+            SUM(dd.adjustment) as closing_balance,  -- Calculated final closing
+            NULL::NUMERIC(15,3) as stock_count_result,
+            NULL::NUMERIC(15,3) as quantity_difference,
+            NULL::NUMERIC(18,4) as value_amount,
+            NULL::VARCHAR(3) as currency,
+            'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
+        FROM daily_data dd
+        GROUP BY dd.company_code, dd.company_name, dd.item_code, dd.item_name, dd.item_type, dd.unit_quantity
+        ORDER BY dd.company_code, dd.item_code;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
@@ -630,25 +684,22 @@ COMMENT ON VIEW vw_lpj_hasil_produksi IS 'Report #5: Finished Goods Mutation Rep
 -- REPORT #6: LPJ BARANG MODAL (Capital Goods Mutation Report)
 -- ============================================================================
 -- Uses function for incoming-based capital goods (excludes production)
--- Item types: HIBE-M, HIBE-E, HIBE-T (Capital Goods - purchased only)
+-- Item types: HIBE_M, HIBE_E, HIBE_T (Capital Goods - purchased only)
 
 CREATE OR REPLACE VIEW vw_lpj_barang_modal AS
 SELECT * FROM fn_calculate_lpj_bahan_baku(
-    ARRAY['HIBE-M', 'HIBE-E', 'HIBE-T'],
+    ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
     DATE_TRUNC('year', CURRENT_DATE)::DATE,
     CURRENT_DATE
 );
 
-COMMENT ON VIEW vw_lpj_barang_modal IS 'Report #6: Capital Goods Mutation Report - Incoming-based only (HIBE-M/E/T purchased) - YTD';
+COMMENT ON VIEW vw_lpj_barang_modal IS 'Report #6: Capital Goods Mutation Report - Incoming-based only (HIBE_M/E/T purchased) - YTD';
 
 -- ============================================================================
 -- FUNCTION 3: CALCULATE LPJ BARANG SISA (Scrap/Waste Mutations)
 -- ============================================================================
--- This function calculates scrap mutations using hybrid approach:
--- Opening balance: From stock_daily_snapshot (last snapshot before start date)
--- Transactions: 
---   - Scrap IN: From scrap_transactions (transaction_type = 'IN')
---   - Scrap OUT: From outgoing_goods + outgoing_good_items (item_type = 'SCRAP')
+-- This function calculates scrap mutations from scrap_transaction_items
+-- Sources: scrap_transactions (independent scrap tracking)
 -- Item types: SCRAP
 --
 -- Parameters:
@@ -658,6 +709,7 @@ COMMENT ON VIEW vw_lpj_barang_modal IS 'Report #6: Capital Goods Mutation Report
 --
 -- Return mode: Always returns aggregated records (1 row per company+item+date_range)
 --   with accumulated in/out between start and end dates
+-- Note: Scrap does NOT have snapshot storage, so all data comes from transactions
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION fn_calculate_lpj_barang_sisa(
@@ -695,138 +747,64 @@ BEGIN
     
     -- Return scrap mutation data based on provided or default date range
     RETURN QUERY
-    WITH
-    -- Get opening balance from last snapshot before start date, or earliest if none before start
-    opening_balances AS (
-        SELECT 
-            sds.company_code,
-            sds.item_code,
-            sds.closing_balance as opening_balance,
-            sds.item_type,
-            sds.item_name,
-            c.name as company_name,
-            sds.uom
-        FROM stock_daily_snapshot sds
-        JOIN companies c ON sds.company_code = c.code
-        INNER JOIN (
-            -- Try to get snapshot before start_date; if none exist, use earliest snapshot
-            SELECT 
-                sds_inner.company_code, 
-                sds_inner.item_code, 
-                COALESCE(
-                    MAX(CASE WHEN sds_inner.snapshot_date < v_start_date THEN sds_inner.snapshot_date END),
-                    MIN(sds_inner.snapshot_date)
-                ) as max_snapshot_date
-            FROM stock_daily_snapshot sds_inner
-            GROUP BY sds_inner.company_code, sds_inner.item_code
-        ) last_snap ON sds.company_code = last_snap.company_code 
-                    AND sds.item_code = last_snap.item_code 
-                    AND sds.snapshot_date = last_snap.max_snapshot_date
-        WHERE sds.item_type = ANY(p_item_types)
-    ),
-    -- Aggregate all scrap transactions within date range (with UOM tracking)
-    transactions_summary AS (
-        -- Scrap IN transactions (from scrap_transactions)
-        SELECT
-            st.company_code,
-            sti.item_code,
-            sti.uom,
-            SUM(sti.qty) as received,
-            0::NUMERIC(15,3) as issued,
-            0::NUMERIC(15,3) as adjustment_val
-        FROM scrap_transactions st
-        JOIN scrap_transaction_items sti ON 
-            st.company_code = sti.scrap_transaction_company
-            AND st.id = sti.scrap_transaction_id
-            AND st.transaction_date = sti.scrap_transaction_date
-        WHERE st.deleted_at IS NULL 
-          AND sti.deleted_at IS NULL
-          AND sti.item_type = ANY(p_item_types)
-          AND st.transaction_type = 'IN'
-          AND st.transaction_date BETWEEN v_start_date AND v_end_date
-        GROUP BY st.company_code, sti.item_code, sti.uom
-
-        UNION ALL
-
-        -- Scrap OUT transactions (from outgoing_goods)
-        SELECT
-            og.company_code,
-            ogi.item_code,
-            ogi.uom,
-            0::NUMERIC(15,3) as received,
-            SUM(ogi.qty) as issued,
-            0::NUMERIC(15,3) as adjustment_val
-        FROM outgoing_goods og
-        JOIN outgoing_good_items ogi ON 
-            og.company_code = ogi.outgoing_good_company
-            AND og.id = ogi.outgoing_good_id
-            AND og.outgoing_date = ogi.outgoing_good_date
-        WHERE og.deleted_at IS NULL 
-          AND ogi.deleted_at IS NULL
-          AND ogi.item_type = ANY(p_item_types)
-          AND og.outgoing_date BETWEEN v_start_date AND v_end_date
-        GROUP BY og.company_code, ogi.item_code, ogi.uom
-    ),
-    -- Combine opening balance with transactions
-    -- Priority for UOM: snapshot.uom → transaction.uom → 'UNIT'
-    period_summary AS (
-        SELECT
-            COALESCE(ob.company_code, ts_agg.agg_company_code) as company_code,
-            COALESCE(ob.company_name, c.name) as company_name,
-            COALESCE(ob.item_code, ts_agg.agg_item_code) as item_code,
-            COALESCE(ob.item_name, '') as item_name,
-            ob.item_type,
-            COALESCE(ob.uom, ts_agg.agg_uom, 'UNIT') as uom,
-            COALESCE(ob.opening_balance, 0)::NUMERIC(15,3) as opening_balance,
-            COALESCE(ts_agg.total_received, 0)::NUMERIC(15,3) as total_received,
-            COALESCE(ts_agg.total_issued, 0)::NUMERIC(15,3) as total_issued,
-            COALESCE(ts_agg.total_adjustment, 0)::NUMERIC(15,3) as total_adjustment
-        FROM opening_balances ob
-        FULL OUTER JOIN (
+        WITH scrap_transactions_data AS (
+            -- Aggregate scrap transactions by type (IN/OUT)
             SELECT
-                ts.company_code as agg_company_code,
-                ts.item_code as agg_item_code,
-                MIN(ts.uom) as agg_uom,
-                SUM(ts.received) as total_received,
-                SUM(ts.issued) as total_issued,
-                SUM(ts.adjustment_val) as total_adjustment
-            FROM transactions_summary ts
-            GROUP BY ts.company_code, ts.item_code
-        ) ts_agg ON
-            ob.company_code = ts_agg.agg_company_code 
-            AND ob.item_code = ts_agg.agg_item_code
-        LEFT JOIN companies c ON COALESCE(ob.company_code, ts_agg.agg_company_code) = c.code
-        WHERE ob.item_type = ANY(p_item_types)
-    )
-    SELECT
-        ROW_NUMBER() OVER (PARTITION BY ps.company_code ORDER BY ps.item_code) as no,
-        ps.company_code,
-        ps.company_name,
-        ps.item_code,
-        ps.item_name,
-        ps.item_type,
-        ps.uom,
-        v_end_date::DATE as snapshot_date,
-        ps.opening_balance,
-        ps.total_received as quantity_received,
-        ps.total_issued as quantity_issued_outgoing,
-        ps.total_adjustment as adjustment,
-        ps.opening_balance + ps.total_received - ps.total_issued + ps.total_adjustment as closing_balance,
-        NULL::NUMERIC(15,3) as stock_count_result,
-        NULL::NUMERIC(15,3) as quantity_difference,
-        NULL::NUMERIC(18,4) as value_amount,
-        NULL::VARCHAR(3) as currency,
-        'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
-    FROM period_summary ps
-    WHERE ps.opening_balance <> 0 
-       OR ps.total_received <> 0 
-       OR ps.total_issued <> 0 
-       OR ps.total_adjustment <> 0
-    ORDER BY ps.company_code, ps.item_code;
+                sti.scrap_transaction_company as company_code,
+                c.name as company_name,
+                sti.item_code,
+                sti.item_name,
+                sti.item_type,
+                sti.uom as unit_quantity,
+                st.transaction_type,
+                CASE 
+                    WHEN st.transaction_type = 'IN' THEN sti.qty
+                    ELSE 0::NUMERIC
+                END as incoming_qty,
+                CASE 
+                    WHEN st.transaction_type = 'OUT' THEN sti.qty
+                    ELSE 0::NUMERIC
+                END as outgoing_qty,
+                sti.amount as value_amount,
+                sti.currency,
+                st.transaction_date
+            FROM scrap_transaction_items sti
+            JOIN scrap_transactions st ON 
+                sti.scrap_transaction_company = st.company_code
+                AND sti.scrap_transaction_id = st.id
+                AND sti.scrap_transaction_date = st.transaction_date
+            JOIN companies c ON st.company_code = c.code
+            WHERE sti.item_type = ANY(p_item_types)
+              AND st.transaction_date BETWEEN v_start_date AND v_end_date
+              AND sti.deleted_at IS NULL
+              AND st.deleted_at IS NULL
+        )
+        SELECT
+            ROW_NUMBER() OVER (PARTITION BY std.company_code ORDER BY std.item_code) as no,
+            std.company_code,
+            std.company_name,
+            std.item_code,
+            std.item_name,
+            std.item_type,
+            std.unit_quantity,
+            v_end_date::DATE as snapshot_date,  -- Show as end date for aggregated view
+            0::NUMERIC(15,3) as opening_balance,  -- Scrap typically starts at 0
+            SUM(std.incoming_qty) as quantity_received,  -- Accumulated scrap received
+            SUM(std.outgoing_qty) as quantity_issued_outgoing,  -- Accumulated scrap disposed
+            0::NUMERIC(15,3) as adjustment,  -- No adjustments for scrap
+            SUM(std.incoming_qty) - SUM(std.outgoing_qty) as closing_balance,  -- Calculated final stock
+            NULL::NUMERIC(15,3) as stock_count_result,
+            NULL::NUMERIC(15,3) as quantity_difference,
+            SUM(std.value_amount) as value_amount,
+            (MAX(std.currency::VARCHAR))::VARCHAR(3) as currency,
+            ('SCRAP MUTATION: ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT) as remarks
+        FROM scrap_transactions_data std
+        GROUP BY std.company_code, std.company_name, std.item_code, std.item_name, std.item_type, std.unit_quantity
+        ORDER BY std.company_code, std.item_code;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION fn_calculate_lpj_barang_sisa IS 'Calculate LPJ for scrap/waste (hybrid: opening from snapshot + SCRAP IN from scrap_transactions + SCRAP OUT from outgoing_goods)';
+COMMENT ON FUNCTION fn_calculate_lpj_barang_sisa IS 'Calculate LPJ for scrap/waste (independent scrap transactions only)';
 
 -- ============================================================================
 -- REPORT #7: LPJ BARANG SISA / SCRAP (Scrap Mutation Report)
@@ -839,7 +817,7 @@ SELECT * FROM fn_calculate_lpj_barang_sisa(
     CURRENT_DATE
 );
 
-COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - SCRAP IN from scrap_transactions + SCRAP OUT from outgoing_goods - YTD';
+COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - Independent scrap transactions (SCRAP) - YTD';
 
 -- ============================================================================
 -- ADDITIONAL HELPER VIEWS
@@ -999,7 +977,7 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 
 -- Test Report #6: Capital Goods Mutation - CUSTOM DATE RANGE (Dec 25, 2024 - Jan 1, 2025)
 -- SELECT * FROM fn_calculate_lpj_bahan_baku(
---     ARRAY['HIBE-M', 'HIBE-E', 'HIBE-T'], 
+--     ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'], 
 --     '2024-12-25'::DATE, 
 --     '2025-01-01'::DATE
 -- ) WHERE company_code = 1310;
@@ -1023,7 +1001,7 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 --
 -- MODE 2: CUSTOM DATE RANGE (Functions - Dynamic)
 --   SELECT * FROM fn_calculate_lpj_bahan_baku(
---       ARRAY['HIBE-M', 'HIBE-E', 'HIBE-T'],
+--       ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
 --       '2024-12-25'::DATE,  -- Start date (custom)
 --       '2025-01-01'::DATE   -- End date (custom)
 --   )
@@ -1042,7 +1020,7 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 -- Scenario 1: Query data from Dec 25, 2024 to Jan 1, 2025 (crosses year boundary)
 --   USE FUNCTION:
 --   SELECT * FROM fn_calculate_lpj_bahan_baku(
---       ARRAY['HIBE-M', 'HIBE-E', 'HIBE-T'],
+--       ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
 --       '2024-12-25'::DATE,
 --       '2025-01-01'::DATE
 --   ) WHERE company_code = 1310;
@@ -1051,7 +1029,7 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 -- Scenario 2: Query data from last month (e.g., Nov 2025)
 --   USE FUNCTION:
 --   SELECT * FROM fn_calculate_lpj_bahan_baku(
---       ARRAY['HIBE-M', 'HIBE-E', 'HIBE-T'],
+--       ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
 --       '2025-11-01'::DATE,
 --       '2025-11-30'::DATE
 --   ) WHERE company_code = 1310;
@@ -1060,7 +1038,7 @@ ON stock_daily_snapshot (company_code, item_type, snapshot_date);
 -- Scenario 3: Year-to-date comparison (Jan 1 to specific date)
 --   USE FUNCTION:
 --   SELECT * FROM fn_calculate_lpj_bahan_baku(
---       ARRAY['HIBE-M', 'HIBE-E', 'HIBE-T'],
+--       ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
 --       DATE_TRUNC('year', CURRENT_DATE)::DATE,  -- Jan 1 current year
 --       '2025-06-30'::DATE  -- Mid-year cutoff
 --   ) WHERE company_code = 1310;
