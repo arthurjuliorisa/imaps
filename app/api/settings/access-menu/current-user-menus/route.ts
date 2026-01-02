@@ -68,7 +68,7 @@ export async function GET() {
     }
 
     // For non-admin users, check permissions
-    const menus = await prisma.menus.findMany({
+    const allMenus = await prisma.menus.findMany({
       where: {
         is_active: true,
       },
@@ -83,8 +83,8 @@ export async function GET() {
       },
     });
 
-    // Filter only menus that user has access to (where can_view = true)
-    const menusWithAccess = menus
+    // Filter only menus that user has explicit access to
+    const menusWithExplicitAccess = allMenus
       .filter((menu) => menu.user_access_menus.length > 0)
       .map((menu): MenuResponse => {
         const access = menu.user_access_menus[0];
@@ -102,12 +102,47 @@ export async function GET() {
         };
       });
 
-    // Create a Set of accessible menu IDs for quick lookup
-    const accessibleMenuIds = new Set(menusWithAccess.map(m => m.id));
+    // Create a Set of explicitly accessible menu IDs
+    const explicitAccessIds = new Set(menusWithExplicitAccess.map(m => m.id));
+
+    // Auto-include child menus when user has access to parent menu
+    // This ensures that granting access to "Lap. per Dokumen" automatically grants access to all its children
+    const parentMenuIds = menusWithExplicitAccess
+      .filter(menu => !menu.parentId) // Get only parent menus
+      .map(menu => menu.id);
+
+    const childMenusToAutoInclude = allMenus
+      .filter(menu =>
+        menu.parent_id && // Has a parent
+        parentMenuIds.includes(menu.parent_id) && // Parent is accessible
+        !explicitAccessIds.has(menu.id) // Not already explicitly granted
+      )
+      .map((menu): MenuResponse => {
+        // Inherit permissions from parent menu
+        const parentMenu = menusWithExplicitAccess.find(m => m.id === menu.parent_id);
+        return {
+          id: menu.id,
+          menuName: menu.menu_name,
+          menuPath: menu.menu_path,
+          menuIcon: menu.menu_icon,
+          parentId: menu.parent_id,
+          menuOrder: menu.menu_order,
+          canView: parentMenu?.canView ?? true,
+          canCreate: parentMenu?.canCreate ?? false,
+          canEdit: parentMenu?.canEdit ?? false,
+          canDelete: parentMenu?.canDelete ?? false,
+        };
+      });
+
+    // Combine explicit access and auto-included child menus
+    const allAccessibleMenus = [...menusWithExplicitAccess, ...childMenusToAutoInclude];
+
+    // Create a Set of all accessible menu IDs for filtering
+    const accessibleMenuIds = new Set(allAccessibleMenus.map(m => m.id));
 
     // Filter out child menus whose parent is not accessible
     // If a menu has a parent, that parent must also be in the accessible list
-    const accessibleMenus = menusWithAccess.filter((menu) => {
+    const accessibleMenus = allAccessibleMenus.filter((menu) => {
       // If menu has no parent, it's a top-level menu - include it
       if (!menu.parentId) {
         return true;
