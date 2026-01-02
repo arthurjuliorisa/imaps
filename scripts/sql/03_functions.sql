@@ -366,8 +366,8 @@ BEGIN
                 COALESCE(out.outgoing_qty, 0) +
                 COALESCE(adj.adjustment_qty, 0)
             
-            -- HIBE/HIBE_M/HIBE_E/HIBE_T: opening + incoming - material_usage - outgoing +/- adjustment
-            WHEN ai.item_type IN ('HIBE', 'HIBE_M', 'HIBE_E', 'HIBE_T') THEN
+            -- HIBE/HIBE-M/HIBE-E/HIBE-T: opening + incoming - material_usage - outgoing +/- adjustment
+            WHEN ai.item_type IN ('HIBE', 'HIBE-M', 'HIBE-E', 'HIBE-T') THEN
                 COALESCE(ob.opening_balance, 0) +
                 COALESCE(inc.incoming_qty, 0) -
                 COALESCE(mat.material_usage_qty, 0) -

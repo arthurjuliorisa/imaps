@@ -54,8 +54,13 @@ export async function GET(request: NextRequest) {
       return errorResponse('Unauthorized', 'UNAUTHORIZED', 401);
     }
 
-    // Get all item types
+    // Check if only active item types should be returned
+    const searchParams = request.nextUrl.searchParams;
+    const activeOnly = searchParams.get('active') === 'true';
+
+    // Get item types with optional filter
     const itemTypes = await prisma.item_types.findMany({
+      where: activeOnly ? { is_active: true } : undefined,
       orderBy: {
         item_type_code: 'asc'
       }

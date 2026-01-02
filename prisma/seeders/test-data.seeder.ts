@@ -61,20 +61,20 @@ export async function seedTestData() {
       uom: 'ROLL',
       balance_date: BALANCE_DATE,
     },
-    // Capital Goods - Machinery (HIBE_M)
+    // Capital Goods - Machinery (HIBE-M)
     {
       company_code: COMPANY_CODE,
-      item_type: 'HIBE_M',
+      item_type: 'HIBE-M',
       item_code: 'CG-MACH-001',
       item_name: 'Weaving Machine Type A',
       qty: 5,
       uom: 'UNIT',
       balance_date: BALANCE_DATE,
     },
-    // Capital Goods - Equipment (HIBE_E)
+    // Capital Goods - Equipment (HIBE-E)
     {
       company_code: COMPANY_CODE,
-      item_type: 'HIBE_E',
+      item_type: 'HIBE-E',
       item_code: 'CG-EQUIP-001',
       item_name: 'Quality Control Equipment',
       qty: 10,
@@ -172,7 +172,7 @@ export async function seedTestData() {
       incoming_good_id: incoming2.id,
       incoming_good_company: incoming2.company_code,
       incoming_good_date: incoming2.incoming_date,
-      item_type: 'HIBE_M',
+      item_type: 'HIBE-M',
       item_code: 'CG-MACH-001',
       item_name: 'Weaving Machine Type A',
       hs_code: '8446.10.00',

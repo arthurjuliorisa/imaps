@@ -45,7 +45,7 @@ export async function GET(request: Request) {
         currency,
         remarks
       FROM fn_calculate_lpj_bahan_baku(
-        ARRAY['HIBE_M', 'HIBE_E', 'HIBE_T'],
+        ARRAY['HIBE-M', 'HIBE-E', 'HIBE-T'],
         $2::DATE,
         $3::DATE
       )

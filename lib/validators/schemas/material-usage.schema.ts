@@ -178,7 +178,7 @@ export const materialUsageBatchRequestSchema = z
   .refine(
     (data: any) => {
       const hasProductionSupport = data.items.some((item: any) =>
-        ['FERT', 'HIBE', 'HIBE_M', 'HIBE_E', 'HIBE_T'].includes(item.item_type.toUpperCase())
+        ['FERT', 'HIBE', 'HIBE-M', 'HIBE-E', 'HIBE-T'].includes(item.item_type.toUpperCase())
       );
       if (hasProductionSupport && !data.cost_center_number) {
         return false;

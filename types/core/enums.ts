@@ -18,9 +18,9 @@ export enum ItemTypeCode {
   HALB = 'HALB',       // Work in Process / Semi-Finished (Barang Setengah Jadi)
   FERT = 'FERT',       // Finished Goods (Barang Jadi)
   HIBE = 'HIBE',       // Capital Goods - General (Barang Modal)
-  HIBE_M = 'HIBE_M',   // Capital Goods - Machinery (Mesin)
-  HIBE_E = 'HIBE_E',   // Capital Goods - Equipment (Peralatan)
-  HIBE_T = 'HIBE_T',   // Capital Goods - Tools (Perkakas)
+  HIBE_M = 'HIBE-M',   // Capital Goods - Machinery (Mesin)
+  HIBE_E = 'HIBE-E',   // Capital Goods - Equipment (Peralatan)
+  HIBE_T = 'HIBE-T',   // Capital Goods - Tools (Perkakas)
   DIEN = 'DIEN',       // Services (Jasa)
   SCRAP = 'SCRAP'      // Scrap and Waste (Sisa/Sampah)
 }

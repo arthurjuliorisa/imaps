@@ -58,7 +58,7 @@ interface AddOutCapitalGoodsDialogProps {
 }
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
-const ITEM_TYPES = ['HIBE_M', 'HIBE_E', 'HIBE_T'];
+const ITEM_TYPES = ['HIBE-M', 'HIBE-E', 'HIBE-T'];
 const DOCUMENT_TYPES = ['BC25', 'BC27', 'BC41'];
 
 export function AddOutCapitalGoodsDialog({

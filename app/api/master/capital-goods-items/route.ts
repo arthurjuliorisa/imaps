@@ -5,7 +5,7 @@ import { validateCompanyCode } from '@/lib/company-validation';
 
 /**
  * GET /api/master/capital-goods-items
- * Get all capital goods items (HIBE_M, HIBE_E, HIBE_T types)
+ * Get all capital goods items (HIBE-M, HIBE-E, HIBE-T types)
  * Returns unique items from stock_daily_snapshot table
  */
 export async function GET(request: Request) {
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     const where: any = {
       company_code: companyCode,
       item_type: {
-        in: ['HIBE_M', 'HIBE_E', 'HIBE_T'],
+        in: ['HIBE-M', 'HIBE-E', 'HIBE-T'],
       },
     };
 

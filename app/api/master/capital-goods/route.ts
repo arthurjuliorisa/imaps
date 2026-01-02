@@ -6,12 +6,12 @@ import { prisma } from '@/lib/prisma';
 /**
  * GET /api/master/capital-goods
  * Returns list of capital goods items from beginning_balances
- * Filters by item_type IN ('HIBE_M', 'HIBE_E', 'HIBE_T')
+ * Filters by item_type IN ('HIBE-M', 'HIBE-E', 'HIBE-T')
  *
  * Item types:
- * - HIBE_M: Machinery
- * - HIBE_E: Electronics
- * - HIBE_T: Tools
+ * - HIBE-M: Machinery
+ * - HIBE-E: Electronics
+ * - HIBE-T: Tools
  */
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     // Build where clause with company_code filter if applicable
     const whereClause: any = {
       item_type: {
-        in: ['HIBE_M', 'HIBE_E', 'HIBE_T'],
+        in: ['HIBE-M', 'HIBE-E', 'HIBE-T'],
       },
     };
 

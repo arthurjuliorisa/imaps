@@ -154,7 +154,7 @@ export async function POST(request: Request) {
       where: {
         company_code: companyCode,
         item_code: { in: itemCodes },
-        item_type: { in: ['HIBE_M', 'HIBE_E', 'HIBE_T'] },
+        item_type: { in: ['HIBE-M', 'HIBE-E', 'HIBE-T'] },
       },
       select: {
         item_code: true,

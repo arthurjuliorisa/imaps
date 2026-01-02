@@ -615,7 +615,7 @@ model adjustment_items {
 // CAPITAL GOODS TRANSACTIONS
 // ============================================================================
 // These tables handle incoming capital goods purchases and outgoing scrap disposals
-// Capital goods are identified by item_type: HIBE_M, HIBE_E, HIBE_T
+// Capital goods are identified by item_type: HIBE-M, HIBE-E, HIBE-T
 // ============================================================================
 
 // ============================================================================

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -57,6 +57,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
   const [fileName, setFileName] = useState('');
   const [records, setRecords] = useState<ImportedRecord[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [validItemTypes, setValidItemTypes] = useState<string[]>([]);
 
   const handleFileSelect = () => {
     fileInputRef.current?.click();
@@ -65,6 +66,38 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
   const getApiEndpoint = () => {
     return '/api/customs/beginning-data';
   };
+
+  /**
+   * Fetch valid (active) item types from the API and return them
+   */
+  const fetchValidItemTypesData = async (): Promise<string[]> => {
+    try {
+      const response = await fetch('/api/master/item-types?active=true', {
+        method: 'GET',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Extract item type codes from the response
+        const codes = data.data?.map((it: any) => it.item_type_code) || [];
+        setValidItemTypes(codes);
+        return codes;
+      }
+      return [];
+    } catch (error) {
+      console.error('Error fetching valid item types:', error);
+      return [];
+    }
+  };
+
+  /**
+   * Fetch valid item types when dialog opens
+   */
+  useEffect(() => {
+    if (open) {
+      fetchValidItemTypesData();
+    }
+  }, [open]);
 
   const handleDownloadTemplate = async () => {
     setDownloading(true);
@@ -112,11 +145,22 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
     }
   };
 
-  const validateRecord = (row: any): { isValid: boolean; errors: string[] } => {
+  const validateRecord = (row: any, itemTypesList: string[]): { isValid: boolean; errors: string[] } => {
     const errors: string[] = [];
 
     // Required field validation
-    if (!row['Item Type']) errors.push('Item Type is required');
+    if (!row['Item Type']) {
+      errors.push('Item Type is required');
+    } else {
+      // Validate Item Type exists in valid types (must check against the list)
+      const itemTypeValue = String(row['Item Type']).trim();
+      if (itemTypesList.length > 0) {
+        if (!itemTypesList.includes(itemTypeValue)) {
+          errors.push(`Invalid Item Type '${itemTypeValue}'. Valid types: ${itemTypesList.join(', ')}`);
+        }
+      }
+    }
+    
     if (!row['Item Code']) errors.push('Item Code is required');
     if (!row['Item Name']) errors.push('Item Name is required');
     if (!row['UOM']) errors.push('UOM is required');
@@ -171,6 +215,12 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
     setParseError(null);
 
     try {
+      // Ensure valid item types are fetched before parsing
+      let itemTypesList = validItemTypes;
+      if (itemTypesList.length === 0) {
+        itemTypesList = await fetchValidItemTypesData();
+      }
+
       const data = await file.arrayBuffer();
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(data);
@@ -214,9 +264,9 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
         return;
       }
 
-      // Process and validate records
+      // Process and validate records using fetched item types
       const processedRecords: ImportedRecord[] = jsonData.map((row: any) => {
-        const validation = validateRecord(row);
+        const validation = validateRecord(row, itemTypesList);
         const qty = parseFloat(row['Qty']) || 0;
         
         // Parse PPKEK Numbers (comma-separated)
@@ -397,6 +447,17 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
               <strong>Note:</strong> Data harus dimulai dari baris ke-3 (Row 3). Baris 1 adalah header, baris 2 adalah format hint.
             </Typography>
           </Alert>
+
+          {validItemTypes.length > 0 && (
+            <Alert severity="success" icon={false} sx={{ mb: 2, py: 0.75 }}>
+              <Typography variant="caption" component="div">
+                <strong>Valid Item Types:</strong> {validItemTypes.join(', ')}
+              </Typography>
+              <Typography variant="caption" component="div" sx={{ mt: 0.5, color: 'text.secondary' }}>
+                Only active item types are accepted. Contact admin if you need to activate more types.
+              </Typography>
+            </Alert>
+          )}
 
           {parseError && (
             <Alert severity="error" sx={{ mb: 2 }}>
