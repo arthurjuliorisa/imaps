@@ -23,12 +23,8 @@ export async function GET(request: Request) {
     }
     const { companyCode } = companyValidation;
 
-    // Query function directly with custom date range
-    // This allows flexible date filtering instead of hardcoded view behavior
-    let startDateParam = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), 0, 1); // Default: Jan 1
-    let endDateParam = endDate ? new Date(endDate) : new Date(); // Default: Today
-
-    const query = `
+    // Query from function with custom date range support
+    let query = `
       SELECT
         no,
         company_code,
@@ -50,27 +46,37 @@ export async function GET(request: Request) {
         remarks
       FROM fn_calculate_lpj_barang_sisa(
         ARRAY['SCRAP'],
-        $1::DATE,
-        $2::DATE
+        $2::DATE,
+        $3::DATE
       )
-      WHERE company_code = $3
-      ORDER BY item_code
+      WHERE company_code = $1
     `;
 
-    const params = [startDateParam, endDateParam, companyCode];
+    const params: any[] = [companyCode];
+
+    // Use dates from frontend request
+    if (startDate && endDate) {
+      params.push(new Date(startDate), new Date(endDate));
+    } else {
+      // Fallback: Default to Jan 1 - Today (year-to-date)
+      const currentDate = new Date();
+      const yearStart = new Date(currentDate.getFullYear(), 0, 1);
+      params.push(yearStart, currentDate);
+    }
+
+    query += ` ORDER BY item_code`;
+
+    console.log('[Scrap API] Query:', query);
+    console.log('[Scrap API] Params:', params);
 
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
-    console.log('[DEBUG] Raw result count:', result.length);
-    if (result.length > 0) {
-      console.log('[DEBUG] First record keys:', Object.keys(result[0]));
-    }
-
+    console.log('[Scrap API] Result rows:', result?.length);
 
     // Transform to expected format
     const transformedData = result.map((row: any, index: number) => ({
       id: `${row.item_code}-${row.snapshot_date}-${index}`,
-      rowNumber: row.no || (index + 1),
+      rowNumber: row.no,
       companyCode: row.company_code,
       companyName: row.company_name,
       itemCode: row.item_code,
@@ -93,8 +99,12 @@ export async function GET(request: Request) {
     return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {
     console.error('[API Error] Failed to fetch scrap mutations:', error);
+    if (error instanceof Error) {
+      console.error('[API Error] Error message:', error.message);
+      console.error('[API Error] Error stack:', error.stack);
+    }
     return NextResponse.json(
-      { message: 'Error fetching scrap mutations', error: error instanceof Error ? error.message : 'Unknown error' },
+      { message: 'Error fetching scrap mutations', error: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }

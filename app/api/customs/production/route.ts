@@ -56,18 +56,26 @@ export async function GET(request: Request) {
 
     const params: any[] = [companyCode];
 
-    // Use provided dates, but always include beginning of year for beginning balance
-    if (startDate && endDate) {
-      // Always start from Jan 1 of current year to include beginning balance
-      const currentDate = new Date();
-      const yearStart = new Date(currentDate.getFullYear(), 0, 1);
-      params.push(yearStart, new Date(endDate));
+    // Use provided dates or fallback to defaults
+    let startDateParam: Date;
+    let endDateParam: Date;
+
+    if (startDate) {
+      startDateParam = new Date(startDate);
     } else {
-      // Default to Jan 1 - Today (year-to-date)
+      // Default: Jan 1 of current year (year-to-date)
       const currentDate = new Date();
-      const yearStart = new Date(currentDate.getFullYear(), 0, 1);
-      params.push(yearStart, currentDate);
+      startDateParam = new Date(currentDate.getFullYear(), 0, 1);
     }
+
+    if (endDate) {
+      endDateParam = new Date(endDate);
+    } else {
+      // Default: Today
+      endDateParam = new Date();
+    }
+
+    params.push(startDateParam, endDateParam);
 
     query += ` ORDER BY item_code`;
 

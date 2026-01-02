@@ -56,14 +56,13 @@ export async function GET(request: Request) {
 
     const params: any[] = [companyCode];
 
-    // Use provided dates, but always include beginning of year for beginning balance
+    // Use dates from frontend request
+    // Frontend is responsible for sending correct start_date and end_date
     if (startDate && endDate) {
-      // Always start from Jan 1 of current year to include beginning balance
-      const currentDate = new Date();
-      const yearStart = new Date(currentDate.getFullYear(), 0, 1);
-      params.push(yearStart, new Date(endDate));
+      // Use EXACTLY what frontend provided
+      params.push(new Date(startDate), new Date(endDate));
     } else {
-      // Default to Jan 1 - Today (year-to-date)
+      // Fallback: Default to Jan 1 - Today (year-to-date)
       const currentDate = new Date();
       const yearStart = new Date(currentDate.getFullYear(), 0, 1);
       params.push(yearStart, currentDate);
