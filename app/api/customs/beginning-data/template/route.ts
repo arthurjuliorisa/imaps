@@ -56,7 +56,7 @@ export async function GET() {
     const sampleData = [
       ['ROH', 'RM-1310-001', 'Steel Plate', 'KG', 100, '01/01/2025', '001,002', 'Opening balance for raw materials'],
       ['FERT', 'FG-1310-001', 'Finished Product A', 'PCS', 250.5, '01/01/2025', '003', 'Initial finished goods stock'],
-      ['HIBE_M', 'CG-MACH-001', 'CNC Machine', 'SET', 2, '01/01/2025', '', 'Capital goods - Machine'],
+      ['HIBE-M', 'CG-MACH-001', 'CNC Machine', 'SET', 2, '01/01/2025', '', 'Capital goods - Machine'],
       ['HALB', 'WIP-1310-001', 'Semi-finished Product', 'PCS', 150, '01/01/2025', '004,005,006', 'WIP stock'],
       ['SCRAP', 'SCRAP-1310-001', 'Waste Materials', 'KG', 10, '01/01/2025', '', 'Waste materials'],
       ['HIBE_E', 'CG-EQUIP-001', 'Testing Equipment', 'SET', 5, '01/01/2025', '007', 'Quality control equipment'],
@@ -178,7 +178,7 @@ export async function GET() {
       ['Item Type | Item Code    | Item Name          | UOM  | Qty   | Balance Date | Remarks'],
       ['ROH       | RM-1310-001  | Steel Plate        | KG   | 100   | 01/01/2025   | Opening balance for raw materials'],
       ['FERT      | FG-1310-001  | Finished Product A | PCS  | 250.5 | 01/01/2025   | Initial finished goods stock'],
-      ['HIBE_M    | CG-MACH-001  | CNC Machine        | SET  | 2     | 01/01/2025   | Capital goods - Machine'],
+      ['HIBE-M    | CG-MACH-001  | CNC Machine        | SET  | 2     | 01/01/2025   | Capital goods - Machine'],
       ['HALB      | WIP-1310-001 | Semi-finished      | PCS  | 150   | 01/01/2025   | WIP stock'],
       ['SCRAP     | SCRAP-001    | Waste Materials    | KG   | 10    | 01/01/2025   | Waste materials'],
       [],

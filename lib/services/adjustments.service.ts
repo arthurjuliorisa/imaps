@@ -1,8 +1,9 @@
 import { logger } from '@/lib/utils/logger';
 import {
-  AdjustmentBatch,
-  validateAdjustment,
-} from '@/lib/validators/adjustment.validator';
+  validateAdjustmentBatch,
+  validateItemTypes,
+  type AdjustmentBatchRequestInput,
+} from '@/lib/validators/schemas/adjustment.schema';
 import { AdjustmentsRepository } from '@/lib/repositories/adjustments.repository';
 import { transformZodErrors } from '@/lib/utils/error-transformer';
 import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/api-response';
@@ -45,29 +46,44 @@ export class AdjustmentsService {
 
     try {
       // Step 1: Schema validation
-      const validation = validateAdjustment(payload);
+      const validation = validateAdjustmentBatch(payload);
 
       if (!validation.success) {
         log.warn('Validation failed', {
-          errorCount: validation.error.issues.length,
+          errorCount: validation.errors?.length || 0,
         });
-
-        const errors = transformZodErrors(validation.error);
 
         return {
           success: false,
-          errors,
+          errors: validation.errors || [],
         };
       }
 
-      const data = validation.data as AdjustmentBatch;
+      const data = validation.data as AdjustmentBatchRequestInput;
 
       log.info('Batch schema validated', {
         wmsId: data.wms_id,
         itemCount: data.items.length,
       });
 
-      // Step 2: Company validation
+      // Step 2: Validate item types
+      const itemTypeErrors = await validateItemTypes(data);
+      if (itemTypeErrors.length > 0) {
+        log.warn('Item type validation failed', {
+          errorCount: itemTypeErrors.length,
+        });
+
+        return {
+          success: false,
+          errors: itemTypeErrors as ErrorDetail[],
+        };
+      }
+
+      log.info('Item types validated', {
+        wmsId: data.wms_id,
+      });
+
+      // Step 3: Company validation
       const companyExists = await this.validateCompany(data.company_code);
 
       if (!companyExists) {
@@ -94,7 +110,7 @@ export class AdjustmentsService {
         companyCode: data.company_code,
       });
 
-      // Step 3: Queue for immediate async insert (non-blocking)
+      // Step 4: Queue for immediate async insert (non-blocking)
       this.repository
         .create(data)
         .then((result) => {

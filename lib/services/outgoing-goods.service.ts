@@ -1,12 +1,13 @@
 import { logger } from '@/lib/utils/logger';
 import { prisma } from '@/lib/prisma';
 import {
-  validateOutgoingGoodsRequest,
+  validateOutgoingGoodRequest,
   validateOutgoingGoodsDates,
   validateProductionTraceability,
-  type OutgoingGoodsRequest,
+  validateItemTypes,
+  type OutgoingGoodRequestInput,
   type ValidationErrorDetail,
-} from '@/lib/validators/outgoing-goods.validator';
+} from '@/lib/validators/schemas/outgoing-goods.schema';
 import { OutgoingGoodsRepository } from '@/lib/repositories/outgoing-goods.repository';
 
 export interface SuccessResponse {
@@ -49,7 +50,7 @@ export class OutgoingGoodsService {
 
     try {
       // 1. Validate payload structure
-      const validationResult = validateOutgoingGoodsRequest(payload);
+      const validationResult = validateOutgoingGoodRequest(payload);
 
       if (!validationResult.success) {
         requestLogger.warn(
@@ -72,7 +73,17 @@ export class OutgoingGoodsService {
         return { success: false, errors: dateErrors as ErrorDetail[] };
       }
 
-      // 3. Validate production traceability for FERT/HALB items
+      // 3. Validate item types
+      const itemTypeErrors = await validateItemTypes(data);
+      if (itemTypeErrors.length > 0) {
+        requestLogger.warn(
+          'Item type validation failed',
+          { errors: itemTypeErrors }
+        );
+        return { success: false, errors: itemTypeErrors as ErrorDetail[] };
+      }
+
+      // 4. Validate production traceability for FERT/HALB items
       const traceabilityErrors = validateProductionTraceability(data);
       if (traceabilityErrors.length > 0) {
         requestLogger.warn(
@@ -82,7 +93,7 @@ export class OutgoingGoodsService {
         return { success: false, errors: traceabilityErrors as ErrorDetail[] };
       }
 
-      // 4. Business validations - verify production_output_wms_ids exist
+      // 5. Business validations - verify production_output_wms_ids exist
       const productionValidationErrors = await this.validateProductionOutputs(data);
       if (productionValidationErrors.length > 0) {
         requestLogger.warn(
@@ -92,10 +103,10 @@ export class OutgoingGoodsService {
         return { success: false, errors: productionValidationErrors };
       }
 
-      // 5. Check stock and collect warnings
+      // 6. Check stock and collect warnings
       const warnings = await this.checkStockAndCollectWarnings(data);
 
-      // 6. Queue async database insert
+      // 7. Queue async database insert
       const repository = new OutgoingGoodsRepository();
       repository.insertOutgoingGoodsAsync(data).catch((error) => {
         requestLogger.error('Failed to insert outgoing goods', { error, wmsId: data.wms_id });
@@ -130,7 +141,7 @@ export class OutgoingGoodsService {
   /**
    * Validate that production_output_wms_ids exist in database
    */
-  private async validateProductionOutputs(data: OutgoingGoodsRequest): Promise<ErrorDetail[]> {
+  private async validateProductionOutputs(data: OutgoingGoodRequestInput): Promise<ErrorDetail[]> {
     const errors: ErrorDetail[] = [];
 
     // Collect all production_output_wms_ids to validate
@@ -184,7 +195,7 @@ export class OutgoingGoodsService {
    * Check current stock and collect warnings for items with insufficient stock
    */
   private async checkStockAndCollectWarnings(
-    data: OutgoingGoodsRequest
+    data: OutgoingGoodRequestInput
   ): Promise<
     Array<{
       item_index: number;

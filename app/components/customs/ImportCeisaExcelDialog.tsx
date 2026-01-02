@@ -72,7 +72,7 @@ export function ImportCeisaExcelDialog({
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [direction, setDirection] = useState<'IN' | 'OUT'>(defaultDirection);
-  const [itemType, setItemType] = useState<string>('HIBE_M');
+  const [itemType, setItemType] = useState<string>('HIBE-M');
   const [loading, setLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
@@ -206,7 +206,7 @@ export function ImportCeisaExcelDialog({
       setPreviewData(null);
       setErrors([]);
       setDirection(defaultDirection);
-      setItemType('HIBE_M');
+      setItemType('HIBE-M');
       onClose();
     }
   };
@@ -247,9 +247,9 @@ export function ImportCeisaExcelDialog({
                 value={itemType}
                 onChange={(e) => setItemType(e.target.value)}
               >
-                <FormControlLabel value="HIBE_M" control={<Radio />} label="HIBE_M (Mesin/Machine)" disabled={loading} />
-                <FormControlLabel value="HIBE_E" control={<Radio />} label="HIBE_E (Equipment)" disabled={loading} />
-                <FormControlLabel value="HIBE_T" control={<Radio />} label="HIBE_T (Tools)" disabled={loading} />
+                <FormControlLabel value="HIBE-M" control={<Radio />} label="HIBE-M (Mesin/Machine)" disabled={loading} />
+                <FormControlLabel value="HIBE-E" control={<Radio />} label="HIBE-E (Equipment)" disabled={loading} />
+                <FormControlLabel value="HIBE-T" control={<Radio />} label="HIBE-T (Tools)" disabled={loading} />
               </RadioGroup>
             </FormControl>
           )}

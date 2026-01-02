@@ -178,14 +178,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate item type exists in database
+    // Validate item type exists and is active in database
     const itemTypeExists = await prisma.item_types.findUnique({
       where: { item_type_code: itemType },
     });
 
-    if (!itemTypeExists) {
+    if (!itemTypeExists || !itemTypeExists.is_active) {
       return NextResponse.json(
-        { message: `Invalid item type: ${itemType}. Item type does not exist in the system.` },
+        { message: `Invalid item type: ${itemType}. Item type does not exist or is not active in the system.` },
         { status: 400 }
       );
     }

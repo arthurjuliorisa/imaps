@@ -135,7 +135,7 @@
         "shipper_name": "PT Industrial Machinery Equipment",
         "items": [
           {
-            "item_type": "HIBE_M",
+            "item_type": "HIBE-M",
             "item_code": "EQ-1310-001",
             "item_name": "Industrial Weaving Machine Model X500",
             "hs_code": "844810",
@@ -153,7 +153,7 @@
         "SA_1310_010": 200,
         "EQ_1310_001": 2
       },
-      "notes": "Capital goods (HIBE_M - Capital Goods Machine) entry for production facility equipment"
+      "notes": "Capital goods (HIBE-M - Capital Goods Machine) entry for production facility equipment"
     },
 
     {
@@ -665,7 +665,7 @@
       "after_incoming": 2,
       "after_usage": 2,
       "final_expected": 2,
-      "status": "CORRECT - CAPITAL GOODS (HIBE_M - Machinery) item, no usage in this scenario"
+      "status": "CORRECT - CAPITAL GOODS (HIBE-M - Machinery) item, no usage in this scenario"
     }
   }
 }

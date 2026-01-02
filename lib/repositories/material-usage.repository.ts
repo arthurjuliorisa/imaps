@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db/prisma';
-import { MaterialUsageBatch, MaterialUsageItem } from '@/lib/validators/material-usage.validator';
+import type { MaterialUsageBatchRequestInput, MaterialUsageItemInput } from '@/lib/validators/schemas/material-usage.schema';
 import { logger } from '@/lib/utils/logger';
 import { BaseTransactionRepository } from './base-transaction.repository';
 
@@ -31,7 +31,7 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
    * Note: Items are inserted into material_usage_items table
    * Header (material_usages) is upserted once per batch
    */
-  async batchUpsert(data: MaterialUsageBatch): Promise<void> {
+  async batchUpsert(data: MaterialUsageBatchRequestInput): Promise<void> {
     const log = logger.child({
       scope: 'MaterialUsageRepository.batchUpsert',
       wmsId: data.wms_id,
@@ -233,5 +233,4 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
       return false;
     }
   }
-
 }

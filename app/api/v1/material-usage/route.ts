@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticate } from '@/lib/middleware/auth.middleware';
 import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware';
 import { MaterialUsageService } from '@/lib/services/material-usage.service';
-import { validateMaterialUsageBatch } from '@/lib/validators/material-usage.validator';
 import { logger } from '@/lib/utils/logger';
 
 /**

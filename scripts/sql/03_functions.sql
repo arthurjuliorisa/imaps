@@ -250,19 +250,21 @@ BEGIN
           AND st.transaction_type = 'IN'
         GROUP BY st.company_code, sti.item_type, sti.item_code
     ),
-    -- Scrap outgoing quantities (from scrap_transactions with transaction_type = 'OUT')
+    -- Scrap outgoing quantities (from outgoing_goods with item_type = 'SCRAP')
     scrap_outgoing_quantities AS (
         SELECT 
-            st.company_code,
-            sti.item_type,
-            sti.item_code,
-            SUM(sti.qty) AS scrap_outgoing_qty
-        FROM scrap_transactions st
-        JOIN scrap_transaction_items sti ON st.id = sti.scrap_transaction_id
-        WHERE st.company_code = p_company_code
-          AND st.transaction_date = p_snapshot_date
-          AND st.transaction_type = 'OUT'
-        GROUP BY st.company_code, sti.item_type, sti.item_code
+            og.company_code,
+            ogi.item_type,
+            ogi.item_code,
+            SUM(ogi.qty) AS scrap_outgoing_qty
+        FROM outgoing_goods og
+        JOIN outgoing_good_items ogi ON og.id = ogi.outgoing_good_id
+        WHERE og.company_code = p_company_code
+          AND og.outgoing_date = p_snapshot_date
+          AND ogi.item_type = 'SCRAP'
+          AND og.deleted_at IS NULL
+          AND ogi.deleted_at IS NULL
+        GROUP BY og.company_code, ogi.item_type, ogi.item_code
     ),
     -- Material usage quantities (from material_usages)
     material_usage_quantities AS (
@@ -366,8 +368,8 @@ BEGIN
                 COALESCE(out.outgoing_qty, 0) +
                 COALESCE(adj.adjustment_qty, 0)
             
-            -- HIBE/HIBE_M/HIBE_E/HIBE_T: opening + incoming - material_usage - outgoing +/- adjustment
-            WHEN ai.item_type IN ('HIBE', 'HIBE_M', 'HIBE_E', 'HIBE_T') THEN
+            -- HIBE/HIBE-M/HIBE-E/HIBE-T: opening + incoming - material_usage - outgoing +/- adjustment
+            WHEN ai.item_type IN ('HIBE', 'HIBE-M', 'HIBE-E', 'HIBE-T') THEN
                 COALESCE(ob.opening_balance, 0) +
                 COALESCE(inc.incoming_qty, 0) -
                 COALESCE(mat.material_usage_qty, 0) -

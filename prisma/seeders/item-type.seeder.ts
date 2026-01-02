@@ -59,10 +59,10 @@ export async function seedItemTypes() {
       },
     }),
     prisma.item_types.upsert({
-      where: { item_type_code: 'HIBE_M' },
+      where: { item_type_code: 'HIBE-M' },
       update: {},
       create: {
-        item_type_code: 'HIBE_M',
+        item_type_code: 'HIBE-M',
         name_en: 'Capital Goods - Machine',
         name_de: 'Hilfsbetriebsstoffe - Mesin',
         name_id: 'Barang Modal - Mesin',
@@ -72,10 +72,10 @@ export async function seedItemTypes() {
       },
     }),
     prisma.item_types.upsert({
-      where: { item_type_code: 'HIBE_E' },
+      where: { item_type_code: 'HIBE-E' },
       update: {},
       create: {
-        item_type_code: 'HIBE_E',
+        item_type_code: 'HIBE-E',
         name_en: 'Capital Goods - Engineering',
         name_de: 'Hilfsbetriebsstoffe - Teknik',
         name_id: 'Barang Modal - Teknik',
@@ -85,10 +85,10 @@ export async function seedItemTypes() {
       },
     }),
     prisma.item_types.upsert({
-      where: { item_type_code: 'HIBE_T' },
+      where: { item_type_code: 'HIBE-T' },
       update: {},
       create: {
-        item_type_code: 'HIBE_T',
+        item_type_code: 'HIBE-T',
         name_en: 'Capital Goods - Tools',
         name_de: 'Hilfsbetriebsstoffe - Alat',
         name_id: 'Barang Modal - Alat',

@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticate } from '@/lib/middleware/auth.middleware';
 import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware';
 import { AdjustmentsService } from '@/lib/services/adjustments.service';
-import { validateAdjustment } from '@/lib/validators/adjustment.validator';
-import { transformZodErrors } from '@/lib/utils/error-transformer';
 import { logger } from '@/lib/utils/logger';
 
 /**

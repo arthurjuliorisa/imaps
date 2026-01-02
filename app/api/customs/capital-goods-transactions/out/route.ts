@@ -24,7 +24,7 @@ const OutgoingCapitalGoodsSchema = z.object({
       0, 0, 0, 0
     ));
   }),
-  itemType: z.enum(['HIBE_M', 'HIBE_E', 'HIBE_T'], {
+  itemType: z.enum(['HIBE-M', 'HIBE-E', 'HIBE-T'], {
     message: 'Item type must be HIBE_M, HIBE_E, or HIBE_T'
   }),
   itemCode: z.string().min(1, 'Item code is required').trim(),

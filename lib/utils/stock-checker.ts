@@ -53,9 +53,9 @@ function normalizeDate(date: Date): Date {
  *   Incoming: scrap_transactions (transaction_type='IN')
  *   Outgoing: outgoing_goods (item_type='SCRAP')
  *
- * CG (HIBE_M/E/T):
- *   Incoming: incoming_goods (item_type='HIBE_*')
- *   Outgoing: outgoing_goods (item_type='HIBE_*')
+ * CG (HIBE-M/E-T):
+ *   Incoming: incoming_goods (item_type='HIBE-*')
+ *   Outgoing: outgoing_goods (item_type='HIBE-*')
  */
 export async function checkStockAvailability(
   companyCode: number,
@@ -227,7 +227,7 @@ async function calculateRealTimeStock(
     `;
 
     outgoingToday = outgoingResult.length > 0 ? Number(outgoingResult[0].total_qty) : 0;
-  } else if (['HIBE_M', 'HIBE_E', 'HIBE_T'].includes(itemType)) {
+  } else if (['HIBE-M', 'HIBE-E', 'HIBE-T'].includes(itemType)) {
     // CG: Incoming from incoming_goods
     const incomingResult = await prisma.$queryRaw<Array<{ total_qty: Prisma.Decimal }>>`
       SELECT COALESCE(SUM(igi.qty), 0) as total_qty

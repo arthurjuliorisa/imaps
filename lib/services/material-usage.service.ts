@@ -1,9 +1,10 @@
 import { logger } from '@/lib/utils/logger';
 import {
-  MaterialUsageBatch,
-  BatchValidationError,
   validateMaterialUsageBatch,
-} from '@/lib/validators/material-usage.validator';
+  validateItemTypes,
+  type MaterialUsageBatchRequestInput,
+  type BatchValidationError,
+} from '@/lib/validators/schemas/material-usage.schema';
 import { MaterialUsageRepository } from '@/lib/repositories/material-usage.repository';
 
 /**
@@ -64,7 +65,7 @@ export class MaterialUsageService {
 
       if (!validationResult.success) {
         log.warn('Validation failed', {
-          errorCount: validationResult.errors.length,
+          errorCount: validationResult.errors?.length || 0,
         });
 
         const wmsId = (payload as any)?.wms_id || 'unknown';
@@ -72,7 +73,7 @@ export class MaterialUsageService {
           status: 'failed',
           message: 'Validation failed',
           wms_id: wmsId,
-          errors: validationResult.errors,
+          errors: validationResult.errors || [],
         };
       }
 
@@ -83,7 +84,26 @@ export class MaterialUsageService {
         recordCount: data.items.length,
       });
 
-      // Step 2: Business validation (company, work order, etc.)
+      // Step 2: Validate item types
+      const itemTypeErrors = await validateItemTypes(data);
+      if (itemTypeErrors.length > 0) {
+        log.warn('Item type validation failed', {
+          errorCount: itemTypeErrors.length,
+        });
+
+        return {
+          status: 'failed',
+          message: 'Validation failed',
+          wms_id: data.wms_id,
+          errors: itemTypeErrors as BatchValidationError[],
+        };
+      }
+
+      log.info('Item types validated', {
+        wmsId: data.wms_id,
+      });
+
+      // Step 3: Business validation (company, work order, etc.)
       const businessErrors = await this.validateBusiness(data);
 
       if (businessErrors.length > 0) {
@@ -143,6 +163,7 @@ export class MaterialUsageService {
         errors: [
           {
             location: 'header',
+            field: 'payload',
             code: 'INTERNAL_ERROR',
             message: err.message,
           },
@@ -162,7 +183,7 @@ export class MaterialUsageService {
    * Work order and cost center not validated (all data from WMS is valid)
    */
   private async validateBusiness(
-    data: MaterialUsageBatch
+    data: MaterialUsageBatchRequestInput
   ): Promise<BatchValidationError[]> {
     const errors: BatchValidationError[] = [];
 

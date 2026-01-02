@@ -23,6 +23,9 @@ enum CustomsDocumentType {
   BC41 // Local Sales to Non-Bonded Zone from Local Purchase (BC40)
   BC261 // Subcontracting - Incoming
   BC262 // Subcontracting - Outgoing
+  PPKEKTLDDP // PPKEK incoming for TLDDP
+  PPKEKLDIN // PPKEK incoming for LDP
+  PPKEKLDPOUT  // PPKEK outgoing for LDP
 }
 
 // ============================================================================
@@ -612,7 +615,7 @@ model adjustment_items {
 // CAPITAL GOODS TRANSACTIONS
 // ============================================================================
 // These tables handle incoming capital goods purchases and outgoing scrap disposals
-// Capital goods are identified by item_type: HIBE_M, HIBE_E, HIBE_T
+// Capital goods are identified by item_type: HIBE-M, HIBE-E, HIBE-T
 // ============================================================================
 
 // ============================================================================

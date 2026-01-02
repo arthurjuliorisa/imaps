@@ -184,6 +184,40 @@ export async function POST(request: Request) {
       throw error;
     }
 
+    // Validate item type exists and is active
+    let itemTypesToValidate: string[] = [];
+    if (validatedRequest.transactionType === 'SCRAP') {
+      itemTypesToValidate = ['SCRAP'];
+    } else {
+      // Capital goods item types
+      if (!itemType || !['HIBE-M', 'HIBE-E', 'HIBE-T'].includes(itemType)) {
+        return NextResponse.json(
+          { message: 'Item type is required for capital goods and must be one of: HIBE-M, HIBE-E, HIBE-T' },
+          { status: 400 }
+        );
+      }
+      itemTypesToValidate = [itemType];
+    }
+
+    // Check if all item types are active in database
+    const validItemTypes = await prisma.item_types.findMany({
+      where: {
+        item_type_code: { in: itemTypesToValidate },
+        is_active: true,
+      },
+      select: { item_type_code: true },
+    });
+
+    const validCodes = new Set(validItemTypes.map(t => t.item_type_code));
+    const invalidTypes = itemTypesToValidate.filter(type => !validCodes.has(type));
+
+    if (invalidTypes.length > 0) {
+      return NextResponse.json(
+        { message: `Invalid or inactive item type: ${invalidTypes.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
     // Convert file to buffer
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
@@ -244,21 +278,13 @@ export async function POST(request: Request) {
         regDate
       );
     } else {
-      // Validate item type for capital goods
-      if (!itemType || !['HIBE_M', 'HIBE_E', 'HIBE_T'].includes(itemType)) {
-        return NextResponse.json(
-          { message: 'Item type is required for capital goods and must be one of: HIBE_M, HIBE_E, HIBE_T' },
-          { status: 400 }
-        );
-      }
-
       result = await importCapitalGoodsTransactions(
         companyCode,
         parsedData,
         validatedRequest.direction,
         docDate,
         regDate,
-        itemType
+        itemType as string
       );
     }
 

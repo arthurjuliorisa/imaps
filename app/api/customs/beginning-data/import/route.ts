@@ -109,8 +109,10 @@ export async function POST(request: Request) {
     }
 
     // Fetch valid item types from database (dynamic validation)
+    // Only fetch ACTIVE item types
     const validItemTypes = await prisma.item_types.findMany({
-      select: { item_type_code: true, name_id: true, name_en: true },
+      where: { is_active: true },
+      select: { item_type_code: true, name_id: true, name_en: true, is_active: true },
     });
     const validItemTypeCodes = new Set(validItemTypes.map(it => it.item_type_code));
 
