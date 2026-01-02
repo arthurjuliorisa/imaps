@@ -671,7 +671,9 @@ COMMENT ON VIEW vw_lpj_barang_modal IS 'Report #6: Capital Goods Mutation Report
 -- ============================================================================
 -- This function calculates scrap mutations using hybrid approach:
 -- Opening balance: From stock_daily_snapshot (last snapshot before start date)
--- Transactions: From scrap_transactions (IN/OUT types)
+-- Transactions: 
+--   - Scrap IN: From scrap_transactions (transaction_type = 'IN')
+--   - Scrap OUT: From outgoing_goods + outgoing_good_items (item_type = 'SCRAP')
 -- Item types: SCRAP
 --
 -- Parameters:
@@ -750,7 +752,7 @@ BEGIN
     ),
     -- Aggregate all scrap transactions within date range
     transactions_summary AS (
-        -- Scrap IN transactions
+        -- Scrap IN transactions (from scrap_transactions)
         SELECT
             st.company_code,
             sti.item_code,
@@ -771,24 +773,23 @@ BEGIN
 
         UNION ALL
 
-        -- Scrap OUT transactions
+        -- Scrap OUT transactions (from outgoing_goods)
         SELECT
-            st.company_code,
-            sti.item_code,
+            og.company_code,
+            ogi.item_code,
             0::NUMERIC(15,3) as received,
-            SUM(sti.qty) as issued,
+            SUM(ogi.qty) as issued,
             0::NUMERIC(15,3) as adjustment_val
-        FROM scrap_transactions st
-        JOIN scrap_transaction_items sti ON 
-            st.company_code = sti.scrap_transaction_company
-            AND st.id = sti.scrap_transaction_id
-            AND st.transaction_date = sti.scrap_transaction_date
-        WHERE st.deleted_at IS NULL 
-          AND sti.deleted_at IS NULL
-          AND sti.item_type = ANY(p_item_types)
-          AND st.transaction_type = 'OUT'
-          AND st.transaction_date BETWEEN v_start_date AND v_end_date
-        GROUP BY st.company_code, sti.item_code
+        FROM outgoing_goods og
+        JOIN outgoing_good_items ogi ON 
+            og.company_code = ogi.outgoing_good_company
+            AND og.id = ogi.outgoing_good_id
+            AND og.outgoing_date = ogi.outgoing_good_date
+        WHERE og.deleted_at IS NULL 
+          AND ogi.deleted_at IS NULL
+          AND ogi.item_type = ANY(p_item_types)
+          AND og.outgoing_date BETWEEN v_start_date AND v_end_date
+        GROUP BY og.company_code, ogi.item_code
     ),
     -- Combine opening balance with transactions
     period_summary AS (
@@ -865,7 +866,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION fn_calculate_lpj_barang_sisa IS 'Calculate LPJ for scrap/waste (hybrid approach: opening from snapshot + scrap transactions)';
+COMMENT ON FUNCTION fn_calculate_lpj_barang_sisa IS 'Calculate LPJ for scrap/waste (hybrid: opening from snapshot + SCRAP IN from scrap_transactions + SCRAP OUT from outgoing_goods)';
 
 -- ============================================================================
 -- REPORT #7: LPJ BARANG SISA / SCRAP (Scrap Mutation Report)
@@ -878,7 +879,7 @@ SELECT * FROM fn_calculate_lpj_barang_sisa(
     CURRENT_DATE
 );
 
-COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - Independent scrap transactions (SCRAP) - YTD';
+COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - SCRAP IN from scrap_transactions + SCRAP OUT from outgoing_goods - YTD';
 
 -- ============================================================================
 -- ADDITIONAL HELPER VIEWS
