@@ -94,6 +94,7 @@ export async function GET(
  * - qty: number (required, must be > 0) - Beginning balance quantity
  * - balanceDate: string (required, ISO date format) - Balance date
  * - remarks: string (optional, max 1000 chars)
+ * - ppkekNumbers: string[] (optional) - Array of PPKEK numbers
  */
 export async function PUT(
   request: Request,
@@ -108,7 +109,7 @@ export async function PUT(
     const { session } = authCheck as { authenticated: true; session: any };
     const { id } = await context.params;
     const body = await request.json();
-    const { itemType, itemCode, itemName, uom, qty, balanceDate, remarks } = body;
+    const { itemType, itemCode, itemName, uom, qty, balanceDate, remarks, ppkekNumbers } = body;
 
     // Parse ID as integer
     const recordId = parseInt(id, 10);
@@ -188,10 +189,19 @@ export async function PUT(
     }
 
     // Get company code from session
-    const companyCode = session.user?.companyCode;
-    if (!companyCode) {
+    const companyCodeRaw = session.user?.companyCode;
+    if (!companyCodeRaw) {
       return NextResponse.json(
         { message: 'Company code not found in session' },
+        { status: 400 }
+      );
+    }
+
+    // Parse company code as integer
+    const companyCode = parseInt(companyCodeRaw);
+    if (isNaN(companyCode)) {
+      return NextResponse.json(
+        { message: 'Invalid company code format' },
         { status: 400 }
       );
     }
@@ -225,7 +235,38 @@ export async function PUT(
         uom: String(uom).trim(),
         qty: qtyValue,
         balance_date: normalizedDate,
+        remarks: sanitizedRemarks,
       },
+    });
+
+    // Handle PPKEK numbers
+    if (ppkekNumbers && Array.isArray(ppkekNumbers)) {
+      // Delete existing PPKEK associations
+      await prisma.beginning_balance_ppkeks.deleteMany({
+        where: { beginning_balance_id: recordId },
+      });
+
+      // Add new PPKEK associations
+      if (ppkekNumbers.length > 0) {
+        await prisma.beginning_balance_ppkeks.createMany({
+          data: ppkekNumbers.map((ppkekNumber: string) => ({
+            beginning_balance_id: recordId,
+            ppkek_number: String(ppkekNumber).trim(),
+          })),
+        });
+      }
+    }
+
+    // Fetch updated record with ppkeks
+    const updatedWithPpkeks = await prisma.beginning_balances.findUnique({
+      where: { id: recordId },
+      include: {
+        ppkeks: {
+          select: {
+            ppkek_number: true
+          }
+        }
+      }
     });
 
     // Transform response
@@ -241,6 +282,7 @@ export async function PUT(
       beginningBalance: Number(updated.qty),
       beginningDate: updated.balance_date,
       remarks: sanitizedRemarks,
+      ppkek_numbers: updatedWithPpkeks?.ppkeks?.map(p => p.ppkek_number) || [],
       itemId: updated.item_code,
       uomId: updated.uom,
       itemType: updated.item_type,
@@ -261,6 +303,49 @@ export async function PUT(
         companyCode,
       },
     });
+
+    // Queue snapshot recalculation for the item on the balance date
+    const priority = normalizedDate < new Date(Date.UTC(
+      new Date().getFullYear(),
+      new Date().getMonth(),
+      new Date().getDate(),
+      0, 0, 0, 0
+    )) ? 0 : -1; // Backdated vs same-day
+
+    // Check if queue entry already exists
+    const existingQueueEntry = await prisma.snapshot_recalc_queue.findFirst({
+      where: {
+        company_code: companyCode,
+        recalc_date: normalizedDate,
+        item_type: null,
+        item_code: null,
+      },
+    });
+
+    if (existingQueueEntry) {
+      // Update existing queue entry
+      await prisma.snapshot_recalc_queue.update({
+        where: { id: existingQueueEntry.id },
+        data: {
+          status: 'PENDING',
+          priority,
+          reason: 'Beginning balance updated',
+        },
+      });
+    } else {
+      // Create new queue entry
+      await prisma.snapshot_recalc_queue.create({
+        data: {
+          company_code: companyCode,
+          item_type: null,
+          item_code: null,
+          recalc_date: normalizedDate,
+          status: 'PENDING',
+          priority,
+          reason: 'Beginning balance updated',
+        },
+      });
+    }
 
     return NextResponse.json(transformedRecord);
   } catch (error: any) {
@@ -359,8 +444,51 @@ export async function DELETE(
       },
     });
 
+    // Queue snapshot recalculation for the item on the balance date
+    const priority = existing.balance_date < new Date(Date.UTC(
+      new Date().getFullYear(),
+      new Date().getMonth(),
+      new Date().getDate(),
+      0, 0, 0, 0
+    )) ? 0 : -1; // Backdated vs same-day
+
+    // Check if queue entry already exists
+    const existingQueueEntry = await prisma.snapshot_recalc_queue.findFirst({
+      where: {
+        company_code: existing.company_code,
+        recalc_date: existing.balance_date,
+        item_type: null,
+        item_code: null,
+      },
+    });
+
+    if (existingQueueEntry) {
+      // Update existing queue entry
+      await prisma.snapshot_recalc_queue.update({
+        where: { id: existingQueueEntry.id },
+        data: {
+          status: 'PENDING',
+          priority,
+          reason: 'Beginning balance deleted',
+        },
+      });
+    } else {
+      // Create new queue entry
+      await prisma.snapshot_recalc_queue.create({
+        data: {
+          company_code: existing.company_code,
+          item_type: null,
+          item_code: null,
+          recalc_date: existing.balance_date,
+          status: 'PENDING',
+          priority,
+          reason: 'Beginning balance deleted',
+        },
+      });
+    }
+
     return NextResponse.json({
-      message: 'Beginning balance record deleted successfully',
+      message: 'Beginning balance record deleted successfully. Snapshot recalculation queued for processing.',
     });
   } catch (error: any) {
     console.error('[API Error] Failed to delete beginning balance record:', error);

@@ -138,10 +138,6 @@ export default function BeginningDataPage() {
 
   // Handle add button click
   const handleAddClick = () => {
-    if (selectedItemType === 'ALL') {
-      toast.error('Please select a specific item type to add data');
-      return;
-    }
     setSelectedItem(null);
     setFormMode('add');
     setFormOpen(true);
@@ -173,7 +169,7 @@ export default function BeginningDataPage() {
         throw new Error('Failed to delete data');
       }
 
-      toast.success('Beginning stock data deleted successfully!');
+      toast.success('Beginning stock data deleted successfully!\n✓ Snapshot recalculation queued for processing');
       await fetchData();
       setDeleteDialogOpen(false);
       setSelectedItem(null);
@@ -198,7 +194,7 @@ export default function BeginningDataPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          itemType: selectedItemType,
+          itemType: formData.item_type,
           itemCode: formData.item_code,
           itemName: formData.item_name,
           uom: formData.uom,
@@ -214,9 +210,14 @@ export default function BeginningDataPage() {
         throw new Error(errorData.message || `Failed to ${formMode} data`);
       }
 
-      toast.success(
-        `Beginning stock data ${formMode === 'add' ? 'added' : 'updated'} successfully!`
-      );
+      let successMessage = `Beginning stock data ${formMode === 'add' ? 'added' : 'updated'} successfully!`;
+      if (formMode === 'edit') {
+        successMessage += '\n✓ Snapshot recalculation queued for processing';
+      } else {
+        successMessage += '\n✓ Snapshot recalculation queued for processing';
+      }
+      
+      toast.success(successMessage);
       await fetchData();
       setFormOpen(false);
       setSelectedItem(null);
@@ -287,6 +288,7 @@ export default function BeginningDataPage() {
       beginningDate: dayjs(selectedItem.beginningDate),
       balance_date: dayjs(selectedItem.beginningDate),
       remarks: selectedItem.remarks || '',
+      ppkek_numbers: (selectedItem as any).ppkek_numbers || [],
     };
   };
 

@@ -14,6 +14,7 @@ import {
   alpha,
   useTheme,
   Stack,
+  Autocomplete,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -37,6 +38,11 @@ export interface BeginningStockFormData {
   ppkek_numbers?: string[];
 }
 
+interface ItemType {
+  code: string;
+  name: string;
+}
+
 interface BeginningStockFormProps {
   open: boolean;
   onClose: () => void;
@@ -56,6 +62,9 @@ export function BeginningStockForm({
 }: BeginningStockFormProps) {
   const theme = useTheme();
   const [loading, setLoading] = useState(false);
+  const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
+  const [itemTypesLoading, setItemTypesLoading] = useState(true);
+
   const [formData, setFormData] = useState<BeginningStockFormData>({
     itemId: undefined,
     item_code: '',
@@ -71,6 +80,35 @@ export function BeginningStockForm({
     ppkek_numbers: [],
   });
 
+  // Load item types on mount
+  useEffect(() => {
+    const fetchItemTypes = async () => {
+      setItemTypesLoading(true);
+      try {
+        const response = await fetch('/api/master/item-types');
+        if (!response.ok) {
+          throw new Error('Failed to fetch item types');
+        }
+        const result = await response.json();
+        const itemTypesData = result.data || result;
+        const types = itemTypesData.map((it: any) => ({
+          code: it.item_type_code,
+          name: it.name_id || it.name_en,
+        }));
+        setItemTypes(types);
+      } catch (error) {
+        console.error('Error fetching item types:', error);
+        setItemTypes([]);
+      } finally {
+        setItemTypesLoading(false);
+      }
+    };
+
+    if (open) {
+      fetchItemTypes();
+    }
+  }, [open]);
+
   // Reset form when dialog opens or initialData changes
   useEffect(() => {
     if (open) {
@@ -81,7 +119,7 @@ export function BeginningStockForm({
           itemId: undefined,
           item_code: '',
           item_name: '',
-          item_type: itemType,
+          item_type: itemType || '',
           uomId: undefined,
           uom: '',
           beginningBalance: 0,
@@ -130,6 +168,7 @@ export function BeginningStockForm({
 
   const isFormValid =
     formData.balance_date !== null &&
+    formData.item_type.trim() !== '' &&
     formData.item_code.trim() !== '' &&
     formData.item_name.trim() !== '' &&
     formData.uom.trim() !== '' &&
@@ -137,7 +176,9 @@ export function BeginningStockForm({
     (formData.balance_date.isBefore(dayjs()) || formData.balance_date.isSame(dayjs(), 'day'));
 
   const getItemTypeLabel = () => {
-    return itemType || 'Item';
+    if (!formData.item_type) return 'Item Type';
+    const selectedType = itemTypes.find((it) => it.code === formData.item_type);
+    return selectedType ? selectedType.name : formData.item_type;
   };
 
   return (
@@ -171,6 +212,29 @@ export function BeginningStockForm({
       <DialogContent sx={{ mt: 3 }}>
         <LocalizationProvider dateAdapter={AdapterDayjs}>
           <Stack spacing={3}>
+            {/* Item Type - Dropdown Selection */}
+            <Autocomplete
+              value={itemTypes.find((it) => it.code === formData.item_type) || null}
+              onChange={(_, newValue) => {
+                if (newValue) {
+                  setFormData((prev) => ({ ...prev, item_type: newValue.code }));
+                }
+              }}
+              options={itemTypes}
+              getOptionLabel={(option) => `${option.code} - ${option.name}`}
+              loading={itemTypesLoading}
+              disabled={mode === 'edit' || itemTypesLoading}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Item Type"
+                  required
+                  placeholder="Select item type..."
+                  helperText={mode === 'edit' ? 'Item type cannot be changed in edit mode' : 'Select the item type'}
+                />
+              )}
+            />
+
             {/* Item Code - Manual Input */}
             <TextField
               fullWidth
