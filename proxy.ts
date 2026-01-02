@@ -26,37 +26,93 @@ const PROTECTED_ROUTES = [
 ];
 
 /**
- * Fetch user's accessible menu paths
+ * Fetch user's accessible menu paths with retry logic and better error handling
+ * @param request - NextRequest object
+ * @param retries - Number of retry attempts (default: 2)
+ * @returns Set of accessible menu paths
  */
-async function fetchUserMenuPaths(request: NextRequest): Promise<Set<string>> {
-  try {
-    const response = await fetch(
-      new URL('/api/settings/access-menu/current-user-menus', request.url),
-      {
-        headers: {
-          cookie: request.headers.get('cookie') || '',
-        },
-      }
-    );
+async function fetchUserMenuPaths(
+  request: NextRequest,
+  retries = 2
+): Promise<Set<string>> {
+  const startTime = Date.now();
+  const pathname = request.nextUrl.pathname;
 
-    if (!response.ok) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      // Create abort controller for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+      const response = await fetch(
+        new URL('/api/settings/access-menu/current-user-menus', request.url),
+        {
+          headers: {
+            cookie: request.headers.get('cookie') || '',
+          },
+          signal: controller.signal,
+        }
+      );
+
+      clearTimeout(timeoutId);
+      const duration = Date.now() - startTime;
+
+      if (!response.ok) {
+        if (attempt < retries) {
+          console.warn(
+            `[Middleware] Attempt ${attempt + 1}/${retries + 1} failed with status ${response.status} (${duration}ms) for ${pathname}, retrying...`
+          );
+          await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms before retry
+          continue;
+        }
+        console.error(
+          `[Middleware] API failed with status ${response.status} after ${retries + 1} attempts (${duration}ms) for ${pathname}`
+        );
+        return new Set();
+      }
+
+      const menus = await response.json();
+      const accessiblePaths = new Set(
+        menus
+          .filter((menu: any) => menu.menuPath !== null)
+          .map((menu: any) => menu.menuPath as string)
+      );
+
+      console.log(
+        `[Middleware] Successfully fetched ${menus.length} menus, ${accessiblePaths.size} accessible paths (${duration}ms) for ${pathname}`
+      );
+
+      return accessiblePaths;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      if (attempt < retries) {
+        console.warn(
+          `[Middleware] Attempt ${attempt + 1}/${retries + 1} failed (${duration}ms) for ${pathname}, retrying...`,
+          error instanceof Error ? error.message : String(error)
+        );
+        await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms before retry
+        continue;
+      }
+
+      // Final attempt failed - log comprehensive error
+      console.error(
+        `[Middleware] Error fetching user menus after ${retries + 1} attempts (${duration}ms) for ${pathname}:`
+      );
+      console.error(`[Middleware] Error type: ${error instanceof Error ? error.constructor.name : typeof error}`);
+      console.error(`[Middleware] Error message: ${error instanceof Error ? error.message : String(error)}`);
+
       return new Set();
     }
-
-    const menus = await response.json();
-    return new Set(
-      menus
-        .filter((menu: any) => menu.menuPath !== null)
-        .map((menu: any) => menu.menuPath as string)
-    );
-  } catch (error) {
-    console.error('[Middleware] Error fetching user menus:', error);
-    return new Set();
   }
+
+  // Fallback (should never reach here)
+  return new Set();
 }
 
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const requestStartTime = Date.now();
 
   // Skip middleware for non-protected routes
   const isProtectedRoute = PROTECTED_ROUTES.some((route) => pathname.startsWith(route));
@@ -69,14 +125,20 @@ export default async function proxy(request: NextRequest) {
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
 
   if (!token) {
+    console.warn(`[Middleware] Unauthenticated access attempt to ${pathname}`);
     // Redirect to login if not authenticated
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
+  const userEmail = token.email || 'unknown';
+  const userRole = token.role || 'unknown';
+
   // Admin users bypass all menu permission checks
   if (token.role === 'ADMIN') {
+    const duration = Date.now() - requestStartTime;
+    console.log(`[Middleware] ADMIN user ${userEmail} accessing ${pathname} - ALLOWED (${duration}ms)`);
     return NextResponse.next();
   }
 
@@ -85,12 +147,17 @@ export default async function proxy(request: NextRequest) {
 
   // Check if user has access to the current path
   const hasAccess = accessiblePaths.has(pathname);
+  const totalDuration = Date.now() - requestStartTime;
 
   if (!hasAccess) {
+    console.warn(
+      `[Middleware] ACCESS DENIED for ${userEmail} (${userRole}) to ${pathname} (${totalDuration}ms) - User has access to ${accessiblePaths.size} paths: ${Array.from(accessiblePaths).join(', ')}`
+    );
     // Redirect to access denied page
     return NextResponse.redirect(new URL('/access-denied', request.url));
   }
 
+  console.log(`[Middleware] Access granted for ${userEmail} (${userRole}) to ${pathname} (${totalDuration}ms)`);
   return NextResponse.next();
 }
 
