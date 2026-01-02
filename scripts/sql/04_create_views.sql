@@ -85,10 +85,9 @@ BEGIN
             sds.item_type,
             sds.item_name,
             c.name as company_name,
-            COALESCE(i.uom, 'UNIT') as uom
+            sds.uom
         FROM stock_daily_snapshot sds
         JOIN companies c ON sds.company_code = c.code
-        LEFT JOIN items i ON sds.company_code = i.company_code AND sds.item_code = i.item_code
         INNER JOIN (
             -- Try to get snapshot before start_date; if none exist, use earliest snapshot
             SELECT 
@@ -105,12 +104,13 @@ BEGIN
                     AND sds.snapshot_date = last_snap.max_snapshot_date
         WHERE sds.item_type = ANY(p_item_types)
     ),
-    -- Aggregate all transactions within date range
+    -- Aggregate all transactions within date range (with UOM tracking)
     transactions_summary AS (
         -- Incoming goods
         SELECT
             ig.company_code,
             igi.item_code,
+            igi.uom,
             SUM(igi.qty) as received,
             0::NUMERIC(15,3) as issued,
             0::NUMERIC(15,3) as material_used,
@@ -124,7 +124,7 @@ BEGIN
           AND igi.deleted_at IS NULL
           AND igi.item_type = ANY(p_item_types)
           AND ig.incoming_date BETWEEN v_start_date AND v_end_date
-        GROUP BY ig.company_code, igi.item_code
+        GROUP BY ig.company_code, igi.item_code, igi.uom
 
         UNION ALL
 
@@ -132,6 +132,7 @@ BEGIN
         SELECT
             og.company_code,
             ogi.item_code,
+            ogi.uom,
             0::NUMERIC(15,3) as received,
             SUM(ogi.qty) as issued,
             0::NUMERIC(15,3) as material_used,
@@ -145,7 +146,7 @@ BEGIN
           AND ogi.deleted_at IS NULL
           AND ogi.item_type = ANY(p_item_types)
           AND og.outgoing_date BETWEEN v_start_date AND v_end_date
-        GROUP BY og.company_code, ogi.item_code
+        GROUP BY og.company_code, ogi.item_code, ogi.uom
 
         UNION ALL
 
@@ -153,6 +154,7 @@ BEGIN
         SELECT
             mu.company_code,
             mui.item_code,
+            mui.uom,
             0::NUMERIC(15,3) as received,
             0::NUMERIC(15,3) as issued,
             SUM(CASE 
@@ -169,7 +171,7 @@ BEGIN
           AND mui.deleted_at IS NULL
           AND mui.item_type = ANY(p_item_types)
           AND mu.transaction_date BETWEEN v_start_date AND v_end_date
-        GROUP BY mu.company_code, mui.item_code
+        GROUP BY mu.company_code, mui.item_code, mui.uom
 
         UNION ALL
 
@@ -177,6 +179,7 @@ BEGIN
         SELECT
             a.company_code,
             ai.item_code,
+            ai.uom,
             0::NUMERIC(15,3) as received,
             0::NUMERIC(15,3) as issued,
             0::NUMERIC(15,3) as material_used,
@@ -193,55 +196,40 @@ BEGIN
           AND ai.deleted_at IS NULL
           AND ai.item_type = ANY(p_item_types)
           AND a.transaction_date BETWEEN v_start_date AND v_end_date
-        GROUP BY a.company_code, ai.item_code
+        GROUP BY a.company_code, ai.item_code, ai.uom
     ),
     -- Combine opening balance with transactions
+    -- Priority for UOM: snapshot.uom → transaction.uom → items.uom → 'UNIT'
     period_summary AS (
         SELECT
-            COALESCE(ob.company_code, ts.company_code) as company_code,
+            COALESCE(ob.company_code, ts_agg.agg_company_code) as company_code,
             COALESCE(ob.company_name, c.name) as company_name,
-            COALESCE(ob.item_code, ts.item_code) as item_code,
-            COALESCE(ob.item_name, i.item_name) as item_name,
-            COALESCE(ob.item_type, i.item_type) as item_type,
-            COALESCE(ob.uom, i.uom, 'UNIT') as uom,
-            COALESCE(ob.opening_balance, 0)::NUMERIC(15,3) as opening_balance,
-            COALESCE(SUM(ts.received), 0)::NUMERIC(15,3) as total_received,
-            COALESCE(SUM(ts.issued), 0)::NUMERIC(15,3) as total_issued,
-            COALESCE(SUM(ts.material_used), 0)::NUMERIC(15,3) as total_material_used,
-            COALESCE(SUM(ts.adjustment_val), 0)::NUMERIC(15,3) as total_adjustment
-        FROM opening_balances ob
-        FULL OUTER JOIN transactions_summary ts ON 
-            ob.company_code = ts.company_code 
-            AND ob.item_code = ts.item_code
-        LEFT JOIN companies c ON COALESCE(ob.company_code, ts.company_code) = c.code
-        LEFT JOIN items i ON 
-            COALESCE(ob.company_code, ts.company_code) = i.company_code 
-            AND COALESCE(ob.item_code, ts.item_code) = i.item_code
-        WHERE COALESCE(ob.item_type, i.item_type) = ANY(p_item_types)
-        GROUP BY 
-            COALESCE(ob.company_code, ts.company_code),
-            COALESCE(ob.company_name, c.name),
-            COALESCE(ob.item_code, ts.item_code),
-            COALESCE(ob.item_name, i.item_name),
-            COALESCE(ob.item_type, i.item_type),
-            COALESCE(ob.uom, i.uom),
-            COALESCE(ob.opening_balance, 0),
-            ob.company_code,
-            ob.company_name,
-            ob.item_code,
-            ob.item_name,
+            COALESCE(ob.item_code, ts_agg.agg_item_code) as item_code,
+            COALESCE(ob.item_name, '') as item_name,
             ob.item_type,
-            ob.uom,
-            ob.opening_balance,
-            ts.company_code,
-            ts.item_code,
-            c.code,
-            c.name,
-            i.company_code,
-            i.item_code,
-            i.item_name,
-            i.item_type,
-            i.uom
+            COALESCE(ob.uom, ts_agg.agg_uom, 'UNIT') as uom,
+            COALESCE(ob.opening_balance, 0)::NUMERIC(15,3) as opening_balance,
+            COALESCE(ts_agg.total_received, 0)::NUMERIC(15,3) as total_received,
+            COALESCE(ts_agg.total_issued, 0)::NUMERIC(15,3) as total_issued,
+            COALESCE(ts_agg.total_material_used, 0)::NUMERIC(15,3) as total_material_used,
+            COALESCE(ts_agg.total_adjustment, 0)::NUMERIC(15,3) as total_adjustment
+        FROM opening_balances ob
+        FULL OUTER JOIN (
+            SELECT
+                ts.company_code as agg_company_code,
+                ts.item_code as agg_item_code,
+                MIN(ts.uom) as agg_uom,
+                SUM(ts.received) as total_received,
+                SUM(ts.issued) as total_issued,
+                SUM(ts.material_used) as total_material_used,
+                SUM(ts.adjustment_val) as total_adjustment
+            FROM transactions_summary ts
+            GROUP BY ts.company_code, ts.item_code
+        ) ts_agg ON 
+            ob.company_code = ts_agg.agg_company_code 
+            AND ob.item_code = ts_agg.agg_item_code
+        LEFT JOIN companies c ON COALESCE(ob.company_code, ts_agg.agg_company_code) = c.code
+        WHERE ob.item_type = ANY(p_item_types)
     )
     SELECT
         ROW_NUMBER() OVER (PARTITION BY ps.company_code ORDER BY ps.item_code) as no,
@@ -335,10 +323,9 @@ BEGIN
             sds.item_type,
             sds.item_name,
             c.name as company_name,
-            COALESCE(i.uom, 'UNIT') as uom
+            sds.uom
         FROM stock_daily_snapshot sds
         JOIN companies c ON sds.company_code = c.code
-        LEFT JOIN items i ON sds.company_code = i.company_code AND sds.item_code = i.item_code
         INNER JOIN (
             -- Try to get snapshot before start_date; if none exist, use earliest snapshot
             SELECT 
@@ -355,12 +342,13 @@ BEGIN
                     AND sds.snapshot_date = last_snap.max_snapshot_date
         WHERE sds.item_type = ANY(p_item_types)
     ),
-    -- Aggregate all transactions within date range
+    -- Aggregate all transactions within date range (with UOM tracking)
     transactions_summary AS (
         -- Production output
         SELECT
             po.company_code,
             poi.item_code,
+            poi.uom,
             SUM(CASE 
                 WHEN po.reversal = 'Y' THEN -poi.qty
                 ELSE poi.qty 
@@ -377,7 +365,7 @@ BEGIN
           AND poi.deleted_at IS NULL
           AND poi.item_type = ANY(p_item_types)
           AND po.transaction_date BETWEEN v_start_date AND v_end_date
-        GROUP BY po.company_code, poi.item_code
+        GROUP BY po.company_code, poi.item_code, poi.uom
 
         UNION ALL
 
@@ -385,6 +373,7 @@ BEGIN
         SELECT
             og.company_code,
             ogi.item_code,
+            ogi.uom,
             0::NUMERIC(15,3) as received,
             SUM(ogi.qty) as issued,
             0::NUMERIC(15,3) as material_used,
@@ -398,7 +387,7 @@ BEGIN
           AND ogi.deleted_at IS NULL
           AND ogi.item_type = ANY(p_item_types)
           AND og.outgoing_date BETWEEN v_start_date AND v_end_date
-        GROUP BY og.company_code, ogi.item_code
+        GROUP BY og.company_code, ogi.item_code, ogi.uom
 
         UNION ALL
 
@@ -406,6 +395,7 @@ BEGIN
         SELECT
             a.company_code,
             ai.item_code,
+            ai.uom,
             0::NUMERIC(15,3) as received,
             0::NUMERIC(15,3) as issued,
             0::NUMERIC(15,3) as material_used,
@@ -422,55 +412,40 @@ BEGIN
           AND ai.deleted_at IS NULL
           AND ai.item_type = ANY(p_item_types)
           AND a.transaction_date BETWEEN v_start_date AND v_end_date
-        GROUP BY a.company_code, ai.item_code
+        GROUP BY a.company_code, ai.item_code, ai.uom
     ),
     -- Combine opening balance with transactions
+    -- Priority for UOM: snapshot.uom → transaction.uom → items.uom → 'UNIT'
     period_summary AS (
         SELECT
-            COALESCE(ob.company_code, ts.company_code) as company_code,
+            COALESCE(ob.company_code, ts_agg.agg_company_code) as company_code,
             COALESCE(ob.company_name, c.name) as company_name,
-            COALESCE(ob.item_code, ts.item_code) as item_code,
-            COALESCE(ob.item_name, i.item_name) as item_name,
-            COALESCE(ob.item_type, i.item_type) as item_type,
-            COALESCE(ob.uom, i.uom, 'UNIT') as uom,
-            COALESCE(ob.opening_balance, 0)::NUMERIC(15,3) as opening_balance,
-            COALESCE(SUM(ts.received), 0)::NUMERIC(15,3) as total_received,
-            COALESCE(SUM(ts.issued), 0)::NUMERIC(15,3) as total_issued,
-            COALESCE(SUM(ts.material_used), 0)::NUMERIC(15,3) as total_material_used,
-            COALESCE(SUM(ts.adjustment_val), 0)::NUMERIC(15,3) as total_adjustment
-        FROM opening_balances ob
-        FULL OUTER JOIN transactions_summary ts ON 
-            ob.company_code = ts.company_code 
-            AND ob.item_code = ts.item_code
-        LEFT JOIN companies c ON COALESCE(ob.company_code, ts.company_code) = c.code
-        LEFT JOIN items i ON 
-            COALESCE(ob.company_code, ts.company_code) = i.company_code 
-            AND COALESCE(ob.item_code, ts.item_code) = i.item_code
-        WHERE COALESCE(ob.item_type, i.item_type) = ANY(p_item_types)
-        GROUP BY 
-            COALESCE(ob.company_code, ts.company_code),
-            COALESCE(ob.company_name, c.name),
-            COALESCE(ob.item_code, ts.item_code),
-            COALESCE(ob.item_name, i.item_name),
-            COALESCE(ob.item_type, i.item_type),
-            COALESCE(ob.uom, i.uom),
-            COALESCE(ob.opening_balance, 0),
-            ob.company_code,
-            ob.company_name,
-            ob.item_code,
-            ob.item_name,
+            COALESCE(ob.item_code, ts_agg.agg_item_code) as item_code,
+            COALESCE(ob.item_name, '') as item_name,
             ob.item_type,
-            ob.uom,
-            ob.opening_balance,
-            ts.company_code,
-            ts.item_code,
-            c.code,
-            c.name,
-            i.company_code,
-            i.item_code,
-            i.item_name,
-            i.item_type,
-            i.uom
+            COALESCE(ob.uom, ts_agg.agg_uom, 'UNIT') as uom,
+            COALESCE(ob.opening_balance, 0)::NUMERIC(15,3) as opening_balance,
+            COALESCE(ts_agg.total_received, 0)::NUMERIC(15,3) as total_received,
+            COALESCE(ts_agg.total_issued, 0)::NUMERIC(15,3) as total_issued,
+            COALESCE(ts_agg.total_material_used, 0)::NUMERIC(15,3) as total_material_used,
+            COALESCE(ts_agg.total_adjustment, 0)::NUMERIC(15,3) as total_adjustment
+        FROM opening_balances ob
+        FULL OUTER JOIN (
+            SELECT
+                ts.company_code as agg_company_code,
+                ts.item_code as agg_item_code,
+                MIN(ts.uom) as agg_uom,
+                SUM(ts.received) as total_received,
+                SUM(ts.issued) as total_issued,
+                SUM(ts.material_used) as total_material_used,
+                SUM(ts.adjustment_val) as total_adjustment
+            FROM transactions_summary ts
+            GROUP BY ts.company_code, ts.item_code
+        ) ts_agg ON 
+            ob.company_code = ts_agg.agg_company_code 
+            AND ob.item_code = ts_agg.agg_item_code
+        LEFT JOIN companies c ON COALESCE(ob.company_code, ts_agg.agg_company_code) = c.code
+        WHERE ob.item_type = ANY(p_item_types)
     )
     SELECT
         ROW_NUMBER() OVER (PARTITION BY ps.company_code ORDER BY ps.item_code) as no,
@@ -730,10 +705,9 @@ BEGIN
             sds.item_type,
             sds.item_name,
             c.name as company_name,
-            COALESCE(i.uom, 'UNIT') as uom
+            sds.uom
         FROM stock_daily_snapshot sds
         JOIN companies c ON sds.company_code = c.code
-        LEFT JOIN items i ON sds.company_code = i.company_code AND sds.item_code = i.item_code
         INNER JOIN (
             -- Try to get snapshot before start_date; if none exist, use earliest snapshot
             SELECT 
@@ -750,12 +724,13 @@ BEGIN
                     AND sds.snapshot_date = last_snap.max_snapshot_date
         WHERE sds.item_type = ANY(p_item_types)
     ),
-    -- Aggregate all scrap transactions within date range
+    -- Aggregate all scrap transactions within date range (with UOM tracking)
     transactions_summary AS (
         -- Scrap IN transactions (from scrap_transactions)
         SELECT
             st.company_code,
             sti.item_code,
+            sti.uom,
             SUM(sti.qty) as received,
             0::NUMERIC(15,3) as issued,
             0::NUMERIC(15,3) as adjustment_val
@@ -769,7 +744,7 @@ BEGIN
           AND sti.item_type = ANY(p_item_types)
           AND st.transaction_type = 'IN'
           AND st.transaction_date BETWEEN v_start_date AND v_end_date
-        GROUP BY st.company_code, sti.item_code
+        GROUP BY st.company_code, sti.item_code, sti.uom
 
         UNION ALL
 
@@ -777,6 +752,7 @@ BEGIN
         SELECT
             og.company_code,
             ogi.item_code,
+            ogi.uom,
             0::NUMERIC(15,3) as received,
             SUM(ogi.qty) as issued,
             0::NUMERIC(15,3) as adjustment_val
@@ -789,54 +765,38 @@ BEGIN
           AND ogi.deleted_at IS NULL
           AND ogi.item_type = ANY(p_item_types)
           AND og.outgoing_date BETWEEN v_start_date AND v_end_date
-        GROUP BY og.company_code, ogi.item_code
+        GROUP BY og.company_code, ogi.item_code, ogi.uom
     ),
     -- Combine opening balance with transactions
+    -- Priority for UOM: snapshot.uom → transaction.uom → 'UNIT'
     period_summary AS (
         SELECT
-            COALESCE(ob.company_code, ts.company_code) as company_code,
+            COALESCE(ob.company_code, ts_agg.agg_company_code) as company_code,
             COALESCE(ob.company_name, c.name) as company_name,
-            COALESCE(ob.item_code, ts.item_code) as item_code,
-            COALESCE(ob.item_name, i.item_name) as item_name,
-            COALESCE(ob.item_type, i.item_type) as item_type,
-            COALESCE(ob.uom, i.uom, 'UNIT') as uom,
-            COALESCE(ob.opening_balance, 0)::NUMERIC(15,3) as opening_balance,
-            COALESCE(SUM(ts.received), 0)::NUMERIC(15,3) as total_received,
-            COALESCE(SUM(ts.issued), 0)::NUMERIC(15,3) as total_issued,
-            COALESCE(SUM(ts.adjustment_val), 0)::NUMERIC(15,3) as total_adjustment
-        FROM opening_balances ob
-        FULL OUTER JOIN transactions_summary ts ON 
-            ob.company_code = ts.company_code 
-            AND ob.item_code = ts.item_code
-        LEFT JOIN companies c ON COALESCE(ob.company_code, ts.company_code) = c.code
-        LEFT JOIN items i ON 
-            COALESCE(ob.company_code, ts.company_code) = i.company_code 
-            AND COALESCE(ob.item_code, ts.item_code) = i.item_code
-        WHERE COALESCE(ob.item_type, i.item_type) = ANY(p_item_types)
-        GROUP BY 
-            COALESCE(ob.company_code, ts.company_code),
-            COALESCE(ob.company_name, c.name),
-            COALESCE(ob.item_code, ts.item_code),
-            COALESCE(ob.item_name, i.item_name),
-            COALESCE(ob.item_type, i.item_type),
-            COALESCE(ob.uom, i.uom),
-            COALESCE(ob.opening_balance, 0),
-            ob.company_code,
-            ob.company_name,
-            ob.item_code,
-            ob.item_name,
+            COALESCE(ob.item_code, ts_agg.agg_item_code) as item_code,
+            COALESCE(ob.item_name, '') as item_name,
             ob.item_type,
-            ob.uom,
-            ob.opening_balance,
-            ts.company_code,
-            ts.item_code,
-            c.code,
-            c.name,
-            i.company_code,
-            i.item_code,
-            i.item_name,
-            i.item_type,
-            i.uom
+            COALESCE(ob.uom, ts_agg.agg_uom, 'UNIT') as uom,
+            COALESCE(ob.opening_balance, 0)::NUMERIC(15,3) as opening_balance,
+            COALESCE(ts_agg.total_received, 0)::NUMERIC(15,3) as total_received,
+            COALESCE(ts_agg.total_issued, 0)::NUMERIC(15,3) as total_issued,
+            COALESCE(ts_agg.total_adjustment, 0)::NUMERIC(15,3) as total_adjustment
+        FROM opening_balances ob
+        FULL OUTER JOIN (
+            SELECT
+                ts.company_code as agg_company_code,
+                ts.item_code as agg_item_code,
+                MIN(ts.uom) as agg_uom,
+                SUM(ts.received) as total_received,
+                SUM(ts.issued) as total_issued,
+                SUM(ts.adjustment_val) as total_adjustment
+            FROM transactions_summary ts
+            GROUP BY ts.company_code, ts.item_code
+        ) ts_agg ON
+            ob.company_code = ts_agg.agg_company_code 
+            AND ob.item_code = ts_agg.agg_item_code
+        LEFT JOIN companies c ON COALESCE(ob.company_code, ts_agg.agg_company_code) = c.code
+        WHERE ob.item_type = ANY(p_item_types)
     )
     SELECT
         ROW_NUMBER() OVER (PARTITION BY ps.company_code ORDER BY ps.item_code) as no,
