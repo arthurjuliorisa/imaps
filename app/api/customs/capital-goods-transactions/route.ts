@@ -23,7 +23,7 @@ import { validateCompanyCode } from '@/lib/company-validation';
  * - Doc Number (outgoing_evidence_number)
  * - Doc Date (outgoing_date)
  * - Recipient Name
- * - Item Type (HIBE_M, HIBE_E, or HIBE_T)
+ * - Item Type (HIBE-M, HIBE-E, or HIBE-T)
  * - Item Code
  * - Item Name
  * - Unit (UOM)
@@ -93,7 +93,7 @@ export async function GET(request: Request) {
       WHERE og.company_code = $1
         AND og.deleted_at IS NULL
         AND ogi.deleted_at IS NULL
-        AND ogi.item_type IN ('HIBE_M', 'HIBE_E', 'HIBE_T')
+        AND ogi.item_type IN ('HIBE-M', 'HIBE-E', 'HIBE-T')
         ${dateFilterOutgoing}
     `;
 
@@ -135,7 +135,7 @@ export async function GET(request: Request) {
       WHERE og.company_code = $1
         AND og.deleted_at IS NULL
         AND ogi.deleted_at IS NULL
-        AND ogi.item_type IN ('HIBE_M', 'HIBE_E', 'HIBE_T')
+        AND ogi.item_type IN ('HIBE-M', 'HIBE-E', 'HIBE-T')
         ${dateFilterOutgoing}
       ORDER BY og.outgoing_date DESC, og.id
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}

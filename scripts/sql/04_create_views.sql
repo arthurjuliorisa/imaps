@@ -881,8 +881,8 @@ BEGIN
     -- Return scrap mutation data based on provided or default date range
     RETURN QUERY
         WITH opening_balance_from_snapshot AS (
-            -- Get opening balance from snapshot closest to or before start_date
-            -- If no snapshot before start_date exists, use the earliest snapshot available
+            -- Get opening balance from snapshot on or before start_date ONLY
+            -- If no snapshot exists before/on start_date, return empty (FULL OUTER JOIN will handle)
             SELECT
                 sds_open.company_code,
                 sds_open.item_code,
@@ -892,20 +892,13 @@ BEGIN
                 sds_open.item_type
             FROM stock_daily_snapshot sds_open
             WHERE sds_open.item_type = ANY(p_item_types)
-              AND sds_open.snapshot_date = COALESCE(
-                  -- First try: snapshot on or before start_date
-                  (SELECT MAX(sds2.snapshot_date)
-                   FROM stock_daily_snapshot sds2
-                   WHERE sds2.company_code = sds_open.company_code
-                     AND sds2.item_code = sds_open.item_code
-                     AND sds2.item_type = ANY(p_item_types)
-                     AND sds2.snapshot_date <= v_start_date),
-                  -- Fallback: if no snapshot before/on start_date, use the earliest snapshot for this item
-                  (SELECT MIN(sds3.snapshot_date)
-                   FROM stock_daily_snapshot sds3
-                   WHERE sds3.company_code = sds_open.company_code
-                     AND sds3.item_code = sds_open.item_code
-                     AND sds3.item_type = ANY(p_item_types))
+              AND sds_open.snapshot_date = (
+                  SELECT MAX(sds_max.snapshot_date)
+                  FROM stock_daily_snapshot sds_max
+                  WHERE sds_max.company_code = sds_open.company_code
+                    AND sds_max.item_code = sds_open.item_code
+                    AND sds_max.item_type = ANY(p_item_types)
+                    AND sds_max.snapshot_date <= v_start_date
               )
         ),
         scrap_transactions_in_range AS (

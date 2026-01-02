@@ -146,8 +146,10 @@ export async function POST(request: NextRequest) {
           row.eachCell((cell) => {
             headers.push(cell.value?.toString() || '');
           });
+        } else if (rowNumber === 2) {
+          // Row 2 is example data, skip it
         } else {
-          // Data rows
+          // Data rows start from row 3
           const rowData: any = {};
           row.eachCell((cell, colNumber) => {
             const header = headers[colNumber - 1];
@@ -234,7 +236,7 @@ export async function POST(request: NextRequest) {
     const items: ImportItem[] = [];
 
     jsonData.forEach((row, index) => {
-      const rowNumber = index + 2; // +2 because row 1 is header
+      const rowNumber = index + 3; // +3 because row 1 is header, row 2 is example
 
       // Parse date
       const parsedDate = row.Date ? parseExcelDate(row.Date) : null;
