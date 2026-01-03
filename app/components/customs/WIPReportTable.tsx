@@ -149,7 +149,7 @@ export function WIPReportTable({
                   </TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" fontWeight={700}>
-                      {row.quantity.toLocaleString('id-ID')}
+                      {row.quantity.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </Typography>
                   </TableCell>
                   <TableCell>
