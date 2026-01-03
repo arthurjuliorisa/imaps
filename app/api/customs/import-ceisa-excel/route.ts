@@ -113,6 +113,107 @@ function mapDocumentTypeToEnum(docType: string): string {
 }
 
 /**
+ * Aggregate items by itemCode to handle multiple rows with same item code
+ * Example:
+ *   Row 1: Part A qty 10
+ *   Row 2: Part A qty 5
+ *   Result: Part A qty 15 (aggregated)
+ *
+ * Returns Map<itemCode, aggregatedQty> for validation
+ * Also validates that all rows with same itemCode have same itemName and unit
+ */
+function aggregateItemsByCode(
+  items: Array<{ itemCode: string; itemName: string; unit: string; quantity: number }>
+): Map<string, { totalQty: number; itemName: string; unit: string }> {
+  const aggregated = new Map<string, { totalQty: number; itemName: string; unit: string }>();
+
+  for (const item of items) {
+    if (!aggregated.has(item.itemCode)) {
+      aggregated.set(item.itemCode, {
+        totalQty: item.quantity,
+        itemName: item.itemName,
+        unit: item.unit,
+      });
+    } else {
+      // Item code already exists - aggregate qty
+      const existing = aggregated.get(item.itemCode)!;
+      existing.totalQty += item.quantity;
+
+      // Validate consistency: itemName and unit should be the same
+      if (existing.itemName !== item.itemName) {
+        throw new Error(
+          `Inconsistent item name for '${item.itemCode}': Row 1="${existing.itemName}", This row="${item.itemName}"`
+        );
+      }
+
+      if (existing.unit !== item.unit) {
+        throw new Error(
+          `Inconsistent unit for '${item.itemCode}': Row 1="${existing.unit}", This row="${item.unit}"`
+        );
+      }
+    }
+  }
+
+  return aggregated;
+}
+
+/**
+ * Handle snapshot recalculation (queue or direct execution)
+ * For backdated transactions: queue now, direct execution will happen after transaction
+ * For current date: queue for batch processing via cron
+ *
+ * Returns the date and whether it's backdated for later direct execution
+ */
+async function handleSnapshotRecalculation(
+  tx: any,
+  companyCode: number,
+  docDate: Date,
+  wmsId: string
+): Promise<{ date: Date; isBackdated: boolean }> {
+  const priority = calculatePriority(docDate);
+  const isBackdated = priority === 0; // 0 = backdated, -1 = current date
+
+  // Always queue the recalculation (for both backdated and current date)
+  const existingQueue = await tx.snapshot_recalc_queue.findFirst({
+    where: {
+      company_code: companyCode,
+      recalc_date: docDate,
+      item_type: null,
+      item_code: null,
+    },
+  });
+
+  if (existingQueue) {
+    // Update existing queue entry
+    await tx.snapshot_recalc_queue.update({
+      where: { id: existingQueue.id },
+      data: {
+        status: 'PENDING',
+        priority: priority,
+        reason: `Excel import: ${wmsId}`,
+        queued_at: new Date(),
+      },
+    });
+  } else {
+    // Create new queue entry
+    await tx.snapshot_recalc_queue.create({
+      data: {
+        company_code: companyCode,
+        item_type: null,
+        item_code: null,
+        recalc_date: docDate,
+        status: 'PENDING',
+        priority: priority,
+        reason: `Excel import: ${wmsId}`,
+      },
+    });
+  }
+
+  // Return date info for later direct execution if backdated
+  return { date: docDate, isBackdated };
+}
+
+/**
  * POST /api/customs/import-ceisa-excel
  * Import Ceisa 4.0 Excel file and create transactions
  *
@@ -269,16 +370,20 @@ export async function POST(request: Request) {
 
     // Process import based on transaction type
     let result;
+    let backdatedDates: Date[] = [];
+
     if (validatedRequest.transactionType === 'SCRAP') {
-      result = await importScrapTransactions(
+      const txResult = await importScrapTransactions(
         companyCode,
         parsedData,
         validatedRequest.direction,
         docDate,
         regDate
       );
+      result = txResult.result;
+      backdatedDates = txResult.backdatedDates;
     } else {
-      result = await importCapitalGoodsTransactions(
+      const txResult = await importCapitalGoodsTransactions(
         companyCode,
         parsedData,
         validatedRequest.direction,
@@ -286,6 +391,39 @@ export async function POST(request: Request) {
         regDate,
         itemType as string
       );
+      result = txResult.result;
+      backdatedDates = txResult.backdatedDates;
+    }
+
+    // Execute direct snapshot recalculation for backdated transactions (outside transaction)
+    if (backdatedDates.length > 0) {
+      const uniqueDates = Array.from(new Set(backdatedDates.map(d => d.getTime()))).map(t => new Date(t));
+      for (const date of uniqueDates) {
+        try {
+          await prisma.$executeRawUnsafe(
+            'SELECT calculate_stock_snapshot($1::int, $2::date)',
+            companyCode,
+            date
+          );
+          console.log(
+            '[API Info] Backdated snapshot recalculation executed',
+            {
+              companyCode,
+              date: date.toISOString().split('T')[0],
+            }
+          );
+        } catch (recalcError) {
+          console.warn(
+            '[API Warning] Backdated snapshot recalculation failed',
+            {
+              companyCode,
+              date: date.toISOString().split('T')[0],
+              errorMessage: recalcError instanceof Error ? recalcError.message : String(recalcError),
+            }
+          );
+          // Continue with next date - recalc will be retried by background worker
+        }
+      }
     }
 
     // Log activity
@@ -349,6 +487,7 @@ export async function POST(request: Request) {
 
 /**
  * Import scrap transactions (incoming or outgoing)
+ * Returns both the transaction result and list of backdated dates for direct execution
  */
 async function importScrapTransactions(
   companyCode: number,
@@ -356,8 +495,10 @@ async function importScrapTransactions(
   direction: string,
   docDate: Date,
   regDate: Date
-) {
-  return await prisma.$transaction(async (tx) => {
+): Promise<{ result: any; backdatedDates: Date[] }> {
+  const backdatedDates: Date[] = [];
+
+  const result = await prisma.$transaction(async (tx) => {
     // Validate scrap items against scrap_items table
     await validateScrapItems(tx, data.items);
 
@@ -412,46 +553,10 @@ async function importScrapTransactions(
         });
       });
 
-      // Queue snapshot recalculation for the transaction date
-      // Note: item_type and item_code are set to NULL because calculate_stock_snapshot
-      // recalculates ALL items for a given company+date, not per-item
-      const priority = calculatePriority(docDate);
-
-      // NOTE: Cannot use upsert() with null values in unique constraint
-      // Use findFirst + create/update pattern instead
-      const existingQueueIn = await tx.snapshot_recalc_queue.findFirst({
-        where: {
-          company_code: companyCode,
-          recalc_date: docDate,
-          item_type: null,
-          item_code: null,
-        },
-      });
-
-      if (existingQueueIn) {
-        // Update existing queue entry
-        await tx.snapshot_recalc_queue.update({
-          where: { id: existingQueueIn.id },
-          data: {
-            status: 'PENDING',
-            priority: priority,
-            reason: `Excel import: ${wmsId}`,
-            queued_at: new Date(),
-          },
-        });
-      } else {
-        // Create new queue entry
-        await tx.snapshot_recalc_queue.create({
-          data: {
-            company_code: companyCode,
-            item_type: null,
-            item_code: null,
-            recalc_date: docDate,
-            status: 'PENDING',
-            priority: priority,
-            reason: `Excel import: ${wmsId}`,
-          },
-        });
+      // Handle snapshot recalculation (queue + track backdated dates)
+      const recalcInfo = await handleSnapshotRecalculation(tx, companyCode, docDate, wmsId);
+      if (recalcInfo.isBackdated) {
+        backdatedDates.push(recalcInfo.date);
       }
 
       return {
@@ -462,11 +567,15 @@ async function importScrapTransactions(
         items: importedItems,
       };
     } else {
+      // Aggregate items by itemCode to handle multiple rows with same item code
+      const aggregatedItems = aggregateItemsByCode(data.items);
+
       // Validate stock availability for all items as of transaction date (all-or-nothing)
-      const itemsToValidate = data.items.map(item => ({
-        itemCode: item.itemCode,
+      // ✅ Now validates TOTAL qty across all rows with same itemCode
+      const itemsToValidate = Array.from(aggregatedItems.entries()).map(([itemCode, item]) => ({
+        itemCode,
         itemType: 'SCRAP',
-        qtyRequested: item.quantity,
+        qtyRequested: item.totalQty,
       }));
 
       const stockValidation = await checkBatchStockAvailability(
@@ -530,46 +639,10 @@ async function importScrapTransactions(
         });
       });
 
-      // Queue snapshot recalculation for the transaction date
-      // Note: item_type and item_code are set to NULL because calculate_stock_snapshot
-      // recalculates ALL items for a given company+date, not per-item
-      const priority = calculatePriority(docDate);
-
-      // NOTE: Cannot use upsert() with null values in unique constraint
-      // Use findFirst + create/update pattern instead
-      const existingQueueScrapOut = await tx.snapshot_recalc_queue.findFirst({
-        where: {
-          company_code: companyCode,
-          recalc_date: docDate,
-          item_type: null,
-          item_code: null,
-        },
-      });
-
-      if (existingQueueScrapOut) {
-        // Update existing queue entry
-        await tx.snapshot_recalc_queue.update({
-          where: { id: existingQueueScrapOut.id },
-          data: {
-            status: 'PENDING',
-            priority: priority,
-            reason: `Excel import: ${wmsId}`,
-            queued_at: new Date(),
-          },
-        });
-      } else {
-        // Create new queue entry
-        await tx.snapshot_recalc_queue.create({
-          data: {
-            company_code: companyCode,
-            item_type: null,
-            item_code: null,
-            recalc_date: docDate,
-            status: 'PENDING',
-            priority: priority,
-            reason: `Excel import: ${wmsId}`,
-          },
-        });
+      // Handle snapshot recalculation (queue + track backdated dates)
+      const recalcInfo = await handleSnapshotRecalculation(tx, companyCode, docDate, wmsId);
+      if (recalcInfo.isBackdated) {
+        backdatedDates.push(recalcInfo.date);
       }
 
       return {
@@ -584,10 +657,13 @@ async function importScrapTransactions(
     isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     timeout: 60000,
   });
+
+  return { result, backdatedDates };
 }
 
 /**
  * Import capital goods transactions (incoming or outgoing)
+ * Returns both the transaction result and list of backdated dates for direct execution
  */
 async function importCapitalGoodsTransactions(
   companyCode: number,
@@ -596,8 +672,10 @@ async function importCapitalGoodsTransactions(
   docDate: Date,
   regDate: Date,
   itemType: string
-) {
-  return await prisma.$transaction(async (tx) => {
+): Promise<{ result: any; backdatedDates: Date[] }> {
+  const backdatedDates: Date[] = [];
+
+  const result = await prisma.$transaction(async (tx) => {
     const wmsId = generateWmsId('CAPITAL', direction);
     const importedItems: any[] = [];
 
@@ -606,11 +684,15 @@ async function importCapitalGoodsTransactions(
       // Only outgoing capital goods transactions are available
       throw new Error('Capital goods incoming transactions are not supported. Only outgoing transactions are available.');
     } else {
+      // Aggregate items by itemCode to handle multiple rows with same item code
+      const aggregatedItems = aggregateItemsByCode(data.items);
+
       // Validate stock availability for all items as of transaction date (all-or-nothing)
-      const itemsToValidate = data.items.map(item => ({
-        itemCode: item.itemCode,
+      // ✅ Now validates TOTAL qty across all rows with same itemCode
+      const itemsToValidate = Array.from(aggregatedItems.entries()).map(([itemCode, item]) => ({
+        itemCode,
         itemType: itemType,
-        qtyRequested: item.quantity,
+        qtyRequested: item.totalQty,
       }));
 
       const stockValidation = await checkBatchStockAvailability(
@@ -676,46 +758,10 @@ async function importCapitalGoodsTransactions(
         });
       });
 
-      // Queue snapshot recalculation for the transaction date
-      // Note: item_type and item_code are set to NULL because calculate_stock_snapshot
-      // recalculates ALL items for a given company+date, not per-item
-      const priority = calculatePriority(docDate);
-
-      // NOTE: Cannot use upsert() with null values in unique constraint
-      // Use findFirst + create/update pattern instead
-      const existingQueueCG = await tx.snapshot_recalc_queue.findFirst({
-        where: {
-          company_code: companyCode,
-          recalc_date: docDate,
-          item_type: null,
-          item_code: null,
-        },
-      });
-
-      if (existingQueueCG) {
-        // Update existing queue entry
-        await tx.snapshot_recalc_queue.update({
-          where: { id: existingQueueCG.id },
-          data: {
-            status: 'PENDING',
-            priority: priority,
-            reason: `Excel import: ${wmsId}`,
-            queued_at: new Date(),
-          },
-        });
-      } else {
-        // Create new queue entry
-        await tx.snapshot_recalc_queue.create({
-          data: {
-            company_code: companyCode,
-            item_type: null,
-            item_code: null,
-            recalc_date: docDate,
-            status: 'PENDING',
-            priority: priority,
-            reason: `Excel import: ${wmsId}`,
-          },
-        });
+      // Handle snapshot recalculation (queue + track backdated dates)
+      const recalcInfo = await handleSnapshotRecalculation(tx, companyCode, docDate, wmsId);
+      if (recalcInfo.isBackdated) {
+        backdatedDates.push(recalcInfo.date);
       }
 
       return {
@@ -730,4 +776,6 @@ async function importCapitalGoodsTransactions(
     isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     timeout: 60000,
   });
+
+  return { result, backdatedDates };
 }

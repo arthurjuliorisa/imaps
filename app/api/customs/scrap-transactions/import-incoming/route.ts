@@ -55,6 +55,55 @@ function calculatePriority(transactionDate: Date): number {
   return -1; // Default to same-day priority
 }
 
+/**
+ * Handle snapshot recalculation in transaction
+ * Returns the date and whether it's backdated for later direct execution
+ */
+async function handleTxSnapshotRecalc(
+  tx: any,
+  companyCode: number,
+  date: Date,
+  reason: string
+): Promise<{ date: Date; isBackdated: boolean }> {
+  const priority = calculatePriority(date);
+  const isBackdated = priority === 0;
+
+  const existingQueue = await tx.snapshot_recalc_queue.findFirst({
+    where: {
+      company_code: companyCode,
+      recalc_date: date,
+      item_type: null,
+      item_code: null,
+    },
+  });
+
+  if (existingQueue) {
+    await tx.snapshot_recalc_queue.update({
+      where: { id: existingQueue.id },
+      data: {
+        status: 'PENDING',
+        priority: priority,
+        reason: reason,
+        queued_at: new Date(),
+      },
+    });
+  } else {
+    await tx.snapshot_recalc_queue.create({
+      data: {
+        company_code: companyCode,
+        item_type: null,
+        item_code: null,
+        recalc_date: date,
+        status: 'PENDING',
+        priority: priority,
+        reason: reason,
+      },
+    });
+  }
+
+  return { date, isBackdated };
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
@@ -65,6 +114,11 @@ export async function POST(request: NextRequest) {
 
     const { session } = authCheck as { authenticated: true; session: any };
     const companyCode = Number(session.user.companyCode);
+
+    // ... existing code ...
+
+    // Collect backdated dates for direct execution
+    let backdatedDates: Date[] = [];
 
     // Parse FormData
     let formData: FormData;
@@ -401,63 +455,38 @@ export async function POST(request: NextRequest) {
           throw new Error('Failed to create transaction items. Please check your data and try again.');
         }
 
-        // Queue snapshot recalculation for the transaction date
+        // Queue snapshot recalculation and track backdated dates
         // Note: item_type and item_code are set to NULL because calculate_stock_snapshot
         // recalculates ALL items for a given company+date, not per-item
-        // Use findFirst + create/update pattern to handle NULL values in unique constraint
-        const uniqueRecalcEntries = new Map<string, any>();
+        const uniqueRecalcEntries = new Map<string, { date: Date; reason: string }>();
         const processedDates = new Set<string>();
 
         for (const header of transactionHeaders) {
           const dateKey = `${companyCode}-${header._date.toISOString()}`;
-          const priority = calculatePriority(header._date);
-
-          // Only create one entry per (company, date) combination
+          
           if (!processedDates.has(dateKey)) {
             processedDates.add(dateKey);
             uniqueRecalcEntries.set(dateKey, {
-              company_code: companyCode,
-              item_type: null,
-              item_code: null,
-              recalc_date: header._date,
-              status: 'PENDING',
-              priority: priority,
+              date: header._date,
               reason: `Incoming scrap batch for ${header._date.toISOString().split('T')[0]}`,
             });
           }
         }
 
-        // Create snapshot recalc queue entries using findFirst + create/update pattern
-        // to avoid Prisma upsert issues with null values
+        // Queue and track backdated dates
         for (const entry of uniqueRecalcEntries.values()) {
           try {
-            const existing = await tx.snapshot_recalc_queue.findFirst({
-              where: {
-                company_code: entry.company_code,
-                recalc_date: entry.recalc_date,
-                item_type: null,
-                item_code: null,
-              },
-            });
-
-            if (existing) {
-              await tx.snapshot_recalc_queue.update({
-                where: { id: existing.id },
-                data: {
-                  status: entry.status,
-                  priority: entry.priority,
-                  reason: entry.reason,
-                  queued_at: new Date(),
-                },
-              });
-            } else {
-              await tx.snapshot_recalc_queue.create({
-                data: entry,
-              });
+            const recalcInfo = await handleTxSnapshotRecalc(
+              tx,
+              companyCode,
+              entry.date,
+              entry.reason
+            );
+            if (recalcInfo.isBackdated) {
+              backdatedDates.push(recalcInfo.date);
             }
           } catch (error) {
             console.error('Error queuing snapshot recalculation:', error);
-            // Don't throw here - snapshot queueing is not critical for import success
           }
         }
 
@@ -480,6 +509,36 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    // Execute direct snapshot recalculation for backdated transactions (outside transaction)
+    if (backdatedDates.length > 0) {
+      const uniqueDates = Array.from(new Set(backdatedDates.map(d => d.getTime()))).map(t => new Date(t));
+      for (const date of uniqueDates) {
+        try {
+          await prisma.$executeRawUnsafe(
+            'SELECT calculate_stock_snapshot($1::int, $2::date)',
+            companyCode,
+            date
+          );
+          console.log(
+            '[API Info] Backdated snapshot recalculation executed',
+            {
+              companyCode,
+              date: date.toISOString().split('T')[0],
+            }
+          );
+        } catch (recalcError) {
+          console.warn(
+            '[API Warning] Backdated snapshot recalculation failed',
+            {
+              companyCode,
+              date: date.toISOString().split('T')[0],
+              errorMessage: recalcError instanceof Error ? recalcError.message : String(recalcError),
+            }
+          );
+        }
+      }
     }
 
     // Log activity

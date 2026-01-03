@@ -8,7 +8,6 @@ import {
   ValidationError,
   getTodayUTC,
 } from '@/lib/api-utils';
-import { SnapshotRecalcRepository } from '@/lib/repositories/snapshot-recalc.repository';
 
 /**
  * Parse DD/MM/YYYY format to Date
@@ -428,67 +427,39 @@ export async function POST(request: Request) {
       );
     }
 
-    // Queue snapshot recalculation for each unique balance date
-    // Since beginning balance is backdated data (historical), we calculate immediately (non-blocking)
+    // Execute snapshot recalculation directly for each unique balance date
     try {
-      const snapshotRecalcRepo = new SnapshotRecalcRepository();
-      const processedDates: string[] = [];
-
       for (const balanceDate of uniqueBalanceDates) {
         const date = new Date(balanceDate);
-        
-        // Queue the recalculation
-        const queueId = await snapshotRecalcRepo.queueRecalculation({
-          company_code: companyCodeInt,
-          recalc_date: date,
-          reason: `Beginning balance setup: ${successCount} item(s)`,
-          priority: 1, // High priority for opening balance
-        });
-
-        // Process immediately for backdated data (non-blocking try-catch)
         try {
-          await snapshotRecalcRepo.processImmediately(
-            queueId,
+          await prisma.$executeRawUnsafe(
+            'SELECT calculate_stock_snapshot($1::int, $2::date)',
             companyCodeInt,
             date
           );
           
-          processedDates.push(date.toISOString().split('T')[0]);
-          
           console.log(
-            '[API Info] Snapshot recalculation processed immediately',
+            '[API Info] Snapshot recalculation executed for balance date',
             {
               companyCode: companyCodeInt,
               balanceDate: date.toISOString().split('T')[0],
-              successCount,
             }
           );
-        } catch (processError) {
-          // Log warning but continue - will be retried by background worker
+        } catch (recalcError) {
+          // Log warning but continue to next date
           console.warn(
-            '[API Warning] Immediate snapshot calculation failed (will retry via worker)',
+            '[API Warning] Snapshot recalculation failed for date',
             {
               companyCode: companyCodeInt,
               balanceDate: date.toISOString().split('T')[0],
-              queueId: queueId.toString(),
-              errorMessage: processError instanceof Error ? processError.message : String(processError),
+              errorMessage: recalcError instanceof Error ? recalcError.message : String(recalcError),
             }
           );
-          processedDates.push(`${date.toISOString().split('T')[0]} (queued)`);
         }
       }
-
-      console.log(
-        '[API Info] Beginning balance snapshot calculation completed',
-        {
-          companyCode: companyCodeInt,
-          processedDates,
-          totalCount: processedDates.length,
-        }
-      );
-    } catch (queueError) {
-      console.error('[API Warning] Failed to queue snapshot recalculation:', queueError);
-      // Continue anyway - recalculation can be triggered manually later
+    } catch (error) {
+      console.error('[API Warning] Error during snapshot recalculation execution:', error);
+      // Continue anyway - data import succeeded
     }
 
     // Log activity

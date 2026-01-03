@@ -25,7 +25,7 @@ const OutgoingCapitalGoodsSchema = z.object({
     ));
   }),
   itemType: z.enum(['HIBE-M', 'HIBE-E', 'HIBE-T'], {
-    message: 'Item type must be HIBE_M, HIBE_E, or HIBE_T'
+    message: 'Item type must be HIBE-M, HIBE-E, or HIBE-T'
   }),
   itemCode: z.string().min(1, 'Item code is required').trim(),
   itemName: z.string().min(1, 'Item name is required').trim(),
@@ -97,11 +97,59 @@ function calculatePriority(transactionDate: Date): number {
 }
 
 /**
+ * Handle snapshot recalculation in transaction
+ * Returns the date and whether it's backdated for later direct execution
+ */
+async function handleTxSnapshotRecalc(
+  tx: any,
+  companyCode: number,
+  date: Date
+): Promise<{ date: Date; isBackdated: boolean }> {
+  const priority = calculatePriority(date);
+  const isBackdated = priority === 0;
+
+  const existingQueue = await tx.snapshot_recalc_queue.findFirst({
+    where: {
+      company_code: companyCode,
+      recalc_date: date,
+      item_type: null,
+      item_code: null,
+    },
+  });
+
+  if (existingQueue) {
+    await tx.snapshot_recalc_queue.update({
+      where: { id: existingQueue.id },
+      data: {
+        status: 'PENDING',
+        priority: priority,
+        reason: `Outgoing capital goods batch for ${date.toISOString().split('T')[0]}`,
+        queued_at: new Date(),
+      },
+    });
+  } else {
+    await tx.snapshot_recalc_queue.create({
+      data: {
+        company_code: companyCode,
+        item_type: null,
+        item_code: null,
+        recalc_date: date,
+        status: 'PENDING',
+        priority: priority,
+        reason: `Outgoing capital goods batch for ${date.toISOString().split('T')[0]}`,
+      },
+    });
+  }
+
+  return { date, isBackdated };
+}
+
+/**
  * POST /api/customs/capital-goods-transactions/out
  * Create outgoing capital goods transaction
  *
  * @body date - Transaction date
- * @body itemType - Capital goods item type (HIBE_M, HIBE_E, or HIBE_T)
+ * @body itemType - Capital goods item type (HIBE-M, HIBE-E, or HIBE-T)
  * @body itemCode - Item code
  * @body itemName - Item name
  * @body uom - Unit of measure
@@ -237,47 +285,8 @@ export async function POST(request: Request) {
         },
       });
 
-      // 4. Queue snapshot recalculation
-      // Use SINGLE queue entry per (company, date) since calculate_stock_snapshot
-      // recalculates ALL items for that date anyway
-      const priority = calculatePriority(date);
-
-      // NOTE: Cannot use upsert() with null values in unique constraint
-      // Use findFirst + create/update pattern instead
-      const existingQueue = await tx.snapshot_recalc_queue.findFirst({
-        where: {
-          company_code: companyCode,
-          recalc_date: date,
-          item_type: null,
-          item_code: null,
-        },
-      });
-
-      if (existingQueue) {
-        // Update existing queue entry
-        await tx.snapshot_recalc_queue.update({
-          where: { id: existingQueue.id },
-          data: {
-            status: 'PENDING',
-            priority: priority,
-            reason: `Outgoing capital goods batch for ${date.toISOString().split('T')[0]}`,
-            queued_at: new Date(),
-          },
-        });
-      } else {
-        // Create new queue entry
-        await tx.snapshot_recalc_queue.create({
-          data: {
-            company_code: companyCode,
-            item_type: null,
-            item_code: null,
-            recalc_date: date,
-            status: 'PENDING',
-            priority: priority,
-            reason: `Outgoing capital goods batch for ${date.toISOString().split('T')[0]}`,
-          },
-        });
-      }
+      // Handle snapshot recalculation
+      const recalcResult = await handleTxSnapshotRecalc(tx, companyCode, date);
 
       return {
         wmsId,
@@ -290,11 +299,33 @@ export async function POST(request: Request) {
         currency,
         amount,
         recipientName,
+        isBackdated: recalcResult.isBackdated,
       };
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30000,
     });
+
+    // Execute direct snapshot recalculation for backdated transactions
+    if (result.isBackdated) {
+      try {
+        await prisma.$executeRawUnsafe(
+          'SELECT calculate_stock_snapshot($1::int, $2::date)',
+          companyCode,
+          result.date
+        );
+        console.log('[API Info] Backdated snapshot recalculation executed', {
+          companyCode,
+          date: result.date.toISOString().split('T')[0],
+        });
+      } catch (recalcError) {
+        console.warn('[API Warning] Backdated snapshot recalculation failed', {
+          companyCode,
+          date: result.date.toISOString().split('T')[0],
+          errorMessage: recalcError instanceof Error ? recalcError.message : String(recalcError),
+        });
+      }
+    }
 
     // Log activity
     await logActivity({
