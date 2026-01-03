@@ -1056,7 +1056,7 @@ BEGIN
             dd.item_code,
             dd.item_name,
             dd.item_type,
-            dd.unit_quantity,
+            COALESCE(MAX(dd.unit_quantity) FILTER (WHERE dd.unit_quantity != 'UNIT'), 'UNIT')::VARCHAR(20) as unit_quantity,  -- Prioritize actual UOM over default
             v_end_date::DATE as snapshot_date,  -- Show as end date for aggregated view
             (ARRAY_AGG(dd.opening_balance ORDER BY dd.snapshot_date ASC) FILTER (WHERE dd.opening_balance IS NOT NULL))[1] as opening_balance,  -- First day opening
             SUM(dd.quantity_received) as quantity_received,  -- Accumulated in
@@ -1071,7 +1071,7 @@ BEGIN
             NULL::VARCHAR(3) as currency,
             'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
         FROM daily_data dd
-        GROUP BY dd.company_code, dd.company_name, dd.item_code, dd.item_name, dd.item_type, dd.unit_quantity
+        GROUP BY dd.company_code, dd.company_name, dd.item_code, dd.item_name, dd.item_type
         ORDER BY dd.company_code, dd.item_code;
 END;
 $$ LANGUAGE plpgsql STABLE;
