@@ -151,8 +151,8 @@ class SimpleLogger {
 // Export singleton instance
 export const logger = new SimpleLogger({
   env: process.env.NODE_ENV || 'development',
-  pid: process.pid,
-  hostname: typeof window === 'undefined' ? require('os').hostname() : 'browser',
+  pid: typeof process !== 'undefined' && process.pid ? process.pid : 0,
+  hostname: typeof window === 'undefined' && typeof require !== 'undefined' ? require('os').hostname() : 'browser',
 });
 
 // ============================================================================

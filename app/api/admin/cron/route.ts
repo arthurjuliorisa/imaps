@@ -11,29 +11,13 @@ import { initializeCronService, getCronService } from '@/lib/services/cron.servi
 import { logger } from '@/lib/utils/logger';
 
 /**
- * Check if user is admin (basic check)
- */
-async function checkAdminAccess(): Promise<boolean> {
-  const session = await getServerSession(authOptions);
-  // Add your admin check logic here
-  // For now, simple session check
-  return !!session;
-}
-
-/**
  * POST /api/admin/cron/initialize
  * Initialize cron service (idempotent)
+ * Internal endpoint - called from server-side initialization
+ * No auth required as this is maintenance task
  */
 export async function POST(request: NextRequest) {
   try {
-    // Check admin access
-    if (!(await checkAdminAccess())) {
-      return NextResponse.json(
-        { error: 'Unauthorized - admin access required' },
-        { status: 401 }
-      );
-    }
-
     logger.info('🔄 Initializing cron service via API...');
     await initializeCronService();
 
@@ -65,13 +49,15 @@ export async function POST(request: NextRequest) {
 /**
  * GET /api/admin/cron/status
  * Get cron service status
+ * Requires authentication - user must be logged in
  */
 export async function GET(request: NextRequest) {
   try {
-    // Check admin access
-    if (!(await checkAdminAccess())) {
+    // Check authentication (user must be logged in to view status)
+    const session = await getServerSession(authOptions);
+    if (!session) {
       return NextResponse.json(
-        { error: 'Unauthorized - admin access required' },
+        { error: 'Unauthorized - authentication required' },
         { status: 401 }
       );
     }

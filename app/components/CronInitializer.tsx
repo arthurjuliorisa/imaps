@@ -1,20 +1,29 @@
 /**
  * Cron Initializer Component
  * Client component that initializes cron service on app load
- * Runs safely as useEffect in browser without blocking page render
+ * Only attempts initialization if user is authenticated
+ * Server-side initialization handles cases where user is not logged in
  */
 
 'use client';
 
 import { useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { logger } from '@/lib/utils/logger';
 
 export function CronInitializer() {
+  const { data: session, status } = useSession();
+
   useEffect(() => {
-    // Initialize cron service when component mounts
+    // Only attempt initialization if user is authenticated
+    if (status !== 'authenticated' || !session) {
+      return;
+    }
+
+    // Initialize cron service when user is logged in
     const initializeCron = async () => {
       try {
-        logger.debug('🔄 Initializing cron service from client...');
+        logger.debug('🔄 Initializing cron service from authenticated session...');
         
         // Call API endpoint to initialize cron service
         const response = await fetch('/api/admin/cron', {
@@ -40,7 +49,6 @@ export function CronInitializer() {
         // Log but don't throw - cron initialization is not critical for app functionality
         logger.warn('Failed to initialize cron service from client', {
           errorMessage: error instanceof Error ? error.message : String(error),
-          note: 'This may be expected if user is not authenticated or not admin',
         });
       }
     };
@@ -51,7 +59,7 @@ export function CronInitializer() {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, []);
+  }, [session, status]);
 
   // This component renders nothing - it's only for side effects
   return null;
