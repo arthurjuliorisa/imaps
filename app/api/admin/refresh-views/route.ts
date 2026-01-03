@@ -155,9 +155,9 @@ export async function POST(request: Request) {
       results.push(result);
 
       // Log each view refresh
-      console.log(
-        `[Materialized View] ${result.view}: ${result.status} - ${result.rowCount ?? 0} rows in ${result.duration}ms`
-      );
+      // console.log(
+      //   `[Materialized View] ${result.view}: ${result.status} - ${result.rowCount ?? 0} rows in ${result.duration}ms`
+      // );
     }
 
     // Analyze views for query optimization

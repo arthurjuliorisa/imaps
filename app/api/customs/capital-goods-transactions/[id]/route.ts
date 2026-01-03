@@ -92,7 +92,7 @@ export async function PUT(
         recipient_name: recipientName || '',
       },
     });
-    console.log('✅ Parent record updated successfully');
+    // console.log('✅ Parent record updated successfully');
 
     // Update the outgoing good items
     const updateResult = await prisma.$executeRaw`
@@ -107,7 +107,7 @@ export async function PUT(
         AND deleted_at IS NULL
         AND item_type IN ('HIBE_M', 'HIBE_E', 'HIBE_T')
     `;
-    console.log(`✅ Items updated. Rows affected: ${updateResult}`);
+    // console.log(`✅ Items updated. Rows affected: ${updateResult}`);
 
     // Log activity
     await logActivity({

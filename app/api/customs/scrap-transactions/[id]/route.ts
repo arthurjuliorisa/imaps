@@ -95,9 +95,9 @@ export async function PUT(
           remarks: remarks || '',
         },
       });
-      console.log('✅ Parent transaction updated successfully');
+      // console.log('✅ Parent transaction updated successfully');
     } catch (error) {
-      console.error('❌ Error updating parent transaction:', error);
+      // console.error('❌ Error updating parent transaction:', error);
       throw error;
     }
 

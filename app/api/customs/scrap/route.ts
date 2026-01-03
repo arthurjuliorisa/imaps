@@ -66,12 +66,12 @@ export async function GET(request: Request) {
 
     query += ` ORDER BY item_code`;
 
-    console.log('[Scrap API] Query:', query);
-    console.log('[Scrap API] Params:', params);
+    // console.log('[Scrap API] Query:', query);
+    // console.log('[Scrap API] Params:', params);
 
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
-    console.log('[Scrap API] Result rows:', result?.length);
+    // console.log('[Scrap API] Result rows:', result?.length);
 
     // Transform to expected format
     const transformedData = result.map((row: any, index: number) => ({
