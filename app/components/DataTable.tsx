@@ -144,9 +144,9 @@ export function DataTable({
                 <TableCell
                   key={column.id}
                   align={column.align || 'left'}
-                  style={{ minWidth: column.minWidth }}
                   sx={{
                     fontWeight: 700,
+                    minWidth: column.minWidth,
                     bgcolor: alpha(theme.palette.primary.main, 0.05),
                     color: theme.palette.primary.main,
                   }}
