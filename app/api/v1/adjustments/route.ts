@@ -3,6 +3,7 @@ import { authenticate } from '@/lib/middleware/auth.middleware';
 import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware';
 import { AdjustmentsService } from '@/lib/services/adjustments.service';
 import { logger } from '@/lib/utils/logger';
+import { logActivity } from '@/lib/log-activity';
 
 /**
  * POST /api/v1/adjustments
@@ -90,6 +91,18 @@ export async function POST(request: NextRequest) {
         wmsId,
         errorCount: result.errors.length,
       });
+      
+      // Log validation failure
+      await logActivity({
+        action: 'WMS_PROCESS_ADJUSTMENTS',
+        description: 'Failed to process adjustments - validation error',
+        status: 'failed',
+        metadata: {
+          wms_id: wmsId,
+          errors: result.errors,
+        },
+      });
+      
       return NextResponse.json(
         {
           status: 'failed',
@@ -107,11 +120,33 @@ export async function POST(request: NextRequest) {
       queuedItemsCount: result.data.queued_items_count,
     });
 
+    // Log successful processing
+    await logActivity({
+      action: 'WMS_PROCESS_ADJUSTMENTS',
+      description: `Successfully processed adjustments for WMS ID: ${result.data.wms_id}`,
+      status: 'success',
+      metadata: {
+        wms_id: result.data.wms_id,
+        itemCount: result.data.queued_items_count,
+      },
+    });
+
     return NextResponse.json(result.data, { status: 200 });
   } catch (error) {
     log.error('Unhandled error in POST /api/v1/adjustments', {
       error: error instanceof Error ? error.message : String(error),
       wmsId,
+    });
+    
+    // Log error
+    await logActivity({
+      action: 'WMS_PROCESS_ADJUSTMENTS',
+      description: 'Failed to process adjustments - system error',
+      status: 'error',
+      metadata: {
+        wms_id: wmsId,
+        error: error instanceof Error ? error.message : String(error),
+      },
     });
     
     return NextResponse.json(

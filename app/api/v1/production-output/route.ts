@@ -3,6 +3,7 @@ import { authenticate } from '@/lib/middleware/auth.middleware';
 import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware';
 import { ProductionOutputService } from '@/lib/services/production-output.service';
 import { logger } from '@/lib/utils/logger';
+import { logActivity } from '@/lib/log-activity';
 
 /**
  * POST /api/v1/production-output
@@ -90,6 +91,18 @@ export async function POST(request: NextRequest) {
         wmsId,
         errorCount: result.errors.length,
       });
+      
+      // Log validation failure
+      await logActivity({
+        action: 'WMS_PROCESS_PRODUCTION_OUTPUT',
+        description: 'Failed to process production output - validation error',
+        status: 'failed',
+        metadata: {
+          wms_id: wmsId,
+          errors: result.errors,
+        },
+      });
+      
       return NextResponse.json(
         {
           status: 'failed',
@@ -107,11 +120,33 @@ export async function POST(request: NextRequest) {
       queuedItemsCount: result.data.queued_items_count,
     });
 
+    // Log successful processing
+    await logActivity({
+      action: 'WMS_PROCESS_PRODUCTION_OUTPUT',
+      description: `Successfully processed production output for WMS ID: ${result.data.wms_id}`,
+      status: 'success',
+      metadata: {
+        wms_id: result.data.wms_id,
+        itemCount: result.data.queued_items_count,
+      },
+    });
+
     return NextResponse.json(result.data, { status: 200 });
   } catch (error) {
     log.error('Unhandled error in POST /api/v1/production-output', {
       error: error instanceof Error ? error.message : String(error),
       wmsId,
+    });
+    
+    // Log error
+    await logActivity({
+      action: 'WMS_PROCESS_PRODUCTION_OUTPUT',
+      description: 'Failed to process production output - system error',
+      status: 'error',
+      metadata: {
+        wms_id: wmsId,
+        error: error instanceof Error ? error.message : String(error),
+      },
     });
     
     return NextResponse.json(

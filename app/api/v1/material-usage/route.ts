@@ -3,6 +3,7 @@ import { authenticate } from '@/lib/middleware/auth.middleware';
 import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware';
 import { MaterialUsageService } from '@/lib/services/material-usage.service';
 import { logger } from '@/lib/utils/logger';
+import { logActivity } from '@/lib/log-activity';
 
 /**
  * POST /api/v1/material-usage
@@ -91,12 +92,36 @@ export async function POST(request: NextRequest) {
         queuedItemsCount: response.queued_items_count,
         validatedAt: response.validated_at,
       });
+      
+      // Log successful processing
+      await logActivity({
+        action: 'WMS_PROCESS_MATERIAL_USAGE',
+        description: `Successfully processed material usage for WMS ID: ${response.wms_id}`,
+        status: 'success',
+        metadata: {
+          wms_id: response.wms_id,
+          itemCount: response.queued_items_count,
+        },
+      });
+      
       return NextResponse.json(response, { status: 200 });
     } else {
       log.warn('Material usage processing failed', {
         wmsId: response.wms_id,
         errorCount: response.errors.length,
       });
+      
+      // Log validation failure
+      await logActivity({
+        action: 'WMS_PROCESS_MATERIAL_USAGE',
+        description: 'Failed to process material usage - validation error',
+        status: 'failed',
+        metadata: {
+          wms_id: response.wms_id,
+          errors: response.errors,
+        },
+      });
+      
       return NextResponse.json(
         {
           status: 'failed',
@@ -112,6 +137,17 @@ export async function POST(request: NextRequest) {
       error: err.message,
       stack: err.stack,
       wmsId,
+    });
+
+    // Log error
+    await logActivity({
+      action: 'WMS_PROCESS_MATERIAL_USAGE',
+      description: 'Failed to process material usage - system error',
+      status: 'error',
+      metadata: {
+        wms_id: wmsId,
+        error: err.message || 'Internal server error',
+      },
     });
 
     return NextResponse.json(

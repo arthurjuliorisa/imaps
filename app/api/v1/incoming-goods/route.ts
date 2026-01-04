@@ -4,6 +4,7 @@ import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware'
 import { errorHandler } from '@/lib/middleware/error-handler.middleware';
 import { IncomingGoodsService } from '@/lib/services/incoming-goods.service';
 import { createRequestLogger, logRequest, logResponse } from '@/lib/utils/logger';
+import { logActivity } from '@/lib/log-activity';
 
 /**
  * POST /api/v1/incoming-goods
@@ -58,6 +59,18 @@ export async function POST(request: NextRequest) {
     if (!result.success) {
       // Validation failed
       logResponse(requestLogger, 400, startTime);
+      
+      // Log validation failure
+      await logActivity({
+        action: 'WMS_PROCESS_INCOMING_GOODS',
+        description: 'Failed to process incoming goods - validation error',
+        status: 'failed',
+        metadata: {
+          wms_id: wmsId,
+          errors: result.errors,
+        },
+      });
+      
       return NextResponse.json(
         {
           status: 'failed',
@@ -71,9 +84,32 @@ export async function POST(request: NextRequest) {
 
     // Success
     logResponse(requestLogger, 200, startTime);
+    
+    // Log successful processing
+    await logActivity({
+      action: 'WMS_PROCESS_INCOMING_GOODS',
+      description: `Successfully processed incoming goods for WMS ID: ${wmsId}`,
+      status: 'success',
+      metadata: {
+        wms_id: wmsId,
+        data: result.data,
+      },
+    });
+    
     return NextResponse.json(result.data, { status: 200 });
   } catch (error) {
     requestLogger.error('Failed to process incoming goods', { error, wmsId });
+
+    // Log error
+    await logActivity({
+      action: 'WMS_PROCESS_INCOMING_GOODS',
+      description: 'Failed to process incoming goods - system error',
+      status: 'error',
+      metadata: {
+        wms_id: wmsId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
 
     const errorResponse = errorHandler(error, wmsId);
     logResponse(requestLogger, errorResponse.status, startTime);

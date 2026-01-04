@@ -3,6 +3,7 @@ import { authenticate } from '@/lib/middleware/auth.middleware';
 import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware';
 import { OutgoingGoodsService } from '@/lib/services/outgoing-goods.service';
 import { logger } from '@/lib/utils/logger';
+import { logActivity } from '@/lib/log-activity';
 
 /**
  * POST /api/v1/outgoing-goods
@@ -90,6 +91,18 @@ export async function POST(request: NextRequest) {
     if (!result.success) {
       // Validation failed
       log.info('Validation failed', { wmsId, errorCount: result.errors.length });
+      
+      // Log validation failure
+      await logActivity({
+        action: 'WMS_PROCESS_OUTGOING_GOODS',
+        description: 'Failed to process outgoing goods - validation error',
+        status: 'failed',
+        metadata: {
+          wms_id: wmsId,
+          errors: result.errors,
+        },
+      });
+      
       return NextResponse.json(
         {
           status: 'failed',
@@ -103,9 +116,32 @@ export async function POST(request: NextRequest) {
 
     // Success
     log.info('Request processed successfully', { wmsId, itemCount: result.data.queued_items_count });
+    
+    // Log successful processing
+    await logActivity({
+      action: 'WMS_PROCESS_OUTGOING_GOODS',
+      description: `Successfully processed outgoing goods for WMS ID: ${wmsId}`,
+      status: 'success',
+      metadata: {
+        wms_id: wmsId,
+        itemCount: result.data.queued_items_count,
+      },
+    });
+    
     return NextResponse.json(result.data, { status: 200 });
   } catch (error) {
     log.error('Unexpected error during request processing', { error, wmsId });
+
+    // Log error
+    await logActivity({
+      action: 'WMS_PROCESS_OUTGOING_GOODS',
+      description: 'Failed to process outgoing goods - system error',
+      status: 'error',
+      metadata: {
+        wms_id: wmsId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
 
     return NextResponse.json(
       {

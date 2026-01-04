@@ -19,6 +19,7 @@ import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware'
 import { errorHandler } from '@/lib/middleware/error-handler.middleware';
 import { WIPBalanceService } from '@/lib/services/wip-balance.service';
 import { createRequestLogger, logRequest, logResponse } from '@/lib/utils/logger';
+import { logActivity } from '@/lib/log-activity';
 
 /**
  * POST /api/v1/wip-balance
@@ -73,6 +74,19 @@ export async function POST(request: NextRequest) {
       const totalRecords = (body?.records?.length) || 0;
       
       logResponse(requestLogger, 400, startTime);
+      
+      // Log validation failure
+      await logActivity({
+        action: 'WMS_PROCESS_WIP_BALANCE',
+        description: 'Failed to process WIP balance - batch validation error',
+        status: 'failed',
+        metadata: {
+          totalRecords,
+          failedCount: totalRecords,
+          errors: result.errors,
+        },
+      });
+      
       return NextResponse.json(
         {
           status: 'failed',
@@ -101,9 +115,30 @@ export async function POST(request: NextRequest) {
 
     // Success or partial success
     logResponse(requestLogger, 200, startTime);
+    
+    // Log successful processing
+    await logActivity({
+      action: 'WMS_PROCESS_WIP_BALANCE',
+      description: `Successfully processed WIP balance - ${result.data?.summary?.success_count || 0} records processed`,
+      status: 'success',
+      metadata: {
+        summary: result.data?.summary,
+      },
+    });
+    
     return NextResponse.json(result.data, { status: 200 });
   } catch (error) {
     requestLogger.error('Failed to process WIP Balance batch', { error });
+
+    // Log error
+    await logActivity({
+      action: 'WMS_PROCESS_WIP_BALANCE',
+      description: 'Failed to process WIP balance - system error',
+      status: 'error',
+      metadata: {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
 
     const errorResponse = errorHandler(error);
     logResponse(requestLogger, errorResponse.status, startTime);
