@@ -13,6 +13,9 @@ import {
   Stack,
   MenuItem,
   Alert,
+  Typography,
+  alpha,
+  useTheme,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -34,6 +37,12 @@ interface FormData {
   documentType: string;
 }
 
+interface StockCheckResult {
+  currentStock: number;
+  available: boolean;
+  shortfall?: number;
+}
+
 interface EditCapitalGoodsTransactionDialogProps {
   open: boolean;
   transaction: CapitalGoodsTransaction | null;
@@ -50,6 +59,7 @@ export function EditCapitalGoodsTransactionDialog({
   onClose,
   onSuccess,
 }: EditCapitalGoodsTransactionDialogProps) {
+  const theme = useTheme();
   const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<FormData>({
@@ -65,13 +75,17 @@ export function EditCapitalGoodsTransactionDialog({
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
+  const [stockCheckResult, setStockCheckResult] = useState<StockCheckResult | null>(null);
+  const [checkingStock, setCheckingStock] = useState(false);
+  const [originalQty, setOriginalQty] = useState(0);
 
   // Populate form when transaction changes
   useEffect(() => {
     if (transaction && open) {
+      const qty = transaction.outQty;
       setFormData({
         date: transaction.docDate ? dayjs(transaction.docDate) : null,
-        qty: transaction.outQty,
+        qty: qty,
         currency: transaction.currency || 'USD',
         amount: transaction.valueAmount || 0,
         recipientName: transaction.recipientName || '',
@@ -80,9 +94,83 @@ export function EditCapitalGoodsTransactionDialog({
         registrationDate: transaction.regDate ? dayjs(transaction.regDate) : null,
         documentType: transaction.docType || '',
       });
+      setOriginalQty(qty);
       setErrors({});
+      setStockCheckResult(null);
     }
   }, [transaction, open]);
+
+  /**
+   * Pre-check stock availability when qty changes
+   */
+  const checkStockAvailabilityFn = async () => {
+    if (!transaction || !formData.qty || formData.qty <= 0) {
+      setStockCheckResult(null);
+      return;
+    }
+
+    const qtyDifference = formData.qty - originalQty;
+    
+    // Only check if qty is increased
+    if (qtyDifference <= 0) {
+      setStockCheckResult(null);
+      return;
+    }
+
+    setCheckingStock(true);
+    try {
+      const dateObj = transaction.docDate ? new Date(transaction.docDate) : new Date();
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
+      const response = await fetch('/api/customs/stock/check', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items: [
+            {
+              itemCode: transaction.itemCode,
+              itemType: transaction.transactionType,
+              qtyRequested: qtyDifference,
+            },
+          ],
+          date: dateStr,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const itemResult = result.results[0];
+        setStockCheckResult({
+          currentStock: itemResult.currentStock,
+          available: itemResult.available,
+          shortfall: itemResult.shortfall,
+        });
+      } else {
+        setStockCheckResult(null);
+      }
+    } catch (error) {
+      console.error('Stock check error:', error);
+      setStockCheckResult(null);
+    } finally {
+      setCheckingStock(false);
+    }
+  };
+
+  /**
+   * Trigger stock check when qty changes
+   */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      checkStockAvailabilityFn();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [formData.qty]);
 
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
@@ -225,6 +313,34 @@ export function EditCapitalGoodsTransactionDialog({
                 InputProps={{ inputProps: { min: 0, step: 0.001 } }}
               />
             </Box>
+
+            {/* Stock Check Result Display */}
+            {formData.qty > originalQty && (
+              <>
+                {checkingStock && (
+                  <Alert severity="info" icon={<CircularProgress size={20} />}>
+                    Checking stock availability...
+                  </Alert>
+                )}
+
+                {!checkingStock && stockCheckResult && (
+                  <Alert
+                    severity={stockCheckResult.available ? 'success' : 'error'}
+                    sx={{ mt: 1 }}
+                  >
+                    {stockCheckResult.available ? (
+                      <Typography variant="body2">
+                        Stock tersedia: {stockCheckResult.currentStock.toLocaleString('id-ID', { minimumFractionDigits: 2 })} untuk penambahan {(formData.qty - originalQty).toLocaleString('id-ID', { minimumFractionDigits: 2 })} unit
+                      </Typography>
+                    ) : (
+                      <Typography variant="body2">
+                        Stock tidak mencukupi. Tersedia {stockCheckResult.currentStock.toLocaleString('id-ID', { minimumFractionDigits: 2 })} unit, tidak cukup untuk menambah {(formData.qty - originalQty).toLocaleString('id-ID', { minimumFractionDigits: 2 })} unit (kurang {stockCheckResult.shortfall?.toLocaleString('id-ID', { minimumFractionDigits: 2 })} unit)
+                      </Typography>
+                    )}
+                  </Alert>
+                )}
+              </>
+            )}
 
             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
               <TextField

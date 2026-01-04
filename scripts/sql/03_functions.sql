@@ -139,21 +139,13 @@ BEGIN
             
             UNION
             
-            -- Items from WIP balance
-            SELECT item_type, item_code, item_name, uom 
-            FROM wip_balances 
-            WHERE company_code = p_company_code 
-              AND stock_date = p_snapshot_date
-            
-            UNION
-            
             -- Items from scrap transactions (IN/OUT)
             SELECT item_type, item_code, item_name, uom 
             FROM scrap_transaction_items sti
             JOIN scrap_transactions st ON sti.scrap_transaction_id = st.id
             WHERE st.company_code = p_company_code 
               AND st.transaction_date = p_snapshot_date
-            
+
             UNION
             
             -- Items with opening balance (from previous day)
@@ -319,18 +311,6 @@ BEGIN
           AND a.deleted_at IS NULL
           AND ai.deleted_at IS NULL
         GROUP BY a.company_code, ai.item_type, ai.item_code
-    ),
-    -- WIP balance quantities (snapshot-based for HALB)
-    wip_quantities AS (
-        SELECT 
-            company_code,
-            item_type,
-            item_code,
-            qty AS wip_balance_qty
-        FROM wip_balances
-        WHERE company_code = p_company_code
-          AND stock_date = p_snapshot_date
-          AND deleted_at IS NULL
     )
     -- Final calculation
     SELECT 
@@ -404,7 +384,7 @@ BEGIN
         COALESCE(prod.production_qty, 0) AS production_qty,
         COALESCE(mat.material_usage_qty, 0) AS material_usage_qty,
         COALESCE(adj.adjustment_qty, 0) AS adjustment_qty,
-        wip.wip_balance_qty,
+        NULL::numeric AS wip_balance_qty,
         p_snapshot_date AS snapshot_date,
         CURRENT_TIMESTAMP AS calculated_at,
         'TRANSACTION'::calculation_method AS calculation_method,
@@ -434,10 +414,7 @@ BEGIN
         AND ai.item_code = prod.item_code
     LEFT JOIN adjustment_quantities adj ON ai.company_code = adj.company_code 
         AND ai.item_type = adj.item_type 
-        AND ai.item_code = adj.item_code
-    LEFT JOIN wip_quantities wip ON ai.company_code = wip.company_code 
-        AND ai.item_type = wip.item_type 
-        AND ai.item_code = wip.item_code;
+        AND ai.item_code = adj.item_code;
     
     GET DIAGNOSTICS v_rows_inserted = ROW_COUNT;
     
