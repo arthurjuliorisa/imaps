@@ -5,7 +5,6 @@ import { useToast } from '@/app/components/ToastProvider';
 import { Box, Stack, TextField, InputAdornment, MenuItem } from '@mui/material';
 import { Search as SearchIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
-import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { WIPReportTable, WIPData } from '@/app/components/customs/WIPReportTable';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
@@ -13,13 +12,9 @@ import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 export default function WIPMutationPage() {
   const toast = useToast();
 
-  // Default date range: last 30 days to today
-  const now = new Date();
-  const thirtyDaysAgo = new Date(now);
-  thirtyDaysAgo.setDate(now.getDate() - 30);
-
-  const [startDate, setStartDate] = useState(thirtyDaysAgo.toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
+  // Initialize with null, will be set to latest date on mount
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [initialLoading, setInitialLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [data, setData] = useState<WIPData[]>([]);
@@ -28,11 +23,12 @@ export default function WIPMutationPage() {
   const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
 
   const fetchData = useCallback(async () => {
+    if (!selectedDate) return;
+
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        startDate,
-        endDate,
+        stockDate: selectedDate,
       });
 
       const response = await fetch(`/api/customs/wip?${params}`);
@@ -46,11 +42,38 @@ export default function WIPMutationPage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, toast]);
+  }, [selectedDate, toast]);
+
+  // Fetch latest stock date on component mount
+  useEffect(() => {
+    const fetchLatestDate = async () => {
+      try {
+        const response = await fetch('/api/customs/wip', {
+          method: 'POST',
+        });
+        if (!response.ok) throw new Error('Failed to fetch latest date');
+        const { latestDate } = await response.json();
+        if (latestDate) {
+          setSelectedDate(latestDate);
+        }
+      } catch (error) {
+        console.error('Error fetching latest stock date:', error);
+        // Fallback to today if fetch fails
+        const now = new Date();
+        setSelectedDate(now.toISOString().split('T')[0]);
+      } finally {
+        setInitialLoading(false);
+      }
+    };
+
+    fetchLatestDate();
+  }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!initialLoading) {
+      fetchData();
+    }
+  }, [selectedDate, fetchData, initialLoading]);
 
   // Get unique item types from data
   const uniqueItemTypes = useMemo(() => {
@@ -110,7 +133,7 @@ export default function WIPMutationPage() {
 
     exportToExcel(
       exportData,
-      `WIP_Stock_Position_${startDate}_${endDate}`,
+      `WIP_Stock_Position_${selectedDate}`,
       'WIP Stock Position'
     );
   };
@@ -145,9 +168,9 @@ export default function WIPMutationPage() {
     exportToPDF(
       exportData,
       columns,
-      `WIP_Stock_Position_${startDate}_${endDate}`,
+      `WIP_Stock_Position_${selectedDate}`,
       'WIP Stock Position Report',
-      `Period: ${formatDate(startDate)} - ${formatDate(endDate)}`
+      `Date: ${formatDate(selectedDate)}`
     );
   };
 
@@ -168,18 +191,23 @@ export default function WIPMutationPage() {
       actions={
         <Stack spacing={3}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <DateRangeFilter
-              startDate={startDate}
-              endDate={endDate}
-              onStartDateChange={setStartDate}
-              onEndDateChange={setEndDate}
+            <TextField
+              label="Stock Date"
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              disabled={initialLoading}
+              InputLabelProps={{
+                shrink: true,
+              }}
+              sx={{ minWidth: 200 }}
             />
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={filteredData.length === 0 || loading}
+              disabled={filteredData.length === 0 || loading || initialLoading}
             />
           </Box>
         </Stack>
@@ -222,8 +250,6 @@ export default function WIPMutationPage() {
         rowsPerPage={rowsPerPage}
         onPageChange={handleChangePage}
         onRowsPerPageChange={handleChangeRowsPerPage}
-        onEdit={handleEdit}
-        onView={handleView}
         loading={loading}
       />
     </ReportLayout>

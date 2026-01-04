@@ -13,12 +13,10 @@ import {
   alpha,
   useTheme,
   Chip,
-  IconButton,
-  Tooltip,
   Box,
   CircularProgress,
 } from '@mui/material';
-import { Edit as EditIcon, Visibility as ViewIcon } from '@mui/icons-material';
+
 
 export interface WIPData {
   id: string;
@@ -40,8 +38,6 @@ interface WIPReportTableProps {
   rowsPerPage: number;
   onPageChange: (event: unknown, newPage: number) => void;
   onRowsPerPageChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onEdit?: (item: WIPData) => void;
-  onView?: (item: WIPData) => void;
   loading?: boolean;
 }
 
@@ -51,8 +47,6 @@ export function WIPReportTable({
   rowsPerPage,
   onPageChange,
   onRowsPerPageChange,
-  onEdit,
-  onView,
   loading = false,
 }: WIPReportTableProps) {
   const theme = useTheme();
@@ -107,14 +101,13 @@ export function WIPReportTable({
               <TableCell sx={{ fontWeight: 600 }}>Stock Date</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Created At</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="center">Action</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {paginatedData.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={11}
+                  colSpan={10}
                   align="center"
                   sx={{ py: 8 }}
                 >
@@ -166,26 +159,6 @@ export function WIPReportTable({
                     <Typography variant="body2" color="text.secondary">
                       {formatDate(row.createdAt)}
                     </Typography>
-                  </TableCell>
-                  <TableCell align="center">
-                    <Tooltip title="View Details">
-                      <IconButton
-                        size="small"
-                        onClick={() => onView?.(row)}
-                        sx={{ mr: 0.5 }}
-                      >
-                        <ViewIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Edit">
-                      <IconButton
-                        size="small"
-                        onClick={() => onEdit?.(row)}
-                        color="primary"
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
                   </TableCell>
                 </TableRow>
               ))

@@ -13,8 +13,7 @@ export async function GET(request: Request) {
 
     const { session } = authCheck as { authenticated: true; session: any };
     const { searchParams } = new URL(request.url);
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
+    const stockDate = searchParams.get('stockDate');
 
     // Validate company code with detailed error messages
     const companyValidation = validateCompanyCode(session);
@@ -26,7 +25,7 @@ export async function GET(request: Request) {
     // console.log('[WIP API] Company Code from session:', companyCode);
     // console.log('[WIP API] Session user:', session.user?.email, 'Company:', session.user?.companyCode);
 
-    // Query from vw_lpj_wip view (WIP balances with stock_date)
+    // Query from vw_lpj_wip view (WIP balances at specific date)
     // Returns all fields except company_code and updated_at
     let query = `
       SELECT
@@ -48,18 +47,13 @@ export async function GET(request: Request) {
     let paramIndex = 2;
 
     // Add date filtering if provided
-    if (startDate) {
-      query += ` AND stock_date >= $${paramIndex}`;
-      params.push(new Date(startDate));
-      paramIndex++;
-    }
-    if (endDate) {
-      query += ` AND stock_date <= $${paramIndex}`;
-      params.push(new Date(endDate));
+    if (stockDate) {
+      query += ` AND stock_date = $${paramIndex}::DATE`;
+      params.push(stockDate);
       paramIndex++;
     }
 
-    query += ` ORDER BY stock_date DESC, item_code`;
+    query += ` ORDER BY item_code`;
 
     // console.log('[WIP API] Query:', query);
     // console.log('[WIP API] Params:', params);
@@ -88,6 +82,47 @@ export async function GET(request: Request) {
     console.error('[API Error] Failed to fetch WIP records:', error);
     return NextResponse.json(
       { message: 'Error fetching WIP records' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const authCheck = await checkAuth();
+    if (!authCheck.authenticated) {
+      return authCheck.response;
+    }
+
+    const { session } = authCheck as { authenticated: true; session: any };
+
+    // Validate company code with detailed error messages
+    const companyValidation = validateCompanyCode(session);
+    if (!companyValidation.success) {
+      return companyValidation.response;
+    }
+    const { companyCode } = companyValidation;
+
+    // Get latest stock date for this company
+    const latestDateResult = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT MAX(stock_date) as latest_date FROM vw_lpj_wip WHERE company_code = $1`,
+      companyCode
+    );
+
+    const latestDate = latestDateResult[0]?.latest_date;
+
+    if (!latestDate) {
+      return NextResponse.json({ latestDate: null });
+    }
+
+    // Format the date to YYYY-MM-DD
+    const formattedDate = latestDate.toISOString().split('T')[0];
+
+    return NextResponse.json({ latestDate: formattedDate });
+  } catch (error) {
+    console.error('[API Error] Failed to fetch latest stock date:', error);
+    return NextResponse.json(
+      { message: 'Error fetching latest stock date' },
       { status: 500 }
     );
   }
