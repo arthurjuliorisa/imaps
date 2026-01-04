@@ -136,6 +136,7 @@ export function DataTable({
                   minWidth: 70,
                   bgcolor: alpha(theme.palette.primary.main, 0.05),
                   color: theme.palette.primary.main,
+                  zIndex: 10,
                 }}
               >
                 No
@@ -149,6 +150,7 @@ export function DataTable({
                     minWidth: column.minWidth,
                     bgcolor: alpha(theme.palette.primary.main, 0.05),
                     color: theme.palette.primary.main,
+                    zIndex: 10,
                   }}
                 >
                   {column.label}
@@ -162,6 +164,7 @@ export function DataTable({
                     minWidth: 120,
                     bgcolor: alpha(theme.palette.primary.main, 0.05),
                     color: theme.palette.primary.main,
+                    zIndex: 10,
                   }}
                 >
                   Action
