@@ -254,7 +254,8 @@ export default function ScrapTransactionsPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to delete transaction');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete transaction');
       }
 
       toast.success('Transaction deleted successfully');
@@ -263,7 +264,7 @@ export default function ScrapTransactionsPage() {
       fetchData();
     } catch (error) {
       console.error('Error deleting transaction:', error);
-      toast.error('Failed to delete transaction');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete transaction');
     } finally {
       setDeleting(false);
     }

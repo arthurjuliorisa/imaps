@@ -302,3 +302,145 @@ export async function checkBatchStockAvailability(
     allAvailable,
   };
 }
+
+/**
+ * Check stock balance for SCRAP IN transactions
+ * For SCRAP IN, we need to ensure that reducing the IN qty won't make balance negative
+ * 
+ * Balance = beginning_balance + Total IN (excluding this transaction) - Total OUT
+ * 
+ * @param companyCode Company code
+ * @param itemCode Item code
+ * @param itemType Item type (should be 'SCRAP')
+ * @param currentInQty Current IN qty in the transaction being edited
+ * @param newInQty New IN qty after edit
+ * @param asOfDate Transaction date
+ * @param excludeTransactionId Transaction ID to exclude from calculation
+ * @returns Current balance and whether reduction is allowed
+ */
+export async function checkScrapInBalance(
+  companyCode: number,
+  itemCode: string,
+  itemType: string,
+  currentInQty: number,
+  newInQty: number,
+  asOfDate: Date,
+  excludeTransactionId?: number
+): Promise<StockCheckResult> {
+  try {
+    const normalizedDate = normalizeDate(asOfDate);
+    const today = normalizeDate(new Date());
+    const isCurrentDate = normalizedDate.getTime() === today.getTime();
+
+    console.log(`[Scrap IN Balance] asOfDate=${asOfDate.toISOString()}, normalizedDate=${normalizedDate.toISOString()}, today=${today.toISOString()}, isCurrentDate=${isCurrentDate}`);
+
+    // Get beginning balance for this item
+    let beginningBalance = 0;
+    const beginningBalanceResult = await prisma.$queryRawUnsafe<[{ qty: bigint }]>(
+      `
+        SELECT COALESCE(SUM(qty), 0) as qty
+        FROM beginning_balances
+        WHERE company_code = $1
+          AND item_code = $2
+          AND item_type = $3
+      `,
+      companyCode, itemCode, itemType
+    );
+    
+    if (beginningBalanceResult.length > 0) {
+      beginningBalance = Number(beginningBalanceResult[0]?.qty || 0);
+    }
+
+    console.log(`[Scrap IN Balance] Beginning balance for ${itemCode} (${itemType}): ${beginningBalance}`);
+
+    // Calculate total IN quantity (excluding current transaction)
+    const params: any[] = [companyCode, itemCode, itemType, normalizedDate];
+    let whereClause = `
+        WHERE st.company_code = $1
+          AND sti.item_code = $2
+          AND sti.item_type = $3
+          AND st.transaction_type = 'IN'
+          AND st.deleted_at IS NULL
+          AND sti.deleted_at IS NULL
+          AND st.transaction_date <= $4`;
+    
+    if (excludeTransactionId) {
+      whereClause += ` AND st.id != $${params.length + 1}`;
+      params.push(excludeTransactionId);
+    }
+
+    const totalInResult = await prisma.$queryRawUnsafe<[{ total_in: bigint }]>(
+      `
+        SELECT COALESCE(SUM(sti.qty), 0) as total_in
+        FROM scrap_transaction_items sti
+        JOIN scrap_transactions st ON st.company_code = sti.scrap_transaction_company
+          AND st.id = sti.scrap_transaction_id
+          AND st.transaction_date = sti.scrap_transaction_date
+        ${whereClause}
+      `,
+      ...params
+    );
+
+    const totalIn = Number(totalInResult[0]?.total_in || 0);
+
+    console.log(`[Scrap IN Balance] Total IN for ${itemCode} (excluding transaction ${excludeTransactionId}): ${totalIn}`);
+
+    // Calculate total OUT quantity
+    // CRITICAL: Always use TODAY's transactions for validation, not transaction date
+    // Because we want to validate: "If we delete this, will CURRENT balance go negative?"
+    let totalOut = 0;
+    const todayDate = normalizeDate(new Date());
+    
+    // Always check outgoing qty up to TODAY (current balance state)
+    const outResult = await prisma.$queryRawUnsafe<[{ total_out: bigint }]>(
+      `
+        SELECT COALESCE(SUM(ogi.qty), 0) as total_out
+        FROM outgoing_good_items ogi
+        JOIN outgoing_goods og ON og.company_code = ogi.outgoing_good_company
+          AND og.id = ogi.outgoing_good_id
+          AND og.outgoing_date = ogi.outgoing_good_date
+        WHERE og.company_code = $1
+          AND ogi.item_code = $2
+          AND ogi.item_type = $3
+          AND og.deleted_at IS NULL
+          AND ogi.deleted_at IS NULL
+          AND og.outgoing_date <= $4
+      `,
+      companyCode, itemCode, itemType, todayDate
+    );
+    totalOut = Number(outResult[0]?.total_out || 0);
+    console.log(`[Scrap IN Balance] Total OUT (up to today) for ${itemCode}: ${totalOut}`);
+
+    // Calculate current balance = beginning_balance + Total IN (excluding this) - Total OUT
+    const balanceExcludingThisTx = beginningBalance + totalIn - totalOut;
+    
+    // After the change, this transaction will have newInQty instead of currentInQty
+    // newBalance = (balance without this tx) + newInQty
+    const newBalance = balanceExcludingThisTx + newInQty;
+    
+    // Check if new balance would be negative
+    const isAllowed = newBalance >= 0;
+    const shortfall = isAllowed ? undefined : Math.abs(newBalance);
+    
+    // For logging: actual current balance (with current transaction included)
+    const actualCurrentBalance = balanceExcludingThisTx + currentInQty;
+
+    console.log(`[Scrap IN Balance] For ${itemCode}: actualBalance=${actualCurrentBalance}, currentQty=${currentInQty}, newQty=${newInQty}, newBalance=${newBalance}, allowed=${isAllowed}`);
+
+    return {
+      itemCode,
+      itemType,
+      currentStock: actualCurrentBalance,
+      qtyRequested: Math.abs(newInQty - currentInQty), // how much we're changing
+      available: isAllowed,
+      shortfall,
+      validationDate: asOfDate,
+    };
+  } catch (error) {
+    console.error(
+      `[Scrap IN Balance Check Error] Failed to check scrap IN balance for ${itemCode} on ${asOfDate.toISOString()}:`,
+      error
+    );
+    throw error;
+  }
+}

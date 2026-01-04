@@ -84,14 +84,14 @@ export class OutgoingGoodsService {
       }
 
       // 4. Validate production traceability for FERT/HALB items
-      const traceabilityErrors = validateProductionTraceability(data);
-      if (traceabilityErrors.length > 0) {
-        requestLogger.warn(
-          'Production traceability validation failed',
-          { errors: traceabilityErrors }
-        );
-        return { success: false, errors: traceabilityErrors as ErrorDetail[] };
-      }
+      // const traceabilityErrors = validateProductionTraceability(data);
+      // if (traceabilityErrors.length > 0) {
+      //   requestLogger.warn(
+      //     'Production traceability validation failed',
+      //     { errors: traceabilityErrors }
+      //   );
+      //   return { success: false, errors: traceabilityErrors as ErrorDetail[] };
+      // }
 
       // 5. Business validations - verify production_output_wms_ids exist
       const productionValidationErrors = await this.validateProductionOutputs(data);

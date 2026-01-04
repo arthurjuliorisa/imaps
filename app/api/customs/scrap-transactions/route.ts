@@ -133,7 +133,7 @@ export async function GET(request: Request) {
       SELECT * FROM (
         -- SCRAP IN from scrap_transactions
         SELECT
-          'SCRAP_IN_' || st.id as record_id,
+          'SCRAP_' || st.id as record_id,
           st.id as source_id,
           st.document_number as wms_id,
           st.company_code,
@@ -171,7 +171,7 @@ export async function GET(request: Request) {
         
         -- SCRAP OUT from outgoing_goods
         SELECT
-          'SCRAP_OUT_' || og.id as record_id,
+          'OUTGOING_' || og.id as record_id,
           og.id as source_id,
           og.wms_id,
           og.company_code,

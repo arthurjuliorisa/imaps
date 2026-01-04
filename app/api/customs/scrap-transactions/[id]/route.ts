@@ -2,7 +2,79 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
+import { checkStockAvailability, checkScrapInBalance } from '@/lib/utils/stock-checker';
 import { logActivity } from '@/lib/log-activity';
+import { Prisma } from '@prisma/client';
+
+/**
+ * Calculate priority for snapshot recalculation queue
+ * Backdated transactions (date < today) should have priority 0
+ * Same-day transactions (date = today) should have priority -1
+ */
+function calculatePriority(transactionDate: Date): number {
+  const now = new Date();
+  const today = new Date(Date.UTC(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0, 0, 0, 0
+  ));
+
+  if (transactionDate < today) {
+    return 0; // Backdated transaction
+  } else if (transactionDate.getTime() === today.getTime()) {
+    return -1; // Same-day transaction
+  }
+  return -1; // Default to same-day priority
+}
+
+/**
+ * Handle snapshot recalculation in transaction
+ * Returns the date and whether it's backdated for later direct execution
+ */
+async function handleTxSnapshotRecalc(
+  tx: any,
+  companyCode: number,
+  date: Date
+): Promise<{ date: Date; isBackdated: boolean }> {
+  const priority = calculatePriority(date);
+  const isBackdated = priority === 0;
+
+  const existingQueue = await tx.snapshot_recalc_queue.findFirst({
+    where: {
+      company_code: companyCode,
+      recalc_date: date,
+      item_type: null,
+      item_code: null,
+    },
+  });
+
+  if (existingQueue) {
+    await tx.snapshot_recalc_queue.update({
+      where: { id: existingQueue.id },
+      data: {
+        status: 'PENDING',
+        priority: priority,
+        reason: `Scrap transaction update for ${date.toISOString().split('T')[0]}`,
+        queued_at: new Date(),
+      },
+    });
+  } else {
+    await tx.snapshot_recalc_queue.create({
+      data: {
+        company_code: companyCode,
+        item_type: null,
+        item_code: null,
+        recalc_date: date,
+        status: 'PENDING',
+        priority: priority,
+        reason: `Scrap transaction update for ${date.toISOString().split('T')[0]}`,
+      },
+    });
+  }
+
+  return { date, isBackdated };
+}
 
 /**
  * PUT /api/customs/scrap-transactions/[id]
@@ -33,17 +105,26 @@ export async function PUT(
     const { id } = await params;
     const transactionId = id;
 
-    // Only allow editing scrap_transactions records
-    if (!transactionId.startsWith('SCRAP_')) {
+    // Parse the ID to determine the source and extract the actual DB ID
+    let sourceTable: 'scrap_transactions' | 'outgoing_goods';
+    let actualId: number;
+
+    if (transactionId.startsWith('SCRAP_')) {
+      sourceTable = 'scrap_transactions';
+      // Extract ID from format: SCRAP_{id}-{item_code}-{index}
+      const parts = transactionId.replace('SCRAP_', '').split('-');
+      actualId = parseInt(parts[0], 10);
+    } else if (transactionId.startsWith('OUTGOING_')) {
+      sourceTable = 'outgoing_goods';
+      // Extract ID from format: OUTGOING_{id}-{item_code}-{index}
+      const parts = transactionId.replace('OUTGOING_', '').split('-');
+      actualId = parseInt(parts[0], 10);
+    } else {
       return NextResponse.json(
-        { message: 'Only scrap transactions can be edited here. Please edit outgoing goods from the Outgoing page.' },
+        { message: 'Invalid transaction ID format' },
         { status: 400 }
       );
     }
-
-    // Extract the actual database ID
-    const parts = transactionId.replace('SCRAP_', '').split('-');
-    const actualId = parseInt(parts[0], 10);
 
     if (isNaN(actualId)) {
       return NextResponse.json(
@@ -66,76 +147,318 @@ export async function PUT(
       documentType,
     } = body;
 
-    // Verify the transaction exists and belongs to the company
-    const transaction = await prisma.scrap_transactions.findFirst({
-      where: {
-        id: actualId,
-        company_code: companyCode,
-        deleted_at: null,
-      },
-    });
-
-    if (!transaction) {
+    // Validate qty is provided and is positive
+    if (!qty || qty <= 0) {
       return NextResponse.json(
-        { message: 'Transaction not found or already deleted' },
-        { status: 404 }
+        { message: 'Quantity must be a positive number' },
+        { status: 400 }
       );
     }
 
-    // Update the scrap transaction
-    // Note: transaction_date is part of compound key and cannot be updated
-    try {
-      await prisma.scrap_transactions.update({
-        where: { id: actualId },
-        data: {
-          ppkek_number: ppkekNumber || '',
-          customs_registration_date: registrationDate ? new Date(registrationDate) : undefined,
-          customs_document_type: documentType || '',
-          recipient_name: recipientName || '',
-          remarks: remarks || '',
-        },
-      });
-      // console.log('✅ Parent transaction updated successfully');
-    } catch (error) {
-      // console.error('❌ Error updating parent transaction:', error);
-      throw error;
-    }
+    // Verify the transaction exists and belongs to the company
+    let transaction: any;
+    let existingItem: any;
 
-    // Update the scrap transaction items
-    try {
-      const result = await prisma.scrap_transaction_items.updateMany({
+    if (sourceTable === 'scrap_transactions') {
+      const scrapTx = await prisma.scrap_transactions.findFirst({
         where: {
-          scrap_transaction_id: actualId,
-          scrap_transaction_company: companyCode,
-          scrap_transaction_date: transaction.transaction_date,
+          id: actualId,
+          company_code: companyCode,
           deleted_at: null,
         },
-        data: {
-          qty: qty,
-          currency: currency as any,
-          amount: amount,
+        include: {
+          items: {
+            where: {
+              deleted_at: null,
+            },
+          },
         },
       });
-      console.log('✅ Items updated successfully. Count:', result.count);
-    } catch (error) {
-      console.error('❌ Error updating items:', error);
-      throw error;
+
+      if (!scrapTx) {
+        return NextResponse.json(
+          { message: 'Transaction not found or already deleted' },
+          { status: 404 }
+        );
+      }
+
+      if (!scrapTx.items || scrapTx.items.length === 0) {
+        return NextResponse.json(
+          { message: 'Transaction item not found' },
+          { status: 404 }
+        );
+      }
+
+      transaction = scrapTx;
+      existingItem = scrapTx.items[0];
+    } else {
+      // outgoing_goods
+      const outgoingTx = await prisma.outgoing_goods.findFirst({
+        where: {
+          id: actualId,
+          company_code: companyCode,
+          deleted_at: null,
+        },
+        include: {
+          items: {
+            where: {
+              deleted_at: null,
+            },
+          },
+        },
+      });
+
+      if (!outgoingTx) {
+        return NextResponse.json(
+          { message: 'Transaction not found or already deleted' },
+          { status: 404 }
+        );
+      }
+
+      if (!outgoingTx.items || outgoingTx.items.length === 0) {
+        return NextResponse.json(
+          { message: 'Transaction item not found' },
+          { status: 404 }
+        );
+      }
+
+      transaction = outgoingTx;
+      existingItem = outgoingTx.items[0];
+    }
+
+    const qtyDifference = qty - Number(existingItem.qty);
+
+    // Validation for SCRAP IN: Check stock balance won't go negative
+    // Validation for SCRAP OUT: Check stock availability when qty increases
+    let stockCheckResult = null;
+    if (sourceTable === 'scrap_transactions') {
+      // For SCRAP IN, use balance check to ensure balance won't go negative
+      stockCheckResult = await checkScrapInBalance(
+        companyCode,
+        existingItem.item_code,
+        existingItem.item_type,
+        Number(existingItem.qty),
+        qty,
+        transaction.transaction_date,
+        actualId
+      );
+
+      // If balance would go negative, reject
+      if (!stockCheckResult.available) {
+        const qtyDecrease = Number(existingItem.qty) - qty;
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Stock akan menjadi minus. Saat ini balance ${stockCheckResult.currentStock} unit. Anda mencoba mengurangi ${qtyDecrease} unit.`,
+            errors: [
+              {
+                field: 'qty',
+                message: `Mengurangi qty sebesar ${qtyDecrease} akan membuat balance minus ${stockCheckResult.shortfall} unit. Current balance: ${stockCheckResult.currentStock}`,
+              },
+            ],
+            data: {
+              itemCode: existingItem.item_code,
+              itemType: existingItem.item_type,
+              itemName: existingItem.item_name,
+              currentQty: Number(existingItem.qty),
+              newQty: qty,
+              qtyDifference: qtyDifference,
+              currentBalance: stockCheckResult.currentStock,
+              qtyReduction: qtyDecrease,
+              shortfall: stockCheckResult.shortfall,
+            },
+          },
+          { status: 400 }
+        );
+      }
+    } else if (sourceTable === 'outgoing_goods' && qtyDifference > 0) {
+      stockCheckResult = await checkStockAvailability(
+        companyCode,
+        existingItem.item_code,
+        existingItem.item_type,
+        qtyDifference,
+        transaction.outgoing_date
+      );
+
+      if (!stockCheckResult.available) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Stock tidak cukup untuk ${existingItem.item_code}. Tersedia: ${stockCheckResult.currentStock}, Diminta: ${qtyDifference}`,
+            errors: [
+              {
+                field: 'qty',
+                message: `Hanya tersedia ${stockCheckResult.currentStock} unit. Anda mencoba menambah ${qtyDifference} unit, kurang ${stockCheckResult.shortfall} unit`,
+              },
+            ],
+            data: {
+              itemCode: existingItem.item_code,
+              itemType: existingItem.item_type,
+              itemName: existingItem.item_name,
+              currentQty: Number(existingItem.qty),
+              newQty: qty,
+              qtyDifference: qtyDifference,
+              availableStock: stockCheckResult.currentStock,
+              requestedQty: qtyDifference,
+              shortfall: stockCheckResult.shortfall,
+            },
+          },
+          { status: 400 }
+        );
+      }
+    } else if (sourceTable === 'outgoing_goods') {
+      // For outgoing_goods OUT transactions, always fetch current stock info
+      if (qtyDifference < 0) {
+        stockCheckResult = await checkStockAvailability(
+          companyCode,
+          existingItem.item_code,
+          existingItem.item_type,
+          Math.abs(qtyDifference),
+          transaction.outgoing_date
+        );
+      } else {
+        stockCheckResult = await checkStockAvailability(
+          companyCode,
+          existingItem.item_code,
+          existingItem.item_type,
+          0,
+          transaction.outgoing_date
+        );
+      }
+    }
+
+    // Update transaction wrapped in a transaction with snapshot recalculation
+    const recalcResult = await prisma.$transaction(
+      async (tx) => {
+        if (sourceTable === 'scrap_transactions') {
+          // Update the scrap transaction
+          // Note: transaction_date is part of compound key and cannot be updated
+          try {
+            await tx.scrap_transactions.update({
+              where: { id: actualId },
+              data: {
+                ppkek_number: ppkekNumber || '',
+                customs_registration_date: registrationDate ? new Date(registrationDate) : undefined,
+                customs_document_type: documentType || '',
+                recipient_name: recipientName || '',
+                remarks: remarks || '',
+              },
+            });
+            // console.log('✅ Parent transaction updated successfully');
+          } catch (error) {
+            // console.error('❌ Error updating parent transaction:', error);
+            throw error;
+          }
+        } else {
+          // Update outgoing_goods transaction
+          try {
+            await tx.outgoing_goods.update({
+              where: { id: actualId },
+              data: {
+                ppkek_number: ppkekNumber || '',
+                customs_registration_date: registrationDate ? new Date(registrationDate) : undefined,
+                customs_document_type: documentType || null,
+                recipient_name: recipientName || '',
+              },
+            });
+          } catch (error) {
+            throw error;
+          }
+        }
+
+        // Update the transaction items
+        try {
+          if (sourceTable === 'scrap_transactions') {
+            await tx.scrap_transaction_items.update({
+              where: {
+                id: existingItem.id,
+              },
+              data: {
+                qty: new Prisma.Decimal(qty),
+                currency: currency,
+                amount: new Prisma.Decimal(amount),
+              },
+            });
+          } else {
+            await tx.outgoing_good_items.update({
+              where: {
+                id: existingItem.id,
+              },
+              data: {
+                qty: new Prisma.Decimal(qty),
+                currency: currency,
+                amount: new Prisma.Decimal(amount),
+              },
+            });
+          }
+          console.log('✅ Items updated successfully');
+        } catch (error) {
+          console.error('❌ Error updating items:', error);
+          throw error;
+        }
+
+        // Handle snapshot recalculation
+        const transactionDate = sourceTable === 'scrap_transactions' 
+          ? transaction.transaction_date 
+          : transaction.outgoing_date;
+        const recalcData = await handleTxSnapshotRecalc(tx, companyCode, transactionDate);
+        return recalcData;
+      },
+      {
+        isolationLevel: 'Serializable',
+      }
+    );
+
+    // Execute direct snapshot for backdated transactions
+    if (recalcResult.isBackdated) {
+      try {
+        await prisma.$executeRawUnsafe(
+          `SELECT calculate_stock_snapshot($1::int, $2::date)`,
+          companyCode,
+          recalcResult.date
+        );
+      } catch (error) {
+        console.error('⚠️ Warning: Direct snapshot execution failed:', error);
+      }
     }
 
     // Log activity
     await logActivity({
       action: 'EDIT_SCRAP_TRANSACTION',
-      description: `Updated scrap transaction: ${transaction.document_number}`,
+      description: `Updated scrap transaction: ${transaction.document_number}. Qty changed from ${existingItem.qty} to ${qty}`,
       status: 'success',
       metadata: {
         transactionId,
         documentNumber: transaction.document_number,
+        oldQty: Number(existingItem.qty),
+        newQty: qty,
         companyCode,
       },
     });
 
     return NextResponse.json({
+      success: true,
       message: 'Transaction updated successfully',
+      data: {
+        transactionId,
+        documentNumber: sourceTable === 'scrap_transactions' ? transaction.document_number : transaction.outgoing_evidence_number,
+        itemCode: existingItem.item_code,
+        itemName: existingItem.item_name,
+        itemType: existingItem.item_type,
+        oldQty: Number(existingItem.qty),
+        newQty: qty,
+        qtyDifference: qtyDifference,
+        currency: currency,
+        amount: amount,
+        ...(sourceTable === 'outgoing_goods' && {
+          stockInfo: {
+            availableStock: stockCheckResult?.currentStock || 0,
+            qtyAfterUpdate: qtyDifference < 0 
+              ? `${stockCheckResult?.currentStock || 0} + ${Math.abs(qtyDifference)}` 
+              : `${stockCheckResult?.currentStock || 0} - ${qtyDifference}`,
+          },
+        }),
+      },
     });
   } catch (error) {
     console.error('[API Error] Failed to update scrap transaction:', error);
@@ -205,29 +528,116 @@ export async function DELETE(
       );
     }
 
-    // Soft delete the record
+    console.log(`[DELETE] transactionId=${transactionId}, sourceTable=${sourceTable}, actualId=${actualId}`);
+
+    // Soft delete the record with snapshot recalculation
     if (sourceTable === 'scrap_transactions') {
-      const transaction = await prisma.scrap_transactions.findFirst({
+      console.log(`[DELETE] Using scrap_transactions path`);
+      const transactionData = await prisma.scrap_transactions.findFirst({
         where: {
           id: actualId,
           company_code: companyCode,
           deleted_at: null,
         },
+        include: {
+          items: {
+            where: {
+              deleted_at: null,
+            },
+          },
+        },
       });
 
-      if (!transaction) {
+      if (!transactionData) {
         return NextResponse.json(
           { message: 'Transaction not found or already deleted' },
           { status: 404 }
         );
       }
 
-      await prisma.scrap_transactions.update({
-        where: { id: actualId },
-        data: { deleted_at: new Date() },
-      });
+      if (!transactionData.items || transactionData.items.length === 0) {
+        return NextResponse.json(
+          { message: 'Transaction item not found' },
+          { status: 404 }
+        );
+      }
+
+      const item = transactionData.items[0];
+      const itemQty = Number(item.qty);
+
+      // Validation: Check stock balance won't go negative when deleting SCRAP IN
+      // When we delete a SCRAP IN transaction, balance will reduce by the qty
+      const stockCheckResult = await checkScrapInBalance(
+        companyCode,
+        item.item_code,
+        item.item_type,
+        itemQty,
+        0, // deleting means qty becomes 0
+        transactionData.transaction_date,
+        actualId
+      );
+
+      console.log(`[DELETE SCRAP IN] Validation result: available=${stockCheckResult.available}, currentStock=${stockCheckResult.currentStock}, shortfall=${stockCheckResult.shortfall}`);
+
+      if (!stockCheckResult.available) {
+        console.log(`[DELETE SCRAP IN] REJECTING - would make balance negative`);
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Stock akan menjadi minus. Saat ini balance ${stockCheckResult.currentStock} unit. Anda mencoba menghapus ${itemQty} unit.`,
+            errors: [
+              {
+                field: 'delete',
+                message: `Menghapus qty sebesar ${itemQty} akan membuat balance minus ${stockCheckResult.shortfall} unit. Current balance: ${stockCheckResult.currentStock}`,
+              },
+            ],
+            data: {
+              itemCode: item.item_code,
+              itemType: item.item_type,
+              itemName: item.item_name,
+              deletingQty: itemQty,
+              currentBalance: stockCheckResult.currentStock,
+              shortfall: stockCheckResult.shortfall,
+            },
+          },
+          { status: 400 }
+        );
+      }
+
+      console.log(`[DELETE SCRAP IN] Validation passed - proceeding with delete`);
+
+      // Delete in transaction with snapshot recalculation
+      const recalcResult = await prisma.$transaction(
+        async (tx) => {
+          await tx.scrap_transactions.update({
+            where: { id: actualId },
+            data: { deleted_at: new Date() },
+          });
+
+          // Handle snapshot recalculation
+          const recalcData = await handleTxSnapshotRecalc(tx, companyCode, transactionData.transaction_date);
+          return recalcData;
+        },
+        {
+          isolationLevel: 'Serializable',
+        }
+      );
+
+      // Execute direct snapshot for backdated transactions
+      if (recalcResult.isBackdated) {
+        try {
+          await prisma.$executeRawUnsafe(
+            `SELECT calculate_stock_snapshot($1::int, $2::date)`,
+            companyCode,
+            recalcResult.date
+          );
+        } catch (error) {
+          console.error('⚠️ Warning: Direct snapshot execution failed:', error);
+        }
+      }
     } else {
-      const transaction = await prisma.outgoing_goods.findFirst({
+      console.log(`[DELETE] Using outgoing_goods path`);
+      const transactionData = await prisma.outgoing_goods.findFirst({
         where: {
           id: actualId,
           company_code: companyCode,
@@ -235,17 +645,42 @@ export async function DELETE(
         },
       });
 
-      if (!transaction) {
+      if (!transactionData) {
         return NextResponse.json(
           { message: 'Transaction not found or already deleted' },
           { status: 404 }
         );
       }
 
-      await prisma.outgoing_goods.update({
-        where: { id: actualId },
-        data: { deleted_at: new Date() },
-      });
+      // Delete in transaction with snapshot recalculation
+      const recalcResult = await prisma.$transaction(
+        async (tx) => {
+          await tx.outgoing_goods.update({
+            where: { id: actualId },
+            data: { deleted_at: new Date() },
+          });
+
+          // Handle snapshot recalculation - outgoing_goods uses outgoing_date
+          const recalcData = await handleTxSnapshotRecalc(tx, companyCode, transactionData.outgoing_date);
+          return recalcData;
+        },
+        {
+          isolationLevel: 'Serializable',
+        }
+      );
+
+      // Execute direct snapshot for backdated transactions
+      if (recalcResult.isBackdated) {
+        try {
+          await prisma.$executeRawUnsafe(
+            `SELECT calculate_stock_snapshot($1::int, $2::date)`,
+            companyCode,
+            recalcResult.date
+          );
+        } catch (error) {
+          console.error('⚠️ Warning: Direct snapshot execution failed:', error);
+        }
+      }
     }
 
     // Log activity
@@ -261,12 +696,21 @@ export async function DELETE(
     });
 
     return NextResponse.json({
+      success: true,
       message: 'Transaction deleted successfully',
+      data: {
+        transactionId,
+        sourceTable,
+      },
     });
   } catch (error) {
     console.error('[API Error] Failed to delete scrap transaction:', error);
+    console.error('Error details:', JSON.stringify(error, null, 2));
     return NextResponse.json(
-      { message: 'Error deleting transaction' },
+      { 
+        message: 'Error deleting transaction',
+        error: error instanceof Error ? error.message : String(error)
+      },
       { status: 500 }
     );
   }
