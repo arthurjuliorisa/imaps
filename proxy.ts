@@ -145,8 +145,24 @@ export default async function proxy(request: NextRequest) {
   // For non-admin users, check menu access
   const accessiblePaths = await fetchUserMenuPaths(request);
 
-  // Check if user has access to the current path
-  const hasAccess = accessiblePaths.has(pathname);
+  // Check if user has access to the current path or its parent path (for dynamic routes)
+  let hasAccess = accessiblePaths.has(pathname);
+
+  // If no exact match, check parent paths for dynamic routes
+  // Example: /customs/outgoing/123 -> check /customs/outgoing
+  if (!hasAccess) {
+    const pathSegments = pathname.split('/').filter(Boolean);
+    // Try removing last segment(s) to find parent path
+    for (let i = pathSegments.length - 1; i > 0; i--) {
+      const parentPath = '/' + pathSegments.slice(0, i).join('/');
+      if (accessiblePaths.has(parentPath)) {
+        hasAccess = true;
+        console.log(`[Middleware] Access granted via parent path: ${parentPath} for ${pathname}`);
+        break;
+      }
+    }
+  }
+
   const totalDuration = Date.now() - requestStartTime;
 
   if (!hasAccess) {

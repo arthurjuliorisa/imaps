@@ -134,8 +134,11 @@ export function DataTable({
                 sx={{
                   fontWeight: 700,
                   minWidth: 70,
-                  bgcolor: alpha(theme.palette.primary.main, 0.05),
+                  background: `linear-gradient(${alpha(theme.palette.primary.main, 0.05)}, ${alpha(theme.palette.primary.main, 0.05)}), ${theme.palette.background.paper}`,
                   color: theme.palette.primary.main,
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 100,
                 }}
               >
                 No
@@ -144,11 +147,14 @@ export function DataTable({
                 <TableCell
                   key={column.id}
                   align={column.align || 'left'}
-                  style={{ minWidth: column.minWidth }}
                   sx={{
                     fontWeight: 700,
-                    bgcolor: alpha(theme.palette.primary.main, 0.05),
+                    minWidth: column.minWidth,
+                    background: `linear-gradient(${alpha(theme.palette.primary.main, 0.05)}, ${alpha(theme.palette.primary.main, 0.05)}), ${theme.palette.background.paper}`,
                     color: theme.palette.primary.main,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 100,
                   }}
                 >
                   {column.label}
@@ -160,8 +166,11 @@ export function DataTable({
                   sx={{
                     fontWeight: 700,
                     minWidth: 120,
-                    bgcolor: alpha(theme.palette.primary.main, 0.05),
+                    background: `linear-gradient(${alpha(theme.palette.primary.main, 0.05)}, ${alpha(theme.palette.primary.main, 0.05)}), ${theme.palette.background.paper}`,
                     color: theme.palette.primary.main,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 100,
                   }}
                 >
                   Action

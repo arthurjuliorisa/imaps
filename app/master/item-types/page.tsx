@@ -88,14 +88,13 @@ export default function ItemTypesPage() {
                 <TableCell>Item Type Code</TableCell>
                 <TableCell>Item Type Name</TableCell>
                 <TableCell>Local Name</TableCell>
-                <TableCell>Type</TableCell>
                 <TableCell>Status</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {itemTypes.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} align="center">
+                  <TableCell colSpan={4} align="center">
                     <Typography variant="body2" color="text.secondary" py={4}>
                       No item types found
                     </Typography>
@@ -117,15 +116,6 @@ export default function ItemTypesPage() {
                       </Typography>
                     </TableCell>
                     <TableCell>{itemType.name_id || '-'}</TableCell>
-                    <TableCell>
-                      {itemType.category === 'CAPITAL_GOODS' ? (
-                        <Chip label="Capital Goods" color="info" size="small" />
-                      ) : itemType.category === 'INVENTORY' ? (
-                        <Chip label="Inventory" color="primary" size="small" />
-                      ) : (
-                        <Chip label="Non-Inventory" color="default" size="small" />
-                      )}
-                    </TableCell>
                     <TableCell>
                       <Chip
                         label={itemType.is_active ? 'Active' : 'Inactive'}

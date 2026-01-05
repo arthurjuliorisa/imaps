@@ -125,14 +125,14 @@ export default function ScrapTransactionsPage() {
       headerName: 'In',
       width: 100,
       type: 'number',
-      valueFormatter: (value) => value || 0,
+      valueFormatter: (value: number) => value ? value.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '0',
     },
     {
       field: 'outQty',
       headerName: 'Out',
       width: 100,
       type: 'number',
-      valueFormatter: (value) => value || 0,
+      valueFormatter: (value: number) => value ? value.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '0',
     },
     {
       field: 'currency',
@@ -144,7 +144,7 @@ export default function ScrapTransactionsPage() {
       headerName: 'Value Amount',
       width: 140,
       type: 'number',
-      valueFormatter: (value: number) => value ? value.toLocaleString() : '0',
+      valueFormatter: (value: number) => value ? value.toLocaleString('id-ID', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : '0',
     },
     {
       field: 'remarks',

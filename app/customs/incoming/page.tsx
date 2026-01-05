@@ -340,7 +340,7 @@ export default function IncomingGoodsReportPage() {
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>
-                        {row.qty.toLocaleString('id-ID', { minimumFractionDigits: 2 })}
+                        {row.qty.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -348,7 +348,7 @@ export default function IncomingGoodsReportPage() {
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>
-                        {row.amount.toLocaleString('id-ID', { minimumFractionDigits: 2 })}
+                        {row.amount.toLocaleString('id-ID', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                       </Typography>
                     </TableCell>
                     <TableCell>{formatDate(row.createdAt)}</TableCell>

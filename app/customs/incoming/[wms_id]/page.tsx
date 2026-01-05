@@ -29,6 +29,21 @@ import { NavigateNext, Home, Receipt, ArrowBack } from '@mui/icons-material';
 import { formatDate, formatCurrency } from '@/lib/exportUtils';
 import type { IncomingHeader, IncomingDetail } from '@/types/core';
 
+// Number formatting utilities
+const formatAmount = (value: number): string => {
+  return new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3
+  }).format(value);
+};
+
+const formatQuantity = (value: number): string => {
+  return new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(value);
+};
+
 interface IncomingTransactionDetail {
   header: IncomingHeader;
   details: IncomingDetail[];
@@ -196,7 +211,7 @@ export default function IncomingDetailPage() {
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                PPKEK Number
+                Nomor Daftar
               </Typography>
               <Typography variant="body1">
                 {data.header.ppkek_number}
@@ -303,12 +318,14 @@ export default function IncomingDetailPage() {
                   <TableCell>{detail.hs_code || '-'}</TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" fontWeight={600}>
-                      {detail.qty.toLocaleString()}
+                      {formatQuantity(detail.qty)}
                     </Typography>
                   </TableCell>
                   <TableCell>{detail.uom}</TableCell>
                   <TableCell align="right">
-                    {formatCurrency(detail.amount)}
+                    <Typography variant="body2" fontWeight={600}>
+                      {formatAmount(detail.amount)}
+                    </Typography>
                   </TableCell>
                   <TableCell>
                     <Chip label={detail.currency} size="small" />
@@ -336,7 +353,7 @@ export default function IncomingDetailPage() {
                 Total Quantity:
               </Typography>
               <Typography variant="body1" fontWeight={600}>
-                {data.details.reduce((sum, d) => sum + d.qty, 0).toLocaleString()}
+                {formatQuantity(data.details.reduce((sum, d) => sum + d.qty, 0))}
               </Typography>
             </Stack>
           </Box>
