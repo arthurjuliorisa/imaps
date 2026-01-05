@@ -16,13 +16,27 @@ export interface SuccessResponse {
   wms_id: string;
   queued_items_count: number;
   validated_at: string;
+  is_revision?: boolean;
   warnings?: Array<{
     item_index: number;
     item_code: string;
     warning_type: string;
     message: string;
-    current_stock: number;
-    outgoing_qty: number;
+    // For new transactions
+    current_stock?: number;
+    outgoing_qty?: number;
+    balance_after?: number;
+    // For revisions with insufficient stock
+    original_stock?: number;
+    outgoing_before?: number;
+    outgoing_after?: number;
+    expected_balance_after?: number;
+  }>;
+  info?: Array<{
+    item_index: number;
+    item_code: string;
+    message: string;
+    balance_before: number;
     balance_after: number;
   }>;
 }
@@ -34,6 +48,14 @@ export interface ErrorDetail {
   message: string;
   item_index?: number;
   item_code?: string;
+}
+
+interface RevisionInfo {
+  isRevision: boolean;
+  previousItems?: Array<{
+    item_code: string;
+    qty: number;
+  }>;
 }
 
 export class OutgoingGoodsService {
@@ -93,7 +115,11 @@ export class OutgoingGoodsService {
       //   return { success: false, errors: traceabilityErrors as ErrorDetail[] };
       // }
 
-      // 5. Business validations - verify production_output_wms_ids exist
+      // 5. Detect if this is a revision (same wms_id already exists)
+      const revisionInfo = await this.detectRevision(data);
+      requestLogger.info('Revision detection', { isRevision: revisionInfo.isRevision, wmsId: data.wms_id });
+
+      // 6. Business validations - verify production_output_wms_ids exist
       const productionValidationErrors = await this.validateProductionOutputs(data);
       if (productionValidationErrors.length > 0) {
         requestLogger.warn(
@@ -103,16 +129,16 @@ export class OutgoingGoodsService {
         return { success: false, errors: productionValidationErrors };
       }
 
-      // 6. Check stock and collect warnings
-      const warnings = await this.checkStockAndCollectWarnings(data);
+      // 7. Check stock and collect warnings (pass revision info)
+      const stockCheckResult = await this.checkStockAndCollectWarnings(data, revisionInfo);
 
-      // 7. Queue async database insert
+      // 8. Queue async database insert
       const repository = new OutgoingGoodsRepository();
       repository.insertOutgoingGoodsAsync(data).catch((error) => {
         requestLogger.error('Failed to insert outgoing goods', { error, wmsId: data.wms_id });
       });
 
-      // 7. Return success response immediately (without waiting for DB insert)
+      // 9. Return success response immediately (without waiting for DB insert)
       const response: SuccessResponse = {
         status: 'success',
         message: 'Transaction validated and queued for processing',
@@ -121,14 +147,23 @@ export class OutgoingGoodsService {
         validated_at: new Date().toISOString(),
       };
 
-      if (warnings && warnings.length > 0) {
-        response.warnings = warnings;
+      if (revisionInfo.isRevision) {
+        response.is_revision = true;
+      }
+
+      if (stockCheckResult.warnings && stockCheckResult.warnings.length > 0) {
+        response.warnings = stockCheckResult.warnings;
+      }
+
+      if (stockCheckResult.info && stockCheckResult.info.length > 0) {
+        response.info = stockCheckResult.info;
       }
 
       requestLogger.info('Outgoing goods processed successfully', {
         wmsId: data.wms_id,
         itemCount: data.items.length,
-        warningCount: warnings?.length || 0,
+        warningCount: stockCheckResult.warnings?.length || 0,
+        infoCount: stockCheckResult.info?.length || 0,
       });
 
       return { success: true, data: response };
@@ -136,6 +171,40 @@ export class OutgoingGoodsService {
       requestLogger.error('Failed to process outgoing goods', { error });
       throw error;
     }
+  }
+
+  /**
+   * Detect if this is a revision by checking if wms_id already exists
+   */
+  private async detectRevision(data: OutgoingGoodRequestInput): Promise<RevisionInfo> {
+    const existingOutgoing = await prisma.outgoing_goods.findFirst({
+      where: {
+        wms_id: data.wms_id,
+      },
+      include: {
+        items: {
+          select: {
+            item_code: true,
+            qty: true,
+          },
+        },
+      },
+    });
+
+    if (!existingOutgoing) {
+      return { isRevision: false };
+    }
+
+    // Extract previous items qty mapping
+    const previousItems = existingOutgoing.items.map((item: any) => ({
+      item_code: item.item_code,
+      qty: Number(item.qty),
+    }));
+
+    return {
+      isRevision: true,
+      previousItems,
+    };
   }
 
   /**
@@ -193,11 +262,13 @@ export class OutgoingGoodsService {
 
   /**
    * Check current stock and collect warnings for items with insufficient stock
+   * For revisions, calculate delta qty and check against stock
    */
   private async checkStockAndCollectWarnings(
-    data: OutgoingGoodRequestInput
-  ): Promise<
-    Array<{
+    data: OutgoingGoodRequestInput,
+    revisionInfo: RevisionInfo
+  ): Promise<{
+    warnings?: Array<{
       item_index: number;
       item_code: string;
       warning_type: string;
@@ -205,61 +276,145 @@ export class OutgoingGoodsService {
       current_stock: number;
       outgoing_qty: number;
       balance_after: number;
-    }> | undefined
-  > {
+    }>;
+    info?: Array<{
+      item_index: number;
+      item_code: string;
+      message: string;
+      balance_before: number;
+      balance_after: number;
+    }>;
+  }> {
     const warnings: Array<{
       item_index: number;
       item_code: string;
       warning_type: string;
       message: string;
-      current_stock: number;
-      outgoing_qty: number;
+      // For new transactions
+      current_stock?: number;
+      outgoing_qty?: number;
+      balance_after?: number;
+      // For revisions with insufficient stock
+      original_stock?: number;
+      outgoing_before?: number;
+      outgoing_after?: number;
+      expected_balance_after?: number;
+    }> = [];
+
+    const info: Array<{
+      item_index: number;
+      item_code: string;
+      message: string;
+      balance_before: number;
       balance_after: number;
     }> = [];
 
     const outgoingDate = new Date(data.outgoing_date);
 
+    // Collect all unique item codes to query in batch (avoid N+1)
+    const uniqueItemCodes = Array.from(new Set(data.items.map((item) => item.item_code)));
+
+    // For revision case, we need to get snapshot BEFORE the outgoing date (to get pristine original stock)
+    // For new transactions, we get snapshot on or before outgoing date
+    const snapshotDateCondition = revisionInfo.isRevision
+      ? { lt: outgoingDate } // Strictly before outgoing date for revisions
+      : { lte: outgoingDate }; // On or before outgoing date for new transactions
+
+    // Batch query all snapshots in one go
+    const snapshots = await prisma.stock_daily_snapshot.findMany({
+      where: {
+        company_code: data.company_code,
+        item_code: {
+          in: uniqueItemCodes,
+        },
+        snapshot_date: snapshotDateCondition,
+      },
+      select: {
+        item_code: true,
+        closing_balance: true,
+        snapshot_date: true,
+      },
+      orderBy: {
+        snapshot_date: 'desc',
+      },
+    });
+
+    // Create a map of item_code -> latest snapshot
+    // Since we ordered by snapshot_date DESC, first occurrence of each item_code is the latest
+    const snapshotMap = new Map<string, { closing_balance: any; snapshot_date: Date }>();
+    snapshots.forEach((snapshot) => {
+      if (!snapshotMap.has(snapshot.item_code)) {
+        snapshotMap.set(snapshot.item_code, {
+          closing_balance: snapshot.closing_balance,
+          snapshot_date: snapshot.snapshot_date,
+        });
+      }
+    });
+
+    // Process each item
     for (let itemIndex = 0; itemIndex < data.items.length; itemIndex++) {
       const item = data.items[itemIndex];
 
-      // Query stock_daily_snapshot for current stock
-      // Use snapshot from the PREVIOUS day since today's snapshot is created at end-of-day
-      // For same-day transactions, we need yesterday's closing balance as today's opening
-      const previousDay = new Date(outgoingDate);
-      previousDay.setDate(previousDay.getDate() - 1);
+      const snapshotData = snapshotMap.get(item.item_code);
+      const currentStock = snapshotData?.closing_balance ? Number(snapshotData.closing_balance) : 0;
+      const newOutgoingQty = Number(item.qty);
 
-      const snapshot = await prisma.stock_daily_snapshot.findFirst({
-        where: {
-          company_code: data.company_code,
-          item_code: item.item_code,
-          snapshot_date: previousDay,
-        },
-        select: {
-          closing_balance: true,
-        },
-        orderBy: {
-          snapshot_date: 'desc', // In case multiple snapshots exist, get the latest
-        },
-      });
+      // Check if this is a revision
+      if (revisionInfo.isRevision && revisionInfo.previousItems) {
+        const previousItem = revisionInfo.previousItems.find((p) => p.item_code === item.item_code);
+        
+        if (previousItem) {
+          const oldQty = previousItem.qty;
+          const balanceBefore = currentStock - oldQty;
+          const balanceAfter = currentStock - newOutgoingQty;
 
-      const currentStock = snapshot?.closing_balance ? Number(snapshot.closing_balance) : 0;
-      const outgoingQty = Number(item.qty);
-      const balanceAfter = currentStock - outgoingQty;
+          // Check if revision causes negative balance
+          if (balanceAfter < 0) {
+            // Revision increases qty and causes insufficient stock → WARNING with detailed info
+            // For warning, expected_balance_after is simply: original_stock - new_outgoing_qty
+            warnings.push({
+              item_index: itemIndex,
+              item_code: item.item_code,
+              warning_type: 'INSUFFICIENT_STOCK',
+              message: `Revision causes insufficient stock: Outgoing qty revised from ${oldQty} to ${newOutgoingQty} units, expected balance ${balanceAfter} units`,
+              original_stock: currentStock,
+              outgoing_before: oldQty,
+              outgoing_after: newOutgoingQty,
+              expected_balance_after: balanceAfter,
+            });
+          } else {
+            // Revision is OK → INFO
+            info.push({
+              item_index: itemIndex,
+              item_code: item.item_code,
+              message: `Original outgoing qty has been revised from ${oldQty} to ${newOutgoingQty}`,
+              balance_before: balanceBefore,
+              balance_after: balanceAfter,
+            });
+          }
+          continue;
+        }
+      }
 
-      // If insufficient stock, create warning
+      // For new transactions (not revision or item not found in revision)
+      const balanceAfter = currentStock - newOutgoingQty;
+
       if (balanceAfter < 0) {
         warnings.push({
           item_index: itemIndex,
           item_code: item.item_code,
           warning_type: 'INSUFFICIENT_STOCK',
-          message: `Insufficient stock: Current stock ${currentStock} units, outgoing ${outgoingQty} units, resulting balance ${balanceAfter} units`,
+          message: `Insufficient stock: Current stock ${currentStock} units, outgoing ${newOutgoingQty} units, resulting balance ${balanceAfter} units`,
           current_stock: currentStock,
-          outgoing_qty: outgoingQty,
+          outgoing_qty: newOutgoingQty,
           balance_after: balanceAfter,
         });
       }
     }
 
-    return warnings.length > 0 ? warnings : undefined;
+    return {
+      ...(warnings.length > 0 && { warnings }),
+      ...(info.length > 0 && { info }),
+    } as ReturnType<typeof this.checkStockAndCollectWarnings>;
   }
 }
