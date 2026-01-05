@@ -26,6 +26,7 @@ import { UploadFile, Close, Save, CheckCircle, Error as ErrorIcon, Download } fr
 import ExcelJS from 'exceljs';
 import dayjs from 'dayjs';
 import { useToast } from '@/app/components/ToastProvider';
+import { formatQty, formatAmount } from '@/lib/utils/format';
 
 interface ImportedRecord {
   date: string;
@@ -508,7 +509,7 @@ export function CapitalGoodsExcelImportDialog({
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" color="error.main" fontWeight={600} fontSize="0.875rem">
-                        {record.qty.toLocaleString('id-ID')}
+                        {formatQty(record.qty)}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -518,7 +519,7 @@ export function CapitalGoodsExcelImportDialog({
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600} fontSize="0.875rem">
-                        {record.valueAmount.toLocaleString('id-ID')}
+                        {formatAmount(record.valueAmount)}
                       </Typography>
                     </TableCell>
                     <TableCell>

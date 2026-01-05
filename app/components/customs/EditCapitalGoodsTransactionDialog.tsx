@@ -23,6 +23,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { Dayjs } from 'dayjs';
 import { Save, Close } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
+import { formatQty } from '@/lib/utils/format';
 import type { CapitalGoodsTransaction } from '@/types/transaction';
 
 interface FormData {
@@ -330,11 +331,11 @@ export function EditCapitalGoodsTransactionDialog({
                   >
                     {stockCheckResult.available ? (
                       <Typography variant="body2">
-                        Stock tersedia: {stockCheckResult.currentStock.toLocaleString('id-ID', { minimumFractionDigits: 2 })} untuk penambahan {(formData.qty - originalQty).toLocaleString('id-ID', { minimumFractionDigits: 2 })} unit
+                        Stock tersedia: {formatQty(stockCheckResult.currentStock)} untuk penambahan {formatQty(formData.qty - originalQty)} unit
                       </Typography>
                     ) : (
                       <Typography variant="body2">
-                        Stock tidak mencukupi. Tersedia {stockCheckResult.currentStock.toLocaleString('id-ID', { minimumFractionDigits: 2 })} unit, tidak cukup untuk menambah {(formData.qty - originalQty).toLocaleString('id-ID', { minimumFractionDigits: 2 })} unit (kurang {stockCheckResult.shortfall?.toLocaleString('id-ID', { minimumFractionDigits: 2 })} unit)
+                        Stock tidak mencukupi. Tersedia {formatQty(stockCheckResult.currentStock)} unit, tidak cukup untuk menambah {formatQty(formData.qty - originalQty)} unit (kurang {formatQty(stockCheckResult.shortfall || 0)} unit)
                       </Typography>
                     )}
                   </Alert>

@@ -26,6 +26,7 @@ import { UploadFile, Close, Save, CheckCircle, Error as ErrorIcon, Download } fr
 import ExcelJS from 'exceljs';
 import dayjs from 'dayjs';
 import { useToast } from '../ToastProvider';
+import { formatQty } from '@/lib/utils/format';
 
 interface ImportedRecord {
   itemType: string;
@@ -573,10 +574,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600} fontSize="0.875rem">
-                        {record.qty.toLocaleString('id-ID', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                        {formatQty(record.qty)}
                       </Typography>
                     </TableCell>
                     <TableCell>

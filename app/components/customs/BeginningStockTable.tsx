@@ -36,6 +36,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { Dayjs } from 'dayjs';
+import { formatQty } from '@/lib/utils/format';
 
 export interface BeginningStockData {
   id: string;
@@ -285,10 +286,7 @@ export function BeginningStockTable({
                   </TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" fontWeight={600}>
-                      {row.beginningBalance.toLocaleString('id-ID', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {formatQty(row.beginningBalance)}
                     </Typography>
                   </TableCell>
                   <TableCell>

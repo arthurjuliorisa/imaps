@@ -18,6 +18,7 @@ import { ImportCeisaExcelDialog } from '@/app/components/customs/ImportCeisaExce
 import { EditCapitalGoodsTransactionDialog } from '@/app/components/customs/EditCapitalGoodsTransactionDialog';
 import { useToast } from '@/app/components/ToastProvider';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
+import { formatQty, formatAmount } from '@/lib/utils/format';
 import type { CapitalGoodsTransaction } from '@/types/transaction';
 
 export default function CapitalGoodsTransactionsPage() {
@@ -120,14 +121,14 @@ export default function CapitalGoodsTransactionsPage() {
       headerName: 'In',
       width: 100,
       type: 'number',
-      valueFormatter: (value: number) => value ? value.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '0',
+      valueFormatter: (value: number) => value ? formatQty(value) : '0',
     },
     {
       field: 'outQty',
       headerName: 'Out',
       width: 100,
       type: 'number',
-      valueFormatter: (value: number) => value ? value.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '0',
+      valueFormatter: (value: number) => value ? formatQty(value) : '0',
     },
     {
       field: 'currency',
@@ -139,7 +140,7 @@ export default function CapitalGoodsTransactionsPage() {
       headerName: 'Value Amount',
       width: 140,
       type: 'number',
-      valueFormatter: (value: number) => value ? value.toLocaleString('id-ID', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : '0',
+      valueFormatter: (value: number) => value ? formatAmount(value) : '0',
     },
     {
       field: 'remarks',

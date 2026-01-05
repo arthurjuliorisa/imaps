@@ -26,6 +26,7 @@ import {
   TableRow,
 } from '@mui/material';
 import { Close, Check, Search } from '@mui/icons-material';
+import { formatQty } from '@/lib/utils/format';
 
 interface ProductionBatch {
   id: string;
@@ -158,7 +159,7 @@ export function ProductionBatchSelector({
               Production Traceability
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Select production batches to link with this outgoing item for traceability. Required quantity: <strong>{requiredQuantity.toLocaleString('id-ID')}</strong>
+              Select production batches to link with this outgoing item for traceability. Required quantity: <strong>{formatQty(requiredQuantity)}</strong>
             </Typography>
           </Box>
 
@@ -169,7 +170,7 @@ export function ProductionBatchSelector({
             >
               <Box>
                 <Typography variant="body2" fontWeight={600}>
-                  Selected: {selected.length} batch(es) - Total Quantity: {totalSelectedQuantity.toLocaleString('id-ID')}
+                  Selected: {selected.length} batch(es) - Total Quantity: {formatQty(totalSelectedQuantity)}
                 </Typography>
                 {!isSufficientQuantity && (
                   <Typography variant="caption" color="warning.main">
@@ -279,7 +280,7 @@ export function ProductionBatchSelector({
                       </TableCell>
                       <TableCell align="right">
                         <Typography variant="body2">
-                          {batch.availableQuantity.toLocaleString('id-ID')} {batch.uom}
+                          {formatQty(batch.availableQuantity)} {batch.uom}
                         </Typography>
                       </TableCell>
                       <TableCell>

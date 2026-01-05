@@ -29,6 +29,7 @@ import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
+import { formatQty, formatAmount } from '@/lib/utils/format';
 
 interface OutgoingReportData {
   id: string;
@@ -177,7 +178,7 @@ export default function OutgoingGoodsReportPage() {
       itemName: row.itemName,
       qty: row.qty.toString(),
       currency: row.currency,
-      amount: row.amount.toLocaleString('id-ID', { minimumFractionDigits: 2 }),
+      amount: formatAmount(row.amount),
     }));
 
     const columns = [
@@ -342,7 +343,7 @@ export default function OutgoingGoodsReportPage() {
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>
-                        {row.qty.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        {formatQty(row.qty)}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -350,7 +351,7 @@ export default function OutgoingGoodsReportPage() {
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>
-                        {row.amount.toLocaleString('id-ID', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                        {formatAmount(row.amount)}
                       </Typography>
                     </TableCell>
                     <TableCell align="center">

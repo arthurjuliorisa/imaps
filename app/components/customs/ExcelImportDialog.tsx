@@ -27,6 +27,7 @@ import { UploadFile, Close, Save, CheckCircle, Error as ErrorIcon, Download } fr
 import ExcelJS from 'exceljs';
 import dayjs from 'dayjs';
 import { useToast } from '../ToastProvider';
+import { formatQty } from '@/lib/utils/format';
 
 interface ImportedRecord {
   date: string;
@@ -445,7 +446,7 @@ export function ExcelImportDialog({ open, onClose, onSubmit }: ExcelImportDialog
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" color="success.main" fontWeight={600} fontSize="0.875rem">
-                        {record.incoming.toLocaleString('id-ID')}
+                        {formatQty(record.incoming)}
                       </Typography>
                     </TableCell>
                     <TableCell>

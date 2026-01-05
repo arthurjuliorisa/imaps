@@ -24,6 +24,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { Dayjs } from 'dayjs';
 import { Save, Close } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
+import { formatQty } from '@/lib/utils/format';
 
 interface ScrapItem {
   id: number;
@@ -522,13 +523,13 @@ export function AddOutScrapDialog({
               >
                 {stockCheckResult.available ? (
                   <Typography variant="body2">
-                    Stock tersedia: {stockCheckResult.currentStock.toLocaleString('id-ID', { minimumFractionDigits: 2 })} {formData.uom}
+                    Stock tersedia: {formatQty(stockCheckResult.currentStock)} {formData.uom}
                   </Typography>
                 ) : (
                   <Typography variant="body2">
                     Stock tidak mencukupi. Item {formData.scrapCode} memiliki stock{' '}
-                    {stockCheckResult.currentStock.toLocaleString('id-ID', { minimumFractionDigits: 2 })} {formData.uom}, tidak cukup untuk mengeluarkan{' '}
-                    {formData.qty.toLocaleString('id-ID', { minimumFractionDigits: 2 })} {formData.uom}
+                    {formatQty(stockCheckResult.currentStock)} {formData.uom}, tidak cukup untuk mengeluarkan{' '}
+                    {formatQty(formData.qty)} {formData.uom}
                   </Typography>
                 )}
               </Alert>

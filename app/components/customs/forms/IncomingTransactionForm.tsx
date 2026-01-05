@@ -44,6 +44,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { Dayjs } from 'dayjs';
 import { useToast } from '@/app/components/ToastProvider';
 import { createIncomingTransaction } from '@/lib/api';
+import { formatQty, formatAmount } from '@/lib/utils/format';
 import {
   CustomsDocumentType,
   ItemTypeCode,
@@ -669,10 +670,10 @@ export function IncomingTransactionForm() {
                         </TableCell>
                         <TableCell>{detail.item_code}</TableCell>
                         <TableCell>{detail.item_name}</TableCell>
-                        <TableCell>{detail.qty.toLocaleString('id-ID')}</TableCell>
+                        <TableCell>{formatQty(detail.qty)}</TableCell>
                         <TableCell>{detail.uom}</TableCell>
                         <TableCell align="right">
-                          {detail.currency} {detail.amount.toLocaleString('id-ID')}
+                          {detail.currency} {formatAmount(detail.amount)}
                         </TableCell>
                       </TableRow>
                     ))}

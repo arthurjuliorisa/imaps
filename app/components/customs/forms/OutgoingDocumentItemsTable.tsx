@@ -29,6 +29,7 @@ import {
   Warning,
   CheckCircle,
 } from '@mui/icons-material';
+import { formatQty } from '@/lib/utils/format';
 import { OutgoingItemData } from './OutgoingDocumentForm';
 import { ProductionBatchSelector } from './ProductionBatchSelector';
 
@@ -304,7 +305,7 @@ export function OutgoingDocumentItemsTable({
                     <TableCell>
                       {stockAvailability ? (
                         <Tooltip
-                          title={`Available: ${stockAvailability.available.toLocaleString('id-ID')} ${stockAvailability.uom}`}
+                          title={`Available: ${formatQty(stockAvailability.available)} ${stockAvailability.uom}`}
                         >
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                             {stockAvailability.isAvailable ? (
@@ -316,7 +317,7 @@ export function OutgoingDocumentItemsTable({
                               variant="caption"
                               color={stockAvailability.isAvailable ? 'success.main' : 'warning.main'}
                             >
-                              {stockAvailability.available.toLocaleString('id-ID')}
+                              {formatQty(stockAvailability.available)}
                             </Typography>
                           </Box>
                         </Tooltip>

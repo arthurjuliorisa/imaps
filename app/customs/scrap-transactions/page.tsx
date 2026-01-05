@@ -21,6 +21,7 @@ import { ImportScrapIncomingExcelDialog } from '@/app/components/customs/ImportS
 import { EditScrapTransactionDialog } from '@/app/components/customs/EditScrapTransactionDialog';
 import { useToast } from '@/app/components/ToastProvider';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
+import { formatQty, formatAmount } from '@/lib/utils/format';
 import type { ScrapTransaction } from '@/types/transaction';
 
 export default function ScrapTransactionsPage() {
@@ -125,14 +126,14 @@ export default function ScrapTransactionsPage() {
       headerName: 'In',
       width: 100,
       type: 'number',
-      valueFormatter: (value: number) => value ? value.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '0',
+      valueFormatter: (value: number) => value ? formatQty(value) : '0',
     },
     {
       field: 'outQty',
       headerName: 'Out',
       width: 100,
       type: 'number',
-      valueFormatter: (value: number) => value ? value.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '0',
+      valueFormatter: (value: number) => value ? formatQty(value) : '0',
     },
     {
       field: 'currency',
@@ -144,7 +145,7 @@ export default function ScrapTransactionsPage() {
       headerName: 'Value Amount',
       width: 140,
       type: 'number',
-      valueFormatter: (value: number) => value ? value.toLocaleString('id-ID', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : '0',
+      valueFormatter: (value: number) => value ? formatAmount(value) : '0',
     },
     {
       field: 'remarks',

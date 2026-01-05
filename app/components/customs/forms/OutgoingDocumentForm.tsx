@@ -18,6 +18,7 @@ import { ArrowBack, ArrowForward, Save, Close } from '@mui/icons-material';
 import { OutgoingDocumentHeader } from './OutgoingDocumentHeader';
 import { OutgoingDocumentItemsTable } from './OutgoingDocumentItemsTable';
 import { useToast } from '@/app/components/ToastProvider';
+import { formatQty, formatAmount } from '@/lib/utils/format';
 import dayjs, { Dayjs } from 'dayjs';
 
 const steps = ['Document Information', 'Items Details', 'Review & Submit'];
@@ -350,7 +351,7 @@ export function OutgoingDocumentForm({ onClose, onSuccess }: OutgoingDocumentFor
                     Quantity
                   </Typography>
                   <Typography variant="body2">
-                    {item.quantity.toLocaleString('id-ID')} {item.uomCode}
+                    {formatQty(item.quantity)} {item.uomCode}
                   </Typography>
                 </Box>
                 <Box>
@@ -358,7 +359,7 @@ export function OutgoingDocumentForm({ onClose, onSuccess }: OutgoingDocumentFor
                     Amount
                   </Typography>
                   <Typography variant="body2">
-                    {headerData.currencyCode} {item.amount.toLocaleString('id-ID')}
+                    {headerData.currencyCode} {formatAmount(item.amount)}
                   </Typography>
                 </Box>
                 <Box>

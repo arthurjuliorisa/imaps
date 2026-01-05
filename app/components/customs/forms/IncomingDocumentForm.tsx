@@ -17,6 +17,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { Save, NavigateNext, NavigateBefore, Description, Inventory, CheckCircle } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
+import { formatQty, formatAmount } from '@/lib/utils/format';
 import { IncomingDocumentHeader } from './IncomingDocumentHeader';
 import { IncomingDocumentItemsTable } from './IncomingDocumentItemsTable';
 
@@ -295,10 +296,10 @@ export function IncomingDocumentForm() {
                       </Typography>
                       <Stack direction="row" spacing={3} sx={{ mt: 1 }}>
                         <Typography variant="caption" color="text.secondary">
-                          Quantity: <strong>{item.quantity.toLocaleString('id-ID')} {item.uomCode}</strong>
+                          Quantity: <strong>{formatQty(item.quantity)} {item.uomCode}</strong>
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          Amount: <strong>{item.currencyCode} {item.amount.toLocaleString('id-ID')}</strong>
+                          Amount: <strong>{item.currencyCode} {formatAmount(item.amount)}</strong>
                         </Typography>
                       </Stack>
                     </Box>

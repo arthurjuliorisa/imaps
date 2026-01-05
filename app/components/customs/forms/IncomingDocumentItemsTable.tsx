@@ -18,6 +18,7 @@ import {
   Stack,
 } from '@mui/material';
 import { Add, Edit, Delete } from '@mui/icons-material';
+import { formatQty, formatAmount } from '@/lib/utils/format';
 import { IncomingDocumentItem } from './IncomingDocumentForm';
 import { IncomingDocumentItemDialog } from './IncomingDocumentItemDialog';
 import { useToast } from '@/app/components/ToastProvider';
@@ -195,18 +196,12 @@ export function IncomingDocumentItemsTable({ items, onChange }: IncomingDocument
                       <Chip label={item.uomCode} size="small" />
                     </TableCell>
                     <TableCell align="right">
-                      {item.quantity.toLocaleString('id-ID', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {formatQty(item.quantity)}
                     </TableCell>
                     <TableCell>{item.currencyCode}</TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>
-                        {item.amount.toLocaleString('id-ID', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                        {formatAmount(item.amount)}
                       </Typography>
                     </TableCell>
                     <TableCell align="center">
@@ -271,10 +266,7 @@ export function IncomingDocumentItemsTable({ items, onChange }: IncomingDocument
                 </Typography>
                 {Object.entries(totals).map(([currency, amount]) => (
                   <Typography key={currency} variant="body1" fontWeight={600}>
-                    {currency} {amount.toLocaleString('id-ID', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                    {currency} {formatAmount(amount)}
                   </Typography>
                 ))}
               </Box>
