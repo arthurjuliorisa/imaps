@@ -94,6 +94,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
           item_code: item.item_code,
           item_name: item.item_name,
           production_output_wms_ids: item.production_output_wms_ids || [],
+          incoming_ppkek_numbers: item.ppkek_number || [],
           hs_code: item.hs_code || null,
           uom: item.uom,
           qty: new Prisma.Decimal(item.qty.toString()),

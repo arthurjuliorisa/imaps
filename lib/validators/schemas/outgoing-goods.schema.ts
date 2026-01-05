@@ -109,6 +109,11 @@ export const outgoingGoodItemSchema = z.object({
     .optional()
     .nullable(),
   
+  ppkek_number: z
+    .array(z.string().min(1, 'PPKEK number cannot be empty').max(50, 'PPKEK number must not exceed 50 characters'))
+    .optional()
+    .nullable(),
+  
   hs_code: z
     .string()
     .max(20, 'HS code must not exceed 20 characters')
