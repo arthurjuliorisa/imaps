@@ -982,7 +982,7 @@ BEGIN
                             sti.scrap_transaction_company = st.company_code
                             AND sti.scrap_transaction_id = st.id
                             AND sti.scrap_transaction_date = st.transaction_date
-                        WHERE sti.item_type = ANY(p_item_types) AND sti.deleted_at IS NULL
+                        WHERE sti.item_type = ANY(p_item_types) AND sti.deleted_at IS NULL AND st.deleted_at IS NULL
                     ) items_list
                     JOIN companies co ON items_list.company_code = co.code
                     -- Find the last snapshot before start date for opening balance

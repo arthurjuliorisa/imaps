@@ -240,6 +240,8 @@ BEGIN
         WHERE st.company_code = p_company_code
           AND st.transaction_date = p_snapshot_date
           AND st.transaction_type = 'IN'
+          AND st.deleted_at IS NULL
+          AND sti.deleted_at IS NULL
         GROUP BY st.company_code, sti.item_type, sti.item_code
     ),
     -- Scrap outgoing quantities (from outgoing_goods with item_type = 'SCRAP')
