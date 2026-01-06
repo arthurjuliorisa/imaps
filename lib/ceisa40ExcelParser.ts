@@ -9,6 +9,7 @@ export interface ParsedCeisaItem {
   unit: string;
   quantity: number;
   valueAmount: number;
+  incomingPpkekNumbers?: string[];
 }
 
 export interface ParsedCeisaData {
@@ -40,6 +41,7 @@ export async function parseCeisa40Excel(buffer: Buffer): Promise<ParsedCeisaData
     const dokumenSheet = workbook.getWorksheet('DOKUMEN');
     const entitasSheet = workbook.getWorksheet('ENTITAS');
     const barangSheet = workbook.getWorksheet('BARANG');
+    const bahanBakuSheet = workbook.getWorksheet('BAHANBAKU');
 
     if (!headerSheet || !dokumenSheet || !entitasSheet || !barangSheet) {
       throw new Error('Required sheets (HEADER, DOKUMEN, ENTITAS, BARANG) not found in Excel file');
@@ -223,6 +225,64 @@ export async function parseCeisa40Excel(buffer: Buffer): Promise<ParsedCeisaData
 
     if (items.length === 0) {
       throw new Error('No items found in BARANG sheet');
+    }
+
+    // Parse BAHANBAKU sheet for incoming PPKEK numbers (optional)
+    if (bahanBakuSheet) {
+      try {
+        const bahanBakuData = worksheetToArray(bahanBakuSheet);
+
+        // Find header row containing "NOMOR DAFTAR ASAL"
+        const bahanBakuHeaderIndex = bahanBakuData.findIndex(row =>
+          row.some((cell: any) =>
+            typeof cell === 'string' && cell.includes('NOMOR DAFTAR ASAL')
+          )
+        );
+
+        if (bahanBakuHeaderIndex >= 0) {
+          const bahanBakuHeader = bahanBakuData[bahanBakuHeaderIndex];
+
+          // Find column R (NOMOR DAFTAR ASAL) - usually column 18 (index 17)
+          const nomorDaftarAsalIndex = bahanBakuHeader.findIndex((cell: any) =>
+            typeof cell === 'string' && cell.includes('NOMOR DAFTAR ASAL')
+          );
+
+          // Also find KODE BARANG column to match with items
+          const kodeBarangIndex = bahanBakuHeader.findIndex((cell: any) =>
+            typeof cell === 'string' && cell.includes('KODE BARANG')
+          );
+
+          if (nomorDaftarAsalIndex >= 0 && kodeBarangIndex >= 0) {
+            // Parse each row and match with items by item code
+            for (let i = bahanBakuHeaderIndex + 1; i < bahanBakuData.length; i++) {
+              const row = bahanBakuData[i];
+
+              if (!row || row.length === 0) {
+                continue;
+              }
+
+              const kodeBarang = kodeBarangIndex >= 0 ? String(row[kodeBarangIndex] || '').trim() : '';
+              const nomorDaftarAsal = nomorDaftarAsalIndex >= 0 ? String(row[nomorDaftarAsalIndex] || '').trim() : '';
+
+              // Match with items and add incoming PPKEK number
+              if (kodeBarang && nomorDaftarAsal) {
+                const matchingItem = items.find(item => item.itemCode === kodeBarang);
+                if (matchingItem) {
+                  if (!matchingItem.incomingPpkekNumbers) {
+                    matchingItem.incomingPpkekNumbers = [];
+                  }
+                  // Split by comma or semicolon in case multiple numbers are in one cell
+                  const numbers = nomorDaftarAsal.split(/[,;]/).map(n => n.trim()).filter(n => n);
+                  matchingItem.incomingPpkekNumbers.push(...numbers);
+                }
+              }
+            }
+          }
+        }
+      } catch (bahanBakuError) {
+        // Log warning but don't fail the import if BAHANBAKU parsing fails
+        console.warn('[Parser] Failed to parse BAHANBAKU sheet:', bahanBakuError);
+      }
     }
 
     return {
