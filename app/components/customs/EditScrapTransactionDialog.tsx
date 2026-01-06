@@ -35,7 +35,6 @@ interface FormData {
   remarks: string;
   ppkekNumber: string;
   registrationDate: Dayjs | null;
-  documentType: string;
 }
 
 interface StockCheckResult {
@@ -52,7 +51,6 @@ interface EditScrapTransactionDialogProps {
 }
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
-const DOCUMENT_TYPES = ['', 'BC25', 'BC27', 'BC41'];
 
 export function EditScrapTransactionDialog({
   open,
@@ -72,7 +70,6 @@ export function EditScrapTransactionDialog({
     remarks: '',
     ppkekNumber: '',
     registrationDate: null,
-    documentType: '',
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -93,7 +90,6 @@ export function EditScrapTransactionDialog({
         remarks: transaction.remarks || '',
         ppkekNumber: transaction.ppkekNumber || '',
         registrationDate: transaction.regDate ? dayjs(transaction.regDate) : null,
-        documentType: transaction.docType || '',
       });
       setOriginalQty(qty);
       setErrors({});
@@ -223,7 +219,6 @@ export function EditScrapTransactionDialog({
           remarks: formData.remarks,
           ppkekNumber: formData.ppkekNumber,
           registrationDate: formData.registrationDate?.toISOString(),
-          documentType: formData.documentType || null,
         }),
       });
 
@@ -403,29 +398,13 @@ export function EditScrapTransactionDialog({
               />
             )}
 
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-              <TextField
-                label="PPKEK Number"
-                value={formData.ppkekNumber}
-                onChange={(e) => setFormData({ ...formData, ppkekNumber: e.target.value })}
-                disabled={loading}
-                fullWidth
-              />
-              <TextField
-                label="Document Type"
-                select
-                value={formData.documentType}
-                onChange={(e) => setFormData({ ...formData, documentType: e.target.value })}
-                disabled={loading}
-                fullWidth
-              >
-                {DOCUMENT_TYPES.map((type) => (
-                  <MenuItem key={type} value={type}>
-                    {type || '(None)'}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Box>
+            <TextField
+              label="Nomor Daftar"
+              value={formData.ppkekNumber}
+              onChange={(e) => setFormData({ ...formData, ppkekNumber: e.target.value })}
+              disabled={loading}
+              fullWidth
+            />
 
             <DatePicker
               label="Registration Date"

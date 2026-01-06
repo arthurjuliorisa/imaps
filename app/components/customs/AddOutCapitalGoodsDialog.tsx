@@ -49,7 +49,7 @@ interface FormData {
   remarks: string;
   ppkekNumber: string;
   registrationDate: Dayjs | null;
-  documentType: string;
+  incomingPpkekNumbers: string[];
 }
 
 interface AddOutCapitalGoodsDialogProps {
@@ -60,7 +60,6 @@ interface AddOutCapitalGoodsDialogProps {
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
 const ITEM_TYPES = ['HIBE-M', 'HIBE-E', 'HIBE-T'];
-const DOCUMENT_TYPES = ['BC25', 'BC27', 'BC41'];
 
 export function AddOutCapitalGoodsDialog({
   open,
@@ -86,7 +85,7 @@ export function AddOutCapitalGoodsDialog({
     remarks: '',
     ppkekNumber: '',
     registrationDate: null,
-    documentType: '',
+    incomingPpkekNumbers: [],
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -274,10 +273,6 @@ export function AddOutCapitalGoodsDialog({
       newErrors.registrationDate = 'Registration Date is required';
     }
 
-    if (!formData.documentType) {
-      newErrors.documentType = 'Document Type is required';
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -319,7 +314,7 @@ export function AddOutCapitalGoodsDialog({
           remarks: formData.remarks || undefined,
           ppkekNumber: formData.ppkekNumber || undefined,
           registrationDate: formData.registrationDate?.format('YYYY-MM-DD') || undefined,
-          documentType: formData.documentType || undefined,
+          incomingPpkekNumbers: formData.incomingPpkekNumbers.length > 0 ? formData.incomingPpkekNumbers : undefined,
         }),
       });
 
@@ -355,7 +350,7 @@ export function AddOutCapitalGoodsDialog({
       remarks: '',
       ppkekNumber: '',
       registrationDate: null,
-      documentType: '',
+      incomingPpkekNumbers: [],
     });
     setErrors({});
     setStockCheckResult(null);
@@ -475,25 +470,23 @@ export function AddOutCapitalGoodsDialog({
                   }}
                 />
 
-                <TextField
-                  fullWidth
-                  select
-                  label="Document Type"
-                  value={formData.documentType}
-                  onChange={(e) => {
-                    setFormData((prev) => ({ ...prev, documentType: e.target.value }));
-                    setErrors((prev) => ({ ...prev, documentType: undefined }));
+                <Autocomplete
+                  multiple
+                  freeSolo
+                  options={[]}
+                  value={formData.incomingPpkekNumbers}
+                  onChange={(event, newValue) => {
+                    setFormData((prev) => ({ ...prev, incomingPpkekNumbers: newValue }));
                   }}
-                  required
-                  error={!!errors.documentType}
-                  helperText={errors.documentType || 'Customs document type'}
-                >
-                  {DOCUMENT_TYPES.map((docType) => (
-                    <MenuItem key={docType} value={docType}>
-                      {docType}
-                    </MenuItem>
-                  ))}
-                </TextField>
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Ex-Nopen (Incoming PPKEK Numbers)"
+                      placeholder="Type and press Enter to add"
+                      helperText="Optional: Add PPKEK numbers from incoming goods that were used"
+                    />
+                  )}
+                />
               </Stack>
             </Box>
 
