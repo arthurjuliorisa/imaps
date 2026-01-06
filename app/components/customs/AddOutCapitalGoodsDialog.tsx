@@ -49,6 +49,7 @@ interface FormData {
   remarks: string;
   ppkekNumber: string;
   registrationDate: Dayjs | null;
+  documentType: string;
   incomingPpkekNumbers: string[];
 }
 
@@ -60,6 +61,7 @@ interface AddOutCapitalGoodsDialogProps {
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
 const ITEM_TYPES = ['HIBE-M', 'HIBE-E', 'HIBE-T'];
+const DOCUMENT_TYPES = ['BC25', 'BC27', 'BC41'];
 
 export function AddOutCapitalGoodsDialog({
   open,
@@ -85,6 +87,7 @@ export function AddOutCapitalGoodsDialog({
     remarks: '',
     ppkekNumber: '',
     registrationDate: null,
+    documentType: 'BC27',
     incomingPpkekNumbers: [],
   });
 
@@ -273,6 +276,10 @@ export function AddOutCapitalGoodsDialog({
       newErrors.registrationDate = 'Registration Date is required';
     }
 
+    if (!formData.documentType) {
+      newErrors.documentType = 'Document Type is required';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -314,6 +321,7 @@ export function AddOutCapitalGoodsDialog({
           remarks: formData.remarks || undefined,
           ppkekNumber: formData.ppkekNumber || undefined,
           registrationDate: formData.registrationDate?.format('YYYY-MM-DD') || undefined,
+          documentType: formData.documentType || undefined,
           incomingPpkekNumbers: formData.incomingPpkekNumbers.length > 0 ? formData.incomingPpkekNumbers : undefined,
         }),
       });
@@ -350,6 +358,7 @@ export function AddOutCapitalGoodsDialog({
       remarks: '',
       ppkekNumber: '',
       registrationDate: null,
+      documentType: 'BC27',
       incomingPpkekNumbers: [],
     });
     setErrors({});
@@ -469,6 +478,26 @@ export function AddOutCapitalGoodsDialog({
                     },
                   }}
                 />
+
+                <TextField
+                  fullWidth
+                  select
+                  label="Document Type"
+                  value={formData.documentType}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, documentType: e.target.value }));
+                    setErrors((prev) => ({ ...prev, documentType: undefined }));
+                  }}
+                  required
+                  error={!!errors.documentType}
+                  helperText={errors.documentType || 'Customs document type (BC25, BC27, BC41)'}
+                >
+                  {DOCUMENT_TYPES.map((type) => (
+                    <MenuItem key={type} value={type}>
+                      {type}
+                    </MenuItem>
+                  ))}
+                </TextField>
 
                 <Autocomplete
                   multiple
