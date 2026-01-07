@@ -52,12 +52,17 @@ const columns: Column[] = [
   {
     id: 'action',
     label: 'Action',
-    minWidth: 200,
-  },
-  {
-    id: 'description',
-    label: 'Description',
-    minWidth: 250,
+    minWidth: 350,
+    format: (value: string, row: any) => (
+      <Box>
+        <Typography variant="body2" fontWeight="600" color="text.primary">
+          {value}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          {row.description}
+        </Typography>
+      </Box>
+    ),
   },
   {
     id: 'status',

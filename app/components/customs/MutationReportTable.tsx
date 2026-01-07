@@ -111,20 +111,20 @@ export function MutationReportTable({
               {hasRowNumber && !hideRowNumber && <TableCell sx={{ fontWeight: 600 }}>Row Number</TableCell>}
               {hasCompanyCode && <TableCell sx={{ fontWeight: 600 }}>Company Code</TableCell>}
               {hasCompanyName && <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>}
-              <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
               {hasItemType && <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>}
-              <TableCell sx={{ fontWeight: 600 }}>Unit</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right">Beginning</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right">In</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right">Out</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right">Adjustment</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right">Ending</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right">Stock Opname</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right">Variant</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">Saldo Awal</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Pemasukan Barang</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Pengeluaran Barang</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">Penyesuaian (Adjustment)</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">Saldo Akhir</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">Hasil Pencacahan</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Selisih</TableCell>
               {!hideValueAmount && hasValueAmount && <TableCell sx={{ fontWeight: 600 }} align="right">Value Amount</TableCell>}
               {!hideValueAmount && hasCurrency && <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>}
-              {!hideRemarks && <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>}
+              {!hideRemarks && <TableCell sx={{ fontWeight: 600 }}>Keterangan</TableCell>}
               {!hideActions && <TableCell sx={{ fontWeight: 600 }} align="center">Action</TableCell>}
             </TableRow>
           </TableHead>

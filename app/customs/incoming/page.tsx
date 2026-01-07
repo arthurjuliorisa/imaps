@@ -271,19 +271,19 @@ export default function IncomingGoodsReportPage() {
               >
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Doc Type</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Nomor Pendaftaran</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Reg Date</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Doc Number</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Doc Date</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Shipper Name</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Jenis Dokumen Pabean</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Nomor Daftar</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Tanggal Daftar</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Nomor Bukti Penerimaan Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Tanggal Bukti Penerimaan Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Pengirim Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Unit</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Quantity</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Value Amount</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>valas</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">nilai barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Created Date</TableCell>
               </TableRow>
             </TableHead>
