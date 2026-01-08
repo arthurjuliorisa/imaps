@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Table,
   TableBody,
@@ -74,10 +74,29 @@ export function BeginningStockTable({
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState<Dayjs | null>(null);
   const [ppkekDialogOpen, setPpkekDialogOpen] = useState(false);
   const [selectedPpkeks, setSelectedPpkeks] = useState<string[]>([]);
   const [selectedItemInfo, setSelectedItemInfo] = useState<{ code: string; name: string } | null>(null);
+
+  // Debounce search term - wait 500ms after user stops typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchTerm]);
+
+  // Trigger search only when debounced value changes
+  useEffect(() => {
+    setPage(0);
+    onSearch?.(debouncedSearchTerm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -91,8 +110,6 @@ export function BeginningStockTable({
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
     setSearchTerm(value);
-    setPage(0);
-    onSearch?.(value);
   };
 
   const handleDateChange = (newDate: Dayjs | null) => {
