@@ -52,12 +52,17 @@ const columns: Column[] = [
   {
     id: 'action',
     label: 'Action',
-    minWidth: 200,
-  },
-  {
-    id: 'description',
-    label: 'Description',
-    minWidth: 250,
+    minWidth: 350,
+    format: (value: string, row: any) => (
+      <Box>
+        <Typography variant="body2" fontWeight="600" color="text.primary">
+          {value}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          {row.description}
+        </Typography>
+      </Box>
+    ),
   },
   {
     id: 'status',
@@ -111,19 +116,17 @@ export default function LogActivityPage() {
       const response = await fetch(`/api/settings/activity-logs?${params}`);
       const data = await response.json();
 
-      // Handle both success and graceful error responses
-      if (data.error) {
-        console.warn('Activity logs API returned with error:', data.error);
-        setLogs([]);
-        setError(null); // Don't show error to user, just show empty state
+      if (Array.isArray(data)) {
+        setLogs(data);
+        setError(null);
       } else {
-        setLogs(Array.isArray(data) ? data : (data.data || data.logs || []));
+        setLogs([]);
         setError(null);
       }
     } catch (err) {
       console.error('Error fetching activity logs:', err);
       setLogs([]);
-      setError(null); // Show empty state instead of error
+      setError(null);
     } finally {
       setLoading(false);
     }

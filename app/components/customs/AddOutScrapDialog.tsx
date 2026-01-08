@@ -48,7 +48,7 @@ interface FormData {
   remarks: string;
   ppkekNumber: string;
   registrationDate: Dayjs | null;
-  documentType: string;
+  incomingPpkekNumbers: string[];
 }
 
 interface AddOutScrapDialogProps {
@@ -58,7 +58,6 @@ interface AddOutScrapDialogProps {
 }
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
-const DOCUMENT_TYPES = ['BC25', 'BC27', 'BC41'];
 
 export function AddOutScrapDialog({
   open,
@@ -83,7 +82,7 @@ export function AddOutScrapDialog({
     remarks: '',
     ppkekNumber: '',
     registrationDate: null,
-    documentType: 'BC27',
+    incomingPpkekNumbers: [],
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -273,7 +272,7 @@ export function AddOutScrapDialog({
           remarks: formData.remarks || undefined,
           ppkekNumber: formData.ppkekNumber || undefined,
           registrationDate: formData.registrationDate?.format('YYYY-MM-DD') || undefined,
-          documentType: formData.documentType || undefined,
+          incomingPpkekNumbers: formData.incomingPpkekNumbers.length > 0 ? formData.incomingPpkekNumbers : undefined,
         }),
       });
 
@@ -308,7 +307,7 @@ export function AddOutScrapDialog({
       remarks: '',
       ppkekNumber: '',
       registrationDate: null,
-      documentType: 'BC27',
+      incomingPpkekNumbers: [],
     });
     setErrors({});
     setStockCheckResult(null);
@@ -397,7 +396,7 @@ export function AddOutScrapDialog({
               <Stack spacing={2} sx={{ mt: 2 }}>
                 <TextField
                   fullWidth
-                  label="PPKEK Number"
+                  label="Nomor Daftar"
                   value={formData.ppkekNumber}
                   onChange={(e) => {
                     setFormData((prev) => ({ ...prev, ppkekNumber: e.target.value }));
@@ -421,22 +420,23 @@ export function AddOutScrapDialog({
                   }}
                 />
 
-                <TextField
-                  fullWidth
-                  select
-                  label="Document Type"
-                  value={formData.documentType}
-                  onChange={(e) => {
-                    setFormData((prev) => ({ ...prev, documentType: e.target.value }));
+                <Autocomplete
+                  multiple
+                  freeSolo
+                  options={[]}
+                  value={formData.incomingPpkekNumbers}
+                  onChange={(event, newValue) => {
+                    setFormData((prev) => ({ ...prev, incomingPpkekNumbers: newValue }));
                   }}
-                  helperText="Customs document type"
-                >
-                  {DOCUMENT_TYPES.map((docType) => (
-                    <MenuItem key={docType} value={docType}>
-                      {docType}
-                    </MenuItem>
-                  ))}
-                </TextField>
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Ex-Nopen (Incoming PPKEK Numbers)"
+                      placeholder="Type and press Enter to add"
+                      helperText="Optional: Add PPKEK numbers from incoming goods that were used"
+                    />
+                  )}
+                />
               </Stack>
             </Box>
 

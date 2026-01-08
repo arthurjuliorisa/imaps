@@ -53,16 +53,31 @@ export async function GET(request: Request) {
       where.item_type = itemType;
     }
 
-    // Filter by item code
-    if (itemCode) {
+    // Filter by item code OR item name (search functionality)
+    if (itemCode && itemName) {
+      // If both are provided, use OR logic for search
+      where.OR = [
+        {
+          item_code: {
+            contains: itemCode,
+            mode: 'insensitive',
+          },
+        },
+        {
+          item_name: {
+            contains: itemName,
+            mode: 'insensitive',
+          },
+        },
+      ];
+    } else if (itemCode) {
+      // Only item code filter
       where.item_code = {
         contains: itemCode,
         mode: 'insensitive',
       };
-    }
-
-    // Filter by item name
-    if (itemName) {
+    } else if (itemName) {
+      // Only item name filter
       where.item_name = {
         contains: itemName,
         mode: 'insensitive',

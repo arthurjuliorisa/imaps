@@ -623,6 +623,7 @@ async function importScrapTransactions(
         qty: new Prisma.Decimal(item.quantity),
         currency: data.currency as any,
         amount: new Prisma.Decimal(item.valueAmount),
+        incoming_ppkek_numbers: item.incomingPpkekNumbers || [],
       }));
 
       // Create all outgoing_good_items at once
@@ -741,6 +742,7 @@ async function importCapitalGoodsTransactions(
         qty: new Prisma.Decimal(item.quantity),
         currency: data.currency as any,
         amount: new Prisma.Decimal(item.valueAmount),
+        incoming_ppkek_numbers: item.incomingPpkekNumbers || [],
       }));
 
       // Create all outgoing_good_items at once

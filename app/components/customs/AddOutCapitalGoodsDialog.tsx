@@ -50,6 +50,7 @@ interface FormData {
   ppkekNumber: string;
   registrationDate: Dayjs | null;
   documentType: string;
+  incomingPpkekNumbers: string[];
 }
 
 interface AddOutCapitalGoodsDialogProps {
@@ -86,7 +87,8 @@ export function AddOutCapitalGoodsDialog({
     remarks: '',
     ppkekNumber: '',
     registrationDate: null,
-    documentType: '',
+    documentType: 'BC27',
+    incomingPpkekNumbers: [],
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -320,6 +322,7 @@ export function AddOutCapitalGoodsDialog({
           ppkekNumber: formData.ppkekNumber || undefined,
           registrationDate: formData.registrationDate?.format('YYYY-MM-DD') || undefined,
           documentType: formData.documentType || undefined,
+          incomingPpkekNumbers: formData.incomingPpkekNumbers.length > 0 ? formData.incomingPpkekNumbers : undefined,
         }),
       });
 
@@ -355,7 +358,8 @@ export function AddOutCapitalGoodsDialog({
       remarks: '',
       ppkekNumber: '',
       registrationDate: null,
-      documentType: '',
+      documentType: 'BC27',
+      incomingPpkekNumbers: [],
     });
     setErrors({});
     setStockCheckResult(null);
@@ -486,14 +490,32 @@ export function AddOutCapitalGoodsDialog({
                   }}
                   required
                   error={!!errors.documentType}
-                  helperText={errors.documentType || 'Customs document type'}
+                  helperText={errors.documentType || 'Customs document type (BC25, BC27, BC41)'}
                 >
-                  {DOCUMENT_TYPES.map((docType) => (
-                    <MenuItem key={docType} value={docType}>
-                      {docType}
+                  {DOCUMENT_TYPES.map((type) => (
+                    <MenuItem key={type} value={type}>
+                      {type}
                     </MenuItem>
                   ))}
                 </TextField>
+
+                <Autocomplete
+                  multiple
+                  freeSolo
+                  options={[]}
+                  value={formData.incomingPpkekNumbers}
+                  onChange={(event, newValue) => {
+                    setFormData((prev) => ({ ...prev, incomingPpkekNumbers: newValue }));
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Ex-Nopen (Incoming PPKEK Numbers)"
+                      placeholder="Type and press Enter to add"
+                      helperText="Optional: Add PPKEK numbers from incoming goods that were used"
+                    />
+                  )}
+                />
               </Stack>
             </Box>
 

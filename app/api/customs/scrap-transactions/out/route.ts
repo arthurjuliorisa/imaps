@@ -48,6 +48,7 @@ const OutgoingScrapSchema = z.object({
     ));
   }),
   documentType: z.enum(['BC25', 'BC27', 'BC41']).optional().nullable(),
+  incomingPpkekNumbers: z.array(z.string()).optional().nullable(),
 });
 
 type OutgoingScrapInput = z.infer<typeof OutgoingScrapSchema>;
@@ -208,7 +209,7 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    const { date, scrapCode, scrapName, uom, qty, currency, amount, recipientName, remarks, ppkekNumber, registrationDate, documentType } = validatedData;
+    const { date, scrapCode, scrapName, uom, qty, currency, amount, recipientName, remarks, ppkekNumber, registrationDate, documentType, incomingPpkekNumbers } = validatedData;
 
     // Validate date is not in the future
     const now = new Date();
@@ -324,6 +325,7 @@ export async function POST(request: Request) {
           qty: new Prisma.Decimal(qty),
           currency: currency,
           amount: new Prisma.Decimal(amount),
+          incoming_ppkek_numbers: incomingPpkekNumbers || [],
         },
       });
 

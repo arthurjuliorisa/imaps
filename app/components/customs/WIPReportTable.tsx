@@ -94,13 +94,13 @@ export function WIPReportTable({
             >
               <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Unit</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right">Quantity</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right">jumlah</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Stock Date</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>catatan</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Created At</TableCell>
             </TableRow>
           </TableHead>

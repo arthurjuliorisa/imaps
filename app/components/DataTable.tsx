@@ -28,7 +28,7 @@ export interface Column {
   label: string;
   minWidth?: number;
   align?: 'left' | 'right' | 'center';
-  format?: (value: any) => string | React.ReactNode;
+  format?: (value: any, row?: any) => string | React.ReactNode;
 }
 
 export interface ExtraAction {
@@ -255,7 +255,7 @@ export function DataTable({
                       const value = row[column.id];
                       return (
                         <TableCell key={column.id} align={column.align || 'left'}>
-                          {column.format ? column.format(value) : value}
+                          {column.format ? column.format(value, row) : value}
                         </TableCell>
                       );
                     })}
