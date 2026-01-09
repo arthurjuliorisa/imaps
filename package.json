@@ -42,7 +42,7 @@
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.19",
     "exceljs": "^4.4.0",
-    "jspdf": "^3.0.4",
+    "jspdf": "^4.0.0",
     "jspdf-autotable": "^5.0.2",
     "next": "^16.0.10",
     "next-auth": "^4.24.11",
