@@ -427,38 +427,64 @@ export async function POST(request: Request) {
       );
     }
 
-    // Execute snapshot recalculation directly for each unique balance date
+    // Execute item-level snapshot calculation for each unique item and date combination
     try {
-      for (const balanceDate of uniqueBalanceDates) {
-        const date = new Date(balanceDate);
+      // Create a map of item to (itemName, UOM) for quick lookup
+      const itemDetailsMap = new Map<string, { itemName: string; uom: string }>();
+      for (const record of validRecords) {
+        const key = `${record.itemType}|${record.itemCode}`;
+        if (!itemDetailsMap.has(key)) {
+          itemDetailsMap.set(key, { itemName: record.itemName, uom: record.uom });
+        }
+      }
+
+      // Get unique item-date combinations
+      const uniqueItemDates = new Set<string>();
+      for (const record of validRecords) {
+        uniqueItemDates.add(`${record.itemType}|${record.itemCode}|${record.balanceDate.getTime()}`);
+      }
+
+      for (const itemDateKey of uniqueItemDates) {
+        const [itemType, itemCode, dateTime] = itemDateKey.split('|');
+        const date = new Date(parseInt(dateTime));
+        const itemDetails = itemDetailsMap.get(`${itemType}|${itemCode}`);
+        
         try {
           await prisma.$executeRawUnsafe(
-            'SELECT calculate_stock_snapshot($1::int, $2::date)',
+            `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
             companyCodeInt,
+            itemType,
+            itemCode,
+            itemDetails?.itemName || itemCode,
+            itemDetails?.uom || '',
             date
           );
           
           console.log(
-            '[API Info] Snapshot recalculation executed for balance date',
+            '[API Info] Item snapshot calculation executed',
             {
               companyCode: companyCodeInt,
+              itemType,
+              itemCode,
               balanceDate: date.toISOString().split('T')[0],
             }
           );
-        } catch (recalcError) {
-          // Log warning but continue to next date
+        } catch (snapshotError) {
+          // Log warning but continue to next item
           console.warn(
-            '[API Warning] Snapshot recalculation failed for date',
+            '[API Warning] Item snapshot calculation failed',
             {
               companyCode: companyCodeInt,
+              itemType,
+              itemCode,
               balanceDate: date.toISOString().split('T')[0],
-              errorMessage: recalcError instanceof Error ? recalcError.message : String(recalcError),
+              errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
             }
           );
         }
       }
     } catch (error) {
-      console.error('[API Warning] Error during snapshot recalculation execution:', error);
+      console.error('[API Warning] Error during item snapshot calculation execution:', error);
       // Continue anyway - data import succeeded
     }
 

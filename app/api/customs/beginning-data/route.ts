@@ -278,21 +278,27 @@ export async function POST(request: Request) {
       }
     }
 
-    // Execute snapshot recalculation directly (synchronous execution)
+    // Execute item-level snapshot calculation (synchronous execution)
     try {
       await prisma.$executeRawUnsafe(
-        'SELECT calculate_stock_snapshot($1::int, $2::date)',
+        `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
         companyCode,
+        newRecord.item_type,
+        newRecord.item_code,
+        newRecord.item_name,
+        newRecord.uom,
         normalizedDate
       );
-    } catch (recalcError) {
+    } catch (snapshotError) {
       // Log the error but don't fail the entire request
-      console.error('[API Warning] Snapshot recalculation failed:', {
+      console.error('[API Warning] Snapshot calculation failed:', {
         companyCode,
+        itemType: newRecord.item_type,
+        itemCode: newRecord.item_code,
         date: normalizedDate.toISOString().split('T')[0],
-        error: recalcError instanceof Error ? recalcError.message : String(recalcError),
+        error: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
       });
-      // Continue - data is created even if recalc fails
+      // Continue - data is created even if snapshot calc fails
     }
 
     // Fetch the created record with ppkeks to return complete data

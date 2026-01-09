@@ -50,8 +50,6 @@ export async function GET(request: Request) {
         $3::DATE
       )
       WHERE company_code = $1
-        AND (item_type IN ('ROH', 'HIBE') 
-             OR (item_type = 'HALB' AND (quantity_received > 0 OR opening_balance > 0)))
     `;
 
     const params: any[] = [companyCode];

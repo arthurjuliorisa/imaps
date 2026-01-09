@@ -119,45 +119,45 @@ BEGIN
       AND incoming_good_date = p_snapshot_date
       AND deleted_at IS NULL;
 
-    -- Query outgoing quantities (untuk future use, saat ini = 0)
-    -- SELECT COALESCE(SUM(qty), NUMERIC '0.000')
-    -- INTO v_outgoing_qty
-    -- FROM outgoing_good_items
-    -- WHERE outgoing_good_company = p_company_code
-    --   AND item_type = p_item_type
-    --   AND item_code = p_item_code
-    --   AND outgoing_good_date = p_snapshot_date
-    --   AND deleted_at IS NULL;
+    -- Query outgoing quantities
+    SELECT COALESCE(SUM(qty), NUMERIC '0.000')
+    INTO v_outgoing_qty
+    FROM outgoing_good_items
+    WHERE outgoing_good_company = p_company_code
+      AND item_type = p_item_type
+      AND item_code = p_item_code
+      AND outgoing_good_date = p_snapshot_date
+      AND deleted_at IS NULL;
 
-    -- Query material usage quantities (untuk future use, saat ini = 0)
-    -- SELECT COALESCE(SUM(qty), NUMERIC '0.000')
-    -- INTO v_material_usage_qty
-    -- FROM material_usage_items
-    -- WHERE material_usage_company = p_company_code
-    --   AND item_type = p_item_type
-    --   AND item_code = p_item_code
-    --   AND material_usage_date = p_snapshot_date
-    --   AND deleted_at IS NULL;
+    -- Query material usage quantities
+    SELECT COALESCE(SUM(qty), NUMERIC '0.000')
+    INTO v_material_usage_qty
+    FROM material_usage_items
+    WHERE material_usage_company = p_company_code
+      AND item_type = p_item_type
+      AND item_code = p_item_code
+      AND material_usage_date = p_snapshot_date
+      AND deleted_at IS NULL;
 
-    -- Query production quantities (untuk future use, saat ini = 0)
-    -- SELECT COALESCE(SUM(qty), NUMERIC '0.000')
-    -- INTO v_production_qty
-    -- FROM production_output_items
-    -- WHERE production_output_company = p_company_code
-    --   AND item_type = p_item_type
-    --   AND item_code = p_item_code
-    --   AND production_output_date = p_snapshot_date
-    --   AND deleted_at IS NULL;
+    -- Query production quantities
+    SELECT COALESCE(SUM(qty), NUMERIC '0.000')
+    INTO v_production_qty
+    FROM production_output_items
+    WHERE production_output_company = p_company_code
+      AND item_type = p_item_type
+      AND item_code = p_item_code
+      AND production_output_date = p_snapshot_date
+      AND deleted_at IS NULL;
 
-    -- Query adjustment quantities (untuk future use, saat ini = 0)
-    -- SELECT COALESCE(SUM(qty), NUMERIC '0.000')
-    -- INTO v_adjustment_qty
-    -- FROM adjustment_items
-    -- WHERE adjustment_company = p_company_code
-    --   AND item_type = p_item_type
-    --   AND item_code = p_item_code
-    --   AND adjustment_date = p_snapshot_date
-    --   AND deleted_at IS NULL;
+    -- Query adjustment quantities
+    SELECT COALESCE(SUM(qty), NUMERIC '0.000')
+    INTO v_adjustment_qty
+    FROM adjustment_items
+    WHERE adjustment_company = p_company_code
+      AND item_type = p_item_type
+      AND item_code = p_item_code
+      AND adjustment_date = p_snapshot_date
+      AND deleted_at IS NULL;
 
     -- Calculate closing balance
     -- Formula: Closing = Opening + In - Out - Usage + Production ± Adjustment

@@ -327,21 +327,22 @@ export function BeginningStockTable({
                         <ViewIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title="Edit">
+                    <Tooltip title="Edit" sx={{ display: 'none' }}>
                       <IconButton
                         size="small"
                         onClick={() => onEdit(row)}
                         color="primary"
-                        sx={{ mr: 0.5 }}
+                        sx={{ mr: 0.5, display: 'none' }}
                       >
                         <EditIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title="Delete">
+                    <Tooltip title="Delete" sx={{ display: 'none' }}>
                       <IconButton
                         size="small"
                         onClick={() => onDelete(row)}
                         color="error"
+                        sx={{ display: 'none' }}
                       >
                         <DeleteIcon fontSize="small" />
                       </IconButton>
