@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box,
   Button,
@@ -27,6 +27,10 @@ import {
   Switch,
   Tooltip,
   Alert,
+  TablePagination,
+  InputAdornment,
+  alpha,
+  useTheme,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -34,8 +38,12 @@ import {
   Delete as DeleteIcon,
   Visibility as ViewIcon,
   Close as CloseIcon,
+  Search as SearchIcon,
 } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
+import { ConfirmDialog } from '@/app/components/ConfirmDialog';
+import { ExportButtons } from '@/app/components/customs/ExportButtons';
+import { exportToExcel, exportToPDF } from '@/lib/exportUtils';
 
 interface ScrapComponent {
   id?: number;
@@ -87,6 +95,7 @@ const initialComponent: ScrapComponent = {
 };
 
 export default function ScrapMasterPage() {
+  const theme = useTheme();
   const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [scrapItems, setScrapItems] = useState<ScrapItem[]>([]);
@@ -96,6 +105,12 @@ export default function ScrapMasterPage() {
   const [selectedItem, setSelectedItem] = useState<ScrapItem | null>(null);
   const [formData, setFormData] = useState<FormData>(initialFormData);
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<ScrapItem | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const fetchScrapItems = useCallback(async () => {
     setLoading(true);
@@ -115,6 +130,47 @@ export default function ScrapMasterPage() {
   useEffect(() => {
     fetchScrapItems();
   }, [fetchScrapItems]);
+
+  // Reset page when search query changes
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery]);
+
+  // Filter data based on search query
+  const filteredData = useMemo(() => {
+    let filtered = scrapItems;
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((item) => {
+        return (
+          item.scrapCode?.toLowerCase().includes(query) ||
+          item.scrapName?.toLowerCase().includes(query) ||
+          item.scrapDescription?.toLowerCase().includes(query) ||
+          item.uom?.toLowerCase().includes(query) ||
+          item.components.some(comp =>
+            comp.componentCode?.toLowerCase().includes(query) ||
+            comp.componentName?.toLowerCase().includes(query)
+          )
+        );
+      });
+    }
+
+    return filtered;
+  }, [scrapItems, searchQuery]);
+
+  const paginatedData = useMemo(() => {
+    return filteredData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  }, [filteredData, page, rowsPerPage]);
+
+  const handleChangePage = (_event: unknown, newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
 
   const handleOpenDialog = (item?: ScrapItem) => {
     if (item) {
@@ -215,25 +271,90 @@ export default function ScrapMasterPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this scrap item?')) return;
+  const handleDelete = (item: ScrapItem) => {
+    setItemToDelete(item);
+    setConfirmDialogOpen(true);
+  };
 
-    setLoading(true);
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
+
+    setDeleteLoading(true);
     try {
-      const response = await fetch(`/api/master/scrap-items/${id}`, {
+      const response = await fetch(`/api/master/scrap-items/${itemToDelete.id}`, {
         method: 'DELETE',
       });
 
-      if (!response.ok) throw new Error('Failed to delete scrap item');
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to delete scrap item');
+      }
 
-      toast.success('Scrap item deleted successfully');
+      toast.success(`Scrap item "${itemToDelete.scrapCode}" deleted successfully!`);
+      setConfirmDialogOpen(false);
+      setItemToDelete(null);
       fetchScrapItems();
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete scrap item';
       console.error('Error deleting scrap item:', error);
-      toast.error('Failed to delete scrap item');
+      toast.error(errorMessage);
     } finally {
-      setLoading(false);
+      setDeleteLoading(false);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setConfirmDialogOpen(false);
+    setItemToDelete(null);
+  };
+
+  const handleExportExcel = () => {
+    const exportData = filteredData.flatMap((item) =>
+      item.components.map((comp, index) => ({
+        'Scrap Code': index === 0 ? item.scrapCode : '',
+        'Scrap Name': index === 0 ? item.scrapName : '',
+        'Scrap Description': index === 0 ? item.scrapDescription || '-' : '',
+        'Scrap UOM': index === 0 ? item.uom : '',
+        'Component Code': comp.componentCode,
+        'Component Name': comp.componentName,
+        'Component Type': comp.componentType,
+        'Component UOM': comp.uom,
+        'Quantity': comp.quantity,
+        'Percentage (%)': comp.percentage || '-',
+        'Remarks': comp.remarks || '-',
+        'Status': index === 0 ? (item.isActive ? 'Active' : 'Inactive') : '',
+      }))
+    );
+
+    exportToExcel(exportData, 'Scrap_Master_Data', 'Scrap Master');
+  };
+
+  const handleExportPDF = () => {
+    const exportData = filteredData.flatMap((item, itemIndex) =>
+      item.components.map((comp, compIndex) => ({
+        no: itemIndex + 1,
+        scrapCode: compIndex === 0 ? item.scrapCode : '',
+        scrapName: compIndex === 0 ? item.scrapName : '',
+        componentCode: comp.componentCode,
+        componentName: comp.componentName,
+        componentType: comp.componentType,
+        quantity: `${comp.quantity} ${comp.uom}`,
+        percentage: comp.percentage ? `${comp.percentage}%` : '-',
+      }))
+    );
+
+    const columns = [
+      { header: 'No', dataKey: 'no' },
+      { header: 'Scrap Code', dataKey: 'scrapCode' },
+      { header: 'Scrap Name', dataKey: 'scrapName' },
+      { header: 'Component Code', dataKey: 'componentCode' },
+      { header: 'Component Name', dataKey: 'componentName' },
+      { header: 'Component Type', dataKey: 'componentType' },
+      { header: 'Quantity', dataKey: 'quantity' },
+      { header: 'Percentage', dataKey: 'percentage' },
+    ];
+
+    exportToPDF(exportData, columns, 'Scrap_Master_Data', 'Scrap Master Data');
   };
 
   return (
@@ -270,84 +391,127 @@ export default function ScrapMasterPage() {
             </Stack>
           </Box>
 
+          <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <ExportButtons
+              onExportExcel={handleExportExcel}
+              onExportPDF={handleExportPDF}
+              disabled={filteredData.length === 0 || loading}
+            />
+            <TextField
+              placeholder="Search scrap items..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              size="small"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ maxWidth: 400 }}
+            />
+          </Box>
+
           {loading && scrapItems.length === 0 ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 8 }}>
               <CircularProgress />
             </Box>
           ) : (
-            <TableContainer component={Paper} variant="outlined">
-              <Table>
-                <TableHead>
-                  <TableRow sx={{ bgcolor: 'grey.100' }}>
-                    <TableCell sx={{ fontWeight: 600 }}>Scrap Code</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Scrap Name</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>UOM</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Components</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }} align="center">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {scrapItems.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
-                        <Typography variant="body2" color="text.secondary">
-                          No scrap items found. Click "Add New Scrap Item" to create one.
-                        </Typography>
-                      </TableCell>
+            <>
+              <TableContainer component={Paper} variant="outlined">
+                <Table>
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                      <TableCell sx={{ fontWeight: 600 }}>Scrap Code</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Scrap Name</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>UOM</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Components</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }} align="center">Actions</TableCell>
                     </TableRow>
-                  ) : (
-                    scrapItems.map((item) => (
-                      <TableRow key={item.id} hover>
-                        <TableCell>
-                          <Typography variant="body2" fontWeight={600}>
-                            {item.scrapCode}
+                  </TableHead>
+                  <TableBody>
+                    {paginatedData.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            {searchQuery
+                              ? 'No scrap items found matching your search.'
+                              : 'No scrap items found. Click "Add New Scrap Item" to create one.'}
                           </Typography>
                         </TableCell>
-                        <TableCell>
-                          <Typography variant="body2">{item.scrapName}</Typography>
-                          {item.scrapDescription && (
-                            <Typography variant="caption" color="text.secondary" display="block">
-                              {item.scrapDescription}
-                            </Typography>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Chip label={item.uom} size="small" />
-                        </TableCell>
-                        <TableCell>
-                          <Chip label={`${item.components.length} components`} size="small" color="info" />
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={item.isActive ? 'Active' : 'Inactive'}
-                            size="small"
-                            color={item.isActive ? 'success' : 'default'}
-                          />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Tooltip title="View Details">
-                            <IconButton size="small" onClick={() => handleViewItem(item)} color="info">
-                              <ViewIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Edit">
-                            <IconButton size="small" onClick={() => handleOpenDialog(item)} color="primary">
-                              <EditIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Delete">
-                            <IconButton size="small" onClick={() => handleDelete(item.id)} color="error">
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                    ) : (
+                      paginatedData.map((item) => (
+                        <TableRow
+                          key={item.id}
+                          hover
+                          sx={{
+                            '&:hover': {
+                              bgcolor: alpha(theme.palette.primary.main, 0.04),
+                            },
+                          }}
+                        >
+                          <TableCell>
+                            <Typography variant="body2" fontWeight={600}>
+                              {item.scrapCode}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{item.scrapName}</Typography>
+                            {item.scrapDescription && (
+                              <Typography variant="caption" color="text.secondary" display="block">
+                                {item.scrapDescription}
+                              </Typography>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Chip label={item.uom} size="small" />
+                          </TableCell>
+                          <TableCell>
+                            <Chip label={`${item.components.length} components`} size="small" color="info" />
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={item.isActive ? 'Active' : 'Inactive'}
+                              size="small"
+                              color={item.isActive ? 'success' : 'default'}
+                            />
+                          </TableCell>
+                          <TableCell align="center">
+                            <Tooltip title="View Details">
+                              <IconButton size="small" onClick={() => handleViewItem(item)} color="info">
+                                <ViewIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Edit">
+                              <IconButton size="small" onClick={() => handleOpenDialog(item)} color="primary">
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton size="small" onClick={() => handleDelete(item)} color="error">
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <TablePagination
+                rowsPerPageOptions={[5, 10, 25, 50]}
+                component="div"
+                count={filteredData.length}
+                rowsPerPage={rowsPerPage}
+                page={page}
+                onPageChange={handleChangePage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+              />
+            </>
           )}
         </CardContent>
       </Card>
@@ -584,6 +748,19 @@ export default function ScrapMasterPage() {
           <Button onClick={() => setOpenViewDialog(false)}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Confirm Delete Dialog */}
+      <ConfirmDialog
+        open={confirmDialogOpen}
+        title="Delete Scrap Item"
+        message={`Are you sure you want to delete scrap item "${itemToDelete?.scrapCode}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+        severity="error"
+        loading={deleteLoading}
+      />
     </Box>
   );
 }

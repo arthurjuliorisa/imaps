@@ -198,6 +198,11 @@ export default function ScrapMutationPage() {
     fetchData();
   }, [fetchData]);
 
+  // Reset page to 0 when search query or item type filter changes
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery, itemTypeFilter]);
+
   return (
     <ReportLayout
       title="LPJ Mutasi Barang Scrap"

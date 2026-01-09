@@ -75,6 +75,11 @@ export default function WIPMutationPage() {
     }
   }, [selectedDate, fetchData, initialLoading]);
 
+  // Reset page to 0 when search query or item type filter changes
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery, itemTypeFilter]);
+
   // Get unique item types from data
   const uniqueItemTypes = useMemo(() => {
     const types = new Set(data.map(item => item.itemType));
