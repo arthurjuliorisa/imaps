@@ -61,6 +61,11 @@ export default function RawMaterialMutationPage() {
     fetchData();
   }, [fetchData]);
 
+  // Reset page to 0 when search query or item type filter changes
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery, itemTypeFilter]);
+
   // Get unique item types from data
   const uniqueItemTypes = useMemo(() => {
     const types = new Set(data.map(item => item.itemType).filter(Boolean));
@@ -76,6 +81,7 @@ export default function RawMaterialMutationPage() {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter((row) => {
         return (
+          row.companyCode?.toString().toLowerCase().includes(query) ||
           row.companyName?.toLowerCase().includes(query) ||
           row.itemCode?.toLowerCase().includes(query) ||
           row.itemName?.toLowerCase().includes(query) ||

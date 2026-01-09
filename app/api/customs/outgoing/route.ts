@@ -38,6 +38,7 @@ export async function GET(request: Request) {
     const { companyCode } = companyValidation;
 
     // Query from vw_laporan_pengeluaran view with date filtering
+    // Filter by doc_date OR reg_date within the date range
     let query = `
       SELECT
         id,
@@ -66,14 +67,22 @@ export async function GET(request: Request) {
     const params: any[] = [companyCode];
     let paramIndex = 2;
 
-    if (startDate) {
-      query += ` AND doc_date >= $${paramIndex}`;
-      params.push(new Date(startDate));
+    // Apply date range filter using OR condition for both doc_date and reg_date
+    if (startDate && endDate) {
+      query += ` AND (
+        (doc_date::date >= $${paramIndex}::date AND doc_date::date <= $${paramIndex + 1}::date)
+        OR
+        (reg_date::date >= $${paramIndex}::date AND reg_date::date <= $${paramIndex + 1}::date)
+      )`;
+      params.push(startDate, endDate);
+      paramIndex += 2;
+    } else if (startDate) {
+      query += ` AND (doc_date::date >= $${paramIndex}::date OR reg_date::date >= $${paramIndex}::date)`;
+      params.push(startDate);
       paramIndex++;
-    }
-    if (endDate) {
-      query += ` AND doc_date <= $${paramIndex}`;
-      params.push(new Date(endDate));
+    } else if (endDate) {
+      query += ` AND (doc_date::date <= $${paramIndex}::date OR reg_date::date <= $${paramIndex}::date)`;
+      params.push(endDate);
       paramIndex++;
     }
 
