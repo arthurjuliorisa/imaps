@@ -4,8 +4,15 @@
  * and end-of-day snapshot calculations
  * 
  * Tasks:
- * 1. Every 15 minutes: Process pending recalculation queue items
- * 2. Every day at end-of-day time: Calculate daily stock snapshots for all companies
+ * 1. [DISABLED] Every 15 minutes: Process pending recalculation queue items
+ *    - Reason: Queue-based snapshot processing deprecated
+ *    - Migration: Use direct synchronous execution or message queue (Redis/Bull)
+ *    - Status: Pending removal after API migration
+ * 
+ * 2. [DISABLED] Every day at end-of-day time: Calculate daily stock snapshots for all companies
+ *    - Reason: Snapshot now updated real-time per transaction
+ *    - Purpose: No longer needed for operational data
+ *    - Alternative: Can be manually triggered for audit/verification
  * 
  * Timezone Configuration:
  * - Uses server/application timezone
@@ -202,16 +209,27 @@ class CronService {
 
       // Register all cron jobs
       const cronJobs: CronJob[] = [
-        {
-          name: 'process-recalc-queue',
-          schedule: this.recalcQueueSchedule, // From env or default
-          task: this.processRecalcQueue.bind(this),
-        },
-        {
-          name: 'calculate-daily-snapshots',
-          schedule: this.dailySnapshotSchedule, // From env or timezone calculation
-          task: this.calculateDailySnapshots.bind(this),
-        },
+        // DISABLED: process-recalc-queue
+        // Reason: Queue-based snapshot processing has been deprecated
+        // Migration Path:
+        //   1. Update all API endpoints to use direct synchronous execution
+        //   2. Or implement message queue (Redis/Bull) for async processing
+        //   3. Ensure accumulated queue records are cleaned up
+        // {
+        //   name: 'process-recalc-queue',
+        //   schedule: this.recalcQueueSchedule, // From env or default
+        //   task: this.processRecalcQueue.bind(this),
+        // },
+        
+        // DISABLED: calculate-daily-snapshots
+        // Reason: Snapshot now updated in real-time per transaction
+        // Architecture: Hybrid approach (snapshot + real-time transactions)
+        // Can be re-enabled manually for audit/verification purposes
+        // {
+        //   name: 'calculate-daily-snapshots',
+        //   schedule: this.dailySnapshotSchedule, // From env or timezone calculation
+        //   task: this.calculateDailySnapshots.bind(this),
+        // },
       ];
 
       // Schedule each job
@@ -270,6 +288,12 @@ class CronService {
 
   /**
    * Process pending recalculation queue items (Every 15 minutes)
+   * 
+   * ⚠️ DEPRECATED & DISABLED - This method is no longer called by cron
+   * 
+   * Kept for backwards compatibility during migration period
+   * Will be removed once all APIs are updated to use direct execution
+   * or message queue implementation
    */
   private async processRecalcQueue(): Promise<void> {
     try {
@@ -321,6 +345,20 @@ class CronService {
 
   /**
    * Calculate daily stock snapshots for all companies (Every day at end-of-day)
+   * 
+   * ⚠️ DEPRECATED & DISABLED - This method is no longer called by cron
+   * 
+   * Reason: Snapshots are now updated in real-time per transaction
+   * Purpose: Can be manually triggered for audit/verification of snapshot consistency
+   * 
+   * Architecture Change:
+   * - Before: Daily batch calculation at end-of-day
+   * - After: Real-time update on each transaction (per-item level snapshot)
+   * - This method: Optional audit tool only
+   * 
+   * To manually execute for audit:
+   *   const service = getCronService();
+   *   await service['calculateDailySnapshots']();
    */
   private async calculateDailySnapshots(): Promise<void> {
     try {
