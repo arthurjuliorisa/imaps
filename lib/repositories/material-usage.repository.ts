@@ -199,7 +199,93 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
         }
       }
 
-      // Step 4: Queue snapshot recalculation if needed (backdated or same-day)
+      // Step 4: Check if this is a date change (for update scenarios)
+      const oldHeader = await prisma.material_usages.findFirst({
+        where: {
+          company_code: data.company_code,
+          wms_id: data.wms_id,
+          id: { not: header.id }, // Different record with same wms_id
+        },
+        orderBy: { transaction_date: 'desc' },
+        take: 1,
+      });
+
+      const oldTransactionDate = oldHeader?.transaction_date;
+      const dateChanged = oldTransactionDate && oldTransactionDate.getTime() !== transactionDate.getTime();
+
+      // Step 5: Calculate item-level snapshots with reversal handling
+      try {
+        // Determine quantity multiplier based on reversal flag
+        const qtyMultiplier = data.reversal === 'Y' ? -1 : 1;
+
+        // Update snapshots for each item
+        for (const item of data.items) {
+          const adjustedQty = (item.qty * qtyMultiplier).toString();
+
+          await prisma.$executeRawUnsafe(
+            `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
+            data.company_code,
+            item.item_type,
+            item.item_code,
+            item.item_name,
+            item.uom,
+            transactionDate
+          );
+        }
+
+        log.info('Item-level snapshots calculated', {
+          itemCount: data.items.length,
+          reversal: data.reversal,
+        });
+
+        // Step 6: If date changed, recalculate old date and cascade from new date
+        if (dateChanged && oldTransactionDate) {
+          try {
+            // Recalculate old date
+            for (const item of data.items) {
+              await prisma.$executeRawUnsafe(
+                `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
+                data.company_code,
+                item.item_type,
+                item.item_code,
+                item.item_name,
+                item.uom,
+                oldTransactionDate
+              );
+            }
+
+            // Cascade recalculate from new date
+            for (const item of data.items) {
+              await prisma.$executeRawUnsafe(
+                `SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)`,
+                data.company_code,
+                item.item_type,
+                item.item_code,
+                transactionDate
+              );
+            }
+
+            log.info('Date change cascade completed', {
+              oldDate: oldTransactionDate.toISOString().split('T')[0],
+              newDate: transactionDate.toISOString().split('T')[0],
+            });
+          } catch (cascadeError) {
+            log.error('Cascade recalculation failed on date change', {
+              error: (cascadeError as any).message,
+              oldDate: oldTransactionDate?.toISOString(),
+              newDate: transactionDate.toISOString(),
+            });
+          }
+        }
+      } catch (snapshotError) {
+        log.error('Snapshot calculation failed', {
+          error: (snapshotError as any).message,
+          itemCount: data.items.length,
+        });
+        // Don't fail the entire transaction if snapshot fails
+      }
+
+      // Step 7: Queue snapshot recalculation if needed (backdated or same-day)
       await this.handleBackdatedTransaction(
         data.company_code,
         transactionDate,

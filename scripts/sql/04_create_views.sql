@@ -110,18 +110,22 @@ BEGIN
             GROUP BY sds.company_code, sds.item_code
         ),
         opening_balance_data AS (
-            -- Get opening balance from closest snapshot ON or BEFORE start_date
+            -- Priority 1: If snapshot exists ON start_date, use its opening_balance
+            -- Priority 2: Otherwise, use closing_balance from latest snapshot ON or BEFORE start_date
             SELECT
                 sds.company_code,
                 sds.item_code,
-                sds.closing_balance,
+                CASE 
+                    WHEN sds.snapshot_date = v_start_date THEN sds.opening_balance
+                    ELSE sds.closing_balance
+                END as balance_value,
                 ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_start_date
         ),
         closing_balance_data AS (
-            -- Get closing balance from snapshot on or before end_date
+            -- Get closing_balance FIELD from snapshot ON or BEFORE end_date (most recent snapshot up to period end)
             SELECT
                 sds.company_code,
                 sds.item_code,
@@ -141,7 +145,7 @@ BEGIN
             COALESCE(ai.uom, 'UNIT')::VARCHAR(20) as unit_quantity,
             v_end_date::DATE as snapshot_date,
             COALESCE(
-                (SELECT obd.closing_balance FROM opening_balance_data obd 
+                (SELECT obd.balance_value FROM opening_balance_data obd 
                  WHERE obd.company_code = ai.company_code 
                    AND obd.item_code = ai.item_code 
                    AND obd.rn = 1),
@@ -249,18 +253,22 @@ BEGIN
             GROUP BY sds.company_code, sds.item_code
         ),
         opening_balance_data AS (
-            -- Get opening balance from closest snapshot ON or BEFORE start_date
+            -- Priority 1: If snapshot exists ON start_date, use its opening_balance
+            -- Priority 2: Otherwise, use closing_balance from latest snapshot ON or BEFORE start_date
             SELECT
                 sds.company_code,
                 sds.item_code,
-                sds.closing_balance,
+                CASE 
+                    WHEN sds.snapshot_date = v_start_date THEN sds.opening_balance
+                    ELSE sds.closing_balance
+                END as balance_value,
                 ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_start_date
         ),
         closing_balance_data AS (
-            -- Get closing balance from snapshot on or before end_date
+            -- Get closing_balance FIELD from snapshot ON or BEFORE end_date (most recent snapshot up to period end)
             SELECT
                 sds.company_code,
                 sds.item_code,
@@ -280,7 +288,7 @@ BEGIN
             COALESCE(ai.uom, 'UNIT')::VARCHAR(20) as unit_quantity,
             v_end_date::DATE as snapshot_date,
             COALESCE(
-                (SELECT obd.closing_balance FROM opening_balance_data obd 
+                (SELECT obd.balance_value FROM opening_balance_data obd 
                  WHERE obd.company_code = ai.company_code 
                    AND obd.item_code = ai.item_code 
                    AND obd.rn = 1),
@@ -554,18 +562,22 @@ BEGIN
             GROUP BY sds.company_code, sds.item_code
         ),
         opening_balance_data AS (
-            -- Get opening balance from closest snapshot ON or BEFORE start_date
+            -- Priority 1: If snapshot exists ON start_date, use its opening_balance
+            -- Priority 2: Otherwise, use closing_balance from latest snapshot ON or BEFORE start_date
             SELECT
                 sds.company_code,
                 sds.item_code,
-                sds.closing_balance,
+                CASE 
+                    WHEN sds.snapshot_date = v_start_date THEN sds.opening_balance
+                    ELSE sds.closing_balance
+                END as balance_value,
                 ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_start_date
         ),
         closing_balance_data AS (
-            -- Get closing balance from snapshot on or before end_date
+            -- Get closing_balance FIELD from snapshot ON or BEFORE end_date (most recent snapshot up to period end)
             SELECT
                 sds.company_code,
                 sds.item_code,
@@ -585,7 +597,7 @@ BEGIN
             COALESCE(ai.uom, 'UNIT')::VARCHAR(20) as unit_quantity,
             v_end_date::DATE as snapshot_date,
             COALESCE(
-                (SELECT obd.closing_balance FROM opening_balance_data obd 
+                (SELECT obd.balance_value FROM opening_balance_data obd 
                  WHERE obd.company_code = ai.company_code 
                    AND obd.item_code = ai.item_code 
                    AND obd.rn = 1),

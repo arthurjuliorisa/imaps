@@ -111,22 +111,47 @@ export async function GET(request: Request) {
     });
 
     // Transform data to match frontend expectations
-    const transformedData = beginningBalances.map((balance) => ({
-      id: balance.id.toString(),
-      item: {
-        code: balance.item_code,
-        name: balance.item_name,
-      },
-      uom: {
-        code: balance.uom,
-      },
-      beginningBalance: Number(balance.qty),
-      beginningDate: balance.balance_date,
-      remarks: balance.remarks || null,
-      ppkek_numbers: balance.ppkeks?.map(p => p.ppkek_number) || [],
-      itemId: balance.item_code,
-      uomId: balance.uom,
-      itemType: balance.item_type,
+    const transformedData = await Promise.all(beginningBalances.map(async (balance) => {
+      // Check if this beginning balance has any incoming or outgoing transactions
+      // Transactions are identified by items in incoming_good_items and outgoing_good_items
+      // for the same item code and on or after the balance date
+      const [incomingCount, outgoingCount] = await Promise.all([
+        prisma.incoming_good_items.count({
+          where: {
+            item_code: balance.item_code,
+            incoming_good_company: balance.company_code,
+            deleted_at: null,
+          },
+        }),
+        prisma.outgoing_good_items.count({
+          where: {
+            item_code: balance.item_code,
+            outgoing_good_company: balance.company_code,
+            deleted_at: null,
+          },
+        }),
+      ]);
+
+      const hasTransactions = incomingCount > 0 || outgoingCount > 0;
+
+      return {
+        id: balance.id.toString(),
+        item: {
+          code: balance.item_code,
+          name: balance.item_name,
+        },
+        uom: {
+          code: balance.uom,
+        },
+        beginningBalance: Number(balance.qty),
+        beginningDate: balance.balance_date,
+        remarks: balance.remarks || null,
+        ppkek_numbers: balance.ppkeks?.map(p => p.ppkek_number) || [],
+        itemId: balance.item_code,
+        uomId: balance.uom,
+        itemType: balance.item_type,
+        hasTransactions,
+      };
     }));
 
     return NextResponse.json(transformedData);
@@ -330,6 +355,7 @@ export async function POST(request: Request) {
       itemId: newRecord.item_code,
       uomId: newRecord.uom,
       itemType: newRecord.item_type,
+      hasTransactions: false, // New records have no transactions yet
     };
 
     // Log activity

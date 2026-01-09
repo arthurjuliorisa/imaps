@@ -115,7 +115,39 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         return { header, items: itemResults };
       });
 
-      // Queue snapshot recalculation if backdated
+      // Step 4: Calculate item-level snapshots for adjustment items
+      try {
+        // For adjustments: 
+        // - GAIN (adjustment_type = 'GAIN') → positive quantity
+        // - LOSS (adjustment_type = 'LOSS') → negative quantity
+        for (const item of data.items) {
+          // Determine sign based on adjustment type
+          const qtyMultiplier = item.adjustment_type === 'LOSS' ? -1 : 1;
+          const adjustedQty = (item.qty * qtyMultiplier).toString();
+
+          await prisma.$executeRawUnsafe(
+            `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
+            data.company_code,
+            item.item_type,
+            item.item_code,
+            item.item_name,
+            item.uom,
+            transactionDate
+          );
+        }
+
+        log.info('Item-level snapshots calculated', {
+          itemCount: data.items.length,
+        });
+      } catch (snapshotError) {
+        log.error('Snapshot calculation failed', {
+          error: (snapshotError as any).message,
+          itemCount: data.items.length,
+        });
+        // Don't fail the entire transaction if snapshot fails
+      }
+
+      // Step 5: Queue snapshot recalculation if backdated
       await this.handleBackdatedTransaction(
         data.company_code,
         transactionDate,

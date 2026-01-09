@@ -51,6 +51,8 @@ export interface BeginningStockData {
   // Added for edit functionality
   itemId?: string;
   uomId?: string;
+  // Check if this balance has any transactions
+  hasTransactions?: boolean;
 }
 
 interface BeginningStockTableProps {
@@ -327,15 +329,18 @@ export function BeginningStockTable({
                         <ViewIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title="Edit" sx={{ display: 'none' }}>
-                      <IconButton
-                        size="small"
-                        onClick={() => onEdit(row)}
-                        color="primary"
-                        sx={{ mr: 0.5, display: 'none' }}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
+                    <Tooltip title={row.hasTransactions ? "This balance already have transaction(s) and cannot be edited" : "Edit"}>
+                      <span>
+                        <IconButton
+                          size="small"
+                          onClick={() => onEdit(row)}
+                          color="primary"
+                          sx={{ mr: 0.5 }}
+                          disabled={row.hasTransactions}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </span>
                     </Tooltip>
                     <Tooltip title="Delete" sx={{ display: 'none' }}>
                       <IconButton

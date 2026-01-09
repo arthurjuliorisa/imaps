@@ -105,6 +105,7 @@ export default function BeginningDataPage() {
         beginningDate: item.beginningDate,
         remarks: item.remarks,
         ppkek_numbers: item.ppkek_numbers || [],
+        hasTransactions: item.hasTransactions || false,
         // Keep item and uom IDs for edit functionality
         itemId: item.itemId,
         uomId: item.uomId,
