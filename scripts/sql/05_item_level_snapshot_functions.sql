@@ -130,34 +130,53 @@ BEGIN
       AND deleted_at IS NULL;
 
     -- Query material usage quantities
-    SELECT COALESCE(SUM(qty), NUMERIC '0.000')
+    SELECT COALESCE(SUM(
+        CASE 
+            WHEN mu.reversal = 'Y' THEN -mui.qty  -- Return increases stock
+            ELSE mui.qty 
+        END
+    ), NUMERIC '0.000')
     INTO v_material_usage_qty
-    FROM material_usage_items
-    WHERE material_usage_company = p_company_code
-      AND item_type = p_item_type
-      AND item_code = p_item_code
-      AND material_usage_date = p_snapshot_date
-      AND deleted_at IS NULL;
+    FROM material_usage_items mui
+    JOIN material_usages mu ON mui.material_usage_id = mu.id
+    WHERE mu.company_code = p_company_code
+      AND mui.item_type = p_item_type
+      AND mui.item_code = p_item_code
+      AND mu.transaction_date = p_snapshot_date
+      AND mu.deleted_at IS NULL
+      AND mui.deleted_at IS NULL;
 
     -- Query production quantities
-    SELECT COALESCE(SUM(qty), NUMERIC '0.000')
+    SELECT COALESCE(SUM(
+        CASE 
+            WHEN po.reversal = 'Y' THEN -poi.qty  -- Reversal decreases stock
+            ELSE poi.qty 
+        END
+    ), NUMERIC '0.000')
     INTO v_production_qty
-    FROM production_output_items
-    WHERE production_output_company = p_company_code
-      AND item_type = p_item_type
-      AND item_code = p_item_code
-      AND production_output_date = p_snapshot_date
-      AND deleted_at IS NULL;
+    FROM production_output_items poi
+    JOIN production_outputs po ON poi.production_output_id = po.id
+    WHERE po.company_code = p_company_code
+      AND poi.item_type = p_item_type
+      AND poi.item_code = p_item_code
+      AND po.transaction_date = p_snapshot_date
+      AND po.deleted_at IS NULL
+      AND poi.deleted_at IS NULL;
 
-    -- Query adjustment quantities
-    SELECT COALESCE(SUM(qty), NUMERIC '0.000')
+    -- Query adjustment quantities (using File 03 pattern for consistency)
+    SELECT COALESCE(SUM(
+        CASE 
+            WHEN ai.adjustment_type = 'GAIN' THEN ai.qty
+            ELSE -ai.qty  -- LOSS
+        END
+    ), NUMERIC '0.000')
     INTO v_adjustment_qty
-    FROM adjustment_items
-    WHERE adjustment_company = p_company_code
-      AND item_type = p_item_type
-      AND item_code = p_item_code
-      AND adjustment_date = p_snapshot_date
-      AND deleted_at IS NULL;
+    FROM adjustment_items ai
+    WHERE ai.adjustment_company = p_company_code
+      AND ai.item_type = p_item_type
+      AND ai.item_code = p_item_code
+      AND ai.adjustment_date = p_snapshot_date
+      AND ai.deleted_at IS NULL;
 
     -- Calculate closing balance
     -- Formula: Closing = Opening + In - Out - Usage + Production ± Adjustment

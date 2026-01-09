@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import type { MaterialUsageBatchRequestInput, MaterialUsageItemInput } from '@/lib/validators/schemas/material-usage.schema';
 import { logger } from '@/lib/utils/logger';
@@ -22,14 +23,21 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
   }
 
   /**
-   * Batch upsert material usage with parallel processing
+   * Batch upsert material usage with date change detection
    * 
-   * Optimization: Promise.allSettled for parallel inserts
-   * - 100 records = ~10x faster than sequential
-   * - Handles failures gracefully (continues on error)
-   * 
-   * Note: Items are inserted into material_usage_items table
-   * Header (material_usages) is upserted once per batch
+   * =========================================================================
+   * NEW FLOW: Detect date change, handle deletion of old records
+   * =========================================================================
+   * STEP 1: Find existing by wms_id (ANY date) to detect date change
+   * STEP 2: If date changed, DELETE old, then INSERT new
+   * STEP 3: If same date, UPSERT header and intelligently manage items
+   * STEP 4: Create traceability records
+   * STEP 5: Calculate item-level snapshots
+   * STEP 6: Cascade recalculate if date changed
+   *
+   * Date Change Scenarios:
+   * - Same date: UPSERT → Update/Insert items intelligently → Recalc same date
+   * - Different date: DELETE old + INSERT new → Recalc both → Cascade from new date
    */
   async batchUpsert(data: MaterialUsageBatchRequestInput): Promise<void> {
     const log = logger.child({
@@ -41,187 +49,333 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
     try {
       const transactionDate = new Date(data.transaction_date);
 
-      // Step 1: Upsert header (material_usages table)
-      const header = await prisma.material_usages.upsert({
+      // =========================================================================
+      // STEP 1: Find existing by wms_id (ANY date) to detect date change
+      // =========================================================================
+      const existing = await prisma.material_usages.findFirst({
         where: {
-          company_code_wms_id_transaction_date: {
-            company_code: data.company_code,
-            wms_id: data.wms_id,
-            transaction_date: transactionDate,
-          },
-        },
-        update: {
-          work_order_number: data.work_order_number || null,
-          cost_center_number: data.cost_center_number || null,
-          internal_evidence_number: data.internal_evidence_number,
-          reversal: data.reversal || null,
-          timestamp: new Date(data.timestamp),
-        },
-        create: {
           company_code: data.company_code,
           wms_id: data.wms_id,
-          work_order_number: data.work_order_number || null,
-          cost_center_number: data.cost_center_number || null,
-          internal_evidence_number: data.internal_evidence_number,
-          transaction_date: transactionDate,
-          reversal: data.reversal || null,
-          timestamp: new Date(data.timestamp),
+          deleted_at: null,
         },
       });
 
-      log.info('Header upserted', { materialUsageId: header.id });
+      const oldDate = existing?.transaction_date;
+      const isDateChanged = existing && oldDate?.getTime() !== transactionDate.getTime();
 
-      // Step 2: Delete existing items and insert new ones
-      await prisma.material_usage_items.deleteMany({
-        where: {
-          material_usage_id: header.id,
-          material_usage_company: data.company_code,
-          material_usage_date: transactionDate,
-        },
-      });
-
-      // Insert all items in parallel
-      const itemRecords = data.items.map((item) => ({
-        material_usage_id: header.id,
-        material_usage_company: data.company_code,
-        material_usage_date: transactionDate,
-        item_type: item.item_type,
-        item_code: item.item_code,
-        item_name: item.item_name,
-        uom: item.uom,
-        qty: item.qty,
-        ppkek_number: item.ppkek_number || null,
-      }));
-
-      const results = await Promise.allSettled(
-        itemRecords.map((record) =>
-          prisma.material_usage_items.create({
-            data: record,
-          })
-        )
-      );
-
-      // Extract successfully created items with their IDs
-      const createdItems = results
-        .map((result, index) => {
-          if (result.status === 'fulfilled') {
-            return { ...result.value, itemCode: itemRecords[index].item_code };
-          }
-          return null;
-        })
-        .filter((item): item is any => item !== null);
-
-      const createdItemsMap = new Map(
-        createdItems.map((item) => [item.item_code, item.id])
-      );
-
-      // Check for failures
-      const failures = results.filter((r) => r.status === 'rejected');
-      if (failures.length > 0) {
-        log.warn('Some items failed to insert', {
-          failureCount: failures.length,
-          totalCount: itemRecords.length,
-        });
-
-        failures.forEach((failure, index) => {
-          if (failure.status === 'rejected') {
-            log.error('Item insert failed', {
-              itemCode: itemRecords[index].item_code,
-              error: failure.reason?.message,
-            });
-          }
+      // Query existing items BEFORE any deletion (untuk detect deleted items)
+      let existingItemRecords: any[] = [];
+      if (existing) {
+        existingItemRecords = await prisma.material_usage_items.findMany({
+          where: {
+            material_usage_id: existing.id,
+            material_usage_company: data.company_code,
+            material_usage_date: existing.transaction_date,
+            deleted_at: null,
+          },
         });
       }
 
-      log.info('Batch upsert completed', {
-        materialUsageId: header.id,
-        successCount: results.filter((r) => r.status === 'fulfilled').length,
-        failureCount: failures.length,
-      });
+      let deletedItems: any[] = [];
+      if (isDateChanged && existing && oldDate) {
+        // DIFFERENT DATE: Track deleted items for snapshot recalculation
+        deletedItems = existingItemRecords;
+      } else if (existing && !isDateChanged) {
+        // SAME DATE: Identify deleted items (in DB but not in payload)
+        const payloadItemKeys = new Set(
+          data.items.map(item => `${item.item_type}|${item.item_code}`)
+        );
 
-      // Step 3: Create traceability records for work order material consumption
-      // This links materials (with PPKEK) to their work orders for customs compliance
-      if (data.work_order_number && createdItemsMap.size > 0) {
-        const traceabilityRecords = data.items
-          .filter((item) => item.ppkek_number && createdItemsMap.has(item.item_code)) // Only trace materials with PPKEK that were successfully created
-          .map((item) => ({
-            material_usage_id: header.id,
-            material_usage_item_id: createdItemsMap.get(item.item_code)!,
-            material_usage_wms_id: data.wms_id,
-            work_order_number: data.work_order_number!,
-            company_code: data.company_code,
-            item_code: item.item_code,
-            ppkek_number: item.ppkek_number!,
-            qty_consumed: item.qty,
-            trx_date: transactionDate,
-          }));
+        deletedItems = existingItemRecords.filter(
+          dbItem =>
+            !payloadItemKeys.has(`${dbItem.item_type}|${dbItem.item_code}`)
+        );
 
-        if (traceabilityRecords.length > 0) {
-          try {
-            // Insert traceability records using Prisma ORM
-            for (const record of traceabilityRecords) {
-              await prisma.work_order_material_consumption.upsert({
-                where: {
-                  material_usage_wms_id_work_order_number_item_code: {
-                    material_usage_wms_id: record.material_usage_wms_id,
-                    work_order_number: record.work_order_number,
-                    item_code: record.item_code,
-                  },
-                },
-                update: {
-                  qty_consumed: record.qty_consumed,
-                },
-                create: {
-                  material_usage_id: record.material_usage_id,
-                  material_usage_item_id: record.material_usage_item_id,
-                  material_usage_wms_id: record.material_usage_wms_id,
-                  work_order_number: record.work_order_number,
-                  company_code: record.company_code,
-                  item_code: record.item_code,
-                  ppkek_number: record.ppkek_number,
-                  qty_consumed: record.qty_consumed,
-                  trx_date: record.trx_date,
-                },
-              });
-            }
-
-            log.info('Traceability records created', {
-              count: traceabilityRecords.length,
-              workOrderNumber: data.work_order_number,
-            });
-          } catch (err) {
-            log.warn('Failed to create traceability records', {
-              error: (err as any).message,
-              workOrderNumber: data.work_order_number,
-            });
-            // Don't fail the entire transaction if traceability fails
-          }
+        if (deletedItems.length > 0) {
+          log.info('Detected deleted items (same date)', {
+            deletedCount: deletedItems.length,
+            deletedItems: deletedItems.map(i => i.item_code),
+          });
         }
       }
 
-      // Step 4: Check if this is a date change (for update scenarios)
-      const oldHeader = await prisma.material_usages.findFirst({
-        where: {
-          company_code: data.company_code,
-          wms_id: data.wms_id,
-          id: { not: header.id }, // Different record with same wms_id
-        },
-        orderBy: { transaction_date: 'desc' },
-        take: 1,
+      // =========================================================================
+      // STEP 2, 3: Transaction - Delete old if date changed, then Upsert new
+      // =========================================================================
+      const createdItemsMap = new Map<string, number>();
+
+      // Always use transaction to ensure consistency
+      await prisma.$transaction(async (tx) => {
+        // If date changed, delete old record first
+        if (isDateChanged && existing && oldDate) {
+          log.debug('Date changed, soft-deleting old items and header', {
+            oldDate,
+            newDate: transactionDate,
+            wmsId: data.wms_id,
+          });
+
+          // Soft delete old items
+          await tx.material_usage_items.updateMany({
+            where: {
+              material_usage_id: existing.id,
+              material_usage_company: data.company_code,
+              material_usage_date: oldDate,
+              deleted_at: null,
+            },
+            data: {
+              deleted_at: new Date(),
+            },
+          });
+
+          // Delete old header
+          await tx.material_usages.delete({
+            where: {
+              company_code_wms_id_transaction_date: {
+                company_code: data.company_code,
+                wms_id: data.wms_id,
+                transaction_date: oldDate,
+              },
+            },
+          });
+
+          log.info('Old record deleted due to date change', {
+            oldDate: oldDate.toISOString().split('T')[0],
+          });
+        }
+
+        // Upsert header
+        const header = await tx.material_usages.upsert({
+          where: {
+            company_code_wms_id_transaction_date: {
+              company_code: data.company_code,
+              wms_id: data.wms_id,
+              transaction_date: transactionDate,
+            },
+          },
+          update: {
+            work_order_number: data.work_order_number || null,
+            cost_center_number: data.cost_center_number || null,
+            internal_evidence_number: data.internal_evidence_number,
+            reversal: data.reversal || null,
+            timestamp: new Date(data.timestamp),
+            updated_at: new Date(),
+            deleted_at: null,
+          },
+          create: {
+            company_code: data.company_code,
+            wms_id: data.wms_id,
+            work_order_number: data.work_order_number || null,
+            cost_center_number: data.cost_center_number || null,
+            internal_evidence_number: data.internal_evidence_number,
+            transaction_date: transactionDate,
+            reversal: data.reversal || null,
+            timestamp: new Date(data.timestamp),
+          },
+        });
+
+        log.info('Header upserted', { materialUsageId: header.id });
+
+        // For update case (same date), intelligently manage items
+        if (!isDateChanged) {
+          // Get existing items for this material_usage_id
+          const existingItems = await tx.material_usage_items.findMany({
+            where: {
+              material_usage_id: header.id,
+              material_usage_company: data.company_code,
+              material_usage_date: transactionDate,
+              deleted_at: null,
+            },
+            select: {
+              id: true,
+              item_type: true,
+              item_code: true,
+              qty: true,
+            },
+          });
+
+          const existingItemMap = new Map(
+            existingItems.map(i => [`${i.item_type}|${i.item_code}`, i])
+          );
+          const payloadItemSet = new Set(
+            data.items.map(i => `${i.item_type}|${i.item_code}`)
+          );
+
+          // 1. Soft-delete items that are no longer in payload
+          const itemsToDelete = existingItems.filter(
+            item => !payloadItemSet.has(`${item.item_type}|${item.item_code}`)
+          );
+
+          if (itemsToDelete.length > 0) {
+            await tx.material_usage_items.updateMany({
+              where: {
+                id: {
+                  in: itemsToDelete.map(i => i.id),
+                },
+              },
+              data: {
+                deleted_at: new Date(),
+              },
+            });
+
+            log.info('Soft-deleted removed items', {
+              deletedCount: itemsToDelete.length,
+              deletedItems: itemsToDelete.map(i => i.item_code),
+            });
+          }
+
+          // 2. Update existing items and 3. Insert new items
+          for (const item of data.items) {
+            const key = `${item.item_type}|${item.item_code}`;
+            const existingItem = existingItemMap.get(key);
+
+            if (existingItem) {
+              // Item exists, update it
+              await tx.material_usage_items.update({
+                where: { id: existingItem.id },
+                data: {
+                  item_name: item.item_name,
+                  uom: item.uom,
+                  qty: new Prisma.Decimal(item.qty),
+                  ppkek_number: item.ppkek_number || null,
+                  updated_at: new Date(),
+                  deleted_at: null,
+                },
+              });
+              createdItemsMap.set(item.item_code, existingItem.id);
+            } else {
+              // New item, insert it
+              const newItem = await tx.material_usage_items.create({
+                data: {
+                  material_usage_id: header.id,
+                  material_usage_company: data.company_code,
+                  material_usage_date: transactionDate,
+                  item_type: item.item_type,
+                  item_code: item.item_code,
+                  item_name: item.item_name,
+                  uom: item.uom,
+                  qty: new Prisma.Decimal(item.qty),
+                  ppkek_number: item.ppkek_number || null,
+                },
+              });
+              createdItemsMap.set(item.item_code, newItem.id);
+            }
+          }
+
+          log.info('Items updated/inserted intelligently', {
+            totalItems: data.items.length,
+            deletedCount: itemsToDelete.length,
+          });
+        } else {
+          // Date changed: insert all new items
+          const itemsData = data.items.map((item) => ({
+            material_usage_id: header.id,
+            material_usage_company: data.company_code,
+            material_usage_date: transactionDate,
+            item_type: item.item_type,
+            item_code: item.item_code,
+            item_name: item.item_name,
+            uom: item.uom,
+            qty: new Prisma.Decimal(item.qty),
+            ppkek_number: item.ppkek_number || null,
+          }));
+
+          await tx.material_usage_items.createMany({
+            data: itemsData,
+          });
+
+          // Map created items for traceability
+          const createdItems = await tx.material_usage_items.findMany({
+            where: {
+              material_usage_id: header.id,
+              material_usage_company: data.company_code,
+              material_usage_date: transactionDate,
+              deleted_at: null,
+            },
+            select: {
+              id: true,
+              item_code: true,
+            },
+          });
+
+          createdItems.forEach(item => {
+            createdItemsMap.set(item.item_code, item.id);
+          });
+
+          log.info('New items inserted (date change)', {
+            insertedCount: itemsData.length,
+          });
+        }
       });
 
-      const oldTransactionDate = oldHeader?.transaction_date;
-      const dateChanged = oldTransactionDate && oldTransactionDate.getTime() !== transactionDate.getTime();
+      log.info('Items managed successfully', {
+        totalItems: data.items.length,
+        mappedItems: createdItemsMap.size,
+      });
 
-      // Step 5: Calculate item-level snapshots with reversal handling
+      // Step 4: Create traceability records for work order material consumption
+      // This links materials (with PPKEK) to their work orders for customs compliance
+      if (data.work_order_number && createdItemsMap.size > 0) {
+        try {
+          for (const item of data.items) {
+            if (item.ppkek_number && createdItemsMap.has(item.item_code)) {
+              const itemId = createdItemsMap.get(item.item_code)!;
+              
+              await prisma.work_order_material_consumption.upsert({
+                where: {
+                  material_usage_wms_id_work_order_number_item_code: {
+                    material_usage_wms_id: data.wms_id,
+                    work_order_number: data.work_order_number,
+                    item_code: item.item_code,
+                  },
+                },
+                update: {
+                  qty_consumed: new Prisma.Decimal(item.qty),
+                },
+                create: {
+                  material_usage_id: 0, // Will be set by relation
+                  material_usage_item_id: itemId,
+                  material_usage_wms_id: data.wms_id,
+                  work_order_number: data.work_order_number,
+                  company_code: data.company_code,
+                  item_code: item.item_code,
+                  ppkek_number: item.ppkek_number,
+                  qty_consumed: new Prisma.Decimal(item.qty),
+                  trx_date: transactionDate,
+                },
+              });
+            }
+          }
+
+          const itemsWithPpkek = data.items.filter(i => i.ppkek_number && createdItemsMap.has(i.item_code)).length;
+          log.info('Traceability records created', {
+            count: itemsWithPpkek,
+            workOrderNumber: data.work_order_number,
+          });
+        } catch (err) {
+          log.warn('Failed to create traceability records', {
+            error: (err as any).message,
+            workOrderNumber: data.work_order_number,
+          });
+        }
+      }
+
+      // Step 5: Calculate item-level snapshots
       try {
-        // Determine quantity multiplier based on reversal flag
-        const qtyMultiplier = data.reversal === 'Y' ? -1 : 1;
+        // Delete existing snapshots for this transaction_date to force clean recalculation
+        await prisma.stock_daily_snapshot.deleteMany({
+          where: {
+            company_code: data.company_code,
+            snapshot_date: transactionDate,
+          },
+        });
+
+        log.info('Cleared snapshots for recalculation', {
+          company_code: data.company_code,
+          snapshot_date: transactionDate.toISOString().split('T')[0],
+        });
 
         // Update snapshots for each item
         for (const item of data.items) {
-          const adjustedQty = (item.qty * qtyMultiplier).toString();
-
           await prisma.$executeRawUnsafe(
             `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
             data.company_code,
@@ -238,8 +392,8 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
           reversal: data.reversal,
         });
 
-        // Step 6: If date changed, recalculate old date and cascade from new date
-        if (dateChanged && oldTransactionDate) {
+        // Step 5: Cascade recalculation for date change
+        if (isDateChanged && oldDate) {
           try {
             // Recalculate old date
             for (const item of data.items) {
@@ -250,7 +404,7 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
                 item.item_code,
                 item.item_name,
                 item.uom,
-                oldTransactionDate
+                oldDate
               );
             }
 
@@ -266,13 +420,13 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
             }
 
             log.info('Date change cascade completed', {
-              oldDate: oldTransactionDate.toISOString().split('T')[0],
+              oldDate: oldDate.toISOString().split('T')[0],
               newDate: transactionDate.toISOString().split('T')[0],
             });
           } catch (cascadeError) {
             log.error('Cascade recalculation failed on date change', {
               error: (cascadeError as any).message,
-              oldDate: oldTransactionDate?.toISOString(),
+              oldDate: oldDate?.toISOString(),
               newDate: transactionDate.toISOString(),
             });
           }
@@ -284,14 +438,6 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
         });
         // Don't fail the entire transaction if snapshot fails
       }
-
-      // Step 7: Queue snapshot recalculation if needed (backdated or same-day)
-      await this.handleBackdatedTransaction(
-        data.company_code,
-        transactionDate,
-        data.wms_id,
-        'material_usage'
-      );
     } catch (err: any) {
       log.error('Batch upsert failed', {
         error: err.message,

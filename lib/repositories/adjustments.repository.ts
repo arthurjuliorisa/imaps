@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import type { AdjustmentBatchRequestInput, AdjustmentItemInput } from '@/lib/validators/schemas/adjustment.schema';
 import { logger } from '@/lib/utils/logger';
@@ -7,10 +8,10 @@ import { BaseTransactionRepository } from './base-transaction.repository';
  * Adjustments Repository
  * 
  * Handles database operations for adjustments:
- * - Insert adjustment records (INSERT ONLY pattern)
- * - Duplicate check by wms_id
+ * - Upsert adjustment records with date change detection
+ * - Company existence validation
  * - Parallel processing for performance
- * - Snapshot recalculation queuing for backdated transactions
+ * - Snapshot recalculation for backdated/same-day transactions
  */
 
 export class AdjustmentsRepository extends BaseTransactionRepository {
@@ -19,8 +20,20 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
   }
 
   /**
-   * Create adjustment transaction
-   * INSERT ONLY pattern - no updates allowed
+   * Create or update adjustment transaction with date change detection
+   * 
+   * =========================================================================
+   * NEW FLOW: Detect date change, handle deletion of old records
+   * =========================================================================
+   * STEP 1: Find existing by wms_id (ANY date) to detect date change
+   * STEP 2: If date changed, DELETE old, then INSERT new
+   * STEP 3: If same date, UPSERT header and intelligently manage items
+   * STEP 4: Calculate item-level snapshots
+   * STEP 5: Cascade recalculate if date changed
+   *
+   * Date Change Scenarios:
+   * - Same date: UPSERT → Update/Insert items intelligently → Recalc same date
+   * - Different date: DELETE old + INSERT new → Recalc both → Cascade from new date
    */
   async create(data: AdjustmentBatchRequestInput): Promise<any> {
     const log = logger.child({
@@ -32,29 +45,91 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
     try {
       const transactionDate = new Date(data.transaction_date);
 
-      // Check for duplicate wms_id
+      // =========================================================================
+      // STEP 1: Find existing by wms_id (ANY date) to detect date change
+      // =========================================================================
       const existing = await prisma.adjustments.findFirst({
         where: {
-          wms_id: data.wms_id,
           company_code: data.company_code,
+          wms_id: data.wms_id,
+          deleted_at: null,
         },
       });
 
+      const oldDate = existing?.transaction_date;
+      const isDateChanged = existing && oldDate?.getTime() !== transactionDate.getTime();
+
+      // Query existing items BEFORE any deletion
+      let existingItemRecords: any[] = [];
       if (existing) {
-        log.warn('Duplicate wms_id found', {
-          existingId: existing.id,
-          existingDate: existing.transaction_date,
+        existingItemRecords = await prisma.adjustment_items.findMany({
+          where: {
+            adjustment_id: existing.id,
+            adjustment_company: data.company_code,
+            adjustment_date: existing.transaction_date,
+            deleted_at: null,
+          },
         });
-        throw new Error(
-          `Adjustment transaction with wms_id '${data.wms_id}' already exists`
-        );
       }
 
-      // Create transaction atomically
+      // =========================================================================
+      // STEP 2, 3: Transaction - Delete old if date changed, then Upsert new
+      // =========================================================================
       const result = await prisma.$transaction(async (tx) => {
-        // Create header
-        const header = await tx.adjustments.create({
-          data: {
+        // If date changed, delete old record first
+        if (isDateChanged && existing && oldDate) {
+          log.debug('Date changed, soft-deleting old items and header', {
+            oldDate,
+            newDate: transactionDate,
+            wmsId: data.wms_id,
+          });
+
+          // Soft delete old items
+          await tx.adjustment_items.updateMany({
+            where: {
+              adjustment_id: existing.id,
+              adjustment_company: data.company_code,
+              adjustment_date: oldDate,
+              deleted_at: null,
+            },
+            data: {
+              deleted_at: new Date(),
+            },
+          });
+
+          // Delete old header
+          await tx.adjustments.delete({
+            where: {
+              company_code_wms_id_transaction_date: {
+                company_code: data.company_code,
+                wms_id: data.wms_id,
+                transaction_date: oldDate,
+              },
+            },
+          });
+
+          log.info('Old record deleted due to date change', {
+            oldDate: oldDate.toISOString().split('T')[0],
+          });
+        }
+
+        // Upsert header
+        const header = await tx.adjustments.upsert({
+          where: {
+            company_code_wms_id_transaction_date: {
+              company_code: data.company_code,
+              wms_id: data.wms_id,
+              transaction_date: transactionDate,
+            },
+          },
+          update: {
+            wms_doc_type: data.wms_doc_type || null,
+            internal_evidence_number: data.internal_evidence_number,
+            timestamp: new Date(data.timestamp),
+            updated_at: new Date(),
+            deleted_at: null,
+          },
+          create: {
             wms_id: data.wms_id,
             company_code: data.company_code,
             wms_doc_type: data.wms_doc_type || null,
@@ -64,58 +139,130 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
           },
         });
 
-        log.info('Header created', { adjustmentId: header.id });
+        log.info('Header upserted', { adjustmentId: header.id });
 
-        // Create items in parallel
-        const itemRecords = data.items.map((item) => ({
-          adjustment_id: header.id,
-          adjustment_company: data.company_code,
-          adjustment_date: transactionDate,
-          adjustment_type: item.adjustment_type,
-          item_type: item.item_type,
-          item_code: item.item_code,
-          item_name: item.item_name,
-          uom: item.uom,
-          qty: item.qty,
-          reason: item.reason || null,
-        }));
-
-        const itemResults = await Promise.allSettled(
-          itemRecords.map((record) =>
-            tx.adjustment_items.create({
-              data: record,
-            })
-          )
-        );
-
-        // Check for failures
-        const failures = itemResults.filter((r) => r.status === 'rejected');
-        if (failures.length > 0) {
-          log.warn('Some items failed to insert', {
-            failureCount: failures.length,
-            totalCount: itemRecords.length,
+        // For update case (same date), intelligently manage items
+        if (!isDateChanged) {
+          // Get existing items for this adjustment_id
+          const existingItems = await tx.adjustment_items.findMany({
+            where: {
+              adjustment_id: header.id,
+              adjustment_company: data.company_code,
+              adjustment_date: transactionDate,
+              deleted_at: null,
+            },
+            select: {
+              id: true,
+              item_type: true,
+              item_code: true,
+              adjustment_type: true,
+              qty: true,
+            },
           });
 
-          failures.forEach((failure, index) => {
-            if (failure.status === 'rejected') {
-              log.error('Item insert failed', {
-                itemCode: itemRecords[index].item_code,
-                error: (failure.reason as any)?.message,
+          const existingItemMap = new Map(
+            existingItems.map(i => [`${i.item_type}|${i.item_code}|${i.adjustment_type}`, i])
+          );
+          const payloadItemSet = new Set(
+            data.items.map(i => `${i.item_type}|${i.item_code}|${i.adjustment_type}`)
+          );
+
+          // 1. Soft-delete items that are no longer in payload
+          const itemsToDelete = existingItems.filter(
+            item => !payloadItemSet.has(`${item.item_type}|${item.item_code}|${item.adjustment_type}`)
+          );
+
+          if (itemsToDelete.length > 0) {
+            await tx.adjustment_items.updateMany({
+              where: {
+                id: {
+                  in: itemsToDelete.map(i => i.id),
+                },
+              },
+              data: {
+                deleted_at: new Date(),
+              },
+            });
+
+            log.info('Soft-deleted removed items', {
+              deletedCount: itemsToDelete.length,
+              deletedItems: itemsToDelete.map(i => i.item_code),
+            });
+          }
+
+          // 2. Update existing items and 3. Insert new items
+          for (const item of data.items) {
+            const key = `${item.item_type}|${item.item_code}|${item.adjustment_type}`;
+            const existingItem = existingItemMap.get(key);
+
+            if (existingItem) {
+              // Item exists, update it
+              await tx.adjustment_items.update({
+                where: { id: existingItem.id },
+                data: {
+                  item_name: item.item_name,
+                  uom: item.uom,
+                  qty: new Prisma.Decimal(item.qty),
+                  reason: item.reason || null,
+                  updated_at: new Date(),
+                  deleted_at: null,
+                },
+              });
+            } else {
+              // New item, insert it
+              await tx.adjustment_items.create({
+                data: {
+                  adjustment_id: header.id,
+                  adjustment_company: data.company_code,
+                  adjustment_date: transactionDate,
+                  adjustment_type: item.adjustment_type,
+                  item_type: item.item_type,
+                  item_code: item.item_code,
+                  item_name: item.item_name,
+                  uom: item.uom,
+                  qty: new Prisma.Decimal(item.qty),
+                  reason: item.reason || null,
+                },
               });
             }
+          }
+
+          log.info('Items updated/inserted intelligently', {
+            totalItems: data.items.length,
+            deletedCount: itemsToDelete.length,
+          });
+        } else {
+          // Date changed: insert all new items
+          const itemsData = data.items.map((item) => ({
+            adjustment_id: header.id,
+            adjustment_company: data.company_code,
+            adjustment_date: transactionDate,
+            adjustment_type: item.adjustment_type,
+            item_type: item.item_type,
+            item_code: item.item_code,
+            item_name: item.item_name,
+            uom: item.uom,
+            qty: new Prisma.Decimal(item.qty),
+            reason: item.reason || null,
+          }));
+
+          await tx.adjustment_items.createMany({
+            data: itemsData,
+          });
+
+          log.info('New items inserted (date change)', {
+            insertedCount: itemsData.length,
           });
         }
 
-        log.info('Batch create completed', {
-          adjustmentId: header.id,
-          successCount: itemResults.filter((r) => r.status === 'fulfilled').length,
-          failureCount: failures.length,
-        });
-
-        return { header, items: itemResults };
+        return { header, items: [] };
       });
 
-      // Step 4: Calculate item-level snapshots for adjustment items
+      log.info('Items managed successfully', {
+        totalItems: data.items.length,
+      });
+
+      // Step 4: Calculate item-level snapshots
       try {
         // For adjustments: 
         // - GAIN (adjustment_type = 'GAIN') → positive quantity
@@ -139,6 +286,46 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         log.info('Item-level snapshots calculated', {
           itemCount: data.items.length,
         });
+
+        // Step 5: Cascade recalculation for date change
+        if (isDateChanged && oldDate) {
+          try {
+            // Recalculate old date
+            for (const item of data.items) {
+              await prisma.$executeRawUnsafe(
+                `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
+                data.company_code,
+                item.item_type,
+                item.item_code,
+                item.item_name,
+                item.uom,
+                oldDate
+              );
+            }
+
+            // Cascade recalculate from new date
+            for (const item of data.items) {
+              await prisma.$executeRawUnsafe(
+                `SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)`,
+                data.company_code,
+                item.item_type,
+                item.item_code,
+                transactionDate
+              );
+            }
+
+            log.info('Date change cascade completed', {
+              oldDate: oldDate.toISOString().split('T')[0],
+              newDate: transactionDate.toISOString().split('T')[0],
+            });
+          } catch (cascadeError) {
+            log.error('Cascade recalculation failed on date change', {
+              error: (cascadeError as any).message,
+              oldDate: oldDate?.toISOString(),
+              newDate: transactionDate.toISOString(),
+            });
+          }
+        }
       } catch (snapshotError) {
         log.error('Snapshot calculation failed', {
           error: (snapshotError as any).message,
@@ -146,14 +333,6 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         });
         // Don't fail the entire transaction if snapshot fails
       }
-
-      // Step 5: Queue snapshot recalculation if backdated
-      await this.handleBackdatedTransaction(
-        data.company_code,
-        transactionDate,
-        data.wms_id,
-        'adjustments'
-      );
 
       return result;
     } catch (err: any) {

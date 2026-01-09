@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import type { ProductionOutputBatchRequestInput, ProductionOutputItemInput } from '@/lib/validators/schemas/production-output.schema';
 import { logger } from '@/lib/utils/logger';
@@ -19,16 +20,21 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
   }
 
   /**
-   * Batch upsert production output with parallel processing
+   * Batch upsert production output with date change detection
    * 
-   * Implements idempotent UPSERT pattern as per API Contract:
-   * - Same wms_id sent multiple times has same effect as sending once
-   * - If wms_id exists → UPDATE with new data
-   * - If wms_id not exists → INSERT new record
-   * 
-   * Optimization: Promise.allSettled for parallel item creates
-   * - 100 records = ~10x faster than sequential
-   * - Handles failures gracefully (continues on error)
+   * =========================================================================
+   * NEW FLOW: Detect date change, handle deletion of old records
+   * =========================================================================
+   * STEP 1: Find existing by wms_id (ANY date) to detect date change
+   * STEP 2: If date changed, DELETE old, then INSERT new
+   * STEP 3: If same date, UPSERT header and intelligently manage items
+   * STEP 4: Create traceability records
+   * STEP 5: Calculate item-level snapshots
+   * STEP 6: Cascade recalculate if date changed
+   *
+   * Date Change Scenarios:
+   * - Same date: UPSERT → Update/Insert items intelligently → Recalc same date
+   * - Different date: DELETE old + INSERT new → Recalc both → Cascade from new date
    */
   async create(data: ProductionOutputBatchRequestInput): Promise<any> {
     const log = logger.child({
@@ -40,10 +46,77 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
     try {
       const transactionDate = new Date(data.transaction_date);
 
-      // Create transaction atomically
+      // =========================================================================
+      // STEP 1: Find existing by wms_id (ANY date) to detect date change
+      // =========================================================================
+      const existing = await prisma.production_outputs.findFirst({
+        where: {
+          company_code: data.company_code,
+          wms_id: data.wms_id,
+          deleted_at: null,
+        },
+      });
+
+      const oldDate = existing?.transaction_date;
+      const isDateChanged = existing && oldDate?.getTime() !== transactionDate.getTime();
+
+      // Query existing items BEFORE any deletion
+      let existingItemRecords: any[] = [];
+      if (existing) {
+        existingItemRecords = await prisma.production_output_items.findMany({
+          where: {
+            production_output_id: existing.id,
+            production_output_company: data.company_code,
+            production_output_date: existing.transaction_date,
+            deleted_at: null,
+          },
+        });
+      }
+
+      const itemCodeToIdMap = new Map<string, number>();
+
+      // =========================================================================
+      // STEP 2, 3: Transaction - Delete old if date changed, then Upsert new
+      // =========================================================================
       const result = await prisma.$transaction(async (tx) => {
-        // Step 1: Upsert header (production_outputs table)
-        // Follows idempotent pattern: update if exists, create if not
+        // If date changed, delete old record first
+        if (isDateChanged && existing && oldDate) {
+          log.debug('Date changed, soft-deleting old items and header', {
+            oldDate,
+            newDate: transactionDate,
+            wmsId: data.wms_id,
+          });
+
+          // Soft delete old items
+          await tx.production_output_items.updateMany({
+            where: {
+              production_output_id: existing.id,
+              production_output_company: data.company_code,
+              production_output_date: oldDate,
+              deleted_at: null,
+            },
+            data: {
+              deleted_at: new Date(),
+            },
+          });
+
+          // Delete old header
+          await tx.production_outputs.delete({
+            where: {
+              company_code_wms_id_transaction_date: {
+                company_code: data.company_code,
+                wms_id: data.wms_id,
+                transaction_date: oldDate,
+              },
+            },
+          });
+
+          log.info('Old record deleted due to date change', {
+            oldDate: oldDate.toISOString().split('T')[0],
+          });
+        }
+
+        // Upsert header
         const header = await tx.production_outputs.upsert({
           where: {
             company_code_wms_id_transaction_date: {
@@ -56,6 +129,8 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
             internal_evidence_number: data.internal_evidence_number,
             reversal: data.reversal || null,
             timestamp: new Date(data.timestamp),
+            updated_at: new Date(),
+            deleted_at: null,
           },
           create: {
             wms_id: data.wms_id,
@@ -69,81 +144,147 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
 
         log.info('Header upserted', { productionOutputId: header.id });
 
-        // Step 2: Delete existing items and insert new ones
-        // When updating, replace items with new data
-        await tx.production_output_items.deleteMany({
-          where: {
+        // For update case (same date), intelligently manage items
+        if (!isDateChanged) {
+          // Get existing items for this production_output_id
+          const existingItems = await tx.production_output_items.findMany({
+            where: {
+              production_output_id: header.id,
+              production_output_company: data.company_code,
+              production_output_date: transactionDate,
+              deleted_at: null,
+            },
+            select: {
+              id: true,
+              item_type: true,
+              item_code: true,
+              qty: true,
+            },
+          });
+
+          const existingItemMap = new Map(
+            existingItems.map(i => [`${i.item_type}|${i.item_code}`, i])
+          );
+          const payloadItemSet = new Set(
+            data.items.map(i => `${i.item_type}|${i.item_code}`)
+          );
+
+          // 1. Soft-delete items that are no longer in payload
+          const itemsToDelete = existingItems.filter(
+            item => !payloadItemSet.has(`${item.item_type}|${item.item_code}`)
+          );
+
+          if (itemsToDelete.length > 0) {
+            await tx.production_output_items.updateMany({
+              where: {
+                id: {
+                  in: itemsToDelete.map(i => i.id),
+                },
+              },
+              data: {
+                deleted_at: new Date(),
+              },
+            });
+
+            log.info('Soft-deleted removed items', {
+              deletedCount: itemsToDelete.length,
+              deletedItems: itemsToDelete.map(i => i.item_code),
+            });
+          }
+
+          // 2. Update existing items and 3. Insert new items
+          for (const item of data.items) {
+            const key = `${item.item_type}|${item.item_code}`;
+            const existingItem = existingItemMap.get(key);
+
+            if (existingItem) {
+              // Item exists, update it
+              await tx.production_output_items.update({
+                where: { id: existingItem.id },
+                data: {
+                  item_name: item.item_name,
+                  uom: item.uom,
+                  qty: new Prisma.Decimal(item.qty),
+                  work_order_numbers: item.work_order_numbers,
+                  updated_at: new Date(),
+                  deleted_at: null,
+                },
+              });
+              itemCodeToIdMap.set(item.item_code, existingItem.id);
+            } else {
+              // New item, insert it
+              const newItem = await tx.production_output_items.create({
+                data: {
+                  production_output_id: header.id,
+                  production_output_company: data.company_code,
+                  production_output_date: transactionDate,
+                  item_type: item.item_type,
+                  item_code: item.item_code,
+                  item_name: item.item_name,
+                  uom: item.uom,
+                  qty: new Prisma.Decimal(item.qty),
+                  work_order_numbers: item.work_order_numbers,
+                },
+              });
+              itemCodeToIdMap.set(item.item_code, newItem.id);
+            }
+          }
+
+          log.info('Items updated/inserted intelligently', {
+            totalItems: data.items.length,
+            deletedCount: itemsToDelete.length,
+          });
+        } else {
+          // Date changed: insert all new items
+          const itemsData = data.items.map((item) => ({
             production_output_id: header.id,
             production_output_company: data.company_code,
             production_output_date: transactionDate,
-          },
-        });
+            item_type: item.item_type,
+            item_code: item.item_code,
+            item_name: item.item_name,
+            uom: item.uom,
+            qty: new Prisma.Decimal(item.qty),
+            work_order_numbers: item.work_order_numbers,
+          }));
 
-        // Create items in parallel
-        const itemRecords = data.items.map((item) => ({
-          production_output_id: header.id,
-          production_output_company: data.company_code,
-          production_output_date: transactionDate,
-          item_type: item.item_type,
-          item_code: item.item_code,
-          item_name: item.item_name,
-          uom: item.uom,
-          qty: item.qty,
-          work_order_numbers: item.work_order_numbers,
-        }));
-
-        const itemResults = await Promise.allSettled(
-          itemRecords.map((record) =>
-            tx.production_output_items.create({
-              data: record,
-            })
-          )
-        );
-
-        // Extract successfully created items with their IDs
-        const createdItems = itemResults
-          .map((result, index) => {
-            if (result.status === 'fulfilled') {
-              return { ...result.value, itemCode: itemRecords[index].item_code };
-            }
-            return null;
-          })
-          .filter((item): item is any => item !== null);
-
-        const itemCodeToIdMap = new Map(
-          createdItems.map((item) => [item.item_code, item.id])
-        );
-
-        // Check for failures
-        const failures = itemResults.filter((r) => r.status === 'rejected');
-        if (failures.length > 0) {
-          log.warn('Some items failed to insert', {
-            failureCount: failures.length,
-            totalCount: itemRecords.length,
+          await tx.production_output_items.createMany({
+            data: itemsData,
           });
 
-          failures.forEach((failure, index) => {
-            if (failure.status === 'rejected') {
-              log.error('Item insert failed', {
-                itemCode: itemRecords[index].item_code,
-                error: (failure.reason as any)?.message,
-              });
-            }
+          // Map created items
+          const createdItems = await tx.production_output_items.findMany({
+            where: {
+              production_output_id: header.id,
+              production_output_company: data.company_code,
+              production_output_date: transactionDate,
+              deleted_at: null,
+            },
+            select: {
+              id: true,
+              item_code: true,
+            },
+          });
+
+          createdItems.forEach(item => {
+            itemCodeToIdMap.set(item.item_code, item.id);
+          });
+
+          log.info('New items inserted (date change)', {
+            insertedCount: itemsData.length,
           });
         }
 
-        log.info('Batch upsert completed', {
-          productionOutputId: header.id,
-          successCount: itemResults.filter((r) => r.status === 'fulfilled').length,
-          failureCount: failures.length,
-        });
-
-        return { header, items: itemResults, itemCodeToIdMap };
+        return { header, items: [], itemCodeToIdMap };
       });
 
-      // Create traceability records for work order to finished/semifinished goods
+      log.info('Items managed successfully', {
+        totalItems: data.items.length,
+        mappedItems: itemCodeToIdMap.size,
+      });
+
+      // Step 4: Create traceability records for work order to finished/semifinished goods
       // This links production outputs to their source work orders for PPKEK traceability
-      const itemCodeToIdMap = (result as any).itemCodeToIdMap as Map<string, number>;
       if (result.header && itemCodeToIdMap && itemCodeToIdMap.size > 0) {
         // Delete existing traceability records for this production output
         // when updating, replace with new traceability data
@@ -154,86 +295,66 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
           },
         });
 
-        const traceabilityRecords = data.items
-          .filter((item) => item.work_order_numbers && item.work_order_numbers.length > 0 && itemCodeToIdMap.has(item.item_code))
-          .flatMap((item) =>
-            item.work_order_numbers.map((woNumber) => ({
-              production_output_id: result.header.id,
-              production_output_item_id: itemCodeToIdMap.get(item.item_code)!,
-              production_wms_id: data.wms_id,
-              work_order_number: woNumber,
-              company_code: data.company_code,
-              item_type: item.item_type,
-              item_code: item.item_code,
-              qty_produced: item.qty,
-              trx_date: transactionDate,
-            }))
-          );
+        try {
+          for (const item of data.items) {
+            if (item.work_order_numbers && item.work_order_numbers.length > 0 && itemCodeToIdMap.has(item.item_code)) {
+              const itemId = itemCodeToIdMap.get(item.item_code)!;
 
-        if (traceabilityRecords.length > 0) {
-          try {
-            // Insert traceability records using Prisma ORM
-            for (const record of traceabilityRecords) {
-              await prisma.work_order_fg_production.upsert({
-                where: {
-                  work_order_fg_production_unique: {
-                    production_wms_id: record.production_wms_id,
-                    work_order_number: record.work_order_number,
-                    item_code: record.item_code,
+              for (const woNumber of item.work_order_numbers) {
+                await prisma.work_order_fg_production.upsert({
+                  where: {
+                    work_order_fg_production_unique: {
+                      production_wms_id: data.wms_id,
+                      work_order_number: woNumber,
+                      item_code: item.item_code,
+                    },
                   },
-                },
-                update: {
-                  qty_produced: record.qty_produced,
-                },
-                create: {
-                  production_output_id: record.production_output_id,
-                  production_output_item_id: record.production_output_item_id,
-                  production_wms_id: record.production_wms_id,
-                  work_order_number: record.work_order_number,
-                  company_code: record.company_code,
-                  item_type: record.item_type,
-                  item_code: record.item_code,
-                  qty_produced: record.qty_produced,
-                  trx_date: record.trx_date,
-                },
-              });
+                  update: {
+                    qty_produced: new Prisma.Decimal(item.qty),
+                  },
+                  create: {
+                    production_output_id: result.header.id,
+                    production_output_item_id: itemId,
+                    production_wms_id: data.wms_id,
+                    work_order_number: woNumber,
+                    company_code: data.company_code,
+                    item_type: item.item_type,
+                    item_code: item.item_code,
+                    qty_produced: new Prisma.Decimal(item.qty),
+                    trx_date: transactionDate,
+                  },
+                });
+              }
             }
-
-            log.info('Production traceability records created', {
-              count: traceabilityRecords.length,
-            });
-          } catch (err) {
-            log.warn('Failed to create production traceability records', {
-              error: (err as any).message,
-            });
-            // Don't fail the entire transaction if traceability fails
           }
+
+          log.info('Production traceability records created', {
+            count: data.items.filter(i => i.work_order_numbers && i.work_order_numbers.length > 0).length,
+          });
+        } catch (err) {
+          log.warn('Failed to create production traceability records', {
+            error: (err as any).message,
+          });
         }
       }
 
-      // Step 4: Check if this is a date change (for update scenarios)
-      const oldHeader = await prisma.production_outputs.findFirst({
-        where: {
-          company_code: data.company_code,
-          wms_id: data.wms_id,
-          id: { not: result.header.id }, // Different record with same wms_id
-        },
-        orderBy: { transaction_date: 'desc' },
-        take: 1,
-      });
-
-      const oldTransactionDate = oldHeader?.transaction_date;
-      const dateChanged = oldTransactionDate && oldTransactionDate.getTime() !== transactionDate.getTime();
-
-      // Step 5: Calculate item-level snapshots with reversal handling
+      // Step 5: Calculate item-level snapshots
       try {
-        // Determine quantity multiplier based on reversal flag
-        const qtyMultiplier = data.reversal === 'Y' ? -1 : 1;
+        // Delete existing snapshots for this transaction_date to force clean recalculation
+        await prisma.stock_daily_snapshot.deleteMany({
+          where: {
+            company_code: data.company_code,
+            snapshot_date: transactionDate,
+          },
+        });
+
+        log.info('Cleared snapshots for recalculation', {
+          company_code: data.company_code,
+          snapshot_date: transactionDate.toISOString().split('T')[0],
+        });
 
         // Update snapshots for each item
         for (const item of data.items) {
-          const adjustedQty = (item.qty * qtyMultiplier).toString();
-
           await prisma.$executeRawUnsafe(
             `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
             data.company_code,
@@ -250,8 +371,8 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
           reversal: data.reversal,
         });
 
-        // Step 6: If date changed, recalculate old date and cascade from new date
-        if (dateChanged && oldTransactionDate) {
+        // Step 6: Cascade recalculation for date change
+        if (isDateChanged && oldDate) {
           try {
             // Recalculate old date
             for (const item of data.items) {
@@ -262,7 +383,7 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
                 item.item_code,
                 item.item_name,
                 item.uom,
-                oldTransactionDate
+                oldDate
               );
             }
 
@@ -278,13 +399,13 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
             }
 
             log.info('Date change cascade completed', {
-              oldDate: oldTransactionDate.toISOString().split('T')[0],
+              oldDate: oldDate.toISOString().split('T')[0],
               newDate: transactionDate.toISOString().split('T')[0],
             });
           } catch (cascadeError) {
             log.error('Cascade recalculation failed on date change', {
               error: (cascadeError as any).message,
-              oldDate: oldTransactionDate?.toISOString(),
+              oldDate: oldDate?.toISOString(),
               newDate: transactionDate.toISOString(),
             });
           }
@@ -296,14 +417,6 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
         });
         // Don't fail the entire transaction if snapshot fails
       }
-
-      // Step 7: Queue snapshot recalculation if backdated
-      await this.handleBackdatedTransaction(
-        data.company_code,
-        transactionDate,
-        data.wms_id,
-        'production_output'
-      );
 
       return result;
     } catch (err: any) {
