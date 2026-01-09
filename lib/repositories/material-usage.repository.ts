@@ -181,6 +181,7 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
         // For update case (same date), intelligently manage items
         if (!isDateChanged) {
           // Get existing items for this material_usage_id
+          // NOTE: Include ppkek_number in selection for proper matching
           const existingItems = await tx.material_usage_items.findMany({
             where: {
               material_usage_id: header.id,
@@ -192,20 +193,31 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
               id: true,
               item_type: true,
               item_code: true,
+              ppkek_number: true,
               qty: true,
             },
           });
 
+          // Create map using composite key: item_type|item_code|ppkek_number
+          // This handles case where same item code has multiple PPKEK entries
           const existingItemMap = new Map(
-            existingItems.map(i => [`${i.item_type}|${i.item_code}`, i])
+            existingItems.map(i => [
+              `${i.item_type}|${i.item_code}|${i.ppkek_number || 'no-ppkek'}`,
+              i,
+            ])
           );
+
+          // Create set from payload items with same composite key
           const payloadItemSet = new Set(
-            data.items.map(i => `${i.item_type}|${i.item_code}`)
+            data.items.map(i => `${i.item_type}|${i.item_code}|${i.ppkek_number || 'no-ppkek'}`)
           );
 
           // 1. Soft-delete items that are no longer in payload
           const itemsToDelete = existingItems.filter(
-            item => !payloadItemSet.has(`${item.item_type}|${item.item_code}`)
+            item =>
+              !payloadItemSet.has(
+                `${item.item_type}|${item.item_code}|${item.ppkek_number || 'no-ppkek'}`
+              )
           );
 
           if (itemsToDelete.length > 0) {
@@ -222,13 +234,16 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
 
             log.info('Soft-deleted removed items', {
               deletedCount: itemsToDelete.length,
-              deletedItems: itemsToDelete.map(i => i.item_code),
+              deletedItems: itemsToDelete.map(i => ({
+                item_code: i.item_code,
+                ppkek_number: i.ppkek_number,
+              })),
             });
           }
 
           // 2. Update existing items and 3. Insert new items
           for (const item of data.items) {
-            const key = `${item.item_type}|${item.item_code}`;
+            const key = `${item.item_type}|${item.item_code}|${item.ppkek_number || 'no-ppkek'}`;
             const existingItem = existingItemMap.get(key);
 
             if (existingItem) {
@@ -244,7 +259,11 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
                   deleted_at: null,
                 },
               });
-              createdItemsMap.set(item.item_code, existingItem.id);
+              // Track by composite key for traceability
+              createdItemsMap.set(
+                `${item.item_code}|${item.ppkek_number || 'no-ppkek'}`,
+                existingItem.id
+              );
             } else {
               // New item, insert it
               const newItem = await tx.material_usage_items.create({
@@ -260,7 +279,11 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
                   ppkek_number: item.ppkek_number || null,
                 },
               });
-              createdItemsMap.set(item.item_code, newItem.id);
+              // Track by composite key for traceability
+              createdItemsMap.set(
+                `${item.item_code}|${item.ppkek_number || 'no-ppkek'}`,
+                newItem.id
+              );
             }
           }
 
@@ -297,11 +320,16 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
             select: {
               id: true,
               item_code: true,
+              ppkek_number: true,
             },
           });
 
           createdItems.forEach(item => {
-            createdItemsMap.set(item.item_code, item.id);
+            // Track by composite key for traceability
+            createdItemsMap.set(
+              `${item.item_code}|${item.ppkek_number || 'no-ppkek'}`,
+              item.id
+            );
           });
 
           log.info('New items inserted (date change)', {
@@ -315,42 +343,58 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
         mappedItems: createdItemsMap.size,
       });
 
+      // Prepare items for snapshot recalculation
+      const snapshotItems = data.items.map(item => ({
+        item_type: item.item_type,
+        item_code: item.item_code,
+        item_name: item.item_name,
+        uom: item.uom,
+      }));
+
       // Step 4: Create traceability records for work order material consumption
       // This links materials (with PPKEK) to their work orders for customs compliance
       if (data.work_order_number && createdItemsMap.size > 0) {
         try {
           for (const item of data.items) {
-            if (item.ppkek_number && createdItemsMap.has(item.item_code)) {
-              const itemId = createdItemsMap.get(item.item_code)!;
-              
-              await prisma.work_order_material_consumption.upsert({
-                where: {
-                  material_usage_wms_id_work_order_number_item_code: {
+            if (item.ppkek_number) {
+              // Use composite key for lookup
+              const itemIdKey = `${item.item_code}|${item.ppkek_number}`;
+              const itemId = createdItemsMap.get(itemIdKey);
+
+              if (itemId) {
+                await prisma.work_order_material_consumption.upsert({
+                  where: {
+                    material_usage_wms_id_work_order_number_item_code_ppkek_number: {
+                      material_usage_wms_id: data.wms_id,
+                      work_order_number: data.work_order_number,
+                      item_code: item.item_code,
+                      ppkek_number: item.ppkek_number,
+                    },
+                  },
+                  update: {
+                    material_usage_id: header.id,
+                    material_usage_item_id: itemId,
+                    qty_consumed: new Prisma.Decimal(item.qty),
+                  },
+                  create: {
+                    material_usage_id: header.id,
+                    material_usage_item_id: itemId,
                     material_usage_wms_id: data.wms_id,
                     work_order_number: data.work_order_number,
+                    company_code: data.company_code,
                     item_code: item.item_code,
+                    ppkek_number: item.ppkek_number,
+                    qty_consumed: new Prisma.Decimal(item.qty),
+                    trx_date: transactionDate,
                   },
-                },
-                update: {
-                  material_usage_id: header.id, // Ensure correct material_usage_id
-                  qty_consumed: new Prisma.Decimal(item.qty),
-                },
-                create: {
-                  material_usage_id: header.id, // Link to the correct material_usage record
-                  material_usage_item_id: itemId,
-                  material_usage_wms_id: data.wms_id,
-                  work_order_number: data.work_order_number,
-                  company_code: data.company_code,
-                  item_code: item.item_code,
-                  ppkek_number: item.ppkek_number,
-                  qty_consumed: new Prisma.Decimal(item.qty),
-                  trx_date: transactionDate,
-                },
-              });
+                });
+              }
             }
           }
 
-          const itemsWithPpkek = data.items.filter(i => i.ppkek_number && createdItemsMap.has(i.item_code)).length;
+          const itemsWithPpkek = data.items.filter(
+            i => i.ppkek_number && createdItemsMap.has(`${i.item_code}|${i.ppkek_number}`)
+          ).length;
           log.info('Traceability records created', {
             count: itemsWithPpkek,
             workOrderNumber: data.work_order_number,
@@ -365,7 +409,7 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
         }
       }
 
-      // Step 5: Calculate item-level snapshots
+      // Step 5: Calculate item-level snapshots and cascade recalculation
       try {
         // Delete existing snapshots for this transaction_date to force clean recalculation
         await prisma.stock_daily_snapshot.deleteMany({
@@ -380,8 +424,8 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
           snapshot_date: transactionDate.toISOString().split('T')[0],
         });
 
-        // Update snapshots for each item
-        for (const item of data.items) {
+        // Update snapshots for each item on transaction_date
+        for (const item of snapshotItems) {
           await prisma.$executeRawUnsafe(
             `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
             data.company_code,
@@ -394,15 +438,30 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
         }
 
         log.info('Item-level snapshots calculated', {
-          itemCount: data.items.length,
+          itemCount: snapshotItems.length,
           reversal: data.reversal,
         });
 
-        // Step 5: Cascade recalculation for date change
+        // Step 5: Cascade recalculation from transaction_date onwards
+        // CRITICAL: Must cascade even on first insert (not just date change)
+        // Material usage can affect snapshots on transaction_date and ALL future dates
+        // Example: Material usage on 2026-01-08 affects snapshots on 2026-01-09, 2026-01-10, etc.
+        await this.cascadeRecalculateSnapshots(
+          data.company_code,
+          snapshotItems,
+          transactionDate
+        );
+
+        log.info('Cascade recalculation completed', {
+          fromDate: transactionDate.toISOString().split('T')[0],
+          itemCount: snapshotItems.length,
+        });
+
+        // Additional: If date changed, also recalculate old date
         if (isDateChanged && oldDate) {
           try {
-            // Recalculate old date
-            for (const item of data.items) {
+            // Recalculate old date snapshots (items removed from that date)
+            for (const item of snapshotItems) {
               await prisma.$executeRawUnsafe(
                 `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
                 data.company_code,
@@ -414,33 +473,27 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
               );
             }
 
-            // Cascade recalculate from new date
-            for (const item of data.items) {
-              await prisma.$executeRawUnsafe(
-                `SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)`,
-                data.company_code,
-                item.item_type,
-                item.item_code,
-                transactionDate
-              );
-            }
+            // Cascade from old date too (in case old date is after transaction date in future operations)
+            await this.cascadeRecalculateSnapshots(
+              data.company_code,
+              snapshotItems,
+              oldDate
+            );
 
-            log.info('Date change cascade completed', {
+            log.info('Old date snapshots and cascade completed', {
               oldDate: oldDate.toISOString().split('T')[0],
-              newDate: transactionDate.toISOString().split('T')[0],
             });
-          } catch (cascadeError) {
-            log.error('Cascade recalculation failed on date change', {
-              error: (cascadeError as any).message,
+          } catch (oldDateError) {
+            log.error('Old date recalculation failed', {
+              error: (oldDateError as any).message,
               oldDate: oldDate?.toISOString(),
-              newDate: transactionDate.toISOString(),
             });
           }
         }
       } catch (snapshotError) {
-        log.error('Snapshot calculation failed', {
+        log.error('Snapshot calculation or cascade failed', {
           error: (snapshotError as any).message,
-          itemCount: data.items.length,
+          itemCount: snapshotItems.length,
         });
         // Don't fail the entire transaction if snapshot fails
       }

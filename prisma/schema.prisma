@@ -695,7 +695,7 @@ model work_order_material_consumption {
 
   material_usage material_usages? @relation(fields: [material_usage_id], references: [id], onDelete: Cascade)
 
-  @@unique([material_usage_wms_id, work_order_number, item_code])
+  @@unique([material_usage_wms_id, work_order_number, item_code, ppkek_number])
   @@index([work_order_number])
   @@index([company_code])
   @@index([ppkek_number])
