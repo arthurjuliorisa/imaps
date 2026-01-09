@@ -138,6 +138,7 @@ export class TraceabilityRepository {
       const workOrderNumbers = [...new Set(productionData.map((p) => p.work_order_number))];
 
       // Get material consumption records with linked material_usage_items (ROH/HALB)
+      // material_usage may be null for orphaned records
       const materialConsumption = await prisma.work_order_material_consumption.findMany({
         where: {
           work_order_number: {
@@ -148,6 +149,8 @@ export class TraceabilityRepository {
         select: {
           work_order_number: true,
           material_usage_id: true,
+          item_code: true,
+          ppkek_number: true,
           material_usage: {
             select: {
               items: {
@@ -175,8 +178,14 @@ export class TraceabilityRepository {
           materialsByWorkOrder.set(woNumber, []);
         }
 
+        // Handle case where material_usage is null (orphaned record)
+        if (!consumption.material_usage) {
+          // Skip orphaned records - material_usage doesn't exist
+          return;
+        }
+
         // Add each material from material_usage_items
-        if (consumption.material_usage?.items && consumption.material_usage.items.length > 0) {
+        if (consumption.material_usage.items && consumption.material_usage.items.length > 0) {
           consumption.material_usage.items.forEach((materialItem) => {
             // Only include ROH/HALB materials (item_type like ROH, HALB, HIBE)
             const isRawOrHalf =

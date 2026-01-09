@@ -103,6 +103,7 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
       // STEP 2, 3: Transaction - Delete old if date changed, then Upsert new
       // =========================================================================
       const createdItemsMap = new Map<string, number>();
+      let header: any; // Declare outside transaction to access after
 
       // Always use transaction to ensure consistency
       await prisma.$transaction(async (tx) => {
@@ -144,7 +145,7 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
         }
 
         // Upsert header
-        const header = await tx.material_usages.upsert({
+        const headerResult = await tx.material_usages.upsert({
           where: {
             company_code_wms_id_transaction_date: {
               company_code: data.company_code,
@@ -172,6 +173,8 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
             timestamp: new Date(data.timestamp),
           },
         });
+
+        header = headerResult; // Assign to outer scope variable
 
         log.info('Header upserted', { materialUsageId: header.id });
 
@@ -329,10 +332,11 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
                   },
                 },
                 update: {
+                  material_usage_id: header.id, // Ensure correct material_usage_id
                   qty_consumed: new Prisma.Decimal(item.qty),
                 },
                 create: {
-                  material_usage_id: 0, // Will be set by relation
+                  material_usage_id: header.id, // Link to the correct material_usage record
                   material_usage_item_id: itemId,
                   material_usage_wms_id: data.wms_id,
                   work_order_number: data.work_order_number,
@@ -350,11 +354,13 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
           log.info('Traceability records created', {
             count: itemsWithPpkek,
             workOrderNumber: data.work_order_number,
+            materialUsageId: header.id,
           });
         } catch (err) {
           log.warn('Failed to create traceability records', {
             error: (err as any).message,
             workOrderNumber: data.work_order_number,
+            materialUsageId: header.id,
           });
         }
       }
