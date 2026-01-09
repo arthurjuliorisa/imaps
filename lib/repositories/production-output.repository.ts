@@ -371,10 +371,31 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
           reversal: data.reversal,
         });
 
-        // Step 6: Cascade recalculation for date change
+        // Step 6: Cascade recalculation from transaction_date onwards
+        // CRITICAL: Must cascade even on first insert (not just date change)
+        // Production output can affect snapshots on transaction_date and ALL future dates
+        const snapshotItems = data.items.map(item => ({
+          item_type: item.item_type,
+          item_code: item.item_code,
+          item_name: item.item_name,
+          uom: item.uom,
+        }));
+
+        await this.cascadeRecalculateSnapshots(
+          data.company_code,
+          snapshotItems,
+          transactionDate
+        );
+
+        log.info('Cascade recalculation completed', {
+          fromDate: transactionDate.toISOString().split('T')[0],
+          itemCount: snapshotItems.length,
+        });
+
+        // Additional: If date changed, also recalculate old date
         if (isDateChanged && oldDate) {
           try {
-            // Recalculate old date
+            // Recalculate old date snapshots
             for (const item of data.items) {
               await prisma.$executeRawUnsafe(
                 `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
@@ -387,26 +408,20 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
               );
             }
 
-            // Cascade recalculate from new date
-            for (const item of data.items) {
-              await prisma.$executeRawUnsafe(
-                `SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)`,
-                data.company_code,
-                item.item_type,
-                item.item_code,
-                transactionDate
-              );
-            }
+            // Cascade from old date too
+            await this.cascadeRecalculateSnapshots(
+              data.company_code,
+              snapshotItems,
+              oldDate
+            );
 
-            log.info('Date change cascade completed', {
+            log.info('Old date snapshots and cascade completed', {
               oldDate: oldDate.toISOString().split('T')[0],
-              newDate: transactionDate.toISOString().split('T')[0],
             });
-          } catch (cascadeError) {
-            log.error('Cascade recalculation failed on date change', {
-              error: (cascadeError as any).message,
+          } catch (oldDateError) {
+            log.error('Old date recalculation failed', {
+              error: (oldDateError as any).message,
               oldDate: oldDate?.toISOString(),
-              newDate: transactionDate.toISOString(),
             });
           }
         }
