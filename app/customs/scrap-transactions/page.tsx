@@ -28,10 +28,8 @@ export default function ScrapTransactionsPage() {
   const toast = useToast();
 
   const now = new Date();
-  const thirtyDaysAgo = new Date(now);
-  thirtyDaysAgo.setDate(now.getDate() - 30);
 
-  const [startDate, setStartDate] = useState(thirtyDaysAgo.toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(now.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
   const [data, setData] = useState<ScrapTransaction[]>([]);
   const [loading, setLoading] = useState(false);
