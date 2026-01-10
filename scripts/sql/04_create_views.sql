@@ -35,8 +35,9 @@
 -- FUNCTION 1: CALCULATE LPJ BAHAN BAKU (Incoming/Purchased Materials)
 -- ============================================================================
 -- This function calculates mutation for raw materials and purchased goods
--- Sources: incoming_qty only (excludes production_qty) from stock_daily_snapshot
--- Item types: ROH, HALB (purchased), HIBE
+-- Sources: For HALB - aggregates BOTH incoming_qty (purchased) AND production_qty (produced)
+--          For other items (ROH, HIBE) - incoming_qty only from stock_daily_snapshot
+-- Item types: ROH, HALB (from both sources), HIBE
 -- 
 -- Parameters:
 --   p_item_types: Array of item types to filter (e.g., ARRAY['ROH', 'HALB', 'HIBE'])
@@ -98,16 +99,22 @@ BEGIN
         ),
         range_mutations AS (
             -- Aggregate mutations for items within the specified date range
+            -- For HALB: include BOTH incoming_qty (purchased) + production_qty (from production output)
+            -- For other items (ROH, HIBE): only incoming_qty
             SELECT
                 sds.company_code,
                 sds.item_code,
-                SUM(sds.incoming_qty) as total_incoming_qty,
+                sds.item_type,
+                SUM(CASE 
+                    WHEN sds.item_type = 'HALB' THEN sds.incoming_qty + sds.production_qty
+                    ELSE sds.incoming_qty
+                END) as total_incoming_qty,
                 SUM(sds.outgoing_qty + sds.material_usage_qty) as total_quantity_issued_outgoing,
                 SUM(sds.adjustment_qty) as total_adjustment_qty
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
-            GROUP BY sds.company_code, sds.item_code
+            GROUP BY sds.company_code, sds.item_code, sds.item_type
         ),
         opening_balance_data AS (
             -- Priority 1: If snapshot exists ON start_date, use its opening_balance
@@ -452,11 +459,11 @@ COMMENT ON VIEW vw_lpj_wip IS 'Report #4: Work in Process Position Report - Snap
 -- ============================================================================
 -- REPORT #5: LPJ HASIL PRODUKSI (Finished Goods Mutation Report)
 -- ============================================================================
--- Uses function for production-based goods (excludes incoming)
--- Item types: FERT and HALB (produced from production output only)
--- Filter: Only HALB items with production_qty activity (excludes HALB from incoming)
--- NOTE: HALB dari incoming dilaporkan di vw_lpj_bahan_baku
---       HALB dari production output dilaporkan di sini
+-- Uses function for production-based goods (FERT only)
+-- Item types: FERT (produced from production output only)
+-- NOTE: HALB adalah BAHAN BAKU - dilaporkan di vw_lpj_bahan_baku saja
+--       (Baik dari incoming maupun dari production output)
+--       HALB dari production output tetap di-record di production_outputs table untuk audit trail
 
 CREATE OR REPLACE VIEW vw_lpj_hasil_produksi AS
 SELECT * FROM fn_calculate_lpj_hasil_produksi(
@@ -464,10 +471,9 @@ SELECT * FROM fn_calculate_lpj_hasil_produksi(
     DATE_TRUNC('year', CURRENT_DATE)::DATE,
     CURRENT_DATE
 )
-WHERE item_type = 'FERT'
-   OR (item_type = 'HALB' AND quantity_received > 0);
+WHERE item_type = 'FERT';
 
-COMMENT ON VIEW vw_lpj_hasil_produksi IS 'Report #5: Finished Goods Mutation Report - Production-based (FERT and HALB from production output only) - YTD';
+COMMENT ON VIEW vw_lpj_hasil_produksi IS 'Report #5: Finished Goods Mutation Report - Production-based (FERT only) - YTD. NOTE: HALB is now treated as raw material and reported in vw_lpj_bahan_baku';
 
 -- ============================================================================
 -- REPORT #6: LPJ BARANG MODAL (Capital Goods Mutation Report)
