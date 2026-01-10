@@ -53,12 +53,10 @@ export default function IncomingGoodsReportPage() {
   const theme = useTheme();
   const toast = useToast();
 
-  // Default date range: last 30 days to today
+  // Default date range: today
   const now = new Date();
-  const thirtyDaysAgo = new Date(now);
-  thirtyDaysAgo.setDate(now.getDate() - 30);
 
-  const [startDate, setStartDate] = useState(thirtyDaysAgo.toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(now.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);

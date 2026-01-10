@@ -36,10 +36,8 @@ export default function MaterialUsagePage() {
   const router = useRouter();
 
   const now = new Date();
-  const thirtyDaysAgo = new Date(now);
-  thirtyDaysAgo.setDate(now.getDate() - 30);
 
-  const [startDate, setStartDate] = useState(thirtyDaysAgo.toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(now.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
