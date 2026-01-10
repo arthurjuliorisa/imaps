@@ -109,25 +109,63 @@ BEGIN
         p_company_code, p_item_type, p_item_code, p_snapshot_date
     );
 
-    -- Query incoming quantities
+    -- Query incoming quantities (from incoming_good_items AND scrap_transaction_items)
     SELECT COALESCE(SUM(qty), NUMERIC '0.000')
     INTO v_incoming_qty
-    FROM incoming_good_items
-    WHERE incoming_good_company = p_company_code
-      AND item_type = p_item_type
-      AND item_code = p_item_code
-      AND incoming_good_date = p_snapshot_date
-      AND deleted_at IS NULL;
+    FROM (
+      -- Incoming from incoming_good_items
+      SELECT qty
+      FROM incoming_good_items
+      WHERE incoming_good_company = p_company_code
+        AND item_type = p_item_type
+        AND item_code = p_item_code
+        AND incoming_good_date = p_snapshot_date
+        AND deleted_at IS NULL
+      
+      UNION ALL
+      
+      -- Incoming from scrap_transaction_items (for SCRAP item type only)
+      SELECT sti.qty
+      FROM scrap_transaction_items sti
+      JOIN scrap_transactions st ON sti.scrap_transaction_id = st.id
+      WHERE st.company_code = p_company_code
+        AND sti.item_type = 'SCRAP'
+        AND p_item_type = 'SCRAP'
+        AND sti.item_code = p_item_code
+        AND st.transaction_type = 'IN'
+        AND st.transaction_date = p_snapshot_date
+        AND st.deleted_at IS NULL
+        AND sti.deleted_at IS NULL
+    ) AS combined_incoming;
 
-    -- Query outgoing quantities
+    -- Query outgoing quantities (from outgoing_good_items AND scrap_transaction_items)
     SELECT COALESCE(SUM(qty), NUMERIC '0.000')
     INTO v_outgoing_qty
-    FROM outgoing_good_items
-    WHERE outgoing_good_company = p_company_code
-      AND item_type = p_item_type
-      AND item_code = p_item_code
-      AND outgoing_good_date = p_snapshot_date
-      AND deleted_at IS NULL;
+    FROM (
+      -- Outgoing from outgoing_good_items
+      SELECT qty
+      FROM outgoing_good_items
+      WHERE outgoing_good_company = p_company_code
+        AND item_type = p_item_type
+        AND item_code = p_item_code
+        AND outgoing_good_date = p_snapshot_date
+        AND deleted_at IS NULL
+      
+      UNION ALL
+      
+      -- Outgoing from scrap_transaction_items (for SCRAP item type only)
+      SELECT sti.qty
+      FROM scrap_transaction_items sti
+      JOIN scrap_transactions st ON sti.scrap_transaction_id = st.id
+      WHERE st.company_code = p_company_code
+        AND sti.item_type = 'SCRAP'
+        AND p_item_type = 'SCRAP'
+        AND sti.item_code = p_item_code
+        AND st.transaction_type = 'OUT'
+        AND st.transaction_date = p_snapshot_date
+        AND st.deleted_at IS NULL
+        AND sti.deleted_at IS NULL
+    ) AS combined_outgoing;
 
     -- Query material usage quantities
     SELECT COALESCE(SUM(

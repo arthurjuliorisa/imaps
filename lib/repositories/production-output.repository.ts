@@ -205,7 +205,6 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
                   item_name: item.item_name,
                   uom: item.uom,
                   qty: new Prisma.Decimal(item.qty),
-                  work_order_numbers: item.work_order_numbers,
                   updated_at: new Date(),
                   deleted_at: null,
                 },
@@ -223,7 +222,6 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
                   item_name: item.item_name,
                   uom: item.uom,
                   qty: new Prisma.Decimal(item.qty),
-                  work_order_numbers: item.work_order_numbers,
                 },
               });
               itemCodeToIdMap.set(item.item_code, newItem.id);
@@ -245,7 +243,6 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
             item_name: item.item_name,
             uom: item.uom,
             qty: new Prisma.Decimal(item.qty),
-            work_order_numbers: item.work_order_numbers,
           }));
 
           await tx.production_output_items.createMany({
@@ -340,17 +337,25 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
 
       // Step 5: Calculate item-level snapshots
       try {
-        // Delete existing snapshots for this transaction_date to force clean recalculation
-        await prisma.stock_daily_snapshot.deleteMany({
-          where: {
-            company_code: data.company_code,
-            snapshot_date: transactionDate,
-          },
-        });
+        // Delete existing snapshots ONLY FOR AFFECTED ITEMS to avoid overwriting other transactions' data
+        // Fix: Previous logic deleted ALL snapshots for the date, which could override incoming goods
+        // Now: Only delete snapshots for items that appear in this production output transaction
+        for (const item of data.items) {
+          await prisma.stock_daily_snapshot.deleteMany({
+            where: {
+              company_code: data.company_code,
+              item_type: item.item_type,
+              item_code: item.item_code,
+              snapshot_date: transactionDate,
+            },
+          });
+        }
 
-        log.info('Cleared snapshots for recalculation', {
+        log.info('Cleared snapshots for affected items only', {
           company_code: data.company_code,
           snapshot_date: transactionDate.toISOString().split('T')[0],
+          affectedItemCount: data.items.length,
+          affectedItems: data.items.map(i => i.item_code).join(', '),
         });
 
         // Update snapshots for each item

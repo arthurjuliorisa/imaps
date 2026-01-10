@@ -411,17 +411,25 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
 
       // Step 5: Calculate item-level snapshots and cascade recalculation
       try {
-        // Delete existing snapshots for this transaction_date to force clean recalculation
-        await prisma.stock_daily_snapshot.deleteMany({
-          where: {
-            company_code: data.company_code,
-            snapshot_date: transactionDate,
-          },
-        });
+        // Delete existing snapshots ONLY FOR AFFECTED ITEMS to avoid overwriting other transactions' data
+        // Fix: Previous logic deleted ALL snapshots for the date, which could override incoming goods
+        // Now: Only delete snapshots for items that appear in this material usage transaction
+        for (const item of snapshotItems) {
+          await prisma.stock_daily_snapshot.deleteMany({
+            where: {
+              company_code: data.company_code,
+              item_type: item.item_type,
+              item_code: item.item_code,
+              snapshot_date: transactionDate,
+            },
+          });
+        }
 
-        log.info('Cleared snapshots for recalculation', {
+        log.info('Cleared snapshots for affected items only', {
           company_code: data.company_code,
           snapshot_date: transactionDate.toISOString().split('T')[0],
+          affectedItemCount: snapshotItems.length,
+          affectedItems: snapshotItems.map(i => i.item_code).join(', '),
         });
 
         // Update snapshots for each item on transaction_date

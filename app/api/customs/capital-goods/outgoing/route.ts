@@ -56,20 +56,7 @@ function generateDocumentNumber(companyCode: number, date: Date): string {
   return `CG-OUT-${companyCode}-${year}${month}${day}-${timestamp}`;
 }
 
-/**
- * Calculate priority for snapshot recalculation queue
- * Same-day transactions: priority -1 (queued for EOD processing)
- * Backdated transactions: priority 0 (processed immediately)
- */
-function calculatePriority(transactionDate: Date): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
-  const txDate = new Date(transactionDate);
-  txDate.setHours(0, 0, 0, 0);
-
-  return txDate < today ? 0 : -1;
-}
 
 /**
  * POST /api/customs/capital-goods/outgoing
@@ -184,6 +171,9 @@ export async function POST(request: Request) {
     // Create transaction with items
     try {
       const result = await prisma.$transaction(async (tx) => {
+        // Collect items for direct snapshot calculation
+        const snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string; date: Date }> = [];
+
         // Create outgoing_goods record
         const outgoingGoods = await tx.outgoing_goods.create({
           data: {
@@ -205,6 +195,14 @@ export async function POST(request: Request) {
         // Create outgoing_good_items records
         const itemRecords = items.map(item => {
           const masterItem = itemMap.get(item.itemCode)!;
+          const snapItem = {
+            itemType: masterItem.item_type,
+            itemCode: item.itemCode,
+            itemName: masterItem.item_name,
+            uom: masterItem.uom,
+            date: parsedDate,
+          };
+          snapshotItems.push(snapItem);
           return {
             outgoing_good_id: outgoingGoods.id,
             outgoing_good_company: companyCode,
@@ -225,53 +223,61 @@ export async function POST(request: Request) {
           data: itemRecords,
         });
 
-        // Queue snapshot recalculation for each item
-        const priority = calculatePriority(parsedDate);
-
-        for (const itemRecord of itemRecords) {
-          await tx.snapshot_recalc_queue.upsert({
-            where: {
-              company_code_recalc_date_item_type_item_code: {
-                company_code: companyCode,
-                recalc_date: parsedDate,
-                item_type: itemRecord.item_type,
-                item_code: itemRecord.item_code,
-              },
-            },
-            create: {
-              company_code: companyCode,
-              item_type: itemRecord.item_type,
-              item_code: itemRecord.item_code,
-              recalc_date: parsedDate,
-              status: 'PENDING',
-              priority: priority,
-              reason: `Capital goods outgoing transaction: ${outgoingGoods.wms_id}`,
-            },
-            update: {
-              status: 'PENDING',
-              priority: priority,
-              reason: `Capital goods outgoing transaction: ${outgoingGoods.wms_id}`,
-              queued_at: new Date(),
-            },
-          });
-        }
-
         return {
           transactionId: outgoingGoods.id,
           wmsId: outgoingGoods.wms_id,
           documentNumber: evidenceNumber,
           itemCount: items.length,
+          snapshotItems,
         };
       }, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         timeout: 10000,
       });
 
+      // Execute direct snapshot calculation asynchronously (fire-and-forget)
+      if (result.snapshotItems.length > 0) {
+        (async () => {
+          for (const item of result.snapshotItems) {
+            try {
+              await prisma.$executeRawUnsafe(
+                'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
+                companyCode,
+                item.itemType,
+                item.itemCode,
+                item.itemName,
+                item.uom,
+                item.date
+              );
+              console.log('[API Info] Direct snapshot calculation executed', {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                date: item.date.toISOString().split('T')[0],
+              });
+            } catch (snapshotError) {
+              console.error('[API Error] Snapshot calculation failed', {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                date: item.date.toISOString().split('T')[0],
+                errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+              });
+            }
+          }
+        })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
+      }
+
       return NextResponse.json(
         {
           success: true,
           message: 'Outgoing transaction created successfully',
-          data: result,
+          data: {
+            transactionId: result.transactionId,
+            wmsId: result.wmsId,
+            documentNumber: result.documentNumber,
+            itemCount: result.itemCount,
+          },
         },
         { status: 201 }
       );

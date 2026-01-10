@@ -67,20 +67,7 @@ function generateDocumentNumber(companyCode: number, date: Date, recipientName: 
   return `CG-OUT-${companyCode}-${year}${month}${day}-${recipientCode}-${timestamp}`;
 }
 
-/**
- * Calculate priority for snapshot recalculation queue
- * Same-day transactions: priority -1 (queued for EOD processing)
- * Backdated transactions: priority 0 (processed immediately)
- */
-function calculatePriority(transactionDate: Date): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
-  const txDate = new Date(transactionDate);
-  txDate.setHours(0, 0, 0, 0);
-
-  return txDate < today ? 0 : -1;
-}
 
 /**
  * Interface for validated record
@@ -383,6 +370,7 @@ export async function POST(request: Request) {
 
     // Process all grouped transactions
     let successCount = 0;
+    const allSnapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string; date: Date }> = [];
 
     try {
       await prisma.$transaction(async (tx) => {
@@ -410,6 +398,14 @@ export async function POST(request: Request) {
           // Create outgoing_good_items records
           const itemRecords = group.items.map(item => {
             const masterItem = itemMap.get(item.itemCode)!;
+            // Collect item for direct snapshot calculation
+            allSnapshotItems.push({
+              itemType: masterItem.item_type,
+              itemCode: item.itemCode,
+              itemName: masterItem.item_name,
+              uom: masterItem.uom,
+              date: group.date,
+            });
             return {
               outgoing_good_id: outgoingGoods.id,
               outgoing_good_company: companyCode,
@@ -430,43 +426,45 @@ export async function POST(request: Request) {
             data: itemRecords,
           });
 
-          // Queue snapshot recalculation for each item
-          const priority = calculatePriority(group.date);
-
-          for (const itemRecord of itemRecords) {
-            await tx.snapshot_recalc_queue.upsert({
-              where: {
-                company_code_recalc_date_item_type_item_code: {
-                  company_code: companyCode,
-                  recalc_date: group.date,
-                  item_type: itemRecord.item_type,
-                  item_code: itemRecord.item_code,
-                },
-              },
-              create: {
-                company_code: companyCode,
-                item_type: itemRecord.item_type,
-                item_code: itemRecord.item_code,
-                recalc_date: group.date,
-                status: 'PENDING',
-                priority: priority,
-                reason: `Capital goods outgoing import: ${outgoingGoods.wms_id}`,
-              },
-              update: {
-                status: 'PENDING',
-                priority: priority,
-                reason: `Capital goods outgoing import: ${outgoingGoods.wms_id}`,
-                queued_at: new Date(),
-              },
-            });
-          }
-
           successCount += group.items.length;
         }
       }, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         timeout: 30000,
       });
+
+      // Execute direct snapshot calculation asynchronously (fire-and-forget)
+      if (allSnapshotItems.length > 0) {
+        (async () => {
+          for (const item of allSnapshotItems) {
+            try {
+              await prisma.$executeRawUnsafe(
+                'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
+                companyCode,
+                item.itemType,
+                item.itemCode,
+                item.itemName,
+                item.uom,
+                item.date
+              );
+              console.log('[API Info] Direct snapshot calculation executed', {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                date: item.date.toISOString().split('T')[0],
+              });
+            } catch (snapshotError) {
+              console.error('[API Error] Snapshot calculation failed', {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                date: item.date.toISOString().split('T')[0],
+                errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+              });
+            }
+          }
+        })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
+      }
 
       const finalSuccess = validationErrors.length === 0;
 
