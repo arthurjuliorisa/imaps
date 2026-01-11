@@ -162,23 +162,24 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
             },
           });
 
-          const existingItemMap = new Map(
-            existingItems.map(i => [`${i.item_type}|${i.item_code}`, i])
-          );
-          const payloadItemSet = new Set(
-            data.items.map(i => `${i.item_type}|${i.item_code}`)
-          );
+          // ===================================================================
+          // FIX: Delete ALL old items + insert ALL new items for same-date
+          // ===================================================================
+          // REASON: Ensures reversal transactions are handled correctly
+          //         When reversal sent with same wms_id + same date:
+          //         - Original: qty=50 (reversal=NULL) stored as-is
+          //         - Reversal: qty=50 (reversal='Y') stored as-is
+          //         - SQL function negates during aggregation (CASE WHEN reversal='Y' THEN -qty)
+          //         - Result: production_qty = +50 + (-50) = 0 ✓ CORRECT
+          // SAFE: snapshot cascade correctly aggregates all items via upsert_item_stock_snapshot()
+          // ===================================================================
 
-          // 1. Soft-delete items that are no longer in payload
-          const itemsToDelete = existingItems.filter(
-            item => !payloadItemSet.has(`${item.item_type}|${item.item_code}`)
-          );
-
-          if (itemsToDelete.length > 0) {
+          // Soft-delete ALL existing items
+          if (existingItems.length > 0) {
             await tx.production_output_items.updateMany({
               where: {
                 id: {
-                  in: itemsToDelete.map(i => i.id),
+                  in: existingItems.map(i => i.id),
                 },
               },
               data: {
@@ -186,51 +187,51 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
               },
             });
 
-            log.info('Soft-deleted removed items', {
-              deletedCount: itemsToDelete.length,
-              deletedItems: itemsToDelete.map(i => i.item_code),
+            log.info('Soft-deleted all items for idempotent replace', {
+              deletedCount: existingItems.length,
+              reason: 'Same-date idempotency: delete all + insert all to handle reversal correctly',
             });
           }
 
-          // 2. Update existing items and 3. Insert new items
-          for (const item of data.items) {
-            const key = `${item.item_type}|${item.item_code}`;
-            const existingItem = existingItemMap.get(key);
+          // Insert ALL new items fresh
+          const itemsData = data.items.map((item) => ({
+            production_output_id: header.id,
+            production_output_company: data.company_code,
+            production_output_date: transactionDate,
+            item_type: item.item_type,
+            item_code: item.item_code,
+            item_name: item.item_name,
+            uom: item.uom,
+            qty: new Prisma.Decimal(item.qty),
+          }));
 
-            if (existingItem) {
-              // Item exists, update it
-              await tx.production_output_items.update({
-                where: { id: existingItem.id },
-                data: {
-                  item_name: item.item_name,
-                  uom: item.uom,
-                  qty: new Prisma.Decimal(item.qty),
-                  updated_at: new Date(),
-                  deleted_at: null,
-                },
-              });
-              itemCodeToIdMap.set(item.item_code, existingItem.id);
-            } else {
-              // New item, insert it
-              const newItem = await tx.production_output_items.create({
-                data: {
-                  production_output_id: header.id,
-                  production_output_company: data.company_code,
-                  production_output_date: transactionDate,
-                  item_type: item.item_type,
-                  item_code: item.item_code,
-                  item_name: item.item_name,
-                  uom: item.uom,
-                  qty: new Prisma.Decimal(item.qty),
-                },
-              });
-              itemCodeToIdMap.set(item.item_code, newItem.id);
-            }
-          }
+          await tx.production_output_items.createMany({
+            data: itemsData,
+            skipDuplicates: false,
+          });
 
-          log.info('Items updated/inserted intelligently', {
+          // Map created items for traceability
+          const insertedItems = await tx.production_output_items.findMany({
+            where: {
+              production_output_id: header.id,
+              production_output_company: data.company_code,
+              production_output_date: transactionDate,
+              deleted_at: null,
+            },
+            select: {
+              id: true,
+              item_code: true,
+            },
+          });
+
+          insertedItems.forEach(item => {
+            itemCodeToIdMap.set(item.item_code, item.id);
+          });
+
+          log.info('Items replaced (delete all + insert all)', {
             totalItems: data.items.length,
-            deletedCount: itemsToDelete.length,
+            deletedCount: existingItems.length,
+            createdCount: itemsData.length,
           });
         } else {
           // Date changed: insert all new items

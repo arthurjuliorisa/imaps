@@ -178,10 +178,15 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
 
         log.info('Header upserted', { materialUsageId: header.id });
 
-        // For update case (same date), intelligently manage items
+        // For update case (same date), use idempotent replace strategy
+        // =====================================================================
+        // FIX: Delete ALL old items + insert ALL new items for same-date
+        // REASON: Eliminates composite key ambiguity when same item_code appears
+        //         multiple times (e.g., qty 0.999 + qty 2.001)
+        // SAFE: snapshot cascade correctly aggregates all items via upsert_item_stock_snapshot()
+        // =====================================================================
         if (!isDateChanged) {
-          // Get existing items for this material_usage_id
-          // NOTE: Include ppkek_number in selection for proper matching
+          // Get existing items for deletion
           const existingItems = await tx.material_usage_items.findMany({
             where: {
               material_usage_id: header.id,
@@ -191,40 +196,17 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
             },
             select: {
               id: true,
-              item_type: true,
               item_code: true,
               ppkek_number: true,
-              qty: true,
             },
           });
 
-          // Create map using composite key: item_type|item_code|ppkek_number
-          // This handles case where same item code has multiple PPKEK entries
-          const existingItemMap = new Map(
-            existingItems.map(i => [
-              `${i.item_type}|${i.item_code}|${i.ppkek_number || 'no-ppkek'}`,
-              i,
-            ])
-          );
-
-          // Create set from payload items with same composite key
-          const payloadItemSet = new Set(
-            data.items.map(i => `${i.item_type}|${i.item_code}|${i.ppkek_number || 'no-ppkek'}`)
-          );
-
-          // 1. Soft-delete items that are no longer in payload
-          const itemsToDelete = existingItems.filter(
-            item =>
-              !payloadItemSet.has(
-                `${item.item_type}|${item.item_code}|${item.ppkek_number || 'no-ppkek'}`
-              )
-          );
-
-          if (itemsToDelete.length > 0) {
+          // Soft-delete ALL existing items
+          if (existingItems.length > 0) {
             await tx.material_usage_items.updateMany({
               where: {
                 id: {
-                  in: itemsToDelete.map(i => i.id),
+                  in: existingItems.map(i => i.id),
                 },
               },
               data: {
@@ -232,64 +214,57 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
               },
             });
 
-            log.info('Soft-deleted removed items', {
-              deletedCount: itemsToDelete.length,
-              deletedItems: itemsToDelete.map(i => ({
-                item_code: i.item_code,
-                ppkek_number: i.ppkek_number,
-              })),
+            log.info('Soft-deleted all items for idempotent replace', {
+              deletedCount: existingItems.length,
+              reason: 'Same-date idempotency: delete all + insert all to handle duplicate item_codes',
             });
           }
 
-          // 2. Update existing items and 3. Insert new items
-          for (const item of data.items) {
-            const key = `${item.item_type}|${item.item_code}|${item.ppkek_number || 'no-ppkek'}`;
-            const existingItem = existingItemMap.get(key);
+          // Insert ALL new items fresh
+          const itemsData = data.items.map((item) => ({
+            material_usage_id: header.id,
+            material_usage_company: data.company_code,
+            material_usage_date: transactionDate,
+            item_type: item.item_type,
+            item_code: item.item_code,
+            item_name: item.item_name,
+            uom: item.uom,
+            qty: new Prisma.Decimal(item.qty),
+            ppkek_number: item.ppkek_number || null,
+          }));
 
-            if (existingItem) {
-              // Item exists, update it
-              await tx.material_usage_items.update({
-                where: { id: existingItem.id },
-                data: {
-                  item_name: item.item_name,
-                  uom: item.uom,
-                  qty: new Prisma.Decimal(item.qty),
-                  ppkek_number: item.ppkek_number || null,
-                  updated_at: new Date(),
-                  deleted_at: null,
-                },
-              });
-              // Track by composite key for traceability
-              createdItemsMap.set(
-                `${item.item_code}|${item.ppkek_number || 'no-ppkek'}`,
-                existingItem.id
-              );
-            } else {
-              // New item, insert it
-              const newItem = await tx.material_usage_items.create({
-                data: {
-                  material_usage_id: header.id,
-                  material_usage_company: data.company_code,
-                  material_usage_date: transactionDate,
-                  item_type: item.item_type,
-                  item_code: item.item_code,
-                  item_name: item.item_name,
-                  uom: item.uom,
-                  qty: new Prisma.Decimal(item.qty),
-                  ppkek_number: item.ppkek_number || null,
-                },
-              });
-              // Track by composite key for traceability
-              createdItemsMap.set(
-                `${item.item_code}|${item.ppkek_number || 'no-ppkek'}`,
-                newItem.id
-              );
-            }
-          }
+          const createdItems = await tx.material_usage_items.createMany({
+            data: itemsData,
+            skipDuplicates: false,
+          });
 
-          log.info('Items updated/inserted intelligently', {
+          // Map created items for traceability (by composite key)
+          const insertedItems = await tx.material_usage_items.findMany({
+            where: {
+              material_usage_id: header.id,
+              material_usage_company: data.company_code,
+              material_usage_date: transactionDate,
+              deleted_at: null,
+            },
+            select: {
+              id: true,
+              item_code: true,
+              ppkek_number: true,
+            },
+          });
+
+          insertedItems.forEach(item => {
+            // Track by composite key for traceability
+            createdItemsMap.set(
+              `${item.item_code}|${item.ppkek_number || 'no-ppkek'}`,
+              item.id
+            );
+          });
+
+          log.info('Items replaced (delete all + insert all)', {
             totalItems: data.items.length,
-            deletedCount: itemsToDelete.length,
+            deletedCount: existingItems.length,
+            createdCount: itemsData.length,
           });
         } else {
           // Date changed: insert all new items
