@@ -52,6 +52,7 @@ const OutgoingCapitalGoodsSchema = z.object({
   }),
   documentType: z.enum(['BC25', 'BC27', 'BC41']).optional().nullable(),
   incomingPpkekNumbers: z.array(z.string()).optional().nullable(),
+  outgoingEvidenceNumber: z.string().max(255, 'Evidence number cannot exceed 255 characters').optional().nullable(),
 });
 
 type OutgoingCapitalGoodsInput = z.infer<typeof OutgoingCapitalGoodsSchema>;
@@ -131,7 +132,7 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    const { date, itemType, itemCode, itemName, uom, qty, currency, amount, recipientName, remarks, ppkekNumber, registrationDate, documentType, incomingPpkekNumbers } = validatedData;
+    const { date, itemType, itemCode, itemName, uom, qty, currency, amount, recipientName, remarks, ppkekNumber, registrationDate, documentType, incomingPpkekNumbers, outgoingEvidenceNumber } = validatedData;
 
     // Validate date is not in the future
     const now = new Date();
@@ -179,6 +180,8 @@ export async function POST(request: Request) {
       // 1. Generate WMS ID and invoice number
       const wmsId = generateWmsId(itemType);
       const invoiceNumber = generateInvoiceNumber();
+      // Use provided outgoingEvidenceNumber or auto-generate from wmsId if not provided
+      const evidenceNumber = outgoingEvidenceNumber?.trim() || wmsId;
 
       // 2. Create outgoing_goods record
       const outgoingGood = await tx.outgoing_goods.create({
@@ -189,7 +192,7 @@ export async function POST(request: Request) {
           customs_document_type: documentType || 'BC27',
           ppkek_number: ppkekNumber || '',
           customs_registration_date: registrationDate || date,
-          outgoing_evidence_number: wmsId,
+          outgoing_evidence_number: evidenceNumber,
           outgoing_date: date,
           invoice_number: invoiceNumber,
           invoice_date: date,

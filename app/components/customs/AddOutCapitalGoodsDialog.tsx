@@ -51,6 +51,7 @@ interface FormData {
   registrationDate: Dayjs | null;
   documentType: string;
   incomingPpkekNumbers: string[];
+  outgoingEvidenceNumber: string;
 }
 
 interface AddOutCapitalGoodsDialogProps {
@@ -89,6 +90,7 @@ export function AddOutCapitalGoodsDialog({
     registrationDate: null,
     documentType: 'BC27',
     incomingPpkekNumbers: [],
+    outgoingEvidenceNumber: '',
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -232,6 +234,10 @@ export function AddOutCapitalGoodsDialog({
       newErrors.date = 'Date cannot be in the future';
     }
 
+    if (formData.outgoingEvidenceNumber.length > 255) {
+      newErrors.outgoingEvidenceNumber = 'Evidence number cannot exceed 255 characters';
+    }
+
     if (!formData.itemCode.trim()) {
       newErrors.itemCode = 'Item code is required';
     }
@@ -323,6 +329,7 @@ export function AddOutCapitalGoodsDialog({
           registrationDate: formData.registrationDate?.format('YYYY-MM-DD') || undefined,
           documentType: formData.documentType || undefined,
           incomingPpkekNumbers: formData.incomingPpkekNumbers.length > 0 ? formData.incomingPpkekNumbers : undefined,
+          outgoingEvidenceNumber: formData.outgoingEvidenceNumber || undefined,
         }),
       });
 
@@ -360,6 +367,7 @@ export function AddOutCapitalGoodsDialog({
       registrationDate: null,
       documentType: 'BC27',
       incomingPpkekNumbers: [],
+      outgoingEvidenceNumber: '',
     });
     setErrors({});
     setStockCheckResult(null);
@@ -686,6 +694,21 @@ export function AddOutCapitalGoodsDialog({
               error={!!errors.remarks}
               helperText={
                 errors.remarks || `${formData.remarks.length}/1000 characters`
+              }
+            />
+
+            <TextField
+              fullWidth
+              label="Outgoing Evidence Number"
+              value={formData.outgoingEvidenceNumber}
+              onChange={(e) => {
+                setFormData((prev) => ({ ...prev, outgoingEvidenceNumber: e.target.value }));
+                setErrors((prev) => ({ ...prev, outgoingEvidenceNumber: undefined }));
+              }}
+              placeholder="Leave empty to auto-generate from system"
+              error={!!errors.outgoingEvidenceNumber}
+              helperText={
+                errors.outgoingEvidenceNumber || 'Optional: Enter custom evidence number or leave blank for auto-generation'
               }
             />
 
