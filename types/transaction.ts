@@ -18,6 +18,9 @@ export interface ScrapTransaction {
   valueAmount: number;
   remarks: string;
   createdAt: string;
+  customsDocumentType?: string;
+  transactionNumber?: string;
+  incomingPpkekNumbers?: string[];
 }
 
 export interface CapitalGoodsTransaction {

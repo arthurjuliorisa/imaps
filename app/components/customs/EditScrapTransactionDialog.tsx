@@ -16,6 +16,7 @@ import {
   Typography,
   alpha,
   useTheme,
+  Autocomplete,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -35,6 +36,9 @@ interface FormData {
   remarks: string;
   ppkekNumber: string;
   registrationDate: Dayjs | null;
+  customsDocumentType: string;
+  transactionNumber: string;
+  incomingPpkekNumbers: string[];
 }
 
 interface StockCheckResult {
@@ -51,6 +55,7 @@ interface EditScrapTransactionDialogProps {
 }
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
+const CUSTOMS_DOCUMENT_TYPES = ['BC25', 'BC27', 'BC41'];
 
 export function EditScrapTransactionDialog({
   open,
@@ -70,6 +75,9 @@ export function EditScrapTransactionDialog({
     remarks: '',
     ppkekNumber: '',
     registrationDate: null,
+    customsDocumentType: 'BC25',
+    transactionNumber: '',
+    incomingPpkekNumbers: [],
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -90,6 +98,9 @@ export function EditScrapTransactionDialog({
         remarks: transaction.remarks || '',
         ppkekNumber: transaction.ppkekNumber || '',
         registrationDate: transaction.regDate ? dayjs(transaction.regDate) : null,
+        customsDocumentType: transaction.customsDocumentType || 'BC25',
+        transactionNumber: transaction.transactionNumber || '',
+        incomingPpkekNumbers: transaction.incomingPpkekNumbers || [],
       });
       setOriginalQty(qty);
       setErrors({});
@@ -194,6 +205,10 @@ export function EditScrapTransactionDialog({
       newErrors.recipientName = 'Recipient name is required for outgoing transactions';
     }
 
+    if (!formData.customsDocumentType) {
+      newErrors.customsDocumentType = 'Customs document type is required';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -219,6 +234,9 @@ export function EditScrapTransactionDialog({
           remarks: formData.remarks,
           ppkekNumber: formData.ppkekNumber,
           registrationDate: formData.registrationDate?.toISOString(),
+          customsDocumentType: formData.customsDocumentType,
+          transactionNumber: formData.transactionNumber || undefined,
+          incomingPpkekNumbers: formData.incomingPpkekNumbers.length > 0 ? formData.incomingPpkekNumbers : undefined,
         }),
       });
 
@@ -358,6 +376,34 @@ export function EditScrapTransactionDialog({
 
             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
               <TextField
+                label="Document Type *"
+                select
+                value={formData.customsDocumentType}
+                onChange={(e) => setFormData({ ...formData, customsDocumentType: e.target.value })}
+                error={!!errors.customsDocumentType}
+                helperText={errors.customsDocumentType}
+                disabled={loading}
+                fullWidth
+              >
+                {CUSTOMS_DOCUMENT_TYPES.map((docType) => (
+                  <MenuItem key={docType} value={docType}>
+                    {docType}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                label="Transaction Number"
+                value={formData.transactionNumber}
+                onChange={(e) => setFormData({ ...formData, transactionNumber: e.target.value })}
+                disabled={loading}
+                fullWidth
+                placeholder="Auto-generated if empty"
+                helperText="Optional: Override auto-generated number"
+              />
+            </Box>
+
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+              <TextField
                 label="Currency *"
                 select
                 value={formData.currency}
@@ -416,6 +462,25 @@ export function EditScrapTransactionDialog({
                   disabled: loading,
                 },
               }}
+            />
+
+            <Autocomplete
+              multiple
+              freeSolo
+              options={[]}
+              value={formData.incomingPpkekNumbers}
+              onChange={(event, newValue) => {
+                setFormData((prev) => ({ ...prev, incomingPpkekNumbers: newValue }));
+              }}
+              disabled={loading}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Ex-Nopen (Incoming PPKEK Numbers)"
+                  placeholder="Type and press Enter to add"
+                  helperText="Optional: Add PPKEK numbers from incoming goods that were used"
+                />
+              )}
             />
 
             <TextField

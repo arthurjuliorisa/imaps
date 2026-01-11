@@ -240,6 +240,25 @@ export async function POST(request: Request) {
             date: result.date.toISOString().split('T')[0],
           }
         );
+
+        // FIX: Cascade recalculate snapshots for all future dates
+        // This ensures forward-looking balance updates when a past transaction is inserted
+        await prisma.$executeRawUnsafe(
+          'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+          companyCode,
+          'SCRAP',
+          result.scrapCode,
+          result.date
+        );
+        console.log(
+          '[API Info] Cascaded snapshot recalculation executed',
+          {
+            companyCode,
+            itemType: 'SCRAP',
+            itemCode: result.scrapCode,
+            fromDate: result.date.toISOString().split('T')[0],
+          }
+        );
       } catch (snapshotError) {
         console.error(
           '[API Error] Snapshot calculation failed',

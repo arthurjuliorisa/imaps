@@ -430,6 +430,7 @@ export async function POST(request: NextRequest) {
       (async () => {
         for (const item of snapshotItems) {
           try {
+            // Step 1: Upsert snapshot for the import transaction date
             await prisma.$executeRawUnsafe(
               'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
               companyCode,
@@ -446,6 +447,25 @@ export async function POST(request: NextRequest) {
                 itemType: item.itemType,
                 itemCode: item.itemCode,
                 date: item.date.toISOString().split('T')[0],
+              }
+            );
+
+            // Step 2: Cascade recalculate snapshots for all future dates
+            // This ensures all forward-looking balance updates when importing past transactions
+            await prisma.$executeRawUnsafe(
+              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+              companyCode,
+              item.itemType,
+              item.itemCode,
+              item.date
+            );
+            console.log(
+              '[API Info] Cascaded snapshot recalculation executed',
+              {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                fromDate: item.date.toISOString().split('T')[0],
               }
             );
           } catch (snapshotError) {

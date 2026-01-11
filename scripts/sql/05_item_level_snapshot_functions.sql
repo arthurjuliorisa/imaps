@@ -113,11 +113,12 @@ BEGIN
     SELECT COALESCE(SUM(qty), NUMERIC '0.000')
     INTO v_incoming_qty
     FROM (
-      -- Incoming from incoming_good_items
+      -- Incoming from incoming_good_items (NOT for SCRAP - scrap uses scrap_transaction_items)
       SELECT qty
       FROM incoming_good_items
       WHERE incoming_good_company = p_company_code
         AND item_type = p_item_type
+        AND item_type != 'SCRAP'  -- SCRAP items use scrap_transaction_items instead
         AND item_code = p_item_code
         AND incoming_good_date = p_snapshot_date
         AND deleted_at IS NULL
@@ -142,7 +143,7 @@ BEGIN
     SELECT COALESCE(SUM(qty), NUMERIC '0.000')
     INTO v_outgoing_qty
     FROM (
-      -- Outgoing from outgoing_good_items
+      -- Outgoing from outgoing_good_items (for non-SCRAP items AND SCRAP items)
       SELECT qty
       FROM outgoing_good_items
       WHERE outgoing_good_company = p_company_code
@@ -153,7 +154,7 @@ BEGIN
       
       UNION ALL
       
-      -- Outgoing from scrap_transaction_items (for SCRAP item type only)
+      -- Outgoing from scrap_transaction_items (for SCRAP item type only, when NOT in outgoing_good_items)
       SELECT sti.qty
       FROM scrap_transaction_items sti
       JOIN scrap_transactions st ON sti.scrap_transaction_id = st.id
@@ -165,6 +166,14 @@ BEGIN
         AND st.transaction_date = p_snapshot_date
         AND st.deleted_at IS NULL
         AND sti.deleted_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM outgoing_good_items
+          WHERE outgoing_good_company = p_company_code
+            AND item_type = 'SCRAP'
+            AND item_code = p_item_code
+            AND outgoing_good_date = p_snapshot_date
+            AND deleted_at IS NULL
+        )
     ) AS combined_outgoing;
 
     -- Query material usage quantities
@@ -423,6 +432,21 @@ BEGIN
           AND outgoing_good_company = p_company_code
           AND outgoing_good_date >= p_from_date
         ORDER BY outgoing_good_date DESC
+        LIMIT 1;
+    END IF;
+
+    -- If still not found and item_type is SCRAP, try scrap_transaction_items
+    IF v_item_name IS NULL AND p_item_type = 'SCRAP' THEN
+        SELECT item_name, uom INTO v_item_name, v_uom
+        FROM scrap_transaction_items sti
+        JOIN scrap_transactions st ON sti.scrap_transaction_id = st.id
+        WHERE sti.item_type = p_item_type
+          AND sti.item_code = p_item_code
+          AND st.company_code = p_company_code
+          AND st.transaction_date >= p_from_date
+          AND st.deleted_at IS NULL
+          AND sti.deleted_at IS NULL
+        ORDER BY st.transaction_date DESC
         LIMIT 1;
     END IF;
 

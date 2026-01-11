@@ -90,8 +90,7 @@ export async function checkStockAvailability(
     const isCurrentDate = isSameDay(normalizedDate, today);
 
     if (isCurrentDate) {
-      // Real-time validation: snapshot + live transactions for today
-      console.log(`[Stock Check] Using REAL-TIME validation (today)`);
+      // Real-time validation: check today's snapshot first, fallback to calculated balance
       currentStock = await calculateRealTimeStock(
         companyCode,
         itemCode,
@@ -108,13 +107,10 @@ export async function checkStockAvailability(
         normalizedDate
       );
       currentStock = snapshotBalance;
-      console.log(`[Stock Check] Using snapshot for historical date`);
     }
 
     const available = currentStock >= qtyRequested;
     const shortfall = available ? undefined : qtyRequested - currentStock;
-
-    console.log(`[Stock Check] Result - currentStock: ${currentStock}, requested: ${qtyRequested}, available: ${available}`);
 
     return {
       itemCode,
@@ -160,7 +156,6 @@ async function getSnapshotBalance(
   `;
 
   if (exactResult.length > 0) {
-    console.log(`[Snapshot] Found exact snapshot for ${itemCode} on ${dateStr}: ${exactResult[0].closing_balance}`);
     return Number(exactResult[0].closing_balance);
   }
 
@@ -177,23 +172,19 @@ async function getSnapshotBalance(
   `;
 
   if (nearestResult.length > 0) {
-    console.log(`[Snapshot] Found carried-forward snapshot for ${itemCode} from ${nearestResult}: ${nearestResult[0].closing_balance}`);
     return Number(nearestResult[0].closing_balance);
   }
 
   // No snapshot found at all - return 0 (conservative approach)
-  console.log(`[Snapshot] No snapshot found for ${itemCode}, returning 0`);
   return 0;
 }
 
 /**
  * Calculate real-time stock for current date
- * Uses snapshot from yesterday + today's transactions
  * 
  * Strategy:
- * 1. Get opening balance (snapshot from yesterday or beginning_balances)
- * 2. Get all transactions for today (all types), optionally excluding a specific transaction
- * 3. Return: opening + incoming - outgoing - material_usage + production ± adjustment ± scrap
+ * 1. Check if snapshot exists for today - use it directly (most accurate)
+ * 2. If no snapshot yet - calculate from opening balance + today's transactions
  * 
  * @param companyCode Company code
  * @param itemCode Item code
@@ -209,6 +200,25 @@ async function calculateRealTimeStock(
   excludeWmsId?: string
 ): Promise<number> {
   const dateStr = formatDateForSql(currentDate);
+
+  // First: Try to find snapshot for today
+  const todaySnapshot = await prisma.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
+    SELECT closing_balance
+    FROM stock_daily_snapshot
+    WHERE company_code = ${companyCode}
+      AND item_type = ${itemType}
+      AND item_code = ${itemCode}
+      AND snapshot_date = ${dateStr}::DATE
+    LIMIT 1
+  `;
+
+  if (todaySnapshot.length > 0) {
+    const balance = Number(todaySnapshot[0].closing_balance);
+    console.log(`[RealTimeStock] Found today's snapshot for ${itemType} ${itemCode} on ${dateStr}: ${balance}`);
+    return balance;
+  }
+
+  // Fallback: Calculate from opening balance + today's transactions
   const yesterdayDate = new Date(currentDate);
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
 
@@ -219,8 +229,6 @@ async function calculateRealTimeStock(
     itemType,
     yesterdayDate
   );
-
-  console.log(`[RealTimeStock] Opening balance for ${itemCode}: ${openingBalance}${excludeWmsId ? ` (excluding ${excludeWmsId})` : ''}`);
 
   // Get all today's transactions aggregated
   const todayTransactions = await getTodayTransactions(
@@ -234,8 +242,6 @@ async function calculateRealTimeStock(
   // Calculate balance: opening + net transactions
   const calculatedBalance = openingBalance + todayTransactions;
   const balance = Math.max(0, calculatedBalance); // Ensure non-negative
-
-  console.log(`[RealTimeStock] Today transactions net: ${todayTransactions}, final balance: ${balance}`);
 
   return balance;
 }
@@ -270,8 +276,8 @@ async function getOpeningBalance(
     }
 
     // Fallback: Check beginning_balances table
-    const beginningResult = await prisma.$queryRaw<Array<{ initial_qty: Prisma.Decimal }>>`
-      SELECT initial_qty
+    const beginningResult = await prisma.$queryRaw<Array<{ qty: Prisma.Decimal }>>`
+      SELECT qty
       FROM beginning_balances
       WHERE company_code = ${companyCode}
         AND item_type = ${itemType}
@@ -279,7 +285,7 @@ async function getOpeningBalance(
     `;
 
     if (beginningResult.length > 0) {
-      return Number(beginningResult[0].initial_qty);
+      return Number(beginningResult[0].qty);
     }
 
     // No history found
@@ -313,8 +319,243 @@ async function getTodayTransactions(
   excludeWmsId?: string
 ): Promise<number> {
   try {
+    // Build query with or without excludeWmsId
+    // We need to construct the WHERE clause carefully to avoid Prisma parameter counting issues
+    let query: string;
+    
+    if (excludeWmsId) {
+      query = `
+        WITH daily_txns AS (
+          -- Incoming goods
+          SELECT 'incoming' as type, COALESCE(SUM(igi.qty), 0)::numeric as qty
+          FROM incoming_good_items igi
+          JOIN incoming_goods ig ON ig.company_code = igi.incoming_good_company
+            AND ig.id = igi.incoming_good_id
+            AND ig.incoming_date = igi.incoming_good_date
+          WHERE ig.company_code = $1
+            AND igi.item_type = $2
+            AND igi.item_code = $3
+            AND ig.incoming_date = $4::DATE
+            AND ig.deleted_at IS NULL
+            AND igi.deleted_at IS NULL
+            AND ig.wms_id != $8
+          
+          UNION ALL
+          
+          -- Outgoing goods
+          SELECT 'outgoing' as type, COALESCE(SUM(ogi.qty), 0)::numeric as qty
+          FROM outgoing_good_items ogi
+          JOIN outgoing_goods og ON og.company_code = ogi.outgoing_good_company
+            AND og.id = ogi.outgoing_good_id
+            AND og.outgoing_date = ogi.outgoing_good_date
+          WHERE og.company_code = $1
+            AND ogi.item_type = $2
+            AND ogi.item_code = $3
+            AND og.outgoing_date = $4::DATE
+            AND og.deleted_at IS NULL
+            AND ogi.deleted_at IS NULL
+            AND og.wms_id != $8
+          
+          UNION ALL
+          
+          -- Material usage
+          SELECT 'material_usage' as type, COALESCE(SUM(
+            CASE WHEN mu.reversal = 'Y' THEN -mui.qty ELSE mui.qty END
+          ), 0)::numeric as qty
+          FROM material_usage_items mui
+          JOIN material_usages mu ON mu.company_code = mui.material_usage_company
+            AND mu.id = mui.material_usage_id
+            AND mu.transaction_date = mui.material_usage_date
+          WHERE mu.company_code = $1
+            AND mui.item_type = $2
+            AND mui.item_code = $3
+            AND mu.transaction_date = $4::DATE
+            AND mu.deleted_at IS NULL
+            AND mui.deleted_at IS NULL
+            AND mu.wms_id != $8
+          
+          UNION ALL
+          
+          -- Production output
+          SELECT 'production' as type, COALESCE(SUM(
+            CASE WHEN po.reversal = 'Y' THEN -poi.qty ELSE poi.qty END
+          ), 0)::numeric as qty
+          FROM production_output_items poi
+          JOIN production_outputs po ON po.company_code = poi.production_output_company
+            AND po.id = poi.production_output_id
+            AND po.transaction_date = poi.production_output_date
+          WHERE po.company_code = $1
+            AND poi.item_type = $2
+            AND poi.item_code = $3
+            AND po.transaction_date = $4::DATE
+            AND po.deleted_at IS NULL
+            AND poi.deleted_at IS NULL
+            AND po.wms_id != $8
+          
+          UNION ALL
+          
+          -- Adjustments
+          SELECT 'adjustment' as type, COALESCE(SUM(
+            CASE WHEN ai.adjustment_type = 'GAIN' THEN ai.qty ELSE -ai.qty END
+          ), 0)::numeric as qty
+          FROM adjustment_items ai
+          JOIN adjustments a ON a.company_code = ai.adjustment_company
+            AND a.id = ai.adjustment_id
+            AND a.transaction_date = ai.adjustment_date
+          WHERE a.company_code = $1
+            AND ai.item_type = $2
+            AND ai.item_code = $3
+            AND a.transaction_date = $4::DATE
+            AND a.deleted_at IS NULL
+            AND ai.deleted_at IS NULL
+            AND a.wms_id != $8
+          
+          UNION ALL
+          
+          -- Scrap transactions
+          SELECT 'scrap' as type, COALESCE(SUM(
+            CASE WHEN st.transaction_type = 'IN' THEN sti.qty ELSE -sti.qty END
+          ), 0)::numeric as qty
+          FROM scrap_transaction_items sti
+          JOIN scrap_transactions st ON st.company_code = sti.scrap_transaction_company
+            AND st.id = sti.scrap_transaction_id
+            AND st.transaction_date = sti.scrap_transaction_date
+          WHERE st.company_code = $1
+            AND sti.item_type = $2
+            AND sti.item_code = $3
+            AND st.transaction_date = $4::DATE
+            AND st.deleted_at IS NULL
+            AND sti.deleted_at IS NULL
+            AND st.document_number != $8
+        )
+        SELECT
+          SUM(CASE WHEN type = 'incoming' THEN qty ELSE 0 END)::numeric as incoming_qty,
+          SUM(CASE WHEN type = 'outgoing' THEN qty ELSE 0 END)::numeric as outgoing_qty,
+          SUM(CASE WHEN type = 'material_usage' THEN qty ELSE 0 END)::numeric as material_usage_qty,
+          SUM(CASE WHEN type = 'production' THEN qty ELSE 0 END)::numeric as production_qty,
+          SUM(CASE WHEN type = 'adjustment' THEN qty ELSE 0 END)::numeric as adjustment_qty,
+          SUM(CASE WHEN type = 'scrap' AND (qty > 0) THEN qty ELSE 0 END)::numeric as scrap_in_qty,
+          SUM(CASE WHEN type = 'scrap' AND (qty < 0) THEN -qty ELSE 0 END)::numeric as scrap_out_qty
+        FROM daily_txns
+      `;
+    } else {
+      query = `
+        WITH daily_txns AS (
+          -- Incoming goods
+          SELECT 'incoming' as type, COALESCE(SUM(igi.qty), 0)::numeric as qty
+          FROM incoming_good_items igi
+          JOIN incoming_goods ig ON ig.company_code = igi.incoming_good_company
+            AND ig.id = igi.incoming_good_id
+            AND ig.incoming_date = igi.incoming_good_date
+          WHERE ig.company_code = $1
+            AND igi.item_type = $2
+            AND igi.item_code = $3
+            AND ig.incoming_date = $4::DATE
+            AND ig.deleted_at IS NULL
+            AND igi.deleted_at IS NULL
+          
+          UNION ALL
+          
+          -- Outgoing goods
+          SELECT 'outgoing' as type, COALESCE(SUM(ogi.qty), 0)::numeric as qty
+          FROM outgoing_good_items ogi
+          JOIN outgoing_goods og ON og.company_code = ogi.outgoing_good_company
+            AND og.id = ogi.outgoing_good_id
+            AND og.outgoing_date = ogi.outgoing_good_date
+          WHERE og.company_code = $1
+            AND ogi.item_type = $2
+            AND ogi.item_code = $3
+            AND og.outgoing_date = $4::DATE
+            AND og.deleted_at IS NULL
+            AND ogi.deleted_at IS NULL
+          
+          UNION ALL
+          
+          -- Material usage
+          SELECT 'material_usage' as type, COALESCE(SUM(
+            CASE WHEN mu.reversal = 'Y' THEN -mui.qty ELSE mui.qty END
+          ), 0)::numeric as qty
+          FROM material_usage_items mui
+          JOIN material_usages mu ON mu.company_code = mui.material_usage_company
+            AND mu.id = mui.material_usage_id
+            AND mu.transaction_date = mui.material_usage_date
+          WHERE mu.company_code = $1
+            AND mui.item_type = $2
+            AND mui.item_code = $3
+            AND mu.transaction_date = $4::DATE
+            AND mu.deleted_at IS NULL
+            AND mui.deleted_at IS NULL
+          
+          UNION ALL
+          
+          -- Production output
+          SELECT 'production' as type, COALESCE(SUM(
+            CASE WHEN po.reversal = 'Y' THEN -poi.qty ELSE poi.qty END
+          ), 0)::numeric as qty
+          FROM production_output_items poi
+          JOIN production_outputs po ON po.company_code = poi.production_output_company
+            AND po.id = poi.production_output_id
+            AND po.transaction_date = poi.production_output_date
+          WHERE po.company_code = $1
+            AND poi.item_type = $2
+            AND poi.item_code = $3
+            AND po.transaction_date = $4::DATE
+            AND po.deleted_at IS NULL
+            AND poi.deleted_at IS NULL
+          
+          UNION ALL
+          
+          -- Adjustments
+          SELECT 'adjustment' as type, COALESCE(SUM(
+            CASE WHEN ai.adjustment_type = 'GAIN' THEN ai.qty ELSE -ai.qty END
+          ), 0)::numeric as qty
+          FROM adjustment_items ai
+          JOIN adjustments a ON a.company_code = ai.adjustment_company
+            AND a.id = ai.adjustment_id
+            AND a.adjustment_date = ai.adjustment_date
+          WHERE a.company_code = $1
+            AND ai.item_type = $2
+            AND ai.item_code = $3
+            AND a.adjustment_date = $4::DATE
+            AND a.deleted_at IS NULL
+            AND ai.deleted_at IS NULL
+          
+          UNION ALL
+          
+          -- Scrap transactions
+          SELECT 'scrap' as type, COALESCE(SUM(
+            CASE WHEN st.transaction_type = 'IN' THEN sti.qty ELSE -sti.qty END
+          ), 0)::numeric as qty
+          FROM scrap_transaction_items sti
+          JOIN scrap_transactions st ON st.company_code = sti.scrap_transaction_company
+            AND st.id = sti.scrap_transaction_id
+            AND st.transaction_date = sti.scrap_transaction_date
+          WHERE st.company_code = $1
+            AND sti.item_type = $2
+            AND sti.item_code = $3
+            AND st.transaction_date = $4::DATE
+            AND st.deleted_at IS NULL
+            AND sti.deleted_at IS NULL
+        )
+        SELECT
+          SUM(CASE WHEN type = 'incoming' THEN qty ELSE 0 END)::numeric as incoming_qty,
+          SUM(CASE WHEN type = 'outgoing' THEN qty ELSE 0 END)::numeric as outgoing_qty,
+          SUM(CASE WHEN type = 'material_usage' THEN qty ELSE 0 END)::numeric as material_usage_qty,
+          SUM(CASE WHEN type = 'production' THEN qty ELSE 0 END)::numeric as production_qty,
+          SUM(CASE WHEN type = 'adjustment' THEN qty ELSE 0 END)::numeric as adjustment_qty,
+          SUM(CASE WHEN type = 'scrap' AND (qty > 0) THEN qty ELSE 0 END)::numeric as scrap_in_qty,
+          SUM(CASE WHEN type = 'scrap' AND (qty < 0) THEN -qty ELSE 0 END)::numeric as scrap_out_qty
+        FROM daily_txns
+      `;
+    }
+
     // Get all transaction types aggregated
-    const result = await prisma.$queryRaw<Array<{
+    const params = [companyCode, itemType, itemCode, dateStr];
+    if (excludeWmsId) {
+      params.push(excludeWmsId);
+    }
+
+    const result = await prisma.$queryRawUnsafe<Array<{
       incoming_qty: Prisma.Decimal;
       outgoing_qty: Prisma.Decimal;
       material_usage_qty: Prisma.Decimal;
@@ -322,118 +563,7 @@ async function getTodayTransactions(
       adjustment_qty: Prisma.Decimal;
       scrap_in_qty: Prisma.Decimal;
       scrap_out_qty: Prisma.Decimal;
-    }>>`
-      WITH daily_txns AS (
-        -- Incoming goods
-        SELECT 'incoming' as type, COALESCE(SUM(igi.qty), 0)::numeric as qty
-        FROM incoming_good_items igi
-        JOIN incoming_goods ig ON ig.company_code = igi.incoming_good_company
-          AND ig.id = igi.incoming_good_id
-          AND ig.incoming_date = igi.incoming_good_date
-        WHERE ig.company_code = ${companyCode}
-          AND igi.item_type = ${itemType}
-          AND igi.item_code = ${itemCode}
-          AND ig.incoming_date = ${dateStr}::DATE
-          AND ig.deleted_at IS NULL
-          AND igi.deleted_at IS NULL
-          ${excludeWmsId ? `AND ig.wms_id != ${excludeWmsId}` : ''}
-        
-        UNION ALL
-        
-        -- Outgoing goods
-        SELECT 'outgoing' as type, COALESCE(SUM(ogi.qty), 0)::numeric as qty
-        FROM outgoing_good_items ogi
-        JOIN outgoing_goods og ON og.company_code = ogi.outgoing_good_company
-          AND og.id = ogi.outgoing_good_id
-          AND og.outgoing_date = ogi.outgoing_good_date
-        WHERE og.company_code = ${companyCode}
-          AND ogi.item_type = ${itemType}
-          AND ogi.item_code = ${itemCode}
-          AND og.outgoing_date = ${dateStr}::DATE
-          AND og.deleted_at IS NULL
-          AND ogi.deleted_at IS NULL
-          ${excludeWmsId ? `AND og.wms_id != ${excludeWmsId}` : ''}
-        
-        UNION ALL
-        
-        -- Material usage
-        SELECT 'material_usage' as type, COALESCE(SUM(
-          CASE WHEN mui.reversal = 'Y' THEN -mui.qty ELSE mui.qty END
-        ), 0)::numeric as qty
-        FROM material_usage_items mui
-        JOIN material_usages mu ON mu.company_code = mui.material_usage_company
-          AND mu.id = mui.material_usage_id
-          AND mu.transaction_date = mui.material_usage_date
-        WHERE mu.company_code = ${companyCode}
-          AND mui.item_type = ${itemType}
-          AND mui.item_code = ${itemCode}
-          AND mu.transaction_date = ${dateStr}::DATE
-          AND mu.deleted_at IS NULL
-          AND mui.deleted_at IS NULL
-          ${excludeWmsId ? `AND mu.wms_id != ${excludeWmsId}` : ''}
-        
-        UNION ALL
-        
-        -- Production output
-        SELECT 'production' as type, COALESCE(SUM(poi.qty), 0)::numeric as qty
-        FROM production_output_items poi
-        JOIN production_outputs po ON po.company_code = poi.production_output_company
-          AND po.id = poi.production_output_id
-          AND po.production_date = poi.production_output_date
-        WHERE po.company_code = ${companyCode}
-          AND poi.item_type = ${itemType}
-          AND poi.item_code = ${itemCode}
-          AND po.production_date = ${dateStr}::DATE
-          AND po.deleted_at IS NULL
-          AND poi.deleted_at IS NULL
-          ${excludeWmsId ? `AND po.wms_id != ${excludeWmsId}` : ''}
-        
-        UNION ALL
-        
-        -- Adjustments
-        SELECT 'adjustment' as type, COALESCE(SUM(
-          CASE WHEN ai.adjustment_type = 'GAIN' THEN ai.qty ELSE -ai.qty END
-        ), 0)::numeric as qty
-        FROM adjustment_items ai
-        JOIN adjustments a ON a.company_code = ai.adjustment_company
-          AND a.id = ai.adjustment_id
-          AND a.adjustment_date = ai.adjustment_date
-        WHERE a.company_code = ${companyCode}
-          AND ai.item_type = ${itemType}
-          AND ai.item_code = ${itemCode}
-          AND a.adjustment_date = ${dateStr}::DATE
-          AND a.deleted_at IS NULL
-          AND ai.deleted_at IS NULL
-          ${excludeWmsId ? `AND a.wms_id != ${excludeWmsId}` : ''}
-        
-        UNION ALL
-        
-        -- Scrap transactions
-        SELECT 'scrap' as type, COALESCE(SUM(
-          CASE WHEN sti.direction = 'IN' THEN sti.qty ELSE -sti.qty END
-        ), 0)::numeric as qty
-        FROM scrap_transaction_items sti
-        JOIN scrap_transactions st ON st.company_code = sti.scrap_transaction_company
-          AND st.id = sti.scrap_transaction_id
-          AND st.transaction_date = sti.scrap_transaction_date
-        WHERE st.company_code = ${companyCode}
-          AND sti.item_type = ${itemType}
-          AND sti.item_code = ${itemCode}
-          AND st.transaction_date = ${dateStr}::DATE
-          AND st.deleted_at IS NULL
-          AND sti.deleted_at IS NULL
-          ${excludeWmsId ? `AND st.wms_id != ${excludeWmsId}` : ''}
-      )
-      SELECT
-        SUM(CASE WHEN type = 'incoming' THEN qty ELSE 0 END)::numeric as incoming_qty,
-        SUM(CASE WHEN type = 'outgoing' THEN qty ELSE 0 END)::numeric as outgoing_qty,
-        SUM(CASE WHEN type = 'material_usage' THEN qty ELSE 0 END)::numeric as material_usage_qty,
-        SUM(CASE WHEN type = 'production' THEN qty ELSE 0 END)::numeric as production_qty,
-        SUM(CASE WHEN type = 'adjustment' THEN qty ELSE 0 END)::numeric as adjustment_qty,
-        SUM(CASE WHEN type = 'scrap' AND (qty > 0) THEN qty ELSE 0 END)::numeric as scrap_in_qty,
-        SUM(CASE WHEN type = 'scrap' AND (qty < 0) THEN -qty ELSE 0 END)::numeric as scrap_out_qty
-      FROM daily_txns
-    `;
+    }>>(query, ...params);
 
     if (result.length === 0) return 0;
 
@@ -462,8 +592,6 @@ async function getTodayTransactions(
       // Unknown type - use all transactions
       netTransactions = incomingQty - materialUsageQty - outgoingQty + productionQty + adjustmentQty + scrapInQty - scrapOutQty;
     }
-
-    console.log(`[TodayTransactions] ${itemType} ${itemCode}${excludeWmsId ? ` (excl ${excludeWmsId})` : ''}: in=${incomingQty}, out=${outgoingQty}, matUsage=${materialUsageQty}, prod=${productionQty}, adj=${adjustmentQty}, scrapIn=${scrapInQty}, scrapOut=${scrapOutQty}, net=${netTransactions}`);
 
     return netTransactions;
   } catch (error) {
@@ -532,14 +660,19 @@ export async function checkScrapInBalance(
     const normalizedDate = normalizeDate(asOfDate);
     const dateStr = formatDateForSql(normalizedDate);
 
-    console.log(`[Scrap IN Balance] Checking: ${itemCode} (${itemType}), currentQty=${currentInQty}, newQty=${newInQty}`);
+    console.log(`[Scrap IN Balance] Checking: ${itemCode} (${itemType}), currentQty=${currentInQty}, newQty=${newInQty}, transactionDate=${dateStr}, excludeId=${excludeTransactionId}`);
 
-    // Get opening balance (previous snapshot or beginning_balances)
-    const openingBalance = await getOpeningBalance(companyCode, itemCode, itemType, normalizedDate);
+    // Get opening balance (previous day balance - the day BEFORE the transaction date)
+    const previousDay = new Date(normalizedDate);
+    previousDay.setDate(previousDay.getDate() - 1);
+    const previousDayStr = formatDateForSql(previousDay);
+    
+    const openingBalance = await getOpeningBalance(companyCode, itemCode, itemType, previousDay);
 
-    console.log(`[Scrap IN Balance] Opening balance: ${openingBalance}`);
+    console.log(`[Scrap IN Balance] Opening balance (as of ${previousDayStr}): ${openingBalance}`);
 
     // Calculate total IN quantity (excluding current transaction)
+    // For delete validation: include ALL IN transactions up to end of time, excluding the one being deleted
     const totalInResult = await prisma.$queryRaw<Array<{ total_in: Prisma.Decimal }>>`
       SELECT COALESCE(SUM(sti.qty), 0)::numeric as total_in
       FROM scrap_transaction_items sti
@@ -552,17 +685,15 @@ export async function checkScrapInBalance(
         AND st.transaction_type = 'IN'
         AND st.deleted_at IS NULL
         AND sti.deleted_at IS NULL
-        AND st.transaction_date <= ${dateStr}::DATE
-        ${excludeTransactionId ? `AND st.id != ${excludeTransactionId}` : ''}
+        AND (${excludeTransactionId} IS NULL OR st.id != ${excludeTransactionId || null})
     `;
 
     const totalIn = Number(totalInResult[0]?.total_in || 0);
     console.log(`[Scrap IN Balance] Total IN (excluding transaction): ${totalIn}`);
 
-    // Calculate total OUT quantity (up to today, for current balance state)
-    const todayDate = normalizeDate(new Date());
-    const todayDateStr = formatDateForSql(todayDate);
-
+    // Calculate total OUT quantity - INCLUDE ALL OUT TRANSACTIONS
+    // For delete validation: we need to check against ALL future OUTs, not just past ones
+    // This ensures we detect if deleting this IN would make balance negative at any future date
     const totalOutResult = await prisma.$queryRaw<Array<{ total_out: Prisma.Decimal }>>`
       SELECT COALESCE(SUM(ogi.qty), 0)::numeric as total_out
       FROM outgoing_good_items ogi
@@ -574,18 +705,19 @@ export async function checkScrapInBalance(
         AND ogi.item_type = ${itemType}
         AND og.deleted_at IS NULL
         AND ogi.deleted_at IS NULL
-        AND og.outgoing_date <= ${todayDateStr}::DATE
     `;
 
     const totalOut = Number(totalOutResult[0]?.total_out || 0);
-    console.log(`[Scrap IN Balance] Total OUT (up to today): ${totalOut}`);
+    console.log(`[Scrap IN Balance] Total OUT (all): ${totalOut}`);
 
     // Calculate balance excluding this transaction: opening + total_in - total_out
     const balanceExcludingThisTx = openingBalance + totalIn - totalOut;
+    console.log(`[Scrap IN Balance] CALCULATION: openingBalance(${openingBalance}) + totalIn(${totalIn}) - totalOut(${totalOut}) = balanceExcludingThisTx(${balanceExcludingThisTx})`);
 
     // After the change, this transaction will have newInQty instead of currentInQty
     // newBalance = (balance without this tx) + newInQty
     const newBalance = balanceExcludingThisTx + newInQty;
+    console.log(`[Scrap IN Balance] newBalance = balanceExcludingThisTx(${balanceExcludingThisTx}) + newInQty(${newInQty}) = ${newBalance}`);
 
     // Check if new balance would be negative
     const isAllowed = newBalance >= 0;
@@ -594,7 +726,7 @@ export async function checkScrapInBalance(
     // For logging: actual current balance (with current transaction included)
     const actualCurrentBalance = balanceExcludingThisTx + currentInQty;
 
-    console.log(`[Scrap IN Balance] For ${itemCode}: actualBalance=${actualCurrentBalance}, currentQty=${currentInQty}, newQty=${newInQty}, newBalance=${newBalance}, allowed=${isAllowed}`);
+    console.log(`[Scrap IN Balance] For ${itemCode}: actualBalance=${actualCurrentBalance}, currentQty=${currentInQty}, newQty=${newInQty}, newBalance=${newBalance}, allowed=${isAllowed}, shortfall=${shortfall}`);
 
     return {
       itemCode,
