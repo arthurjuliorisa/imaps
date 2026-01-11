@@ -614,6 +614,13 @@ export async function DELETE(
             data: { deleted_at: new Date() },
           });
 
+          // Also soft-delete all scrap_transaction_items for this scrap_transaction
+          // For consistency with SCRAP OUT delete logic
+          await tx.scrap_transaction_items.updateMany({
+            where: { scrap_transaction_id: actualId },
+            data: { deleted_at: new Date() },
+          });
+
           // Collect item for direct snapshot calculation
           snapshotItems.push({
             itemType: item.item_type,
@@ -707,23 +714,68 @@ export async function DELETE(
         );
       }
 
-      // Delete in transaction with snapshot recalculation
+      // Collect items for direct snapshot calculation BEFORE deletion
       const snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string; date: Date }> = [];
+      for (const item of transactionData.items) {
+        snapshotItems.push({
+          itemType: item.item_type,
+          itemCode: item.item_code,
+          itemName: item.item_name,
+          uom: item.uom,
+          date: transactionData.outgoing_date,
+        });
+      }
+
+      // Find and soft-delete corresponding scrap_transactions record (for dual-table consistency)
+      // SCRAP OUT is stored in BOTH outgoing_goods and scrap_transactions
+      const scrapTransaction = await prisma.scrap_transactions.findFirst({
+        where: {
+          company_code: companyCode,
+          transaction_type: 'OUT',
+          transaction_date: transactionData.outgoing_date,
+          deleted_at: null,
+        },
+        include: {
+          items: {
+            where: {
+              deleted_at: null,
+              item_type: 'SCRAP',
+            },
+          },
+        },
+      });
+
+      // Delete in transaction
       await prisma.$transaction(
         async (tx) => {
+          // Delete outgoing_goods and its items
           await tx.outgoing_goods.update({
             where: { id: actualId },
             data: { deleted_at: new Date() },
           });
 
-          // Collect items for direct snapshot calculation
-          for (const item of transactionData.items) {
-            snapshotItems.push({
-              itemType: item.item_type,
-              itemCode: item.item_code,
-              itemName: item.item_name,
-              uom: item.uom,
-              date: transactionData.outgoing_date,
+          // Also soft-delete all outgoing_good_items for this outgoing_good
+          await tx.outgoing_good_items.updateMany({
+            where: { outgoing_good_id: actualId },
+            data: { deleted_at: new Date() },
+          });
+
+          // Delete corresponding scrap_transactions record if found
+          if (scrapTransaction) {
+            await tx.scrap_transactions.update({
+              where: { id: scrapTransaction.id },
+              data: { deleted_at: new Date() },
+            });
+
+            // Also soft-delete all scrap_transaction_items for this scrap_transaction
+            await tx.scrap_transaction_items.updateMany({
+              where: { scrap_transaction_id: scrapTransaction.id },
+              data: { deleted_at: new Date() },
+            });
+
+            console.log('[DELETE] Soft-deleted corresponding scrap_transactions record and items:', {
+              scrapTransactionId: scrapTransaction.id,
+              outgoingGoodId: actualId,
             });
           }
         },
@@ -733,6 +785,7 @@ export async function DELETE(
       );
 
       // Execute direct snapshot calculation and cascading recalculation asynchronously (fire-and-forget)
+      // This ensures balance updates propagate forward when a past OUT transaction is deleted
       if (snapshotItems.length > 0) {
         (async () => {
           for (const snapItem of snapshotItems) {

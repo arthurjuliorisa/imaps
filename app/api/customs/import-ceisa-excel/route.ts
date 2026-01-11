@@ -331,6 +331,7 @@ export async function POST(request: Request) {
       (async () => {
         for (const item of snapshotItems) {
           try {
+            // Step 1: Upsert snapshot for the import date
             await prisma.$executeRawUnsafe(
               'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
               companyCode,
@@ -347,6 +348,25 @@ export async function POST(request: Request) {
                 itemType: item.itemType,
                 itemCode: item.itemCode,
                 date: docDate.toISOString().split('T')[0],
+              }
+            );
+
+            // Step 2: Cascade recalculate snapshots for all future dates
+            // This ensures all forward-looking balance updates when importing transactions
+            await prisma.$executeRawUnsafe(
+              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+              companyCode,
+              item.itemType,
+              item.itemCode,
+              docDate
+            );
+            console.log(
+              '[API Info] Cascaded snapshot recalculation executed',
+              {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                fromDate: docDate.toISOString().split('T')[0],
               }
             );
           } catch (snapshotError) {
@@ -531,7 +551,43 @@ async function importScrapTransactions(
         throw new Error(`Import ditolak: stock tidak mencukupi pada tanggal ${docDate.toLocaleDateString('id-ID')} untuk item berikut: ${insufficientItems.join('; ')}`);
       }
 
-      // Create outgoing_goods record
+      // Create scrap_transactions header (for snapshot calculation to query scrap_transaction_items)
+      const scrapTransaction = await tx.scrap_transactions.create({
+        data: {
+          company_code: companyCode,
+          transaction_date: docDate,
+          transaction_type: 'OUT',
+          document_number: data.docNumber,
+          recipient_name: data.recipientName || 'Unknown',
+          disposal_method: 'Sold as scrap',
+          remarks: null,
+          ppkek_number: data.ppkekNumber || null,
+          customs_registration_date: regDate || null,
+          customs_document_type: mapDocumentTypeToEnum(data.docType || '27') as any,
+          timestamp: new Date(),
+        },
+      });
+
+      // Create scrap_transaction_items for each item (for snapshot calculation to query)
+      const scrapTransactionItemsData = data.items.map(item => ({
+        scrap_transaction_id: scrapTransaction.id,
+        scrap_transaction_company: companyCode,
+        scrap_transaction_date: docDate,
+        item_type: 'SCRAP',
+        item_code: item.itemCode,
+        item_name: item.itemName,
+        uom: item.unit,
+        qty: new Prisma.Decimal(item.quantity),
+        currency: data.currency as any,
+        amount: new Prisma.Decimal(item.valueAmount),
+        scrap_reason: null,
+      }));
+
+      await tx.scrap_transaction_items.createMany({
+        data: scrapTransactionItemsData,
+      });
+
+      // Create outgoing_goods record (for WMS integration)
       const outgoingGood = await tx.outgoing_goods.create({
         data: {
           wms_id: wmsId,
