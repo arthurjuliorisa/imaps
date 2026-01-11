@@ -411,28 +411,29 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
 
       // Step 5: Calculate item-level snapshots and cascade recalculation
       try {
-        // Delete existing snapshots ONLY FOR AFFECTED ITEMS to avoid overwriting other transactions' data
-        // Fix: Previous logic deleted ALL snapshots for the date, which could override incoming goods
-        // Now: Only delete snapshots for items that appear in this material usage transaction
-        for (const item of snapshotItems) {
-          await prisma.stock_daily_snapshot.deleteMany({
-            where: {
-              company_code: data.company_code,
-              item_type: item.item_type,
-              item_code: item.item_code,
-              snapshot_date: transactionDate,
-            },
-          });
-        }
+        // =====================================================================
+        // FIX: Removed snapshot deletion before recalculation
+        // =====================================================================
+        // REASON: upsert_item_stock_snapshot() SQL function now queries ALL
+        // transaction sources on the snapshot_date and recalculates correctly:
+        //   - incoming_good_items
+        //   - outgoing_good_items
+        //   - material_usage_items (with reversal handling: CASE WHEN reversal='Y' THEN -qty)
+        //   - production_output_items (with reversal handling)
+        //   - adjustment_items (with GAIN/LOSS handling)
+        //
+        // For REVERSAL transactions:
+        //   - Original: PHC0126011000001 (qty=10, reversal=NULL) → counts as +10
+        //   - Reversal: PHC0126011000001-Reversal (qty=10, reversal='Y') → counts as -10
+        //   - Result: material_usage_qty = +10 + (-10) = 0 ✓ CORRECT
+        //   - Closing balance = opening + 0 = opening (negates original) ✓
+        //
+        // Deletion was causing: snapshot deleted → recalc without previous value → wrong closing balance
+        // Now: direct upsert with correct calculation on all sources
+        // =====================================================================
 
-        log.info('Cleared snapshots for affected items only', {
-          company_code: data.company_code,
-          snapshot_date: transactionDate.toISOString().split('T')[0],
-          affectedItemCount: snapshotItems.length,
-          affectedItems: snapshotItems.map(i => i.item_code).join(', '),
-        });
-
-        // Update snapshots for each item on transaction_date
+        // Recalculate snapshots for each item on transaction_date
+        // SQL function will aggregate ALL transactions and handle reversal logic
         for (const item of snapshotItems) {
           await prisma.$executeRawUnsafe(
             `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
@@ -445,15 +446,18 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
           );
         }
 
-        log.info('Item-level snapshots calculated', {
+        log.info('Item-level snapshots recalculated (no pre-deletion)', {
           itemCount: snapshotItems.length,
           reversal: data.reversal,
+          reason: 'upsert_item_stock_snapshot aggregates all transaction sources correctly'
         });
 
-        // Step 5: Cascade recalculation from transaction_date onwards
+        // Step 6: Cascade recalculation from transaction_date onwards
         // CRITICAL: Must cascade even on first insert (not just date change)
-        // Material usage can affect snapshots on transaction_date and ALL future dates
+        // Material usage affects closing_balance which rolls forward to future dates
+        // Reversal handling: cascaded snapshots automatically consider reversal logic
         // Example: Material usage on 2026-01-08 affects snapshots on 2026-01-09, 2026-01-10, etc.
+        // For reversals: closing_balance will be DECREASED (negation), cascading correctly
         await this.cascadeRecalculateSnapshots(
           data.company_code,
           snapshotItems,
@@ -463,6 +467,8 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
         log.info('Cascade recalculation completed', {
           fromDate: transactionDate.toISOString().split('T')[0],
           itemCount: snapshotItems.length,
+          reversal: data.reversal,
+          note: 'All future snapshots recalculated with correct opening_balance from previous closing'
         });
 
         // Additional: If date changed, also recalculate old date
