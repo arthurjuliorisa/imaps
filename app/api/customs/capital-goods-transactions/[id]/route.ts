@@ -371,6 +371,19 @@ export async function DELETE(
         data: { deleted_at: new Date() },
       });
 
+      // IMPORTANT: Also soft delete all child items to maintain data consistency
+      // This ensures snapshot calculation won't include deleted transaction items
+      if (items.length > 0) {
+        await tx.outgoing_good_items.updateMany({
+          where: {
+            outgoing_good_id: actualId,
+            outgoing_good_company: companyCode,
+            deleted_at: null,
+          },
+          data: { deleted_at: new Date() },
+        });
+      }
+
       // Collect snapshot items for direct calculation
       for (const item of items) {
         snapshotItemsDelete.push({
@@ -393,6 +406,7 @@ export async function DELETE(
       (async () => {
         for (const item of snapshotItemsDelete) {
           try {
+            // Step 1: Upsert snapshot for the delete date
             await prisma.$executeRawUnsafe(
               'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
               companyCode,
@@ -407,6 +421,22 @@ export async function DELETE(
               itemType: item.itemType,
               itemCode: item.itemCode,
               date: item.date.toISOString().split('T')[0],
+            });
+
+            // Step 2: Cascade recalculate snapshots for all future dates
+            // This ensures all forward-looking balance updates when deleting transactions
+            await prisma.$executeRawUnsafe(
+              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+              companyCode,
+              item.itemType,
+              item.itemCode,
+              item.date
+            );
+            console.log('[API Info] Cascaded snapshot recalculation executed', {
+              companyCode,
+              itemType: item.itemType,
+              itemCode: item.itemCode,
+              fromDate: item.date.toISOString().split('T')[0],
             });
           } catch (snapshotError) {
             console.error('[API Error] Snapshot calculation failed', {

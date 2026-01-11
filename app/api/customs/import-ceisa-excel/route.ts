@@ -80,20 +80,52 @@ async function validateScrapItems(
 }
 
 /**
- * Map document type code to enum value
+ * Valid customs document types enum
+ * These must match Prisma schema CustomsDocumentType enum
+ */
+const VALID_CUSTOMS_DOCUMENT_TYPES = [
+  'BC23',  // Import Declaration
+  'BC27',  // Other Bonded Zone Release (Incoming & Outgoing)
+  'BC40',  // Local Purchase from Non-Bonded Zone
+  'BC30',  // Export Declaration
+  'BC25',  // Local Sales to Non-Bonded Zone
+  'BC261', // Subcontracting - Incoming
+  'BC262', // Subcontracting - Outgoing
+  'PPKEKTLDDP',  // PPKEK incoming for TLDDP
+  'PPKEKLDIN',   // PPKEK incoming for LDP
+  'PPKEKLDPOUT', // PPKEK outgoing for LDP
+] as const;
+
+/**
+ * Map document type code to enum value and validate
  * Converts "25" to "BC25", "27" to "BC27", "41" to "BC41", etc.
- * Valid document types for outgoing transactions: BC25, BC27, BC41
+ * Also validates that the result is a valid enum value
+ * 
+ * @throws Error if document type is not valid
  */
 function mapDocumentTypeToEnum(docType: string): string {
   const cleanType = docType.trim();
 
-  // If already prefixed with BC, return as-is
-  if (cleanType.startsWith('BC')) {
-    return cleanType;
+  // Determine the mapped type
+  let mappedType: string;
+  
+  // If already prefixed with BC, use as-is
+  if (cleanType.startsWith('BC') || cleanType.startsWith('PPKEK')) {
+    mappedType = cleanType;
+  } else {
+    // Add BC prefix
+    mappedType = `BC${cleanType}`;
   }
 
-  // Add BC prefix
-  return `BC${cleanType}`;
+  // Validate against allowed enum values
+  if (!VALID_CUSTOMS_DOCUMENT_TYPES.includes(mappedType as any)) {
+    throw new Error(
+      `Invalid customs document type: '${cleanType}' (mapped to '${mappedType}'). ` +
+      `Allowed values: ${VALID_CUSTOMS_DOCUMENT_TYPES.join(', ')}`
+    );
+  }
+
+  return mappedType;
 }
 
 /**
