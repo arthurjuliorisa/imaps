@@ -64,14 +64,15 @@ const columns: Column[] = [
     label: 'Status',
     minWidth: 120,
     format: (value: string) => {
+      const upperValue = value?.toUpperCase() || '';
       let color: 'success' | 'error' | 'warning' | 'info' = 'info';
-      if (value === 'SUCCESS') color = 'success';
-      else if (value === 'FAILED') color = 'error';
-      else if (value === 'WARNING') color = 'warning';
+      if (upperValue === 'SUCCESS') color = 'success';
+      else if (upperValue === 'FAILED') color = 'error';
+      else if (upperValue === 'WARNING') color = 'warning';
 
       return (
         <Chip
-          label={value}
+          label={upperValue}
           color={color}
           size="small"
           sx={{ fontWeight: 'bold' }}
