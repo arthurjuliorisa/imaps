@@ -155,6 +155,7 @@ export async function GET(request: Request) {
           sti.amount as value_amount,
           st.remarks,
           st.created_at,
+          st.transaction_date,
           st.transaction_date as sort_date
         FROM scrap_transactions st
         JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
@@ -193,6 +194,7 @@ export async function GET(request: Request) {
           ogi.amount as value_amount,
           '' as remarks,
           og.created_at,
+          og.outgoing_date as transaction_date,
           og.outgoing_date as sort_date
         FROM outgoing_goods og
         JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
@@ -236,6 +238,7 @@ export async function GET(request: Request) {
       currency: row.currency,
       valueAmount: Number(row.value_amount || 0),
       remarks: row.remarks,
+      transactionDate: row.transaction_date,
       createdAt: row.created_at,
     }));
 

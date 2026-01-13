@@ -31,6 +31,10 @@ import {
   InputAdornment,
   alpha,
   useTheme,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -44,6 +48,17 @@ import { useToast } from '@/app/components/ToastProvider';
 import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcel, exportToPDF } from '@/lib/exportUtils';
+
+interface ItemType {
+  item_type_code: string;
+  name_en: string;
+  name_de?: string;
+  name_id?: string;
+  category: string;
+  description?: string;
+  is_active: boolean;
+  sort_order?: number;
+}
 
 interface ScrapComponent {
   id?: number;
@@ -111,6 +126,8 @@ export default function ScrapMasterPage() {
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<ScrapItem | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
+  const [loadingItemTypes, setLoadingItemTypes] = useState(false);
 
   const fetchScrapItems = useCallback(async () => {
     setLoading(true);
@@ -127,9 +144,30 @@ export default function ScrapMasterPage() {
     }
   }, [includeInactive, toast]);
 
+  const fetchItemTypes = useCallback(async () => {
+    setLoadingItemTypes(true);
+    try {
+      const response = await fetch('/api/master/item-types?active=true');
+      if (!response.ok) throw new Error('Failed to fetch item types');
+      const result = await response.json();
+      if (result.success && result.data) {
+        setItemTypes(result.data);
+      }
+    } catch (error) {
+      console.error('Error fetching item types:', error);
+      toast.error('Failed to load item types');
+    } finally {
+      setLoadingItemTypes(false);
+    }
+  }, [toast]);
+
   useEffect(() => {
     fetchScrapItems();
   }, [fetchScrapItems]);
+
+  useEffect(() => {
+    fetchItemTypes();
+  }, [fetchItemTypes]);
 
   // Reset page when search query changes
   useEffect(() => {
@@ -613,14 +651,32 @@ export default function ScrapMasterPage() {
                     />
                   </Stack>
                   <Stack direction="row" spacing={2}>
-                    <TextField
-                      label="Component Type"
-                      value={comp.componentType}
-                      onChange={(e) => handleUpdateComponent(index, 'componentType', e.target.value)}
-                      required
-                      size="small"
-                      sx={{ width: 150 }}
-                    />
+                    <FormControl required size="small" sx={{ width: 200 }}>
+                      <InputLabel id={`component-type-label-${index}`}>Component Type</InputLabel>
+                      <Select
+                        labelId={`component-type-label-${index}`}
+                        id={`component-type-select-${index}`}
+                        value={comp.componentType}
+                        label="Component Type"
+                        onChange={(e) => handleUpdateComponent(index, 'componentType', e.target.value)}
+                        disabled={loadingItemTypes}
+                      >
+                        {loadingItemTypes ? (
+                          <MenuItem disabled>
+                            <CircularProgress size={20} sx={{ mr: 1 }} />
+                            Loading...
+                          </MenuItem>
+                        ) : itemTypes.length === 0 ? (
+                          <MenuItem disabled>No item types available</MenuItem>
+                        ) : (
+                          itemTypes.map((itemType) => (
+                            <MenuItem key={itemType.item_type_code} value={itemType.item_type_code}>
+                              {itemType.item_type_code}
+                            </MenuItem>
+                          ))
+                        )}
+                      </Select>
+                    </FormControl>
                     <TextField
                       label="UOM"
                       value={comp.uom}

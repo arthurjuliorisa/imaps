@@ -59,6 +59,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
   const [records, setRecords] = useState<ImportedRecord[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
   const [validItemTypes, setValidItemTypes] = useState<string[]>([]);
+  const [backendValidationErrors, setBackendValidationErrors] = useState<Array<{itemCode: string; error: string}>>([]);
 
   const handleFileSelect = () => {
     fileInputRef.current?.click();
@@ -214,6 +215,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
     setFileName(file.name);
     setLoading(true);
     setParseError(null);
+    setBackendValidationErrors([]);
 
     try {
       // Ensure valid item types are fetched before parsing
@@ -302,6 +304,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
 
   const handleSubmit = async () => {
     setImporting(true);
+    setBackendValidationErrors([]);
     try {
       const validRecords = records.filter((r) => r.isValid);
       await onSubmit(validRecords);
@@ -309,12 +312,51 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
       setRecords([]);
       setFileName('');
       setParseError(null);
+      setBackendValidationErrors([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error importing records:', error);
+
+      // Check if error contains validation errors from backend
+      if (error.validationErrors && Array.isArray(error.validationErrors)) {
+        // Map backend validation errors to records
+        // Backend errors format: { row: number, field: string, error: string }
+        const backendErrors: Array<{itemCode: string; error: string}> = [];
+
+        error.validationErrors.forEach((validationError: any) => {
+          // Row number from backend (1-based) needs to match our records array (0-based)
+          // But actually, we need to match by item code since rows might not align
+          // The backend returns row numbers based on the request array
+          const recordIndex = validationError.row - 1; // Convert to 0-based index
+          if (recordIndex >= 0 && recordIndex < records.length) {
+            const record = records[recordIndex];
+            backendErrors.push({
+              itemCode: record.itemCode,
+              error: validationError.error
+            });
+          }
+        });
+
+        setBackendValidationErrors(backendErrors);
+
+        // Update records to mark them as invalid and add backend errors
+        const updatedRecords = records.map(record => {
+          const backendError = backendErrors.find(e => e.itemCode === record.itemCode);
+          if (backendError) {
+            return {
+              ...record,
+              isValid: false,
+              errors: [...record.errors, backendError.error]
+            };
+          }
+          return record;
+        });
+
+        setRecords(updatedRecords);
+      }
     } finally {
       setImporting(false);
     }
@@ -324,6 +366,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
     setRecords([]);
     setFileName('');
     setParseError(null);
+    setBackendValidationErrors([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -494,6 +537,27 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                   )}
                 </Typography>
               </Alert>
+
+              {backendValidationErrors.length > 0 && (
+                <Alert severity="error" sx={{ mt: 1, py: 1 }}>
+                  <Typography variant="body2" fontWeight={600} gutterBottom>
+                    Validation Error dari Server
+                  </Typography>
+                  <Typography variant="caption" component="div">
+                    {backendValidationErrors.length} item tidak dapat ditambahkan karena:
+                  </Typography>
+                  <Box component="ul" sx={{ mt: 0.5, mb: 0, pl: 2 }}>
+                    {backendValidationErrors.map((error, index) => (
+                      <Typography key={index} variant="caption" component="li">
+                        <strong>{error.itemCode}</strong>: {error.error}
+                      </Typography>
+                    ))}
+                  </Box>
+                  <Typography variant="caption" component="div" sx={{ mt: 1, fontStyle: 'italic' }}>
+                    Import dibatalkan. Perbaiki error di atas dan coba lagi.
+                  </Typography>
+                </Alert>
+              )}
             </Box>
           )}
         </Box>

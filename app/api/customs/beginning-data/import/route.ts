@@ -8,6 +8,7 @@ import {
   ValidationError,
   getTodayUTC,
 } from '@/lib/api-utils';
+import { validateBeginningBalanceItemsBatch } from '@/lib/beginning-data-validation';
 
 /**
  * Parse DD/MM/YYYY format to Date
@@ -269,6 +270,49 @@ export async function POST(request: Request) {
       );
     }
 
+    // Validate items for duplicates and existing transactions (batch validation)
+    const itemsToValidate = validRecords.map(record => ({
+      itemCode: record.itemCode,
+      balanceDate: record.balanceDate,
+    }));
+
+    const validationResults = await validateBeginningBalanceItemsBatch(
+      companyCodeInt,
+      itemsToValidate
+    );
+
+    // Check validation results and collect errors
+    const validationErrors: Array<{ row: number; field: string; error: string }> = [];
+    for (const record of validRecords) {
+      const key = `${record.itemCode}|${record.balanceDate.getTime()}`;
+      const validationResult = validationResults[key];
+
+      if (!validationResult.valid) {
+        // Add all validation errors for this record
+        for (const validationError of validationResult.errors) {
+          validationErrors.push({
+            row: record.row,
+            field: 'Item Code',
+            error: validationError.reason,
+          });
+        }
+      }
+    }
+
+    // If there are validation errors, return them
+    if (validationErrors.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Validation failed: ${validationErrors.length} item(s) cannot be added`,
+          successCount: 0,
+          errorCount: validationErrors.length,
+          errors: validationErrors,
+        },
+        { status: 400 }
+      );
+    }
+
     // Import all records in a transaction
     let successCount = 0;
     const byType: Record<string, number> = {};
@@ -276,45 +320,8 @@ export async function POST(request: Request) {
 
     try {
       await prisma.$transaction(async (tx) => {
-        // OPTIMIZATION: Batch check for duplicates (single query instead of N+1)
-        const itemCodes = validRecords.map(r => r.itemCode);
-        const balanceDates = Array.from(uniqueBalanceDates).map(t => new Date(t));
-        
-        const existingRecords = await tx.beginning_balances.findMany({
-          where: {
-            company_code: companyCodeInt,
-            item_code: { in: itemCodes },
-            balance_date: { in: balanceDates },
-          },
-          select: {
-            item_code: true,
-            balance_date: true,
-          },
-        });
-
-        // Build a set for O(1) lookup
-        const existingSet = new Set(
-          existingRecords.map(r => `${r.item_code}|${r.balance_date.getTime()}`)
-        );
-
-        // Check each record against the set
-        const duplicateErrors: Array<{ row: number; field: string; error: string }> = [];
-        for (const record of validRecords) {
-          const key = `${record.itemCode}|${record.balanceDate.getTime()}`;
-          if (existingSet.has(key)) {
-            duplicateErrors.push({
-              row: record.row,
-              field: 'Duplicate',
-              error: `A beginning balance record for item '${record.itemCode}' on this date already exists`,
-            });
-          }
-        }
-
-        // If duplicates found, throw error to rollback transaction
-        if (duplicateErrors.length > 0) {
-          errors.push(...duplicateErrors);
-          throw new ValidationError('Duplicate records detected');
-        }
+        // Note: Duplicate and transaction validation is already done before this transaction
+        // This ensures we fail fast and don't start a transaction if validation fails
 
         // OPTIMIZATION: Bulk insert all records at once instead of one-by-one
         const insertData = validRecords.map(record => ({

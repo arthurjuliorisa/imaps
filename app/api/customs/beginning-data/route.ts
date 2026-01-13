@@ -10,6 +10,7 @@ import {
   validatePositiveNumber,
   ValidationError,
 } from '@/lib/api-utils';
+import { validateBeginningBalanceItem } from '@/lib/beginning-data-validation';
 
 /**
  * GET /api/customs/beginning-data
@@ -216,19 +217,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check for duplicate record (same company, item code, and date)
-    const existingRecord = await prisma.beginning_balances.findFirst({
-      where: {
-        company_code: companyCode,
-        item_code: itemCode,
-        balance_date: normalizedDate,
-      },
-    });
+    // Validate item: check for duplicates and existing transactions
+    const validation = await validateBeginningBalanceItem(
+      companyCode,
+      itemCode,
+      normalizedDate
+    );
 
-    if (existingRecord) {
+    if (!validation.valid) {
+      // Return the first validation error with detailed message
+      const firstError = validation.errors[0];
       return NextResponse.json(
-        { message: 'A beginning balance record for this item and date already exists' },
-        { status: 409 }
+        { message: firstError.reason },
+        { status: 400 }
       );
     }
 
