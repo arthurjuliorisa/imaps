@@ -41,6 +41,7 @@ export default function DashboardLayout({
       <Header
         onMenuClick={() => setSidebarOpen(true)}
         sidebarCollapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
       <Sidebar
         open={sidebarOpen}

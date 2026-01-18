@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,93 +7,34 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================================================
-// ENUMS
-// ============================================================================
-
-enum CustomsDocumentType {
-  BC23 // Import Declaration
-  BC27 // Other Bonded Zone Release (Incoming & Outgoing)
-  BC40 // Local Purchase from Non-Bonded Zone
-  BC30 // Export Declaration
-  BC25 // Local Sales to Non-Bonded Zone
-  BC41 // Local Sales to Non-Bonded Zone from Local Purchase (BC40)
-  BC261 // Subcontracting - Incoming
-  BC262 // Subcontracting - Outgoing
-  PPKEKTLDDP // PPKEK incoming for TLDDP
-  PPKEKLDIN // PPKEK incoming for LDP
-  PPKEKLDPOUT  // PPKEK outgoing for LDP
-}
-
-// ============================================================================
-// ITEM TYPE MASTER TABLE (Replaced ENUM for extensibility)
-// ============================================================================
-
 model item_types {
   item_type_code String   @id @db.VarChar(10)
   name_en        String   @db.VarChar(100)
   name_de        String?  @db.VarChar(100)
   name_id        String?  @db.VarChar(100)
   category       String   @db.VarChar(50)
-  description    String?  @db.Text
+  description    String?
   is_active      Boolean  @default(true)
   sort_order     Int?
   created_at     DateTime @default(now()) @db.Timestamptz(6)
   updated_at     DateTime @updatedAt @db.Timestamptz(6)
 }
 
-enum AdjustmentType {
-  GAIN // Inventory increase
-  LOSS // Inventory decrease
-}
-
-enum Currency {
-  USD
-  IDR
-  CNY
-  EUR
-  JPY
-}
-
-enum CompanyStatus {
-  ACTIVE
-  INACTIVE
-}
-
-enum CalculationMethod {
-  TRANSACTION
-  WIP_SNAPSHOT
-
-  @@map("calculation_method")
-}
-
-// ============================================================================
-// MASTER DATA TABLES
-// ============================================================================
-
 model companies {
-  id         Int           @id @default(autoincrement())
-  code       Int           @unique
-  name       String        @db.VarChar(200)
-  status     CompanyStatus @default(ACTIVE)
-  created_at DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at DateTime      @updatedAt @db.Timestamptz(6)
-  deleted_at DateTime?     @db.Timestamptz(6)
-
-  // Relations
-  incoming_goods               incoming_goods[]
-  material_usages              material_usages[]
-  wip_balances                 wip_balances[]
-  production_outputs           production_outputs[]
-  outgoing_goods               outgoing_goods[]
-  adjustments                  adjustments[]
-  beginning_balances           beginning_balances[]
-  scrap_items                  scrap_items[]
-  items                        items[]
-  users                        users[]
-  snapshot_recalc_queue        snapshot_recalc_queue[]
-  stock_daily_snapshot         stock_daily_snapshot[]
-  scrap_transactions           scrap_transactions[]
+  id                    Int                     @id @default(autoincrement())
+  code                  Int                     @unique
+  name                  String                  @db.VarChar(200)
+  status                CompanyStatus           @default(ACTIVE)
+  created_at            DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime                @updatedAt @db.Timestamptz(6)
+  deleted_at            DateTime?               @db.Timestamptz(6)
+  beginning_balances    beginning_balances[]
+  items                 items[]
+  scrap_items           scrap_items[]
+  scrap_transactions    scrap_transactions[]
+  snapshot_recalc_queue snapshot_recalc_queue[]
+  stock_opnames         stock_opnames[]
+  users                 users[]
 
   @@index([code])
   @@index([status])
@@ -115,8 +53,7 @@ model items {
   created_at   DateTime  @default(now()) @db.Timestamptz(6)
   updated_at   DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at   DateTime? @db.Timestamptz(6)
-
-  company companies @relation(fields: [company_code], references: [code])
+  company      companies @relation(fields: [company_code], references: [code])
 
   @@unique([company_code, item_code])
   @@index([company_code])
@@ -126,22 +63,20 @@ model items {
 }
 
 model users {
-  id           String    @id @default(dbgenerated("gen_random_uuid()"))
-  username     String    @unique @db.VarChar(100)
-  email        String    @unique @db.VarChar(200)
-  password     String    @db.VarChar(255)
-  full_name    String    @db.VarChar(200)
-  role         String    @default("USER") @db.VarChar(50)
-  company_code Int?
-  is_active    Boolean   @default(true)
-  created_at   DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at   DateTime? @db.Timestamptz(6)
-
-  // Relations
-  company           companies?          @relation(fields: [company_code], references: [code], onDelete: NoAction, onUpdate: NoAction)
-  user_access_menus user_access_menus[]
+  id                String              @id @default(dbgenerated("gen_random_uuid()"))
+  username          String              @unique @db.VarChar(100)
+  email             String              @unique @db.VarChar(200)
+  password          String              @db.VarChar(255)
+  full_name         String              @db.VarChar(200)
+  role              String              @default("USER") @db.VarChar(50)
+  company_code      Int?
+  is_active         Boolean             @default(true)
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime            @updatedAt @db.Timestamptz(6)
+  deleted_at        DateTime?           @db.Timestamptz(6)
   activity_logs     activity_logs[]
+  user_access_menus user_access_menus[]
+  company           companies?          @relation(fields: [company_code], references: [code], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([username])
   @@index([email])
@@ -149,17 +84,15 @@ model users {
 }
 
 model menus {
-  id         String   @id @default(dbgenerated("gen_random_uuid()"))
-  parent_id  String?
-  menu_name  String   @db.VarChar(100)
-  menu_path  String?  @db.VarChar(255)
-  menu_icon  String?  @db.VarChar(50)
-  menu_order Int?
-  is_active  Boolean  @default(true)
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  updated_at DateTime @updatedAt @db.Timestamptz(6)
-
-  // Relations
+  id                String              @id @default(dbgenerated("gen_random_uuid()"))
+  parent_id         String?
+  menu_name         String              @db.VarChar(100)
+  menu_path         String?             @db.VarChar(255)
+  menu_icon         String?             @db.VarChar(50)
+  menu_order        Int?
+  is_active         Boolean             @default(true)
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime            @updatedAt @db.Timestamptz(6)
   parent            menus?              @relation("MenuHierarchy", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   children          menus[]             @relation("MenuHierarchy")
   user_access_menus user_access_menus[]
@@ -178,10 +111,8 @@ model user_access_menus {
   can_delete Boolean  @default(false)
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
-
-  // Relations
-  user users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  menu menus @relation(fields: [menu_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  menu       menus    @relation(fields: [menu_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user       users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([user_id, menu_id])
   @@index([user_id])
@@ -189,21 +120,20 @@ model user_access_menus {
 }
 
 model beginning_balances {
-  id           Int       @id @default(autoincrement())
+  id           Int                        @id @default(autoincrement())
   company_code Int
-  item_code    String    @db.VarChar(50)
-  item_name    String    @db.VarChar(200)
-  item_type    String    @db.VarChar(10)
-  uom          String    @db.VarChar(20)
-  qty          Decimal   @db.Decimal(15, 3)
-  balance_date DateTime  @db.Date
-  remarks      String?   @db.VarChar(1000)
-  created_at   DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at   DateTime? @db.Timestamptz(6)
-
-  company companies @relation(fields: [company_code], references: [code])
-  ppkeks      beginning_balance_ppkeks[]
+  item_code    String                     @db.VarChar(50)
+  item_name    String                     @db.VarChar(200)
+  item_type    String                     @db.VarChar(10)
+  uom          String                     @db.VarChar(20)
+  qty          Decimal                    @db.Decimal(15, 3)
+  balance_date DateTime                   @db.Date
+  created_at   DateTime                   @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime                   @updatedAt @db.Timestamptz(6)
+  deleted_at   DateTime?                  @db.Timestamptz(6)
+  remarks      String?                    @db.VarChar(1000)
+  ppkeks       beginning_balance_ppkeks[]
+  company      companies                  @relation(fields: [company_code], references: [code])
 
   @@unique([company_code, item_code, balance_date])
   @@index([company_code])
@@ -212,36 +142,30 @@ model beginning_balances {
 }
 
 model beginning_balance_ppkeks {
-  id                    Int                @id @default(autoincrement())
-  beginning_balance_id  Int
-  ppkek_number          String             @db.VarChar(50)
-  created_at            DateTime           @default(now()) @db.Timestamptz(6)
+  id                   Int                @id @default(autoincrement())
+  beginning_balance_id Int
+  ppkek_number         String             @db.VarChar(50)
+  created_at           DateTime           @default(now()) @db.Timestamptz(6)
+  beginning_balance    beginning_balances @relation(fields: [beginning_balance_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_beginning_balance")
 
-  beginning_balance beginning_balances @relation(fields: [beginning_balance_id], references: [id], onDelete: Cascade)
-
-  @@unique([beginning_balance_id, ppkek_number])
-  @@index([beginning_balance_id])
-  @@index([ppkek_number])
+  @@unique([beginning_balance_id, ppkek_number], map: "uk_beginning_balance_ppkek")
+  @@index([beginning_balance_id], map: "idx_beginning_balance_ppkeks_balance_id")
+  @@index([ppkek_number], map: "idx_beginning_balance_ppkeks_ppkek_number")
 }
 
-// ============================================================================
-// SCRAP MASTER DATA
-// ============================================================================
-
 model scrap_items {
-  id                Int       @id @default(autoincrement())
-  company_code      Int
-  scrap_code        String    @unique @db.VarChar(50)
-  scrap_name        String    @db.VarChar(200)
-  scrap_description String?   @db.VarChar(500)
-  uom               String    @db.VarChar(20)
-  is_active         Boolean   @default(true)
-  created_at        DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at        DateTime? @db.Timestamptz(6)
-
-  company            companies            @relation(fields: [company_code], references: [code])
+  id                 Int                  @id @default(autoincrement())
+  company_code       Int
+  scrap_code         String               @unique @db.VarChar(50)
+  scrap_name         String               @db.VarChar(200)
+  scrap_description  String?              @db.VarChar(500)
+  uom                String               @db.VarChar(20)
+  is_active          Boolean              @default(true)
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @updatedAt @db.Timestamptz(6)
+  deleted_at         DateTime?            @db.Timestamptz(6)
   scrap_item_details scrap_item_details[]
+  company            companies            @relation(fields: [company_code], references: [code])
 
   @@unique([company_code, scrap_code])
   @@index([company_code])
@@ -250,19 +174,18 @@ model scrap_items {
 }
 
 model scrap_item_details {
-  id             Int      @id @default(autoincrement())
+  id             Int         @id @default(autoincrement())
   scrap_item_id  Int
-  component_code String   @db.VarChar(50)
-  component_name String   @db.VarChar(200)
-  component_type String   @db.VarChar(10)
-  uom            String   @db.VarChar(20)
-  quantity       Decimal  @db.Decimal(15, 3)
-  percentage     Decimal? @db.Decimal(5, 2)
-  remarks        String?  @db.VarChar(500)
-  created_at     DateTime @default(now()) @db.Timestamptz(6)
-  updated_at     DateTime @updatedAt @db.Timestamptz(6)
-
-  scrap_item scrap_items @relation(fields: [scrap_item_id], references: [id], onDelete: Cascade)
+  component_code String      @db.VarChar(50)
+  component_name String      @db.VarChar(200)
+  component_type String      @db.VarChar(10)
+  uom            String      @db.VarChar(20)
+  quantity       Decimal     @db.Decimal(15, 3)
+  percentage     Decimal?    @db.Decimal(5, 2)
+  remarks        String?     @db.VarChar(500)
+  created_at     DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime    @updatedAt @db.Timestamptz(6)
+  scrap_item     scrap_items @relation(fields: [scrap_item_id], references: [id], onDelete: Cascade)
 
   @@unique([scrap_item_id, component_code])
   @@index([scrap_item_id])
@@ -291,37 +214,22 @@ model activity_logs {
   id          BigInt   @id @default(autoincrement())
   user_id     String?  @db.VarChar(100)
   action      String   @db.VarChar(100)
-  description String   @db.Text
+  description String
   status      String   @default("success") @db.VarChar(20)
   metadata    Json?
   ip_address  String?  @db.VarChar(50)
   user_agent  String?  @db.VarChar(500)
   created_at  DateTime @default(now()) @db.Timestamptz(6)
+  users       users?   @relation(fields: [user_id], references: [id], onUpdate: NoAction, map: "fk_activity_logs_user")
 
-  users users? @relation(fields: [user_id], references: [id], onDelete: SetNull)
-
-  @@index([user_id])
-  @@index([action])
-  @@index([status])
-  @@index([created_at])
+  @@index([action], map: "idx_activity_logs_action")
+  @@index([created_at], map: "idx_activity_logs_created_at")
+  @@index([status], map: "idx_activity_logs_status")
+  @@index([user_id], map: "idx_activity_logs_user_id")
 }
 
-// ============================================================================
-// PARTITIONED TABLES
-// Note: Prisma will create these as regular tables first
-// Then setup_partitions.sql will convert them to partitioned tables
-// ============================================================================
-
-// ============================================================================
-// INCOMING GOODS - PARTITIONED TABLE
-// ============================================================================
-// IMPORTANT: FK relation removed because PostgreSQL doesn't support
-// foreign keys from regular tables to partitioned tables.
-// Referential integrity is maintained at application level.
-// ============================================================================
-
 model incoming_goods {
-  id                        Int                 @id @default(autoincrement())
+  id                        Int                 @default(autoincrement())
   wms_id                    String              @db.VarChar(100)
   company_code              Int
   owner                     Int
@@ -338,10 +246,6 @@ model incoming_goods {
   updated_at                DateTime            @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime?           @db.Timestamptz(6)
 
-  company companies @relation(fields: [company_code], references: [code])
-  // NOTE: items relation removed - use manual joins in queries
-  // items   incoming_good_items[]
-
   @@unique([company_code, wms_id, incoming_date])
   @@unique([company_code, id, incoming_date])
   @@index([wms_id])
@@ -350,6 +254,7 @@ model incoming_goods {
   @@index([ppkek_number])
   @@index([customs_document_type])
   @@index([incoming_evidence_number])
+  @@index([company_code, incoming_date, deleted_at], map: "idx_incoming_goods_date_range")
 }
 
 model incoming_good_items {
@@ -369,23 +274,19 @@ model incoming_good_items {
   updated_at            DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at            DateTime? @db.Timestamptz(6)
 
-  // NOTE: incoming_good relation removed due to partitioning limitation
-  // PostgreSQL doesn't support FK from regular table to partitioned table
-  // Use manual joins: WHERE incoming_good_company = ? AND incoming_good_id = ? AND incoming_good_date = ?
-  // incoming_good incoming_goods @relation(fields: [incoming_good_company, incoming_good_id, incoming_good_date], references: [company_code, id, incoming_date], onDelete: Cascade)
-
   @@index([incoming_good_id])
   @@index([incoming_good_id, incoming_good_company, incoming_good_date])
   @@index([item_code])
   @@index([item_type])
+  @@index([item_type, deleted_at], map: "idx_incoming_good_items_type")
 }
 
 model material_usages {
-  id                       Int       @id @default(autoincrement())
+  id                       Int       @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
   work_order_number        String?   @db.VarChar(50)
-  cost_center_number       String?
+  cost_center_number       String?   @db.VarChar(100)
   internal_evidence_number String    @db.VarChar(50)
   transaction_date         DateTime  @db.Date
   reversal                 String?   @db.VarChar(1)
@@ -393,10 +294,6 @@ model material_usages {
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at               DateTime? @db.Timestamptz(6)
-
-  company                         companies                         @relation(fields: [company_code], references: [code])
-  items                           material_usage_items[]
-  work_order_material_consumption work_order_material_consumption[]
 
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
@@ -406,6 +303,7 @@ model material_usages {
   @@index([work_order_number])
   @@index([cost_center_number])
   @@index([internal_evidence_number])
+  @@index([company_code, transaction_date, deleted_at], map: "idx_material_usages_date_range")
 }
 
 model material_usage_items {
@@ -423,17 +321,16 @@ model material_usage_items {
   updated_at             DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at             DateTime? @db.Timestamptz(6)
 
-  material_usage material_usages @relation(fields: [material_usage_company, material_usage_id, material_usage_date], references: [company_code, id, transaction_date], onDelete: Cascade)
-
   @@index([material_usage_id])
   @@index([material_usage_id, material_usage_company, material_usage_date])
   @@index([item_code])
   @@index([item_type])
   @@index([ppkek_number])
+  @@index([item_type, deleted_at], map: "idx_material_usage_items_type")
 }
 
 model wip_balances {
-  id           Int       @id @default(autoincrement())
+  id           Int       @default(autoincrement())
   wms_id       String    @db.VarChar(100)
   company_code Int
   item_type    String    @db.VarChar(10)
@@ -447,8 +344,6 @@ model wip_balances {
   updated_at   DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at   DateTime? @db.Timestamptz(6)
 
-  company companies @relation(fields: [company_code], references: [code])
-
   @@unique([company_code, wms_id, stock_date])
   @@index([wms_id])
   @@index([company_code])
@@ -458,7 +353,7 @@ model wip_balances {
 }
 
 model production_outputs {
-  id                       Int       @id @default(autoincrement())
+  id                       Int       @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
   internal_evidence_number String    @db.VarChar(50)
@@ -469,16 +364,13 @@ model production_outputs {
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at               DateTime? @db.Timestamptz(6)
 
-  company                  companies                  @relation(fields: [company_code], references: [code])
-  items                    production_output_items[]
-  work_order_fg_production work_order_fg_production[]
-
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
   @@index([wms_id])
   @@index([company_code])
   @@index([transaction_date])
   @@index([internal_evidence_number])
+  @@index([company_code, transaction_date, deleted_at], map: "idx_production_outputs_date_range")
 }
 
 model production_output_items {
@@ -496,16 +388,15 @@ model production_output_items {
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime? @db.Timestamptz(6)
 
-  production_output production_outputs @relation(fields: [production_output_company, production_output_id, production_output_date], references: [company_code, id, transaction_date], onDelete: Cascade)
-
   @@index([production_output_id])
   @@index([production_output_id, production_output_company, production_output_date])
   @@index([item_code])
   @@index([item_type])
+  @@index([item_type, deleted_at], map: "idx_production_output_items_type")
 }
 
 model outgoing_goods {
-  id                        Int                 @id @default(autoincrement())
+  id                        Int                 @default(autoincrement())
   wms_id                    String              @db.VarChar(100)
   company_code              Int
   owner                     Int
@@ -522,9 +413,6 @@ model outgoing_goods {
   updated_at                DateTime            @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime?           @db.Timestamptz(6)
 
-  company companies             @relation(fields: [company_code], references: [code])
-  items   outgoing_good_items[]
-
   @@unique([company_code, wms_id, outgoing_date])
   @@unique([company_code, id, outgoing_date])
   @@index([wms_id])
@@ -533,34 +421,34 @@ model outgoing_goods {
   @@index([ppkek_number])
   @@index([customs_document_type])
   @@index([outgoing_evidence_number])
+  @@index([company_code, outgoing_date, deleted_at], map: "idx_outgoing_goods_date_range")
 }
 
 model outgoing_good_items {
-  id                        Int       @id @default(autoincrement())
-  outgoing_good_id          Int
-  outgoing_good_company     Int
-  outgoing_good_date        DateTime  @db.Date
-  item_type                 String    @db.VarChar(10)
-  item_code                 String    @db.VarChar(50)
-  item_name                 String    @db.VarChar(200)
-  production_output_wms_ids String[]
-  incoming_ppkek_numbers    String[]  @default([])
-  hs_code                   String?   @db.VarChar(20)
-  uom                       String    @db.VarChar(20)
-  qty                       Decimal   @db.Decimal(15, 3)
-  currency                  Currency
-  amount                    Decimal   @db.Decimal(18, 4)
-  created_at                DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at                DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at                DateTime? @db.Timestamptz(6)
-
-  outgoing_good                       outgoing_goods                        @relation(fields: [outgoing_good_company, outgoing_good_id, outgoing_good_date], references: [company_code, id, outgoing_date], onDelete: Cascade)
+  id                                  Int                                   @id @default(autoincrement())
+  outgoing_good_id                    Int
+  outgoing_good_company               Int
+  outgoing_good_date                  DateTime                              @db.Date
+  item_type                           String                                @db.VarChar(10)
+  item_code                           String                                @db.VarChar(50)
+  item_name                           String                                @db.VarChar(200)
+  production_output_wms_ids           String[]
+  hs_code                             String?                               @db.VarChar(20)
+  uom                                 String                                @db.VarChar(20)
+  qty                                 Decimal                               @db.Decimal(15, 3)
+  currency                            Currency
+  amount                              Decimal                               @db.Decimal(18, 4)
+  created_at                          DateTime                              @default(now()) @db.Timestamptz(6)
+  updated_at                          DateTime                              @updatedAt @db.Timestamptz(6)
+  deleted_at                          DateTime?                             @db.Timestamptz(6)
+  incoming_ppkek_numbers              String[]                              @default([])
   outgoing_fg_production_traceability outgoing_fg_production_traceability[]
 
   @@index([outgoing_good_id])
   @@index([outgoing_good_id, outgoing_good_company, outgoing_good_date])
   @@index([item_code])
   @@index([item_type])
+  @@index([item_type, deleted_at], map: "idx_outgoing_good_items_type")
 }
 
 model adjustments {
@@ -574,9 +462,6 @@ model adjustments {
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at               DateTime? @db.Timestamptz(6)
-
-  company companies          @relation(fields: [company_code], references: [code])
-  items   adjustment_items[]
 
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
@@ -602,46 +487,33 @@ model adjustment_items {
   updated_at         DateTime       @updatedAt @db.Timestamptz(6)
   deleted_at         DateTime?      @db.Timestamptz(6)
 
-  adjustment adjustments @relation(fields: [adjustment_company, adjustment_id, adjustment_date], references: [company_code, id, transaction_date], onDelete: Cascade)
-
   @@index([adjustment_id])
   @@index([adjustment_id, adjustment_company, adjustment_date])
   @@index([item_code])
   @@index([item_type])
   @@index([adjustment_type])
+  @@index([item_type, adjustment_type, deleted_at], map: "idx_adjustment_items_type")
 }
-
-// ============================================================================
-// CAPITAL GOODS TRANSACTIONS
-// ============================================================================
-// These tables handle incoming capital goods purchases and outgoing scrap disposals
-// Capital goods are identified by item_type: HIBE-M, HIBE-E, HIBE-T
-// ============================================================================
-
-// ============================================================================
-// SCRAP TRANSACTIONS
-// ============================================================================
 
 model scrap_transactions {
   id                        Int                       @id @default(autoincrement())
   company_code              Int
   transaction_date          DateTime                  @db.Date
-  transaction_type          String                    @db.VarChar(10) // 'IN' or 'OUT'
+  transaction_type          String                    @db.VarChar(10)
   document_number           String                    @db.VarChar(100)
-  source                    String?                   @db.VarChar(200) // For IN transactions
-  recipient_name            String?                   @db.VarChar(200) // For OUT transactions
-  disposal_method           String?                   @db.VarChar(100) // For OUT: "Sold as scrap", "Destroyed", "Donated"
+  source                    String?                   @db.VarChar(200)
+  recipient_name            String?                   @db.VarChar(200)
+  disposal_method           String?                   @db.VarChar(100)
   remarks                   String?                   @db.VarChar(1000)
-  ppkek_number              String?                   @db.VarChar(50) // Customs registration number (for OUT transactions)
-  customs_registration_date DateTime?                 @db.Date // Customs registration date (for OUT transactions)
-  customs_document_type     String?                   @db.VarChar(10) // BC25, BC27, BC41 (for OUT transactions)
   timestamp                 DateTime                  @default(now()) @db.Timestamptz(6)
   created_at                DateTime                  @default(now()) @db.Timestamptz(6)
   updated_at                DateTime                  @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime?                 @db.Timestamptz(6)
-
-  company companies                   @relation(fields: [company_code], references: [code])
-  items   scrap_transaction_items[]
+  ppkek_number              String?                   @db.VarChar(50)
+  customs_registration_date DateTime?                 @db.Date
+  customs_document_type     String?                   @db.VarChar(10)
+  items                     scrap_transaction_items[]
+  company                   companies                 @relation(fields: [company_code], references: [code])
 
   @@unique([company_code, id, transaction_date])
   @@index([company_code])
@@ -651,24 +523,23 @@ model scrap_transactions {
 }
 
 model scrap_transaction_items {
-  id                     Int                @id @default(autoincrement())
-  scrap_transaction_id   Int
+  id                        Int                @id @default(autoincrement())
+  scrap_transaction_id      Int
   scrap_transaction_company Int
-  scrap_transaction_date DateTime           @db.Date
-  item_type              String             @default("SCRAP") @db.VarChar(10)
-  item_code              String             @db.VarChar(50)
-  item_name              String             @db.VarChar(200)
-  uom                    String             @db.VarChar(20)
-  qty                    Decimal            @db.Decimal(15, 3)
-  currency               Currency
-  amount                 Decimal            @db.Decimal(18, 4)
-  scrap_reason           String?            @db.VarChar(500)
-  remarks                String?            @db.VarChar(500)
-  created_at             DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime           @updatedAt @db.Timestamptz(6)
-  deleted_at             DateTime?          @db.Timestamptz(6)
-
-  scrap_transaction scrap_transactions @relation(fields: [scrap_transaction_company, scrap_transaction_id, scrap_transaction_date], references: [company_code, id, transaction_date], onDelete: Cascade)
+  scrap_transaction_date    DateTime           @db.Date
+  item_type                 String             @default("SCRAP") @db.VarChar(10)
+  item_code                 String             @db.VarChar(50)
+  item_name                 String             @db.VarChar(200)
+  uom                       String             @db.VarChar(20)
+  qty                       Decimal            @db.Decimal(15, 3)
+  currency                  Currency
+  amount                    Decimal            @db.Decimal(18, 4)
+  scrap_reason              String?            @db.VarChar(500)
+  remarks                   String?            @db.VarChar(500)
+  created_at                DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime           @updatedAt @db.Timestamptz(6)
+  deleted_at                DateTime?          @db.Timestamptz(6)
+  scrap_transaction         scrap_transactions @relation(fields: [scrap_transaction_company, scrap_transaction_id, scrap_transaction_date], references: [company_code, id, transaction_date], onDelete: Cascade)
 
   @@index([scrap_transaction_id])
   @@index([scrap_transaction_id, scrap_transaction_company, scrap_transaction_date])
@@ -676,26 +547,21 @@ model scrap_transaction_items {
   @@index([item_type])
 }
 
-// ============================================================================
-// TRACEABILITY TABLES
-// ============================================================================
-
 model work_order_material_consumption {
-  id                     BigInt   @id @default(autoincrement())
+  id                     BigInt   @default(autoincrement())
   material_usage_id      Int
   material_usage_item_id Int
   material_usage_wms_id  String   @db.VarChar(100)
   work_order_number      String   @db.VarChar(50)
   company_code           Int
   item_code              String   @db.VarChar(50)
-  ppkek_number           String?  @db.VarChar(50) // Nullable: materials from adjustments may not have PPKEK
+  ppkek_number           String?  @db.VarChar(50)
   qty_consumed           Decimal  @db.Decimal(15, 3)
   trx_date               DateTime @db.Date
   created_at             DateTime @default(now()) @db.Timestamptz(6)
 
-  material_usage material_usages @relation(fields: [material_usage_id], references: [id], onDelete: Cascade)
-
-  @@unique([material_usage_wms_id, work_order_number, item_code])
+  @@id([id, trx_date])
+  @@unique([material_usage_wms_id, work_order_number, item_code, trx_date])
   @@index([work_order_number])
   @@index([company_code])
   @@index([ppkek_number])
@@ -703,21 +569,20 @@ model work_order_material_consumption {
 }
 
 model work_order_fg_production {
-  id                        BigInt   @id @default(autoincrement())
+  id                        BigInt   @default(autoincrement())
   production_output_id      Int
   production_output_item_id Int
   production_wms_id         String   @db.VarChar(100)
   work_order_number         String   @db.VarChar(50)
   company_code              Int
-  item_type                 String   @db.VarChar(10) // FERT or HALB
+  item_type                 String   @db.VarChar(10)
   item_code                 String   @db.VarChar(50)
   qty_produced              Decimal  @db.Decimal(15, 3)
   trx_date                  DateTime @db.Date
   created_at                DateTime @default(now()) @db.Timestamptz(6)
 
-  production_output production_outputs @relation(fields: [production_output_id], references: [id], onDelete: Cascade)
-
-  @@unique([production_wms_id, work_order_number, item_code], name: "work_order_fg_production_unique")
+  @@id([id, trx_date])
+  @@unique([production_wms_id, work_order_number, item_code, trx_date], name: "work_order_fg_production_unique")
   @@index([work_order_number])
   @@index([company_code])
   @@index([item_type])
@@ -725,21 +590,21 @@ model work_order_fg_production {
 }
 
 model outgoing_fg_production_traceability {
-  id                    BigInt   @id @default(autoincrement())
+  id                    BigInt              @default(autoincrement())
   outgoing_good_item_id Int
-  outgoing_wms_id       String   @db.VarChar(100)
-  production_wms_id     String   @db.VarChar(100)
+  outgoing_wms_id       String              @db.VarChar(100)
+  production_wms_id     String              @db.VarChar(100)
   company_code          Int
-  item_code             String   @db.VarChar(50)
-  trx_date              DateTime @db.Date
-  allocated_qty         Decimal? @db.Decimal(15, 3) // Nullable: Optional qty allocation
-  allocation_notes      String?  @db.Text
-  created_at            DateTime @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime @updatedAt @db.Timestamptz(6)
+  item_code             String              @db.VarChar(50)
+  trx_date              DateTime            @db.Date
+  allocated_qty         Decimal?            @db.Decimal(15, 3)
+  allocation_notes      String?
+  created_at            DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime            @updatedAt @db.Timestamptz(6)
+  outgoing_good_item    outgoing_good_items @relation(fields: [outgoing_good_item_id], references: [id], onDelete: Cascade)
 
-  outgoing_good_item outgoing_good_items @relation(fields: [outgoing_good_item_id], references: [id], onDelete: Cascade)
-
-  @@unique([outgoing_wms_id, production_wms_id, item_code])
+  @@id([id, trx_date])
+  @@unique([outgoing_wms_id, production_wms_id, item_code, trx_date])
   @@index([outgoing_wms_id])
   @@index([production_wms_id])
   @@index([company_code])
@@ -747,45 +612,32 @@ model outgoing_fg_production_traceability {
 }
 
 model stock_daily_snapshot {
-  id                 BigInt            @id @default(autoincrement())
+  id                 BigInt   @default(autoincrement())
   company_code       Int
-  item_type          String            @db.VarChar(10)
-  item_code          String            @db.VarChar(50)
-  item_name          String            @db.VarChar(200)
-  uom                String            @db.VarChar(20)
-  opening_balance    Decimal           @default(0) @db.Decimal(15, 3)
-  closing_balance    Decimal           @default(0) @db.Decimal(15, 3)
-  incoming_qty       Decimal           @default(0) @db.Decimal(15, 3)
-  outgoing_qty       Decimal           @default(0) @db.Decimal(15, 3)
-  production_qty     Decimal           @default(0) @db.Decimal(15, 3)
-  material_usage_qty Decimal           @default(0) @db.Decimal(15, 3)
-  adjustment_qty     Decimal           @default(0) @db.Decimal(15, 3) // Can be positive (GAIN) or negative (LOSS)
-  wip_balance_qty    Decimal?          @db.Decimal(15, 3) // For HALB only (snapshot-based)
-  snapshot_date      DateTime          @db.Date
-  calculated_at      DateTime          @default(now()) @db.Timestamptz(6)
-  calculation_method CalculationMethod
-  created_at         DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime          @updatedAt @db.Timestamptz(6)
+  item_type          String   @db.VarChar(10)
+  item_code          String   @db.VarChar(50)
+  item_name          String   @db.VarChar(200)
+  uom                String   @db.VarChar(20)
+  opening_balance    Decimal  @default(0) @db.Decimal(15, 3)
+  closing_balance    Decimal  @default(0) @db.Decimal(15, 3)
+  incoming_qty       Decimal  @default(0) @db.Decimal(15, 3)
+  outgoing_qty       Decimal  @default(0) @db.Decimal(15, 3)
+  production_qty     Decimal  @default(0) @db.Decimal(15, 3)
+  material_usage_qty Decimal  @default(0) @db.Decimal(15, 3)
+  adjustment_qty     Decimal  @default(0) @db.Decimal(15, 3)
+  wip_balance_qty    Decimal? @db.Decimal(15, 3)
+  snapshot_date      DateTime @db.Date
+  calculated_at      DateTime @default(now()) @db.Timestamptz(6)
+  calculation_method String   @db.VarChar(50)
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @updatedAt @db.Timestamptz(6)
 
-  company companies @relation(fields: [company_code], references: [code], onDelete: Cascade)
-
-  @@unique([company_code, item_type, item_code, snapshot_date])
-  @@index([company_code, snapshot_date])
-  @@index([item_type, snapshot_date])
-  @@index([snapshot_date])
-}
-
-// ============================================================================
-// SNAPSHOT RECALCULATION QUEUE
-// ============================================================================
-
-enum RecalcStatus {
-  PENDING
-  IN_PROGRESS
-  COMPLETED
-  FAILED
-
-  @@map("recalc_status")
+  @@id([id, snapshot_date])
+  @@unique([company_code, item_type, item_code, snapshot_date], map: "stock_snapshot_company_item_date_key")
+  @@index([company_code, item_type, snapshot_date], map: "idx_stock_snapshot_item_type_date")
+  @@index([company_code, snapshot_date], map: "stock_snapshot_company_date_idx")
+  @@index([snapshot_date], map: "stock_snapshot_date_idx")
+  @@index([item_type, snapshot_date], map: "stock_snapshot_item_date_idx")
 }
 
 model snapshot_recalc_queue {
@@ -800,11 +652,580 @@ model snapshot_recalc_queue {
   queued_at     DateTime     @default(now()) @db.Timestamptz(6)
   started_at    DateTime?    @db.Timestamptz(6)
   completed_at  DateTime?    @db.Timestamptz(6)
-  error_message String?      @db.Text
-
-  company companies @relation(fields: [company_code], references: [code], onDelete: Cascade)
+  error_message String?
+  company       companies    @relation(fields: [company_code], references: [code], onDelete: Cascade)
 
   @@unique([company_code, recalc_date, item_type, item_code])
   @@index([status, priority, queued_at])
   @@index([company_code, recalc_date])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model adjustments_1310 {
+  id                       Int       @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
+  company_code             Int
+  wms_doc_type             String?   @db.VarChar(100)
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, id, transaction_date], map: "adjustments_1310_company_code_id_transaction_date_idx")
+  @@unique([company_code, wms_id, transaction_date], map: "adjustments_1310_company_code_wms_id_transaction_date_idx")
+  @@index([company_code])
+  @@index([internal_evidence_number])
+  @@index([transaction_date])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model adjustments_1370 {
+  id                       Int       @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
+  company_code             Int
+  wms_doc_type             String?   @db.VarChar(100)
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, id, transaction_date], map: "adjustments_1370_company_code_id_transaction_date_idx")
+  @@unique([company_code, wms_id, transaction_date], map: "adjustments_1370_company_code_wms_id_transaction_date_idx")
+  @@index([company_code])
+  @@index([internal_evidence_number])
+  @@index([transaction_date])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model adjustments_1380 {
+  id                       Int       @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
+  company_code             Int
+  wms_doc_type             String?   @db.VarChar(100)
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, id, transaction_date], map: "adjustments_1380_company_code_id_transaction_date_idx")
+  @@unique([company_code, wms_id, transaction_date], map: "adjustments_1380_company_code_wms_id_transaction_date_idx")
+  @@index([company_code])
+  @@index([internal_evidence_number])
+  @@index([transaction_date])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model incoming_goods_1310 {
+  id                        Int                 @default(autoincrement())
+  wms_id                    String              @db.VarChar(100)
+  company_code              Int
+  owner                     Int
+  customs_document_type     CustomsDocumentType
+  ppkek_number              String              @db.VarChar(50)
+  customs_registration_date DateTime            @db.Date
+  incoming_evidence_number  String              @db.VarChar(50)
+  incoming_date             DateTime            @db.Date
+  invoice_number            String              @db.VarChar(50)
+  invoice_date              DateTime            @db.Date
+  shipper_name              String              @db.VarChar(200)
+  timestamp                 DateTime            @db.Timestamptz(6)
+  created_at                DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime            @db.Timestamptz(6)
+  deleted_at                DateTime?           @db.Timestamptz(6)
+
+  @@unique([company_code, id, incoming_date], map: "incoming_goods_1310_company_code_id_incoming_date_idx")
+  @@unique([company_code, wms_id, incoming_date], map: "incoming_goods_1310_company_code_wms_id_incoming_date_idx")
+  @@index([company_code])
+  @@index([company_code, incoming_date, deleted_at])
+  @@index([customs_document_type])
+  @@index([incoming_date])
+  @@index([incoming_evidence_number])
+  @@index([ppkek_number])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model incoming_goods_1370 {
+  id                        Int                 @default(autoincrement())
+  wms_id                    String              @db.VarChar(100)
+  company_code              Int
+  owner                     Int
+  customs_document_type     CustomsDocumentType
+  ppkek_number              String              @db.VarChar(50)
+  customs_registration_date DateTime            @db.Date
+  incoming_evidence_number  String              @db.VarChar(50)
+  incoming_date             DateTime            @db.Date
+  invoice_number            String              @db.VarChar(50)
+  invoice_date              DateTime            @db.Date
+  shipper_name              String              @db.VarChar(200)
+  timestamp                 DateTime            @db.Timestamptz(6)
+  created_at                DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime            @db.Timestamptz(6)
+  deleted_at                DateTime?           @db.Timestamptz(6)
+
+  @@unique([company_code, id, incoming_date], map: "incoming_goods_1370_company_code_id_incoming_date_idx")
+  @@unique([company_code, wms_id, incoming_date], map: "incoming_goods_1370_company_code_wms_id_incoming_date_idx")
+  @@index([company_code])
+  @@index([company_code, incoming_date, deleted_at])
+  @@index([customs_document_type])
+  @@index([incoming_date])
+  @@index([incoming_evidence_number])
+  @@index([ppkek_number])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model incoming_goods_1380 {
+  id                        Int                 @default(autoincrement())
+  wms_id                    String              @db.VarChar(100)
+  company_code              Int
+  owner                     Int
+  customs_document_type     CustomsDocumentType
+  ppkek_number              String              @db.VarChar(50)
+  customs_registration_date DateTime            @db.Date
+  incoming_evidence_number  String              @db.VarChar(50)
+  incoming_date             DateTime            @db.Date
+  invoice_number            String              @db.VarChar(50)
+  invoice_date              DateTime            @db.Date
+  shipper_name              String              @db.VarChar(200)
+  timestamp                 DateTime            @db.Timestamptz(6)
+  created_at                DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime            @db.Timestamptz(6)
+  deleted_at                DateTime?           @db.Timestamptz(6)
+
+  @@unique([company_code, id, incoming_date], map: "incoming_goods_1380_company_code_id_incoming_date_idx")
+  @@unique([company_code, wms_id, incoming_date], map: "incoming_goods_1380_company_code_wms_id_incoming_date_idx")
+  @@index([company_code])
+  @@index([company_code, incoming_date, deleted_at])
+  @@index([customs_document_type])
+  @@index([incoming_date])
+  @@index([incoming_evidence_number])
+  @@index([ppkek_number])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model material_usages_1310 {
+  id                       Int       @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
+  company_code             Int
+  work_order_number        String?   @db.VarChar(50)
+  cost_center_number       String?   @db.VarChar(100)
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  reversal                 String?   @db.VarChar(1)
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, id, transaction_date], map: "material_usages_1310_company_code_id_transaction_date_idx")
+  @@unique([company_code, wms_id, transaction_date], map: "material_usages_1310_company_code_wms_id_transaction_date_idx")
+  @@index([company_code])
+  @@index([company_code, transaction_date, deleted_at])
+  @@index([cost_center_number])
+  @@index([internal_evidence_number])
+  @@index([transaction_date])
+  @@index([wms_id])
+  @@index([work_order_number])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model material_usages_1370 {
+  id                       Int       @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
+  company_code             Int
+  work_order_number        String?   @db.VarChar(50)
+  cost_center_number       String?   @db.VarChar(100)
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  reversal                 String?   @db.VarChar(1)
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, id, transaction_date], map: "material_usages_1370_company_code_id_transaction_date_idx")
+  @@unique([company_code, wms_id, transaction_date], map: "material_usages_1370_company_code_wms_id_transaction_date_idx")
+  @@index([company_code])
+  @@index([company_code, transaction_date, deleted_at])
+  @@index([cost_center_number])
+  @@index([internal_evidence_number])
+  @@index([transaction_date])
+  @@index([wms_id])
+  @@index([work_order_number])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model material_usages_1380 {
+  id                       Int       @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
+  company_code             Int
+  work_order_number        String?   @db.VarChar(50)
+  cost_center_number       String?   @db.VarChar(100)
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  reversal                 String?   @db.VarChar(1)
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, id, transaction_date], map: "material_usages_1380_company_code_id_transaction_date_idx")
+  @@unique([company_code, wms_id, transaction_date], map: "material_usages_1380_company_code_wms_id_transaction_date_idx")
+  @@index([company_code])
+  @@index([company_code, transaction_date, deleted_at])
+  @@index([cost_center_number])
+  @@index([internal_evidence_number])
+  @@index([transaction_date])
+  @@index([wms_id])
+  @@index([work_order_number])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model outgoing_goods_1310 {
+  id                        Int                 @default(autoincrement())
+  wms_id                    String              @db.VarChar(100)
+  company_code              Int
+  owner                     Int
+  customs_document_type     CustomsDocumentType
+  ppkek_number              String              @db.VarChar(50)
+  customs_registration_date DateTime            @db.Date
+  outgoing_evidence_number  String              @db.VarChar(50)
+  outgoing_date             DateTime            @db.Date
+  invoice_number            String              @db.VarChar(50)
+  invoice_date              DateTime            @db.Date
+  recipient_name            String              @db.VarChar(200)
+  timestamp                 DateTime            @db.Timestamptz(6)
+  created_at                DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime            @db.Timestamptz(6)
+  deleted_at                DateTime?           @db.Timestamptz(6)
+
+  @@unique([company_code, id, outgoing_date], map: "outgoing_goods_1310_company_code_id_outgoing_date_idx")
+  @@unique([company_code, wms_id, outgoing_date], map: "outgoing_goods_1310_company_code_wms_id_outgoing_date_idx")
+  @@index([company_code])
+  @@index([company_code, outgoing_date, deleted_at])
+  @@index([customs_document_type])
+  @@index([outgoing_date])
+  @@index([outgoing_evidence_number])
+  @@index([ppkek_number])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model outgoing_goods_1370 {
+  id                        Int                 @default(autoincrement())
+  wms_id                    String              @db.VarChar(100)
+  company_code              Int
+  owner                     Int
+  customs_document_type     CustomsDocumentType
+  ppkek_number              String              @db.VarChar(50)
+  customs_registration_date DateTime            @db.Date
+  outgoing_evidence_number  String              @db.VarChar(50)
+  outgoing_date             DateTime            @db.Date
+  invoice_number            String              @db.VarChar(50)
+  invoice_date              DateTime            @db.Date
+  recipient_name            String              @db.VarChar(200)
+  timestamp                 DateTime            @db.Timestamptz(6)
+  created_at                DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime            @db.Timestamptz(6)
+  deleted_at                DateTime?           @db.Timestamptz(6)
+
+  @@unique([company_code, id, outgoing_date], map: "outgoing_goods_1370_company_code_id_outgoing_date_idx")
+  @@unique([company_code, wms_id, outgoing_date], map: "outgoing_goods_1370_company_code_wms_id_outgoing_date_idx")
+  @@index([company_code])
+  @@index([company_code, outgoing_date, deleted_at])
+  @@index([customs_document_type])
+  @@index([outgoing_date])
+  @@index([outgoing_evidence_number])
+  @@index([ppkek_number])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model outgoing_goods_1380 {
+  id                        Int                 @default(autoincrement())
+  wms_id                    String              @db.VarChar(100)
+  company_code              Int
+  owner                     Int
+  customs_document_type     CustomsDocumentType
+  ppkek_number              String              @db.VarChar(50)
+  customs_registration_date DateTime            @db.Date
+  outgoing_evidence_number  String              @db.VarChar(50)
+  outgoing_date             DateTime            @db.Date
+  invoice_number            String              @db.VarChar(50)
+  invoice_date              DateTime            @db.Date
+  recipient_name            String              @db.VarChar(200)
+  timestamp                 DateTime            @db.Timestamptz(6)
+  created_at                DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime            @db.Timestamptz(6)
+  deleted_at                DateTime?           @db.Timestamptz(6)
+
+  @@unique([company_code, id, outgoing_date], map: "outgoing_goods_1380_company_code_id_outgoing_date_idx")
+  @@unique([company_code, wms_id, outgoing_date], map: "outgoing_goods_1380_company_code_wms_id_outgoing_date_idx")
+  @@index([company_code])
+  @@index([company_code, outgoing_date, deleted_at])
+  @@index([customs_document_type])
+  @@index([outgoing_date])
+  @@index([outgoing_evidence_number])
+  @@index([ppkek_number])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model production_outputs_1310 {
+  id                       Int       @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
+  company_code             Int
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  reversal                 String?   @db.VarChar(1)
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, id, transaction_date], map: "production_outputs_1310_company_code_id_transaction_date_idx")
+  @@unique([company_code, wms_id, transaction_date], map: "production_outputs_1310_company_code_wms_id_transaction_dat_idx")
+  @@index([company_code])
+  @@index([company_code, transaction_date, deleted_at])
+  @@index([internal_evidence_number])
+  @@index([transaction_date])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model production_outputs_1370 {
+  id                       Int       @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
+  company_code             Int
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  reversal                 String?   @db.VarChar(1)
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, id, transaction_date], map: "production_outputs_1370_company_code_id_transaction_date_idx")
+  @@unique([company_code, wms_id, transaction_date], map: "production_outputs_1370_company_code_wms_id_transaction_dat_idx")
+  @@index([company_code])
+  @@index([company_code, transaction_date, deleted_at])
+  @@index([internal_evidence_number])
+  @@index([transaction_date])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model production_outputs_1380 {
+  id                       Int       @default(autoincrement())
+  wms_id                   String    @db.VarChar(100)
+  company_code             Int
+  internal_evidence_number String    @db.VarChar(50)
+  transaction_date         DateTime  @db.Date
+  reversal                 String?   @db.VarChar(1)
+  timestamp                DateTime  @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @db.Timestamptz(6)
+  deleted_at               DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, id, transaction_date], map: "production_outputs_1380_company_code_id_transaction_date_idx")
+  @@unique([company_code, wms_id, transaction_date], map: "production_outputs_1380_company_code_wms_id_transaction_dat_idx")
+  @@index([company_code])
+  @@index([company_code, transaction_date, deleted_at])
+  @@index([internal_evidence_number])
+  @@index([transaction_date])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model wip_balances_1310 {
+  id           Int       @default(autoincrement())
+  wms_id       String    @db.VarChar(100)
+  company_code Int
+  item_type    String    @db.VarChar(10)
+  item_code    String    @db.VarChar(50)
+  item_name    String    @db.VarChar(200)
+  stock_date   DateTime  @db.Date
+  uom          String    @db.VarChar(20)
+  qty          Decimal   @db.Decimal(15, 3)
+  timestamp    DateTime  @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @db.Timestamptz(6)
+  deleted_at   DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, wms_id, stock_date], map: "wip_balances_1310_company_code_wms_id_stock_date_idx")
+  @@index([company_code])
+  @@index([item_code])
+  @@index([item_type])
+  @@index([stock_date])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model wip_balances_1370 {
+  id           Int       @default(autoincrement())
+  wms_id       String    @db.VarChar(100)
+  company_code Int
+  item_type    String    @db.VarChar(10)
+  item_code    String    @db.VarChar(50)
+  item_name    String    @db.VarChar(200)
+  stock_date   DateTime  @db.Date
+  uom          String    @db.VarChar(20)
+  qty          Decimal   @db.Decimal(15, 3)
+  timestamp    DateTime  @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @db.Timestamptz(6)
+  deleted_at   DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, wms_id, stock_date], map: "wip_balances_1370_company_code_wms_id_stock_date_idx")
+  @@index([company_code])
+  @@index([item_code])
+  @@index([item_type])
+  @@index([stock_date])
+  @@index([wms_id])
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model wip_balances_1380 {
+  id           Int       @default(autoincrement())
+  wms_id       String    @db.VarChar(100)
+  company_code Int
+  item_type    String    @db.VarChar(10)
+  item_code    String    @db.VarChar(50)
+  item_name    String    @db.VarChar(200)
+  stock_date   DateTime  @db.Date
+  uom          String    @db.VarChar(20)
+  qty          Decimal   @db.Decimal(15, 3)
+  timestamp    DateTime  @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @db.Timestamptz(6)
+  deleted_at   DateTime? @db.Timestamptz(6)
+
+  @@unique([company_code, wms_id, stock_date], map: "wip_balances_1380_company_code_wms_id_stock_date_idx")
+  @@index([company_code])
+  @@index([item_code])
+  @@index([item_type])
+  @@index([stock_date])
+  @@index([wms_id])
+}
+
+enum CustomsDocumentType {
+  BC23
+  BC27
+  BC40
+  BC30
+  BC25
+  BC261
+  BC262
+  BC41
+}
+
+enum AdjustmentType {
+  GAIN
+  LOSS
+}
+
+enum Currency {
+  USD
+  IDR
+  CNY
+  EUR
+  JPY
+}
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CalculationMethod {
+  TRANSACTION
+  WIP_SNAPSHOT
+
+  @@map("calculation_method")
+}
+
+enum RecalcStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+
+  @@map("recalc_status")
+}
+
+// ============================================================================
+// STOCK OPNAME (PHYSICAL INVENTORY COUNT)
+// ============================================================================
+
+enum StockOpnameStatus {
+  OPEN      // Draft mode - can edit
+  PROCESS   // Under review - limited editing
+  RELEASED  // Finalized - read-only, affects stock
+
+  @@map("stock_opname_status")
+}
+
+model stock_opnames {
+  id              Int                @id @default(autoincrement())
+  sto_number      String             @unique @db.VarChar(50) // STO-YYYYMMDD-XXX
+  company_code    Int
+  sto_datetime    DateTime           @db.Timestamptz(6) // Date and time of stock opname
+  pic_name        String?            @db.VarChar(200) // Person in charge (optional)
+  status          StockOpnameStatus  @default(OPEN)
+  created_by      String             @db.VarChar(100) // Username who created
+  created_at      DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime           @updatedAt @db.Timestamptz(6)
+  deleted_at      DateTime?          @db.Timestamptz(6)
+
+  // Relations
+  company companies            @relation(fields: [company_code], references: [code], onDelete: Cascade)
+  items   stock_opname_items[]
+
+  // Indexes for optimal query performance
+  @@index([company_code, sto_datetime]) // Filter by company and date range
+  @@index([sto_number]) // Quick lookup by STO number
+  @@index([status]) // Filter by status
+  @@index([created_at]) // Sort by creation date
+  @@index([company_code, status, sto_datetime]) // Composite for common queries
+}
+
+model stock_opname_items {
+  id              BigInt    @id @default(autoincrement())
+  stock_opname_id Int
+  company_code    Int
+  item_code       String    @db.VarChar(50)
+  item_name       String    @db.VarChar(200) // Denormalized for performance
+  item_type       String    @db.VarChar(10) // Denormalized (ROH, HALB, FERT, etc.)
+  uom             String    @db.VarChar(20) // Denormalized
+  sto_qty         Decimal   @db.Decimal(15, 3) // Physical count quantity
+  end_stock       Decimal   @db.Decimal(15, 3) // System stock at STO datetime (denormalized)
+  variant         Decimal   @db.Decimal(15, 3) // Calculated: sto_qty - end_stock
+  report_area     String?   @db.VarChar(100) // Optional location/area
+  remark          String?   @db.Text // Optional notes
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at      DateTime? @db.Timestamptz(6)
+
+  // Relations
+  stock_opname stock_opnames @relation(fields: [stock_opname_id], references: [id], onDelete: Cascade)
+
+  // Indexes for optimal query performance
+  @@unique([stock_opname_id, item_code]) // Prevent duplicate items in same STO
+  @@index([stock_opname_id]) // Fast joins with parent
+  @@index([item_code]) // Filter/search by item
+  @@index([item_type]) // Filter by item type
+  @@index([company_code]) // Filter by company
+  @@index([company_code, item_code]) // Covering index for common queries
+  @@index([variant]) // Find items with discrepancies
 }

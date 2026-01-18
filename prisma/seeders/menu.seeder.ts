@@ -63,6 +63,7 @@ const menuStructure: MenuInput[] = [
     children: [
       { menu_name: 'Transaksi Scrap', menu_path: '/customs/scrap-transactions', menu_icon: 'Recycling', menu_order: 1 },
       { menu_name: 'Transaksi Barang Modal', menu_path: '/customs/capital-goods-transactions', menu_icon: 'Inventory', menu_order: 2 },
+      { menu_name: 'Stock Opname', menu_path: '/customs/stock-opname', menu_icon: 'Inventory', menu_order: 3 },
     ],
   },
   {
