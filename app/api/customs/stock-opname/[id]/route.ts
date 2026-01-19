@@ -62,10 +62,16 @@ export async function GET(
       orderBy: { created_at: 'desc' },
     });
 
+    // Transform items to match frontend interface
+    const transformedItems = items.map((item) => ({
+      ...item,
+      item_type: item.item_type,
+    }));
+
     return NextResponse.json(
       serializeBigInt({
         stockOpname: header,
-        items,
+        items: transformedItems,
       })
     );
   } catch (error) {

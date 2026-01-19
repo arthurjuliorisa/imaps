@@ -43,7 +43,7 @@ export default function StockOpnameDetailPage({ params }: PageProps) {
     fetchData();
   }, [fetchData]);
 
-  const handleDeleteItem = async (itemId: number) => {
+  const handleDeleteItem = async (itemId: bigint | string) => {
     try {
       const response = await fetch(
         `/api/customs/stock-opname/${stockOpnameId}/items/${itemId}`,
@@ -68,10 +68,10 @@ export default function StockOpnameDetailPage({ params }: PageProps) {
   const totals = items.reduce(
     (acc, item) => ({
       totalItems: acc.totalItems + 1,
-      totalStoQty: acc.totalStoQty + item.sto_qty,
-      totalVariance: acc.totalVariance + item.variance,
+      totalStoQty: acc.totalStoQty + Number(item.sto_qty || 0),
+      totalVariant: acc.totalVariant + Number(item.variant || 0),
     }),
-    { totalItems: 0, totalStoQty: 0, totalVariance: 0 }
+    { totalItems: 0, totalStoQty: 0, totalVariant: 0 }
   );
 
   if (loading) {
@@ -107,7 +107,7 @@ export default function StockOpnameDetailPage({ params }: PageProps) {
         stockOpname={stockOpname}
         totalItems={totals.totalItems}
         totalStoQty={totals.totalStoQty}
-        totalVariance={totals.totalVariance}
+        totalVariant={totals.totalVariant}
         onUpdate={fetchData}
       />
 

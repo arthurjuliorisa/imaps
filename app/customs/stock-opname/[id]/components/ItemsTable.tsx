@@ -41,7 +41,7 @@ interface ItemsTableProps {
   stoDate: string;
   canEdit: boolean;
   onEdit: (item: StockOpnameItem) => void;
-  onDelete: (itemId: number) => void;
+  onDelete: (itemId: bigint | string) => void;
 }
 
 export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsTableProps) {
@@ -50,7 +50,7 @@ export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsT
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; itemId: number | null }>({
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; itemId: bigint | string | null }>({
     open: false,
     itemId: null,
   });
@@ -87,11 +87,11 @@ export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsT
   const totals = useMemo(() => {
     return filteredItems.reduce(
       (acc, item) => ({
-        sto_qty: acc.sto_qty + item.sto_qty,
-        end_stock: acc.end_stock + item.end_stock,
-        variance: acc.variance + item.variance,
+        sto_qty: acc.sto_qty + Number(item.sto_qty || 0),
+        end_stock: acc.end_stock + Number(item.end_stock || 0),
+        variant: acc.variant + Number(item.variant || 0),
       }),
-      { sto_qty: 0, end_stock: 0, variance: 0 }
+      { sto_qty: 0, end_stock: 0, variant: 0 }
     );
   }, [filteredItems]);
 
@@ -104,7 +104,7 @@ export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsT
     setPage(0);
   };
 
-  const handleDeleteClick = (itemId: number) => {
+  const handleDeleteClick = (itemId: bigint | string) => {
     setDeleteDialog({ open: true, itemId });
   };
 
@@ -124,13 +124,12 @@ export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsT
       No: index + 1,
       'Item Code': item.item_code,
       'Item Name': item.item_name,
-      'Item Type': item.item_type_code,
+      'Item Type': item.item_type,
       'STO Date': formatDateTime(stoDate),
       'STO Qty': item.sto_qty,
       'End Stock': item.end_stock,
-      Variance: item.variance,
+      Variance: item.variant,
       'Report Area': item.report_area || '-',
-      'STO PIC Name': item.sto_pic_name || '-',
       Remark: item.remark || '-',
     }));
 
@@ -187,7 +186,6 @@ export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsT
               <TableCell sx={{ fontWeight: 600 }} align="right">End Stock</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">Variance</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Report Area</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>STO PIC Name</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Remark</TableCell>
               {canEdit && <TableCell sx={{ fontWeight: 600 }} align="center">Actions</TableCell>}
             </TableRow>
@@ -195,7 +193,7 @@ export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsT
           <TableBody>
             {paginatedItems.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={canEdit ? 10 : 9} align="center" sx={{ py: 8 }}>
+                <TableCell colSpan={canEdit ? 9 : 8} align="center" sx={{ py: 8 }}>
                   <Typography variant="body1" color="text.secondary">
                     No items found
                   </Typography>
@@ -222,31 +220,30 @@ export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsT
                       </Typography>
                       <br />
                       <Typography variant="caption" color="text.secondary">
-                        ({item.item_type_code})
+                        ({item.item_type})
                       </Typography>
                     </TableCell>
                     <TableCell>{formatDateTime(stoDate)}</TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>
-                        {item.sto_qty.toFixed(2)}
+                        {Number(item.sto_qty || 0).toFixed(2)}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2">
-                        {item.end_stock.toFixed(2)}
+                        {Number(item.end_stock || 0).toFixed(2)}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
                       <Typography
                         variant="body2"
                         fontWeight={600}
-                        sx={{ color: getVarianceColor(item.variance) }}
+                        sx={{ color: getVarianceColor(item.variant) }}
                       >
-                        {item.variance.toFixed(2)}
+                        {Number(item.variant || 0).toFixed(2)}
                       </Typography>
                     </TableCell>
                     <TableCell>{item.report_area || '-'}</TableCell>
-                    <TableCell>{item.sto_pic_name || '-'}</TableCell>
                     <TableCell>
                       {item.remark ? (
                         <Tooltip title={item.remark}>
@@ -297,10 +294,10 @@ export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsT
                   <TableCell align="right" sx={{ fontWeight: 600 }}>
                     {totals.end_stock.toFixed(2)}
                   </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600, color: getVarianceColor(totals.variance) }}>
-                    {totals.variance.toFixed(2)}
+                  <TableCell align="right" sx={{ fontWeight: 600, color: getVarianceColor(totals.variant) }}>
+                    {totals.variant.toFixed(2)}
                   </TableCell>
-                  <TableCell colSpan={canEdit ? 4 : 3} />
+                  <TableCell colSpan={canEdit ? 3 : 2} />
                 </TableRow>
               </>
             )}

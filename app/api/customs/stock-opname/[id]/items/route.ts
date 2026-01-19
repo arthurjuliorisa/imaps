@@ -67,7 +67,13 @@ export async function GET(
       orderBy: { created_at: 'desc' },
     });
 
-    return NextResponse.json(serializeBigInt(items));
+    // Transform items to match frontend interface
+    const transformedItems = items.map((item) => ({
+      ...item,
+      item_type: item.item_type,
+    }));
+
+    return NextResponse.json(serializeBigInt(transformedItems));
   } catch (error) {
     console.error('[API Error] Failed to fetch stock opname items:', error);
     return NextResponse.json(
@@ -162,16 +168,16 @@ export async function POST(
       );
     }
 
-    // Check for duplicate item in same stock opname
+    // Check for duplicate item in same stock opname (including soft-deleted)
     const existingItem = await prisma.stock_opname_items.findFirst({
       where: {
         stock_opname_id: stockOpnameId,
         item_code: item_code,
-        deleted_at: null,
       },
     });
 
-    if (existingItem) {
+    // If item exists and is not deleted, return error
+    if (existingItem && !existingItem.deleted_at) {
       return NextResponse.json(
         { message: `Item ${item_code} already exists in this stock opname` },
         { status: 400 }
@@ -185,27 +191,48 @@ export async function POST(
       stockOpname.sto_datetime
     );
 
-    // Calculate variance
-    const variance = calculateVariance(stoQtyDecimal, endStock);
+    // Calculate variant
+    const variant = calculateVariance(stoQtyDecimal, endStock);
 
-    // Create stock opname item
+    // Create or restore stock opname item
     const item = await prisma.$transaction(async (tx) => {
-      // Create item
-      const newItem = await tx.stock_opname_items.create({
-        data: {
-          stock_opname_id: stockOpnameId,
-          company_code: companyCode,
-          item_code: item_code,
-          item_name: itemDetails.item_name,
-          item_type: itemDetails.item_type,
-          uom: itemDetails.uom,
-          sto_qty: stoQtyDecimal,
-          end_stock: endStock,
-          variant: variance,
-          report_area: report_area || null,
-          remark: remark || null,
-        },
-      });
+      let newItem;
+
+      if (existingItem && existingItem.deleted_at) {
+        // If item was soft-deleted, restore and update it
+        newItem = await tx.stock_opname_items.update({
+          where: { id: existingItem.id },
+          data: {
+            item_name: itemDetails.item_name,
+            item_type: itemDetails.item_type,
+            uom: itemDetails.uom,
+            sto_qty: stoQtyDecimal,
+            end_stock: endStock,
+            variant: variant,
+            report_area: report_area || null,
+            remark: remark || null,
+            deleted_at: null, // Restore the item
+            updated_at: new Date(),
+          },
+        });
+      } else {
+        // Create new item
+        newItem = await tx.stock_opname_items.create({
+          data: {
+            stock_opname_id: stockOpnameId,
+            company_code: companyCode,
+            item_code: item_code,
+            item_name: itemDetails.item_name,
+            item_type: itemDetails.item_type,
+            uom: itemDetails.uom,
+            sto_qty: stoQtyDecimal,
+            end_stock: endStock,
+            variant: variant,
+            report_area: report_area || null,
+            remark: remark || null,
+          },
+        });
+      }
 
       // Update stock opname status to PROCESS if it's OPEN
       if (stockOpname.status === 'OPEN') {
@@ -232,22 +259,35 @@ export async function POST(
       },
     });
 
-    return NextResponse.json(serializeBigInt(item), { status: 201 });
+    // Transform item to match frontend interface
+    const transformedItem = {
+      ...item,
+      item_type: item.item_type,
+    };
+
+    return NextResponse.json(serializeBigInt(transformedItem), { status: 201 });
   } catch (error) {
     console.error('[API Error] Failed to add stock opname item:', error);
 
-    // Log failed activity
-    await logActivity({
+    // Log failed activity (don't await to prevent secondary errors)
+    logActivity({
       action: 'ADD_STOCK_OPNAME_ITEM',
       description: 'Failed to add stock opname item',
       status: 'error',
       metadata: {
         error: error instanceof Error ? error.message : 'Unknown error',
       },
+    }).catch((logError) => {
+      console.error('[API Error] Failed to log activity:', logError);
     });
 
     return NextResponse.json(
-      { message: 'Error adding stock opname item' },
+      {
+        message: 'Error adding stock opname item',
+        error: process.env.NODE_ENV === 'development'
+          ? (error instanceof Error ? error.message : 'Unknown error')
+          : undefined
+      },
       { status: 500 }
     );
   }

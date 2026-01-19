@@ -32,7 +32,7 @@ export async function POST(
 
     if (isNaN(stockOpnameId)) {
       return NextResponse.json(
-        { message: 'Invalid stock opname ID' },
+        { message: 'ID stock opname tidak valid' },
         { status: 400 }
       );
     }
@@ -42,7 +42,7 @@ export async function POST(
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
-        { message: 'No items provided' },
+        { message: 'Tidak ada item yang disediakan' },
         { status: 400 }
       );
     }
@@ -58,7 +58,7 @@ export async function POST(
 
     if (!stockOpname) {
       return NextResponse.json(
-        { message: 'Stock opname not found' },
+        { message: 'Stock opname tidak ditemukan' },
         { status: 404 }
       );
     }
@@ -66,7 +66,7 @@ export async function POST(
     // Check if status allows editing
     if (stockOpname.status === 'RELEASED') {
       return NextResponse.json(
-        { message: 'Cannot add items to released stock opname' },
+        { message: 'Tidak dapat menambah item ke stock opname yang sudah dirilis' },
         { status: 400 }
       );
     }
@@ -74,44 +74,59 @@ export async function POST(
     const createdItems = [];
     const errors = [];
 
+    // Get all item codes for batch fetch
+    const itemCodes = items.map((item: any) => item.item_code);
+
+    // Batch fetch item master data
+    const itemsFromMaster = await prisma.items.findMany({
+      where: {
+        company_code: companyCode,
+        item_code: { in: itemCodes },
+        deleted_at: null,
+        is_active: true,
+      },
+      select: {
+        item_code: true,
+        item_name: true,
+        item_type: true,
+        uom: true,
+      },
+    });
+
+    const itemsMap = new Map(
+      itemsFromMaster.map(item => [item.item_code, item])
+    );
+
     for (const item of items) {
       try {
-        // Get item master data
-        const itemMaster = await prisma.lpj_mutasi_items.findFirst({
-          where: {
-            company_code: companyCode,
-            item_code: item.item_code,
-          },
-          select: {
-            item_code: true,
-            item_name: true,
-            item_type_code: true,
-            uom: true,
-          },
-        });
+        const itemMaster = itemsMap.get(item.item_code);
 
         if (!itemMaster) {
-          errors.push(`Row ${item.row}: Item code ${item.item_code} not found`);
+          errors.push(`Baris ${item.row}: Kode item ${item.item_code} tidak ditemukan`);
           continue;
         }
 
         // Calculate end stock and variance
-        const endStock = await calculateEndStock(item.item_code, stockOpname.sto_datetime);
+        const endStock = await calculateEndStock(
+          companyCode,
+          item.item_code,
+          stockOpname.sto_datetime
+        );
         const variance = calculateVariance(item.sto_qty, endStock);
 
         // Create item
         const createdItem = await prisma.stock_opname_items.create({
           data: {
             stock_opname_id: stockOpnameId,
+            company_code: companyCode,
             item_code: itemMaster.item_code,
             item_name: itemMaster.item_name,
-            item_type_code: itemMaster.item_type_code,
+            item_type: itemMaster.item_type,
             uom: itemMaster.uom,
             sto_qty: item.sto_qty,
             end_stock: endStock,
-            variance: variance,
+            variant: variance,
             report_area: item.report_area || null,
-            sto_pic_name: item.sto_pic_name || null,
             remark: item.remark || null,
           },
         });
@@ -119,7 +134,7 @@ export async function POST(
         createdItems.push(createdItem);
       } catch (error) {
         console.error(`Error creating item ${item.item_code}:`, error);
-        errors.push(`Row ${item.row}: ${error instanceof Error ? error.message : 'Failed to create item'}`);
+        errors.push(`Baris ${item.row}: ${error instanceof Error ? error.message : 'Gagal membuat item'}`);
       }
     }
 
@@ -134,7 +149,7 @@ export async function POST(
     // Log activity
     await logActivity({
       action: 'BULK_ADD_STOCK_OPNAME_ITEMS',
-      description: `Bulk added ${createdItems.length} items to stock opname: ${stockOpname.sto_number}`,
+      description: `Berhasil menambahkan ${createdItems.length} item ke stock opname: ${stockOpname.sto_number}`,
       status: 'success',
       metadata: {
         stock_opname_id: stockOpnameId,
@@ -156,7 +171,7 @@ export async function POST(
 
     await logActivity({
       action: 'BULK_ADD_STOCK_OPNAME_ITEMS',
-      description: 'Failed to bulk add stock opname items',
+      description: 'Gagal menambahkan item stock opname secara bulk',
       status: 'error',
       metadata: {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -164,7 +179,7 @@ export async function POST(
     });
 
     return NextResponse.json(
-      { message: 'Error creating items' },
+      { message: 'Terjadi kesalahan saat membuat item' },
       { status: 500 }
     );
   }

@@ -37,7 +37,6 @@ interface UploadedRow {
   item_code: string;
   sto_qty: number;
   report_area?: string;
-  sto_pic_name?: string;
   remark?: string;
   isValid: boolean;
   errorMessage?: string;
@@ -179,7 +178,6 @@ export function ExcelUploadDialog({
                 <li><strong>Item Code</strong> (required): Must match existing item codes in master data</li>
                 <li><strong>STO Qty</strong> (required): Stock opname quantity (must be a number)</li>
                 <li><strong>Report Area</strong> (optional): Reporting area information</li>
-                <li><strong>PIC Name</strong> (optional): Person in charge name</li>
                 <li><strong>Remark</strong> (optional): Additional notes</li>
               </ul>
             </Typography>
@@ -254,7 +252,6 @@ export function ExcelUploadDialog({
                       <TableCell>Item Code</TableCell>
                       <TableCell>STO Qty</TableCell>
                       <TableCell>Report Area</TableCell>
-                      <TableCell>PIC Name</TableCell>
                       <TableCell>Remark</TableCell>
                       <TableCell>Status</TableCell>
                     </TableRow>
@@ -266,7 +263,6 @@ export function ExcelUploadDialog({
                         <TableCell>{row.item_code}</TableCell>
                         <TableCell>{row.sto_qty}</TableCell>
                         <TableCell>{row.report_area || '-'}</TableCell>
-                        <TableCell>{row.sto_pic_name || '-'}</TableCell>
                         <TableCell>{row.remark || '-'}</TableCell>
                         <TableCell>
                           {row.isValid ? (

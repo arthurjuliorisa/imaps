@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -37,13 +37,32 @@ export function ManualInputDialog({
   const [formData, setFormData] = useState({
     sto_qty: '',
     report_area: '',
-    sto_pic_name: '',
     remark: '',
   });
 
+  // Load initial 5 items when dialog opens
+  useEffect(() => {
+    if (open) {
+      loadInitialItems();
+    }
+  }, [open]);
+
+  const loadInitialItems = async () => {
+    try {
+      const response = await fetch('/api/customs/stock-opname/items-master?limit=5');
+      if (!response.ok) throw new Error('Failed to fetch items');
+
+      const data = await response.json();
+      setItems(data);
+    } catch (error) {
+      console.error('Error loading initial items:', error);
+    }
+  };
+
   const handleSearchItems = async (query: string) => {
     if (query.length < 2) {
-      setItems([]);
+      // Load initial 5 items if query is too short
+      loadInitialItems();
       return;
     }
 
@@ -81,7 +100,6 @@ export function ManualInputDialog({
           item_code: selectedItem.item_code,
           sto_qty: parseFloat(formData.sto_qty),
           report_area: formData.report_area.trim() || null,
-          sto_pic_name: formData.sto_pic_name.trim() || null,
           remark: formData.remark.trim() || null,
         }),
       });
@@ -97,7 +115,6 @@ export function ManualInputDialog({
       setFormData({
         sto_qty: '',
         report_area: '',
-        sto_pic_name: '',
         remark: '',
       });
       onSuccess();
@@ -116,14 +133,13 @@ export function ManualInputDialog({
       setFormData({
         sto_qty: '',
         report_area: '',
-        sto_pic_name: '',
         remark: '',
       });
       onClose();
     }
   };
 
-  const variance =
+  const variant =
     selectedItem && formData.sto_qty
       ? parseFloat(formData.sto_qty) - (selectedItem.end_stock || 0)
       : 0;
@@ -143,7 +159,7 @@ export function ManualInputDialog({
             }}
             options={items}
             getOptionLabel={(option) =>
-              `${option.item_code} - ${option.item_name} (${option.item_type_code})`
+              `${option.item_code} - ${option.item_name} (${option.item_type})`
             }
             renderInput={(params) => (
               <TextField {...params} label="Item Code" placeholder="Search item..." required />
@@ -159,13 +175,23 @@ export function ManualInputDialog({
                 value={selectedItem.item_name}
                 InputProps={{ readOnly: true }}
                 fullWidth
+                sx={{
+                  '& .MuiInputBase-root': {
+                    backgroundColor: 'action.hover',
+                  },
+                }}
               />
 
               <TextField
                 label="Item Type"
-                value={selectedItem.item_type_code}
+                value={selectedItem.item_type}
                 InputProps={{ readOnly: true }}
                 fullWidth
+                sx={{
+                  '& .MuiInputBase-root': {
+                    backgroundColor: 'action.hover',
+                  },
+                }}
               />
 
               <TextField
@@ -173,6 +199,11 @@ export function ManualInputDialog({
                 value={(selectedItem.end_stock || 0).toFixed(2)}
                 InputProps={{ readOnly: true }}
                 fullWidth
+                sx={{
+                  '& .MuiInputBase-root': {
+                    backgroundColor: 'action.hover',
+                  },
+                }}
               />
 
               <TextField
@@ -187,12 +218,15 @@ export function ManualInputDialog({
 
               <TextField
                 label="Variance"
-                value={variance.toFixed(2)}
+                value={variant.toFixed(2)}
                 InputProps={{ readOnly: true }}
                 fullWidth
                 sx={{
+                  '& .MuiInputBase-root': {
+                    backgroundColor: 'action.hover',
+                  },
                   '& .MuiInputBase-input': {
-                    color: variance > 0 ? 'success.main' : variance < 0 ? 'error.main' : 'inherit',
+                    color: variant > 0 ? 'success.main' : variant < 0 ? 'error.main' : 'inherit',
                     fontWeight: 600,
                   },
                 }}
@@ -202,13 +236,6 @@ export function ManualInputDialog({
                 label="Report Area"
                 value={formData.report_area}
                 onChange={(e) => setFormData({ ...formData, report_area: e.target.value })}
-                fullWidth
-              />
-
-              <TextField
-                label="PIC Name"
-                value={formData.sto_pic_name}
-                onChange={(e) => setFormData({ ...formData, sto_pic_name: e.target.value })}
                 fullWidth
               />
 

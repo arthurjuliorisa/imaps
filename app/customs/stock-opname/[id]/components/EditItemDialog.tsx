@@ -34,7 +34,6 @@ export function EditItemDialog({
   const [formData, setFormData] = useState({
     sto_qty: '',
     report_area: '',
-    sto_pic_name: '',
     remark: '',
   });
 
@@ -43,7 +42,6 @@ export function EditItemDialog({
       setFormData({
         sto_qty: item.sto_qty.toString(),
         report_area: item.report_area || '',
-        sto_pic_name: item.sto_pic_name || '',
         remark: item.remark || '',
       });
     }
@@ -67,7 +65,6 @@ export function EditItemDialog({
           body: JSON.stringify({
             sto_qty: parseFloat(formData.sto_qty),
             report_area: formData.report_area.trim() || null,
-            sto_pic_name: formData.sto_pic_name.trim() || null,
             remark: formData.remark.trim() || null,
           }),
         }
@@ -89,7 +86,7 @@ export function EditItemDialog({
     }
   };
 
-  const variance = item
+  const variant = item
     ? parseFloat(formData.sto_qty || '0') - item.end_stock
     : 0;
 
@@ -104,6 +101,11 @@ export function EditItemDialog({
               value={item.item_code}
               InputProps={{ readOnly: true }}
               fullWidth
+              sx={{
+                '& .MuiInputBase-root': {
+                  backgroundColor: 'action.hover',
+                },
+              }}
             />
 
             <TextField
@@ -111,13 +113,23 @@ export function EditItemDialog({
               value={item.item_name}
               InputProps={{ readOnly: true }}
               fullWidth
+              sx={{
+                '& .MuiInputBase-root': {
+                  backgroundColor: 'action.hover',
+                },
+              }}
             />
 
             <TextField
               label="Item Type"
-              value={item.item_type_code}
+              value={item.item_type}
               InputProps={{ readOnly: true }}
               fullWidth
+              sx={{
+                '& .MuiInputBase-root': {
+                  backgroundColor: 'action.hover',
+                },
+              }}
             />
 
             <TextField
@@ -125,6 +137,11 @@ export function EditItemDialog({
               value={item.end_stock.toFixed(2)}
               InputProps={{ readOnly: true }}
               fullWidth
+              sx={{
+                '& .MuiInputBase-root': {
+                  backgroundColor: 'action.hover',
+                },
+              }}
             />
 
             <TextField
@@ -139,12 +156,15 @@ export function EditItemDialog({
 
             <TextField
               label="Variance"
-              value={variance.toFixed(2)}
+              value={variant.toFixed(2)}
               InputProps={{ readOnly: true }}
               fullWidth
               sx={{
+                '& .MuiInputBase-root': {
+                  backgroundColor: 'action.hover',
+                },
                 '& .MuiInputBase-input': {
-                  color: variance > 0 ? 'success.main' : variance < 0 ? 'error.main' : 'inherit',
+                  color: variant > 0 ? 'success.main' : variant < 0 ? 'error.main' : 'inherit',
                   fontWeight: 600,
                 },
               }}
@@ -154,13 +174,6 @@ export function EditItemDialog({
               label="Report Area"
               value={formData.report_area}
               onChange={(e) => setFormData({ ...formData, report_area: e.target.value })}
-              fullWidth
-            />
-
-            <TextField
-              label="PIC Name"
-              value={formData.sto_pic_name}
-              onChange={(e) => setFormData({ ...formData, sto_pic_name: e.target.value })}
               fullWidth
             />
 

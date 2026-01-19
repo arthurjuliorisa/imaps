@@ -42,7 +42,10 @@ export async function GET(request: Request) {
       ];
     }
 
-    // Get items
+    // Get items with latest stock snapshot
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const items = await prisma.items.findMany({
       where,
       select: {
@@ -50,12 +53,48 @@ export async function GET(request: Request) {
         item_name: true,
         item_type: true,
         uom: true,
+        company_code: true,
       },
       orderBy: [{ item_code: 'asc' }],
       take: limit,
     });
 
-    return NextResponse.json(serializeBigInt(items));
+    // Fetch latest stock snapshots for all items
+    const itemCodes = items.map((item) => item.item_code);
+    const snapshots = await prisma.stock_daily_snapshot.findMany({
+      where: {
+        company_code: companyCode,
+        item_code: { in: itemCodes },
+        snapshot_date: { lte: today },
+      },
+      select: {
+        item_code: true,
+        closing_balance: true,
+        snapshot_date: true,
+      },
+      orderBy: {
+        snapshot_date: 'desc',
+      },
+    });
+
+    // Create a map of item_code to latest snapshot
+    const snapshotMap = new Map<string, number>();
+    snapshots.forEach((snapshot) => {
+      if (!snapshotMap.has(snapshot.item_code)) {
+        snapshotMap.set(snapshot.item_code, Number(snapshot.closing_balance));
+      }
+    });
+
+    // Transform items to match ItemMaster interface
+    const transformedItems = items.map((item) => ({
+      item_code: item.item_code,
+      item_name: item.item_name,
+      item_type: item.item_type,
+      uom: item.uom,
+      end_stock: snapshotMap.get(item.item_code) || 0,
+    }));
+
+    return NextResponse.json(serializeBigInt(transformedItems));
   } catch (error) {
     console.error('[API Error] Failed to fetch items master:', error);
     return NextResponse.json(

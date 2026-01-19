@@ -38,18 +38,17 @@ export interface StockOpname {
  * Stock Opname Item (from database)
  */
 export interface StockOpnameItem {
-  id: number;
+  id: bigint | string; // BigInt in DB, serialized as string in API
   stock_opname_id: number;
   company_code: number;
   item_code: string;
   item_name: string;
-  item_type_code: string;
+  item_type: string;
   uom: string;
   sto_qty: number; // Decimal stored as number
   end_stock: number; // Decimal stored as number
-  variance: number; // Decimal stored as number
+  variant: number; // Decimal stored as number
   report_area: string | null;
-  sto_pic_name: string | null;
   remark: string | null;
   created_at: string;
   updated_at: string;
@@ -61,7 +60,7 @@ export interface StockOpnameItem {
 export interface ItemMaster {
   item_code: string;
   item_name: string;
-  item_type_code: string;
+  item_type: string;
   end_stock?: number;
 }
 

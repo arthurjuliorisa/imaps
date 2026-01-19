@@ -172,30 +172,6 @@ export default function LoginPage() {
           }}
         >
           <Box>
-            <Typography
-              sx={{
-                fontSize: { xs: '2rem', sm: '2.8rem', md: '3.6rem', lg: '4rem' },
-                fontWeight: 700,
-                color: 'white',
-                lineHeight: 1.2,
-                mb: 2,
-                textShadow: '0 4px 12px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.3)',
-                letterSpacing: '0.02em',
-              }}
-            >
-              唯智仓库管理系统
-            </Typography>
-            <Typography
-              sx={{
-                fontSize: { xs: '1rem', sm: '1.2rem', md: '1.4rem', lg: '1.6rem' },
-                fontWeight: 500,
-                color: 'rgba(255, 255, 255, 0.95)',
-                textShadow: '0 2px 8px rgba(0,0,0,0.4)',
-                letterSpacing: '0.05em',
-              }}
-            >
-              vTradEx Warehouse Management System
-            </Typography>
           </Box>
         </Box>
 
@@ -491,7 +467,6 @@ export default function LoginPage() {
             fontSize: '0.875rem',
           }}
         >
-          © {new Date().getFullYear()} vTradEx Warehouse Management System. All rights reserved.
         </Typography>
       </Box>
     </Box>

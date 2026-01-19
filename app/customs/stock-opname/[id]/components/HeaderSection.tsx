@@ -22,6 +22,8 @@ import {
   Edit as EditIcon,
   PlayArrow,
   CheckCircle,
+  Undo,
+  Print as PrintIcon,
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import { StockOpname, StockOpnameStatus } from '@/types/stock-opname';
@@ -31,7 +33,7 @@ interface HeaderSectionProps {
   stockOpname: StockOpname;
   totalItems: number;
   totalStoQty: number;
-  totalVariance: number;
+  totalVariant: number;
   onUpdate: () => void;
 }
 
@@ -39,12 +41,16 @@ export function HeaderSection({
   stockOpname,
   totalItems,
   totalStoQty,
-  totalVariance,
+  totalVariant,
   onUpdate,
 }: HeaderSectionProps) {
   const router = useRouter();
   const toast = useToast();
   const [editDialog, setEditDialog] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    action: 'release' | 'rollback' | null;
+  }>({ open: false, action: null });
   const [loading, setLoading] = useState(false);
   const [companyName, setCompanyName] = useState<string>('');
 
@@ -111,7 +117,7 @@ export function HeaderSection({
       const stoDateTime = new Date(`${formData.sto_date}T${formData.sto_time}:00`);
 
       const response = await fetch(`/api/customs/stock-opname/${stockOpname.id}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sto_date: stoDateTime.toISOString(),
@@ -136,16 +142,10 @@ export function HeaderSection({
   };
 
   const handleStatusChange = async (newStatus: StockOpnameStatus) => {
-    const confirmMessage =
-      newStatus === 'PROCESS'
-        ? 'Change status to PROCESS? You cannot revert this action.'
-        : 'Change status to RELEASED? You cannot revert this action.';
-
-    if (!confirm(confirmMessage)) return;
-
+    setLoading(true);
     try {
       const response = await fetch(`/api/customs/stock-opname/${stockOpname.id}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
@@ -155,12 +155,28 @@ export function HeaderSection({
         throw new Error(error.message || 'Failed to update status');
       }
 
-      toast.success(`Status changed to ${newStatus}`);
+      const action = newStatus === 'RELEASED' ? 'dirilis' : 'dikembalikan ke PROCESS';
+      toast.success(`Stock opname berhasil ${action}`);
+      setConfirmDialog({ open: false, action: null });
       onUpdate();
     } catch (error) {
       console.error('Error updating status:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to update status');
+      toast.error(error instanceof Error ? error.message : 'Gagal mengubah status');
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleConfirmAction = () => {
+    if (confirmDialog.action === 'release') {
+      handleStatusChange('RELEASED');
+    } else if (confirmDialog.action === 'rollback') {
+      handleStatusChange('PROCESS');
+    }
+  };
+
+  const handlePrint = () => {
+    window.open(`/customs/stock-opname/${stockOpname.id}/print`, '_blank');
   };
 
   return (
@@ -197,20 +213,37 @@ export function HeaderSection({
               </IconButton>
             </Tooltip>
           )}
+          <Button
+            variant="outlined"
+            startIcon={<PrintIcon />}
+            onClick={handlePrint}
+          >
+            Print
+          </Button>
           {stockOpname.status === 'PROCESS' && (
             <Button
               variant="contained"
               color="success"
               startIcon={<CheckCircle />}
-              onClick={() => handleStatusChange('RELEASED')}
+              onClick={() => setConfirmDialog({ open: true, action: 'release' })}
             >
               Release STO
+            </Button>
+          )}
+          {stockOpname.status === 'RELEASED' && (
+            <Button
+              variant="outlined"
+              color="warning"
+              startIcon={<Undo />}
+              onClick={() => setConfirmDialog({ open: true, action: 'rollback' })}
+            >
+              Rollback
             </Button>
           )}
         </Box>
 
         <Grid container spacing={3}>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                 STO Information
@@ -247,7 +280,7 @@ export function HeaderSection({
             </Paper>
           </Grid>
 
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                 Summary
@@ -266,7 +299,7 @@ export function HeaderSection({
                     Total STO Qty
                   </Typography>
                   <Typography variant="h6" fontWeight={600}>
-                    {totalStoQty.toFixed(2)}
+                    {Number(totalStoQty || 0).toFixed(2)}
                   </Typography>
                 </Box>
                 <Box sx={{ flex: 1 }}>
@@ -276,16 +309,16 @@ export function HeaderSection({
                   <Typography
                     variant="h6"
                     fontWeight={600}
-                    color={totalVariance > 0 ? 'success.main' : totalVariance < 0 ? 'error.main' : 'text.primary'}
+                    color={totalVariant > 0 ? 'success.main' : totalVariant < 0 ? 'error.main' : 'text.primary'}
                   >
-                    {totalVariance.toFixed(2)}
+                    {Number(totalVariant || 0).toFixed(2)}
                   </Typography>
                 </Box>
               </Box>
             </Paper>
           </Grid>
 
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                 Audit Information
@@ -356,6 +389,40 @@ export function HeaderSection({
           </Button>
           <Button onClick={handleUpdateHeader} variant="contained" disabled={loading}>
             {loading ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => !loading && setConfirmDialog({ open: false, action: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {confirmDialog.action === 'release' ? 'Konfirmasi Release STO' : 'Konfirmasi Rollback'}
+        </DialogTitle>
+        <DialogContent>
+          <Typography>
+            {confirmDialog.action === 'release'
+              ? 'Apakah Anda yakin ingin merilis stock opname ini? Setelah dirilis, Anda tidak dapat menambah, mengubah, atau menghapus item.'
+              : 'Apakah Anda yakin ingin mengembalikan status ke PROCESS? Setelah dikembalikan, Anda dapat kembali menambah, mengubah, atau menghapus item.'}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setConfirmDialog({ open: false, action: null })}
+            disabled={loading}
+          >
+            Batal
+          </Button>
+          <Button
+            onClick={handleConfirmAction}
+            variant="contained"
+            color={confirmDialog.action === 'release' ? 'success' : 'warning'}
+            disabled={loading}
+          >
+            {loading ? 'Memproses...' : confirmDialog.action === 'release' ? 'Ya, Release' : 'Ya, Rollback'}
           </Button>
         </DialogActions>
       </Dialog>

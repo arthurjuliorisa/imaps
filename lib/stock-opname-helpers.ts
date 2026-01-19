@@ -99,23 +99,24 @@ export async function getItemDetails(companyCode: number, itemCode: string) {
 /**
  * Validate status transition
  * Allowed transitions:
- * - OPEN -> PROCESS
- * - PROCESS -> RELEASED
- * - Cannot go backwards
+ * - OPEN -> PROCESS (forward)
+ * - PROCESS -> RELEASED (forward)
+ * - RELEASED -> PROCESS (rollback)
+ * Not allowed:
+ * - RELEASED -> OPEN
+ * - PROCESS -> OPEN
  */
 export function isValidStatusTransition(
   currentStatus: string,
   newStatus: string
 ): boolean {
-  const statusOrder = { OPEN: 0, PROCESS: 1, RELEASED: 2 };
+  // Allow forward transitions
+  if (currentStatus === 'OPEN' && newStatus === 'PROCESS') return true;
+  if (currentStatus === 'PROCESS' && newStatus === 'RELEASED') return true;
 
-  const currentOrder = statusOrder[currentStatus as keyof typeof statusOrder];
-  const newOrder = statusOrder[newStatus as keyof typeof statusOrder];
+  // Allow rollback from RELEASED to PROCESS
+  if (currentStatus === 'RELEASED' && newStatus === 'PROCESS') return true;
 
-  if (currentOrder === undefined || newOrder === undefined) {
-    return false;
-  }
-
-  // Can only move forward, not backwards
-  return newOrder >= currentOrder;
+  // Block all other transitions (backward to OPEN, same status, etc.)
+  return false;
 }
