@@ -70,6 +70,14 @@ enum CalculationMethod {
   @@map("calculation_method")
 }
 
+enum StockOpnameStatus {
+  OPEN      // Draft mode - can edit
+  PROCESS   // Under review - limited editing
+  RELEASED  // Finalized - read-only, affects stock
+
+  @@map("stock_opname_status")
+}
+
 // ============================================================================
 // MASTER DATA TABLES
 // ============================================================================
@@ -97,6 +105,7 @@ model companies {
   snapshot_recalc_queue        snapshot_recalc_queue[]
   stock_daily_snapshot         stock_daily_snapshot[]
   scrap_transactions           scrap_transactions[]
+  stock_opnames                stock_opnames[]
 
   @@index([code])
   @@index([status])
@@ -674,6 +683,64 @@ model scrap_transaction_items {
   @@index([scrap_transaction_id, scrap_transaction_company, scrap_transaction_date])
   @@index([item_code])
   @@index([item_type])
+}
+
+// ============================================================================
+// STOCK OPNAME TABLES
+// ============================================================================
+
+model stock_opnames {
+  id              Int                @id @default(autoincrement())
+  sto_number      String             @unique @db.VarChar(50) // STO-YYYYMMDD-XXX
+  company_code    Int
+  sto_datetime    DateTime           @db.Timestamptz(6) // Date and time of stock opname
+  pic_name        String?            @db.VarChar(200) // Person in charge (optional)
+  status          StockOpnameStatus  @default(OPEN)
+  created_by      String             @db.VarChar(100) // Username who created
+  created_at      DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime           @updatedAt @db.Timestamptz(6)
+  deleted_at      DateTime?          @db.Timestamptz(6)
+
+  // Relations
+  company companies            @relation(fields: [company_code], references: [code], onDelete: Cascade)
+  items   stock_opname_items[]
+
+  // Indexes for optimal query performance
+  @@index([company_code, sto_datetime]) // Filter by company and date range
+  @@index([sto_number]) // Quick lookup by STO number
+  @@index([status]) // Filter by status
+  @@index([created_at]) // Sort by creation date
+  @@index([company_code, status, sto_datetime]) // Composite for common queries
+}
+
+model stock_opname_items {
+  id              BigInt    @id @default(autoincrement())
+  stock_opname_id Int
+  company_code    Int
+  item_code       String    @db.VarChar(50)
+  item_name       String    @db.VarChar(200) // Denormalized for performance
+  item_type       String    @db.VarChar(10) // Denormalized (ROH, HALB, FERT, etc.)
+  uom             String    @db.VarChar(20) // Denormalized
+  sto_qty         Decimal   @db.Decimal(15, 3) // Physical count quantity
+  end_stock       Decimal   @db.Decimal(15, 3) // System stock at STO datetime (denormalized)
+  variant         Decimal   @db.Decimal(15, 3) // Calculated: sto_qty - end_stock
+  report_area     String?   @db.VarChar(100) // Optional location/area
+  remark          String?   @db.Text // Optional notes
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at      DateTime? @db.Timestamptz(6)
+
+  // Relations
+  stock_opname stock_opnames @relation(fields: [stock_opname_id], references: [id], onDelete: Cascade)
+
+  // Indexes for optimal query performance
+  @@unique([stock_opname_id, item_code]) // Prevent duplicate items in same STO
+  @@index([stock_opname_id]) // Fast joins with parent
+  @@index([item_code]) // Filter/search by item
+  @@index([item_type]) // Filter by item type
+  @@index([company_code]) // Filter by company
+  @@index([company_code, item_code]) // Covering index for common queries
+  @@index([variant]) // Find items with discrepancies
 }
 
 // ============================================================================

@@ -140,3 +140,160 @@ export function formatDate(dateString: string | Date | null | undefined): string
 export function formatNumber(num: number): string {
   return new Intl.NumberFormat('id-ID').format(num);
 }
+
+/**
+ * Export Stock Opname to Excel with proper styling
+ */
+export async function exportStockOpnameToExcel(
+  headerInfo: { label: string; value: string }[],
+  itemsData: any[],
+  fileName: string
+) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Stock Opname');
+
+  let currentRow = 1;
+
+  // ============================================================================
+  // HEADER INFORMATION SECTION
+  // ============================================================================
+  headerInfo.forEach((info) => {
+    if (info.label) {
+      const row = worksheet.addRow([info.label, info.value]);
+
+      // Style for header info labels (column A)
+      row.getCell(1).font = { bold: true };
+      row.getCell(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE2E8F0' }, // Light gray
+      };
+      row.getCell(1).border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+
+      // Style for header info values (column B)
+      row.getCell(2).border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+
+      currentRow++;
+    } else {
+      // Empty row
+      worksheet.addRow([]);
+      currentRow++;
+    }
+  });
+
+  // Add one more empty row as separator
+  worksheet.addRow([]);
+  currentRow++;
+
+  // ============================================================================
+  // TABLE HEADER
+  // ============================================================================
+  if (itemsData.length > 0) {
+    const headers = Object.keys(itemsData[0]);
+    const headerRow = worksheet.addRow(headers);
+    headerRow.height = 20;
+
+    // Style each header cell individually
+    headers.forEach((_, index) => {
+      const cell = headerRow.getCell(index + 1);
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }; // White text
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1E3A8A' }, // Dark blue
+      };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+
+    currentRow++;
+
+    // ============================================================================
+    // DATA ROWS
+    // ============================================================================
+    itemsData.forEach((rowData, rowIndex) => {
+      const dataRow = worksheet.addRow(Object.values(rowData));
+
+      // Alternate row colors
+      if (rowIndex % 2 === 1) {
+        dataRow.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF8FAFC' }, // Very light gray
+        };
+      }
+
+      // Add borders to all cells
+      headers.forEach((_, index) => {
+        const cell = dataRow.getCell(index + 1);
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+
+        // Align numbers to the right
+        const value = cell.value;
+        if (typeof value === 'number') {
+          cell.alignment = { horizontal: 'right' };
+        }
+      });
+
+      // Bold the first column (No)
+      dataRow.getCell(1).font = { bold: true };
+
+      currentRow++;
+    });
+
+    // ============================================================================
+    // AUTO-ADJUST COLUMN WIDTHS
+    // ============================================================================
+    worksheet.columns.forEach((column, index) => {
+      if (index === 0) {
+        column.width = 6; // No column
+      } else if (index === 1) {
+        column.width = 15; // Item Code
+      } else if (index === 2) {
+        column.width = 30; // Item Name
+      } else if (index === 3) {
+        column.width = 12; // Item Type
+      } else {
+        column.width = 12; // Other columns
+      }
+    });
+
+    // Set width for header info columns
+    worksheet.getColumn(1).width = 20;
+    worksheet.getColumn(2).width = 35;
+  }
+
+  // ============================================================================
+  // GENERATE AND DOWNLOAD FILE
+  // ============================================================================
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${fileName}.xlsx`;
+  link.click();
+  window.URL.revokeObjectURL(url);
+}

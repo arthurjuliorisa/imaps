@@ -32,28 +32,47 @@ import {
   Search as SearchIcon,
   FileDownload,
 } from '@mui/icons-material';
-import { StockOpnameItem } from '@/types/stock-opname';
+import { StockOpnameItem, StockOpname } from '@/types/stock-opname';
 import { useToast } from '@/app/components/ToastProvider';
-import { exportToExcel } from '@/lib/exportUtils';
+import { exportStockOpnameToExcel } from '@/lib/exportUtils';
 
 interface ItemsTableProps {
   items: StockOpnameItem[];
-  stoDate: string;
+  stockOpname: StockOpname;
   canEdit: boolean;
   onEdit: (item: StockOpnameItem) => void;
   onDelete: (itemId: bigint | string) => void;
 }
 
-export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsTableProps) {
+export function ItemsTable({ items, stockOpname, canEdit, onEdit, onDelete }: ItemsTableProps) {
   const theme = useTheme();
   const toast = useToast();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
+  const [companyName, setCompanyName] = useState<string>('');
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; itemId: bigint | string | null }>({
     open: false,
     itemId: null,
   });
+
+  React.useEffect(() => {
+    const fetchCompanyName = async () => {
+      try {
+        const response = await fetch(`/api/master/companies?code=${stockOpname.company_code}`);
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data && result.data.length > 0) {
+            setCompanyName(result.data[0].name);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch company name:', error);
+      }
+    };
+
+    fetchCompanyName();
+  }, [stockOpname.company_code]);
 
   const formatDateTime = (dateString: string) => {
     try {
@@ -120,12 +139,24 @@ export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsT
   };
 
   const handleExportExcel = () => {
+    // Header information
+    const headerInfo = [
+      { label: 'STO Number', value: stockOpname.sto_number },
+      { label: 'Company', value: `${stockOpname.company_code} - ${companyName || 'Loading...'}` },
+      { label: 'STO Date & Time', value: formatDateTime(stockOpname.sto_datetime) + ' ' + new Date(stockOpname.sto_datetime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) },
+      { label: 'PIC Name', value: stockOpname.pic_name || '-' },
+      { label: 'Status', value: stockOpname.status },
+      { label: 'Created By', value: stockOpname.created_by },
+      { label: '', value: '' }, // Empty row
+    ];
+
+    // Items data
     const exportData = filteredItems.map((item, index) => ({
       No: index + 1,
       'Item Code': item.item_code,
       'Item Name': item.item_name,
       'Item Type': item.item_type,
-      'STO Date': formatDateTime(stoDate),
+      'STO Date': formatDateTime(stockOpname.sto_datetime),
       'STO Qty': item.sto_qty,
       'End Stock': item.end_stock,
       Variance: item.variant,
@@ -133,7 +164,7 @@ export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsT
       Remark: item.remark || '-',
     }));
 
-    exportToExcel(exportData, `Stock_Opname_Items_${Date.now()}`, 'Stock Opname Items');
+    exportStockOpnameToExcel(headerInfo, exportData, `Stock_Opname_${stockOpname.sto_number}_${Date.now()}`);
     toast.success('Export successful');
   };
 
@@ -223,7 +254,7 @@ export function ItemsTable({ items, stoDate, canEdit, onEdit, onDelete }: ItemsT
                         ({item.item_type})
                       </Typography>
                     </TableCell>
-                    <TableCell>{formatDateTime(stoDate)}</TableCell>
+                    <TableCell>{formatDateTime(stockOpname.sto_datetime)}</TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>
                         {Number(item.sto_qty || 0).toFixed(2)}

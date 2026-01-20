@@ -120,7 +120,7 @@ export default function StockOpnameDetailPage({ params }: PageProps) {
 
       <ItemsTable
         items={items}
-        stoDate={stockOpname.sto_datetime}
+        stockOpname={stockOpname}
         canEdit={canEdit}
         onEdit={setEditItem}
         onDelete={handleDeleteItem}
