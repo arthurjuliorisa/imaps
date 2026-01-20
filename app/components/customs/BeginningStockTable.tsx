@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Table,
   TableBody,
@@ -51,6 +51,8 @@ export interface BeginningStockData {
   // Added for edit functionality
   itemId?: string;
   uomId?: string;
+  // Check if this balance has any transactions
+  hasTransactions?: boolean;
 }
 
 interface BeginningStockTableProps {
@@ -74,10 +76,29 @@ export function BeginningStockTable({
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState<Dayjs | null>(null);
   const [ppkekDialogOpen, setPpkekDialogOpen] = useState(false);
   const [selectedPpkeks, setSelectedPpkeks] = useState<string[]>([]);
   const [selectedItemInfo, setSelectedItemInfo] = useState<{ code: string; name: string } | null>(null);
+
+  // Debounce search term - wait 500ms after user stops typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchTerm]);
+
+  // Trigger search only when debounced value changes
+  useEffect(() => {
+    setPage(0);
+    onSearch?.(debouncedSearchTerm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -91,8 +112,6 @@ export function BeginningStockTable({
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
     setSearchTerm(value);
-    setPage(0);
-    onSearch?.(value);
   };
 
   const handleDateChange = (newDate: Dayjs | null) => {
@@ -310,21 +329,25 @@ export function BeginningStockTable({
                         <ViewIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title="Edit">
-                      <IconButton
-                        size="small"
-                        onClick={() => onEdit(row)}
-                        color="primary"
-                        sx={{ mr: 0.5 }}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
+                    <Tooltip title={row.hasTransactions ? "This balance already have transaction(s) and cannot be edited" : "Edit"}>
+                      <span>
+                        <IconButton
+                          size="small"
+                          onClick={() => onEdit(row)}
+                          color="primary"
+                          sx={{ mr: 0.5 }}
+                          disabled={row.hasTransactions}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </span>
                     </Tooltip>
-                    <Tooltip title="Delete">
+                    <Tooltip title="Delete" sx={{ display: 'none' }}>
                       <IconButton
                         size="small"
                         onClick={() => onDelete(row)}
                         color="error"
+                        sx={{ display: 'none' }}
                       >
                         <DeleteIcon fontSize="small" />
                       </IconButton>

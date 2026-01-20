@@ -27,23 +27,7 @@ function generateWmsId(type: string, direction: string): string {
   return `${type}-${direction}-${timestamp}-${random}`;
 }
 
-/**
- * Calculate priority for snapshot recalculation queue
- */
-function calculatePriority(transactionDate: Date): number {
-  const now = new Date();
-  const today = new Date(Date.UTC(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    0, 0, 0, 0
-  ));
 
-  if (transactionDate < today) {
-    return 0; // Backdated transaction
-  }
-  return -1; // Same-day transaction
-}
 
 /**
  * Normalize date to UTC midnight
@@ -96,20 +80,52 @@ async function validateScrapItems(
 }
 
 /**
- * Map document type code to enum value
+ * Valid customs document types enum
+ * These must match Prisma schema CustomsDocumentType enum
+ */
+const VALID_CUSTOMS_DOCUMENT_TYPES = [
+  'BC23',  // Import Declaration
+  'BC27',  // Other Bonded Zone Release (Incoming & Outgoing)
+  'BC40',  // Local Purchase from Non-Bonded Zone
+  'BC30',  // Export Declaration
+  'BC25',  // Local Sales to Non-Bonded Zone
+  'BC261', // Subcontracting - Incoming
+  'BC262', // Subcontracting - Outgoing
+  'PPKEKTLDDP',  // PPKEK incoming for TLDDP
+  'PPKEKLDIN',   // PPKEK incoming for LDP
+  'PPKEKLDPOUT', // PPKEK outgoing for LDP
+] as const;
+
+/**
+ * Map document type code to enum value and validate
  * Converts "25" to "BC25", "27" to "BC27", "41" to "BC41", etc.
- * Valid document types for outgoing transactions: BC25, BC27, BC41
+ * Also validates that the result is a valid enum value
+ * 
+ * @throws Error if document type is not valid
  */
 function mapDocumentTypeToEnum(docType: string): string {
   const cleanType = docType.trim();
 
-  // If already prefixed with BC, return as-is
-  if (cleanType.startsWith('BC')) {
-    return cleanType;
+  // Determine the mapped type
+  let mappedType: string;
+  
+  // If already prefixed with BC, use as-is
+  if (cleanType.startsWith('BC') || cleanType.startsWith('PPKEK')) {
+    mappedType = cleanType;
+  } else {
+    // Add BC prefix
+    mappedType = `BC${cleanType}`;
   }
 
-  // Add BC prefix
-  return `BC${cleanType}`;
+  // Validate against allowed enum values
+  if (!VALID_CUSTOMS_DOCUMENT_TYPES.includes(mappedType as any)) {
+    throw new Error(
+      `Invalid customs document type: '${cleanType}' (mapped to '${mappedType}'). ` +
+      `Allowed values: ${VALID_CUSTOMS_DOCUMENT_TYPES.join(', ')}`
+    );
+  }
+
+  return mappedType;
 }
 
 /**
@@ -157,61 +173,7 @@ function aggregateItemsByCode(
   return aggregated;
 }
 
-/**
- * Handle snapshot recalculation (queue or direct execution)
- * For backdated transactions: queue now, direct execution will happen after transaction
- * For current date: queue for batch processing via cron
- *
- * Returns the date and whether it's backdated for later direct execution
- */
-async function handleSnapshotRecalculation(
-  tx: any,
-  companyCode: number,
-  docDate: Date,
-  wmsId: string
-): Promise<{ date: Date; isBackdated: boolean }> {
-  const priority = calculatePriority(docDate);
-  const isBackdated = priority === 0; // 0 = backdated, -1 = current date
 
-  // Always queue the recalculation (for both backdated and current date)
-  const existingQueue = await tx.snapshot_recalc_queue.findFirst({
-    where: {
-      company_code: companyCode,
-      recalc_date: docDate,
-      item_type: null,
-      item_code: null,
-    },
-  });
-
-  if (existingQueue) {
-    // Update existing queue entry
-    await tx.snapshot_recalc_queue.update({
-      where: { id: existingQueue.id },
-      data: {
-        status: 'PENDING',
-        priority: priority,
-        reason: `Excel import: ${wmsId}`,
-        queued_at: new Date(),
-      },
-    });
-  } else {
-    // Create new queue entry
-    await tx.snapshot_recalc_queue.create({
-      data: {
-        company_code: companyCode,
-        item_type: null,
-        item_code: null,
-        recalc_date: docDate,
-        status: 'PENDING',
-        priority: priority,
-        reason: `Excel import: ${wmsId}`,
-      },
-    });
-  }
-
-  // Return date info for later direct execution if backdated
-  return { date: docDate, isBackdated };
-}
 
 /**
  * POST /api/customs/import-ceisa-excel
@@ -370,7 +332,7 @@ export async function POST(request: Request) {
 
     // Process import based on transaction type
     let result;
-    let backdatedDates: Date[] = [];
+    let snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string }> = [];
 
     if (validatedRequest.transactionType === 'SCRAP') {
       const txResult = await importScrapTransactions(
@@ -381,7 +343,7 @@ export async function POST(request: Request) {
         regDate
       );
       result = txResult.result;
-      backdatedDates = txResult.backdatedDates;
+      snapshotItems = txResult.snapshotItems;
     } else {
       const txResult = await importCapitalGoodsTransactions(
         companyCode,
@@ -392,38 +354,67 @@ export async function POST(request: Request) {
         itemType as string
       );
       result = txResult.result;
-      backdatedDates = txResult.backdatedDates;
+      snapshotItems = txResult.snapshotItems;
     }
 
-    // Execute direct snapshot recalculation for backdated transactions (outside transaction)
-    if (backdatedDates.length > 0) {
-      const uniqueDates = Array.from(new Set(backdatedDates.map(d => d.getTime()))).map(t => new Date(t));
-      for (const date of uniqueDates) {
-        try {
-          await prisma.$executeRawUnsafe(
-            'SELECT calculate_stock_snapshot($1::int, $2::date)',
-            companyCode,
-            date
-          );
-          console.log(
-            '[API Info] Backdated snapshot recalculation executed',
-            {
+    // Execute direct snapshot recalculation for all affected items (outside transaction, non-blocking)
+    if (snapshotItems.length > 0) {
+      // Fire-and-forget: execute snapshots in background without waiting
+      (async () => {
+        for (const item of snapshotItems) {
+          try {
+            // Step 1: Upsert snapshot for the import date
+            await prisma.$executeRawUnsafe(
+              'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
               companyCode,
-              date: date.toISOString().split('T')[0],
-            }
-          );
-        } catch (recalcError) {
-          console.warn(
-            '[API Warning] Backdated snapshot recalculation failed',
-            {
+              item.itemType,
+              item.itemCode,
+              item.itemName,
+              item.uom,
+              docDate
+            );
+            console.log(
+              '[API Info] Direct snapshot calculation executed',
+              {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                date: docDate.toISOString().split('T')[0],
+              }
+            );
+
+            // Step 2: Cascade recalculate snapshots for all future dates
+            // This ensures all forward-looking balance updates when importing transactions
+            await prisma.$executeRawUnsafe(
+              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
               companyCode,
-              date: date.toISOString().split('T')[0],
-              errorMessage: recalcError instanceof Error ? recalcError.message : String(recalcError),
-            }
-          );
-          // Continue with next date - recalc will be retried by background worker
+              item.itemType,
+              item.itemCode,
+              docDate
+            );
+            console.log(
+              '[API Info] Cascaded snapshot recalculation executed',
+              {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                fromDate: docDate.toISOString().split('T')[0],
+              }
+            );
+          } catch (snapshotError) {
+            console.error(
+              '[API Error] Snapshot calculation failed',
+              {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                date: docDate.toISOString().split('T')[0],
+                errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+              }
+            );
+          }
         }
-      }
+      })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
     }
 
     // Log activity
@@ -487,7 +478,7 @@ export async function POST(request: Request) {
 
 /**
  * Import scrap transactions (incoming or outgoing)
- * Returns both the transaction result and list of backdated dates for direct execution
+ * Returns both the transaction result and list of items affected for direct snapshot calculation
  */
 async function importScrapTransactions(
   companyCode: number,
@@ -495,8 +486,8 @@ async function importScrapTransactions(
   direction: string,
   docDate: Date,
   regDate: Date
-): Promise<{ result: any; backdatedDates: Date[] }> {
-  const backdatedDates: Date[] = [];
+): Promise<{ result: any; snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string }> }> {
+  const snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string }> = [];
 
   const result = await prisma.$transaction(async (tx) => {
     // Validate scrap items against scrap_items table
@@ -544,20 +535,20 @@ async function importScrapTransactions(
         data: incomingGoodItemsData,
       });
 
-      // Prepare imported items response
+      // Collect snapshot items for direct calculation
       data.items.forEach(item => {
         importedItems.push({
           itemCode: item.itemCode,
           itemName: item.itemName,
           quantity: item.quantity,
         });
+        snapshotItems.push({
+          itemType: 'SCRAP',
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          uom: item.unit,
+        });
       });
-
-      // Handle snapshot recalculation (queue + track backdated dates)
-      const recalcInfo = await handleSnapshotRecalculation(tx, companyCode, docDate, wmsId);
-      if (recalcInfo.isBackdated) {
-        backdatedDates.push(recalcInfo.date);
-      }
 
       return {
         wmsId,
@@ -592,7 +583,43 @@ async function importScrapTransactions(
         throw new Error(`Import ditolak: stock tidak mencukupi pada tanggal ${docDate.toLocaleDateString('id-ID')} untuk item berikut: ${insufficientItems.join('; ')}`);
       }
 
-      // Create outgoing_goods record
+      // Create scrap_transactions header (for snapshot calculation to query scrap_transaction_items)
+      const scrapTransaction = await tx.scrap_transactions.create({
+        data: {
+          company_code: companyCode,
+          transaction_date: docDate,
+          transaction_type: 'OUT',
+          document_number: data.docNumber,
+          recipient_name: data.recipientName || 'Unknown',
+          disposal_method: 'Sold as scrap',
+          remarks: null,
+          ppkek_number: data.ppkekNumber || null,
+          customs_registration_date: regDate || null,
+          customs_document_type: mapDocumentTypeToEnum(data.docType || '27') as any,
+          timestamp: new Date(),
+        },
+      });
+
+      // Create scrap_transaction_items for each item (for snapshot calculation to query)
+      const scrapTransactionItemsData = data.items.map(item => ({
+        scrap_transaction_id: scrapTransaction.id,
+        scrap_transaction_company: companyCode,
+        scrap_transaction_date: docDate,
+        item_type: 'SCRAP',
+        item_code: item.itemCode,
+        item_name: item.itemName,
+        uom: item.unit,
+        qty: new Prisma.Decimal(item.quantity),
+        currency: data.currency as any,
+        amount: new Prisma.Decimal(item.valueAmount),
+        scrap_reason: null,
+      }));
+
+      await tx.scrap_transaction_items.createMany({
+        data: scrapTransactionItemsData,
+      });
+
+      // Create outgoing_goods record (for WMS integration)
       const outgoingGood = await tx.outgoing_goods.create({
         data: {
           wms_id: wmsId,
@@ -623,6 +650,7 @@ async function importScrapTransactions(
         qty: new Prisma.Decimal(item.quantity),
         currency: data.currency as any,
         amount: new Prisma.Decimal(item.valueAmount),
+        incoming_ppkek_numbers: item.incomingPpkekNumbers || [],
       }));
 
       // Create all outgoing_good_items at once
@@ -630,20 +658,23 @@ async function importScrapTransactions(
         data: outgoingGoodItemsData,
       });
 
-      // Prepare imported items response
+      // Collect snapshot items for direct calculation
       data.items.forEach(item => {
         importedItems.push({
           itemCode: item.itemCode,
           itemName: item.itemName,
           quantity: item.quantity,
         });
+        // Add to snapshot items if not already added (for aggregated items)
+        if (!snapshotItems.some(s => s.itemCode === item.itemCode)) {
+          snapshotItems.push({
+            itemType: 'SCRAP',
+            itemCode: item.itemCode,
+            itemName: item.itemName,
+            uom: item.unit,
+          });
+        }
       });
-
-      // Handle snapshot recalculation (queue + track backdated dates)
-      const recalcInfo = await handleSnapshotRecalculation(tx, companyCode, docDate, wmsId);
-      if (recalcInfo.isBackdated) {
-        backdatedDates.push(recalcInfo.date);
-      }
 
       return {
         wmsId,
@@ -658,12 +689,12 @@ async function importScrapTransactions(
     timeout: 60000,
   });
 
-  return { result, backdatedDates };
+  return { result, snapshotItems };
 }
 
 /**
  * Import capital goods transactions (incoming or outgoing)
- * Returns both the transaction result and list of backdated dates for direct execution
+ * Returns both the transaction result and list of items affected for direct snapshot calculation
  */
 async function importCapitalGoodsTransactions(
   companyCode: number,
@@ -672,8 +703,8 @@ async function importCapitalGoodsTransactions(
   docDate: Date,
   regDate: Date,
   itemType: string
-): Promise<{ result: any; backdatedDates: Date[] }> {
-  const backdatedDates: Date[] = [];
+): Promise<{ result: any; snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string }> }> {
+  const snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string }> = [];
 
   const result = await prisma.$transaction(async (tx) => {
     const wmsId = generateWmsId('CAPITAL', direction);
@@ -741,6 +772,7 @@ async function importCapitalGoodsTransactions(
         qty: new Prisma.Decimal(item.quantity),
         currency: data.currency as any,
         amount: new Prisma.Decimal(item.valueAmount),
+        incoming_ppkek_numbers: item.incomingPpkekNumbers || [],
       }));
 
       // Create all outgoing_good_items at once
@@ -748,7 +780,7 @@ async function importCapitalGoodsTransactions(
         data: outgoingGoodItemsData,
       });
 
-      // Prepare imported items response
+      // Collect snapshot items for direct calculation
       data.items.forEach(item => {
         importedItems.push({
           itemCode: item.itemCode,
@@ -756,13 +788,16 @@ async function importCapitalGoodsTransactions(
           itemType: itemType,
           quantity: item.quantity,
         });
+        // Add to snapshot items if not already added (for aggregated items)
+        if (!snapshotItems.some(s => s.itemCode === item.itemCode)) {
+          snapshotItems.push({
+            itemType: itemType,
+            itemCode: item.itemCode,
+            itemName: item.itemName,
+            uom: item.unit,
+          });
+        }
       });
-
-      // Handle snapshot recalculation (queue + track backdated dates)
-      const recalcInfo = await handleSnapshotRecalculation(tx, companyCode, docDate, wmsId);
-      if (recalcInfo.isBackdated) {
-        backdatedDates.push(recalcInfo.date);
-      }
 
       return {
         wmsId,
@@ -777,5 +812,5 @@ async function importCapitalGoodsTransactions(
     timeout: 60000,
   });
 
-  return { result, backdatedDates };
+  return { result, snapshotItems };
 }

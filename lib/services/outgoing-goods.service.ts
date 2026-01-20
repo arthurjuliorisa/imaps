@@ -314,11 +314,9 @@ export class OutgoingGoodsService {
     // Collect all unique item codes to query in batch (avoid N+1)
     const uniqueItemCodes = Array.from(new Set(data.items.map((item) => item.item_code)));
 
-    // For revision case, we need to get snapshot BEFORE the outgoing date (to get pristine original stock)
-    // For new transactions, we get snapshot on or before outgoing date
-    const snapshotDateCondition = revisionInfo.isRevision
-      ? { lt: outgoingDate } // Strictly before outgoing date for revisions
-      : { lte: outgoingDate }; // On or before outgoing date for new transactions
+    // For all cases (new or revision), get snapshot AS OF outgoing date (on or before)
+    // This gives us the "original stock" at the time of transaction
+    const snapshotDateCondition = { lte: outgoingDate };
 
     // Batch query all snapshots in one go
     const snapshots = await prisma.stock_daily_snapshot.findMany({
@@ -356,7 +354,7 @@ export class OutgoingGoodsService {
       const item = data.items[itemIndex];
 
       const snapshotData = snapshotMap.get(item.item_code);
-      const currentStock = snapshotData?.closing_balance ? Number(snapshotData.closing_balance) : 0;
+      const originalStock = snapshotData?.closing_balance ? Number(snapshotData.closing_balance) : 0;
       const newOutgoingQty = Number(item.qty);
 
       // Check if this is a revision
@@ -365,31 +363,34 @@ export class OutgoingGoodsService {
         
         if (previousItem) {
           const oldQty = previousItem.qty;
-          const balanceBefore = currentStock - oldQty;
-          const balanceAfter = currentStock - newOutgoingQty;
+          
+          // For revision: snapshot represents stock AFTER the old transaction
+          // To get original stock before any transaction: snapshot + old_qty
+          // Balance after new outgoing = (snapshot + old_qty) - new_qty
+          const originalStockBeforeTransaction = originalStock + oldQty;
+          const balanceAfterRevision = originalStockBeforeTransaction - newOutgoingQty;
 
-          // Check if revision causes negative balance
-          if (balanceAfter < 0) {
-            // Revision increases qty and causes insufficient stock → WARNING with detailed info
-            // For warning, expected_balance_after is simply: original_stock - new_outgoing_qty
+          // Check if revision is OK (balance >= 0) or causes insufficient stock
+          if (balanceAfterRevision < 0) {
+            // Revision causes negative balance → WARNING
             warnings.push({
               item_index: itemIndex,
               item_code: item.item_code,
               warning_type: 'INSUFFICIENT_STOCK',
-              message: `Revision causes insufficient stock: Outgoing qty revised from ${oldQty} to ${newOutgoingQty} units, expected balance ${balanceAfter} units`,
-              original_stock: currentStock,
+              message: `Outgoing qty revised from ${oldQty} to ${newOutgoingQty} units, expected balance ${balanceAfterRevision} units`,
+              original_stock: originalStockBeforeTransaction,
               outgoing_before: oldQty,
               outgoing_after: newOutgoingQty,
-              expected_balance_after: balanceAfter,
+              expected_balance_after: balanceAfterRevision,
             });
           } else {
             // Revision is OK → INFO
             info.push({
               item_index: itemIndex,
               item_code: item.item_code,
-              message: `Original outgoing qty has been revised from ${oldQty} to ${newOutgoingQty}`,
-              balance_before: balanceBefore,
-              balance_after: balanceAfter,
+              message: `Outgoing qty revised from ${oldQty} to ${newOutgoingQty} units, expected balance ${balanceAfterRevision} units`,
+              balance_before: originalStock,
+              balance_after: balanceAfterRevision,
             });
           }
           continue;
@@ -397,15 +398,15 @@ export class OutgoingGoodsService {
       }
 
       // For new transactions (not revision or item not found in revision)
-      const balanceAfter = currentStock - newOutgoingQty;
+      const balanceAfter = originalStock - newOutgoingQty;
 
       if (balanceAfter < 0) {
         warnings.push({
           item_index: itemIndex,
           item_code: item.item_code,
           warning_type: 'INSUFFICIENT_STOCK',
-          message: `Insufficient stock: Current stock ${currentStock} units, outgoing ${newOutgoingQty} units, resulting balance ${balanceAfter} units`,
-          current_stock: currentStock,
+          message: `Insufficient stock: Current stock ${originalStock} units, outgoing ${newOutgoingQty} units, resulting balance ${balanceAfter} units`,
+          current_stock: originalStock,
           outgoing_qty: newOutgoingQty,
           balance_after: balanceAfter,
         });

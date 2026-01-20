@@ -54,16 +54,31 @@ export async function GET(request: Request) {
       where.item_type = itemType;
     }
 
-    // Filter by item code
-    if (itemCode) {
+    // Filter by item code OR item name (search functionality)
+    if (itemCode && itemName) {
+      // If both are provided, use OR logic for search
+      where.OR = [
+        {
+          item_code: {
+            contains: itemCode,
+            mode: 'insensitive',
+          },
+        },
+        {
+          item_name: {
+            contains: itemName,
+            mode: 'insensitive',
+          },
+        },
+      ];
+    } else if (itemCode) {
+      // Only item code filter
       where.item_code = {
         contains: itemCode,
         mode: 'insensitive',
       };
-    }
-
-    // Filter by item name
-    if (itemName) {
+    } else if (itemName) {
+      // Only item name filter
       where.item_name = {
         contains: itemName,
         mode: 'insensitive',
@@ -97,22 +112,47 @@ export async function GET(request: Request) {
     });
 
     // Transform data to match frontend expectations
-    const transformedData = beginningBalances.map((balance) => ({
-      id: balance.id.toString(),
-      item: {
-        code: balance.item_code,
-        name: balance.item_name,
-      },
-      uom: {
-        code: balance.uom,
-      },
-      beginningBalance: Number(balance.qty),
-      beginningDate: balance.balance_date,
-      remarks: balance.remarks || null,
-      ppkek_numbers: balance.ppkeks?.map(p => p.ppkek_number) || [],
-      itemId: balance.item_code,
-      uomId: balance.uom,
-      itemType: balance.item_type,
+    const transformedData = await Promise.all(beginningBalances.map(async (balance) => {
+      // Check if this beginning balance has any incoming or outgoing transactions
+      // Transactions are identified by items in incoming_good_items and outgoing_good_items
+      // for the same item code and on or after the balance date
+      const [incomingCount, outgoingCount] = await Promise.all([
+        prisma.incoming_good_items.count({
+          where: {
+            item_code: balance.item_code,
+            incoming_good_company: balance.company_code,
+            deleted_at: null,
+          },
+        }),
+        prisma.outgoing_good_items.count({
+          where: {
+            item_code: balance.item_code,
+            outgoing_good_company: balance.company_code,
+            deleted_at: null,
+          },
+        }),
+      ]);
+
+      const hasTransactions = incomingCount > 0 || outgoingCount > 0;
+
+      return {
+        id: balance.id.toString(),
+        item: {
+          code: balance.item_code,
+          name: balance.item_name,
+        },
+        uom: {
+          code: balance.uom,
+        },
+        beginningBalance: Number(balance.qty),
+        beginningDate: balance.balance_date,
+        remarks: balance.remarks || null,
+        ppkek_numbers: balance.ppkeks?.map(p => p.ppkek_number) || [],
+        itemId: balance.item_code,
+        uomId: balance.uom,
+        itemType: balance.item_type,
+        hasTransactions,
+      };
     }));
 
     return NextResponse.json(transformedData);
@@ -264,21 +304,27 @@ export async function POST(request: Request) {
       }
     }
 
-    // Execute snapshot recalculation directly (synchronous execution)
+    // Execute item-level snapshot calculation (synchronous execution)
     try {
       await prisma.$executeRawUnsafe(
-        'SELECT calculate_stock_snapshot($1::int, $2::date)',
+        `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
         companyCode,
+        newRecord.item_type,
+        newRecord.item_code,
+        newRecord.item_name,
+        newRecord.uom,
         normalizedDate
       );
-    } catch (recalcError) {
+    } catch (snapshotError) {
       // Log the error but don't fail the entire request
-      console.error('[API Warning] Snapshot recalculation failed:', {
+      console.error('[API Warning] Snapshot calculation failed:', {
         companyCode,
+        itemType: newRecord.item_type,
+        itemCode: newRecord.item_code,
         date: normalizedDate.toISOString().split('T')[0],
-        error: recalcError instanceof Error ? recalcError.message : String(recalcError),
+        error: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
       });
-      // Continue - data is created even if recalc fails
+      // Continue - data is created even if snapshot calc fails
     }
 
     // Fetch the created record with ppkeks to return complete data
@@ -310,6 +356,7 @@ export async function POST(request: Request) {
       itemId: newRecord.item_code,
       uomId: newRecord.uom,
       itemType: newRecord.item_type,
+      hasTransactions: false, // New records have no transactions yet
     };
 
     // Log activity

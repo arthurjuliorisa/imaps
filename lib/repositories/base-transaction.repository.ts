@@ -1,17 +1,22 @@
 import { SnapshotRecalcRepository } from './snapshot-recalc.repository';
+import { SnapshotRepository, SnapshotItem } from './snapshot.repository';
 import { isBackdated } from '../utils/date.util';
 import { logger } from '../utils/logger';
 import { prisma } from '../db/prisma';
 
 /**
  * Base repository for transaction tables
- * Handles backdated transaction checking and queue management
+ * Handles:
+ * 1. Direct snapshot updates (via SnapshotRepository) - NEW, non-blocking
+ * 2. Backdated transaction queue (via SnapshotRecalcRepository) - OLD, kept for backward compatibility
  */
 export abstract class BaseTransactionRepository {
   protected snapshotRecalcRepo: SnapshotRecalcRepository;
+  protected snapshotRepo: SnapshotRepository;
 
   constructor() {
     this.snapshotRecalcRepo = new SnapshotRecalcRepository();
+    this.snapshotRepo = new SnapshotRepository();
   }
 
   /**
@@ -203,4 +208,108 @@ export abstract class BaseTransactionRepository {
       );
     }
   }
-}
+
+  /**
+   * ============================================================================
+   * NEW METHODS: Direct Snapshot Updates (Non-blocking, Item-level)
+   * ============================================================================
+   * These replace the queue-based approach for direct recalculation
+   * Called immediately after transaction create/update
+   * No backdating logic - all transactions handled the same way
+   */
+
+  /**
+   * Update item snapshots for specified items on a given date
+   * Called immediately after transaction (incoming_goods, outgoing_goods, etc)
+   * Non-blocking: errors are logged but don't fail the transaction
+   *
+   * @param companyCode Company code
+   * @param items Array of items to calculate snapshots for
+   * @param transactionDate Date to calculate snapshots for
+   * @param wmsId WMS ID (for logging)
+   * @param transactionType Transaction type (for logging)
+   */
+  protected async updateItemSnapshots(
+    companyCode: number,
+    items: SnapshotItem[],
+    transactionDate: Date,
+    wmsId: string,
+    transactionType: string
+  ): Promise<void> {
+    const log = logger.child({
+      scope: 'BaseTransactionRepository.updateItemSnapshots',
+      wmsId,
+      companyCode,
+      transactionDate,
+      transactionType,
+      itemsCount: items.length,
+    });
+
+    try {
+      await this.snapshotRepo.upsertItemsSnapshot(companyCode, items, transactionDate);
+      log.info('Item snapshots updated successfully');
+    } catch (error: any) {
+      // Don't throw - snapshot updates are non-blocking
+      log.error('Failed to update item snapshots (non-blocking)', {
+        errorName: error?.name,
+        errorMessage: error?.message,
+        errorCode: error?.code,
+      });
+    }
+  }
+
+  /**
+   * Cascade recalculate snapshots from given date onwards
+   * Called when transaction date changes (e.g., re-transmit with different date)
+   * Ensures opening balances of subsequent dates are updated
+   * Non-blocking: errors are logged but don't fail the transaction
+   *
+   * @param companyCode Company code
+   * @param items Array of items affected
+   * @param fromDate Start date for cascade (inclusive)
+   */
+  protected async cascadeRecalculateSnapshots(
+    companyCode: number,
+    items: SnapshotItem[],
+    fromDate: Date
+  ): Promise<void> {
+    const log = logger.child({
+      scope: 'BaseTransactionRepository.cascadeRecalculateSnapshots',
+      companyCode,
+      fromDate,
+      itemsCount: items.length,
+    });
+
+    try {
+      for (const item of items) {
+        const count = await this.snapshotRepo.recalculateItemSnapshotsFromDate(
+          companyCode,
+          item.item_type,
+          item.item_code,
+          fromDate
+        );
+
+        log.info('Item cascade recalculation completed', {
+          item_code: item.item_code,
+          snapshotsRecalculated: count,
+        });
+      }
+    } catch (error: any) {
+      // Don't throw - cascade recalc is non-blocking
+      log.error('Failed to cascade recalculate snapshots (non-blocking)', {
+        errorName: error?.name,
+        errorMessage: error?.message,
+        errorCode: error?.code,
+      });
+    }
+  }
+
+    /**
+     * ============================================================================
+     * OLD METHODS: Backdated Transaction Queue (Deprecated for incoming_goods)
+     * ============================================================================
+     * Kept for backward compatibility with other transaction types
+     * For incoming_goods, prefer updateItemSnapshots() + cascadeRecalculateSnapshots()
+     * Marked for deprecation: will be removed in v2.0
+     */
+  }

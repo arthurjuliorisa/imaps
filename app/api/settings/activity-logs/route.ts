@@ -5,8 +5,6 @@ import { serializeBigInt } from '@/lib/bigint-serializer';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const pageSize = parseInt(searchParams.get('pageSize') || '10');
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
     const exportData = searchParams.get('export') === 'true';
@@ -27,10 +25,7 @@ export async function GET(request: Request) {
       where.status = status.toLowerCase();
     }
 
-    // Get total count
-    const total = await prisma.activity_logs.count({ where });
-
-    // Get paginated data
+    // Get all data (client-side pagination will be handled by DataTable)
     const logs = await prisma.activity_logs.findMany({
       where,
       include: {
@@ -46,8 +41,6 @@ export async function GET(request: Request) {
       orderBy: {
         created_at: 'desc',
       },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
     });
 
     // If export, return CSV
@@ -93,23 +86,10 @@ export async function GET(request: Request) {
       createdAt: log.created_at.toISOString(),
     }));
 
-    return NextResponse.json({
-      data,
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    });
+    return NextResponse.json(data);
   } catch (error) {
     console.error('[API Error] Failed to fetch activity logs:', error);
 
-    return NextResponse.json({
-      data: [],
-      total: 0,
-      page: 1,
-      pageSize: 10,
-      totalPages: 0,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+    return NextResponse.json([], { status: 500 });
   }
 }

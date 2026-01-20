@@ -402,6 +402,35 @@ export async function POST(request: Request) {
       });
 
       result.successCount = results.length;
+
+      // FIX: Recalculate stock_daily_snapshot for all affected scraps from earliest imported date
+      // This ensures cascading balance calculation for all future dates
+      if (sortedRecords.length > 0) {
+        try {
+          const affectedScraps = [...new Set(sortedRecords.map(r => r.scrapId))];
+          const minDate = new Date(Math.min(...sortedRecords.map(r => r.date.getTime())));
+
+          // Get fresh scrap masters with company info
+          const updatedScrapMasters = await prisma.scrapMaster.findMany({
+            where: { id: { in: affectedScraps } },
+            select: { id: true, code: true, company_code: true },
+          });
+
+          for (const scrap of updatedScrapMasters) {
+            await prisma.$executeRawUnsafe(
+              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+              scrap.company_code,
+              'SCRAP',
+              scrap.code,
+              minDate
+            );
+            console.log(`[API Info] Recalculated snapshots for SCRAP ${scrap.code} from ${minDate.toISOString().split('T')[0]}`);
+          }
+        } catch (recalcError) {
+          console.error('[API Warning] Snapshot recalculation failed (non-blocking):', recalcError);
+          // Don't fail the import if snapshot recalculation fails - just log it
+        }
+      }
     } catch (error: any) {
       console.error('[API Error] Transaction failed during import:', error);
 

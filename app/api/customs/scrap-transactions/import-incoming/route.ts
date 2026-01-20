@@ -33,76 +33,7 @@ function generateWmsId(type: 'IN' | 'OUT'): string {
   return `SCRAP-${type}-${timestamp}-${random}`;
 }
 
-/**
- * Calculate priority for snapshot recalculation queue
- * Backdated transactions (date < today) should have priority 0
- * Same-day transactions (date = today) should have priority -1
- */
-function calculatePriority(transactionDate: Date): number {
-  const now = new Date();
-  const today = new Date(Date.UTC(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    0, 0, 0, 0
-  ));
 
-  if (transactionDate < today) {
-    return 0; // Backdated transaction
-  } else if (transactionDate.getTime() === today.getTime()) {
-    return -1; // Same-day transaction
-  }
-  return -1; // Default to same-day priority
-}
-
-/**
- * Handle snapshot recalculation in transaction
- * Returns the date and whether it's backdated for later direct execution
- */
-async function handleTxSnapshotRecalc(
-  tx: any,
-  companyCode: number,
-  date: Date,
-  reason: string
-): Promise<{ date: Date; isBackdated: boolean }> {
-  const priority = calculatePriority(date);
-  const isBackdated = priority === 0;
-
-  const existingQueue = await tx.snapshot_recalc_queue.findFirst({
-    where: {
-      company_code: companyCode,
-      recalc_date: date,
-      item_type: null,
-      item_code: null,
-    },
-  });
-
-  if (existingQueue) {
-    await tx.snapshot_recalc_queue.update({
-      where: { id: existingQueue.id },
-      data: {
-        status: 'PENDING',
-        priority: priority,
-        reason: reason,
-        queued_at: new Date(),
-      },
-    });
-  } else {
-    await tx.snapshot_recalc_queue.create({
-      data: {
-        company_code: companyCode,
-        item_type: null,
-        item_code: null,
-        recalc_date: date,
-        status: 'PENDING',
-        priority: priority,
-        reason: reason,
-      },
-    });
-  }
-
-  return { date, isBackdated };
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -114,11 +45,6 @@ export async function POST(request: NextRequest) {
 
     const { session } = authCheck as { authenticated: true; session: any };
     const companyCode = Number(session.user.companyCode);
-
-    // ... existing code ...
-
-    // Collect backdated dates for direct execution
-    let backdatedDates: Date[] = [];
 
     // Parse FormData
     let formData: FormData;
@@ -367,6 +293,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Collect snapshot items for direct calculation
+    let snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string; date: Date }> = [];
+
     // Process all items in a transaction
     let importedItems: any;
     try {
@@ -455,38 +384,23 @@ export async function POST(request: NextRequest) {
           throw new Error('Failed to create transaction items. Please check your data and try again.');
         }
 
-        // Queue snapshot recalculation and track backdated dates
-        // Note: item_type and item_code are set to NULL because calculate_stock_snapshot
-        // recalculates ALL items for a given company+date, not per-item
-        const uniqueRecalcEntries = new Map<string, { date: Date; reason: string }>();
-        const processedDates = new Set<string>();
-
+        // Collect unique items for snapshot calculation
+        const uniqueItems = new Map<string, { date: Date; itemName: string; uom: string }>();
         for (const header of transactionHeaders) {
-          const dateKey = `${companyCode}-${header._date.toISOString()}`;
-          
-          if (!processedDates.has(dateKey)) {
-            processedDates.add(dateKey);
-            uniqueRecalcEntries.set(dateKey, {
+          const key = `${header._item.scrapCode}-${header._date.toISOString()}`;
+          if (!uniqueItems.has(key)) {
+            uniqueItems.set(key, {
               date: header._date,
-              reason: `Incoming scrap batch for ${header._date.toISOString().split('T')[0]}`,
+              itemName: header._item.scrapName,
+              uom: header._item.uom,
             });
-          }
-        }
-
-        // Queue and track backdated dates
-        for (const entry of uniqueRecalcEntries.values()) {
-          try {
-            const recalcInfo = await handleTxSnapshotRecalc(
-              tx,
-              companyCode,
-              entry.date,
-              entry.reason
-            );
-            if (recalcInfo.isBackdated) {
-              backdatedDates.push(recalcInfo.date);
-            }
-          } catch (error) {
-            console.error('Error queuing snapshot recalculation:', error);
+            snapshotItems.push({
+              itemType: 'SCRAP',
+              itemCode: header._item.scrapCode,
+              itemName: header._item.scrapName,
+              uom: header._item.uom,
+              date: header._date,
+            });
           }
         }
 
@@ -511,34 +425,63 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Execute direct snapshot recalculation for backdated transactions (outside transaction)
-    if (backdatedDates.length > 0) {
-      const uniqueDates = Array.from(new Set(backdatedDates.map(d => d.getTime()))).map(t => new Date(t));
-      for (const date of uniqueDates) {
-        try {
-          await prisma.$executeRawUnsafe(
-            'SELECT calculate_stock_snapshot($1::int, $2::date)',
-            companyCode,
-            date
-          );
-          console.log(
-            '[API Info] Backdated snapshot recalculation executed',
-            {
+    // Execute direct snapshot recalculation for all affected items (outside transaction, non-blocking)
+    if (snapshotItems.length > 0) {
+      (async () => {
+        for (const item of snapshotItems) {
+          try {
+            // Step 1: Upsert snapshot for the import transaction date
+            await prisma.$executeRawUnsafe(
+              'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
               companyCode,
-              date: date.toISOString().split('T')[0],
-            }
-          );
-        } catch (recalcError) {
-          console.warn(
-            '[API Warning] Backdated snapshot recalculation failed',
-            {
+              item.itemType,
+              item.itemCode,
+              item.itemName,
+              item.uom,
+              item.date
+            );
+            console.log(
+              '[API Info] Direct snapshot calculation executed',
+              {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                date: item.date.toISOString().split('T')[0],
+              }
+            );
+
+            // Step 2: Cascade recalculate snapshots for all future dates
+            // This ensures all forward-looking balance updates when importing past transactions
+            await prisma.$executeRawUnsafe(
+              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
               companyCode,
-              date: date.toISOString().split('T')[0],
-              errorMessage: recalcError instanceof Error ? recalcError.message : String(recalcError),
-            }
-          );
+              item.itemType,
+              item.itemCode,
+              item.date
+            );
+            console.log(
+              '[API Info] Cascaded snapshot recalculation executed',
+              {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                fromDate: item.date.toISOString().split('T')[0],
+              }
+            );
+          } catch (snapshotError) {
+            console.error(
+              '[API Error] Snapshot calculation failed',
+              {
+                companyCode,
+                itemType: item.itemType,
+                itemCode: item.itemCode,
+                date: item.date.toISOString().split('T')[0],
+                errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+              }
+            );
+          }
         }
-      }
+      })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
     }
 
     // Log activity

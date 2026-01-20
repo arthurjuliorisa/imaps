@@ -45,13 +45,12 @@ export async function GET(request: Request) {
         currency,
         remarks
       FROM fn_calculate_lpj_hasil_produksi(
-        ARRAY['FERT', 'HALB'],
+        ARRAY['FERT'],
         $2::DATE,
         $3::DATE
       )
       WHERE company_code = $1
-        AND (item_type = 'FERT'
-             OR (item_type = 'HALB' AND quantity_received > 0))
+        AND item_type = 'FERT'
     `;
 
     const params: any[] = [companyCode];

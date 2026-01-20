@@ -47,7 +47,9 @@ const OutgoingScrapSchema = z.object({
       0, 0, 0, 0
     ));
   }),
-  documentType: z.enum(['BC25', 'BC27', 'BC41']).optional().nullable(),
+  customsDocumentType: z.enum(['BC25', 'BC27', 'BC41']),
+  transactionNumber: z.string().optional().nullable(),
+  incomingPpkekNumbers: z.array(z.string()).optional().nullable(),
 });
 
 type OutgoingScrapInput = z.infer<typeof OutgoingScrapSchema>;
@@ -74,83 +76,23 @@ function generateInvoiceNumber(): string {
 /**
  * Map document type to enum value if not already prefixed with BC
  */
-function mapDocumentTypeToEnum(docType: string | null | undefined): string {
+function mapDocumentTypeToEnum(docType: string | null | undefined): 'BC25' | 'BC27' | 'BC41' {
   if (!docType) return 'BC27'; // Default
-  const cleanType = docType.trim();
-  if (cleanType.startsWith('BC')) {
-    return cleanType;
-  }
-  return `BC${cleanType}`;
-}
-
-/**
- * Calculate priority for snapshot recalculation queue
- * Backdated transactions (date < today) should have priority 0
- * Same-day transactions (date = today) should have priority -1
- */
-function calculatePriority(transactionDate: Date): number {
-  const now = new Date();
-  const today = new Date(Date.UTC(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    0, 0, 0, 0
-  ));
-
-  if (transactionDate < today) {
-    return 0; // Backdated transaction
-  } else if (transactionDate.getTime() === today.getTime()) {
-    return -1; // Same-day transaction
-  }
-  return -1; // Default to same-day priority
-}
-
-/**
- * Handle snapshot recalculation in transaction
- * Returns the date and whether it's backdated for later direct execution
- */
-async function handleTxSnapshotRecalc(
-  tx: any,
-  companyCode: number,
-  date: Date
-): Promise<{ date: Date; isBackdated: boolean }> {
-  const priority = calculatePriority(date);
-  const isBackdated = priority === 0;
-
-  const existingQueue = await tx.snapshot_recalc_queue.findFirst({
-    where: {
-      company_code: companyCode,
-      recalc_date: date,
-      item_type: null,
-      item_code: null,
-    },
-  });
-
-  if (existingQueue) {
-    await tx.snapshot_recalc_queue.update({
-      where: { id: existingQueue.id },
-      data: {
-        status: 'PENDING',
-        priority: priority,
-        reason: `Outgoing scrap batch for ${date.toISOString().split('T')[0]}`,
-        queued_at: new Date(),
-      },
-    });
-  } else {
-    await tx.snapshot_recalc_queue.create({
-      data: {
-        company_code: companyCode,
-        item_type: null,
-        item_code: null,
-        recalc_date: date,
-        status: 'PENDING',
-        priority: priority,
-        reason: `Outgoing scrap batch for ${date.toISOString().split('T')[0]}`,
-      },
-    });
-  }
-
-  return { date, isBackdated };
+  
+  const cleanType = docType.trim().toUpperCase();
+  
+  // Direct matches
+  if (cleanType === 'BC25') return 'BC25';
+  if (cleanType === 'BC27') return 'BC27';
+  if (cleanType === 'BC41') return 'BC41';
+  
+  // Number-only matches
+  if (cleanType === '25') return 'BC25';
+  if (cleanType === '27') return 'BC27';
+  if (cleanType === '41') return 'BC41';
+  
+  // Default fallback
+  return 'BC27';
 }
 
 /**
@@ -208,7 +150,7 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    const { date, scrapCode, scrapName, uom, qty, currency, amount, recipientName, remarks, ppkekNumber, registrationDate, documentType } = validatedData;
+    const { date, scrapCode, scrapName, uom, qty, currency, amount, recipientName, remarks, ppkekNumber, registrationDate, customsDocumentType, transactionNumber, incomingPpkekNumbers } = validatedData;
 
     // Validate date is not in the future
     const now = new Date();
@@ -253,10 +195,12 @@ export async function POST(request: Request) {
     // Execute transaction
     const result = await prisma.$transaction(async (tx) => {
       // 1. Generate WMS ID and document number
-      const wmsId = generateWmsId();
-      const timestamp = Date.now();
-      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-      const documentNumber = `SCRAP-OUT-${timestamp}-${random}`;
+      const wmsId = transactionNumber || generateWmsId();
+      const documentNumber = transactionNumber || (() => {
+        const timestamp = Date.now();
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        return `SCRAP-OUT-${timestamp}-${random}`;
+      })();
 
       // 2. Create scrap_transactions header record
       const scrapTransaction = await tx.scrap_transactions.create({
@@ -270,7 +214,7 @@ export async function POST(request: Request) {
           remarks: remarks,
           ppkek_number: ppkekNumber || null,
           customs_registration_date: registrationDate || null,
-          customs_document_type: documentType || null,
+          customs_document_type: customsDocumentType,
           timestamp: new Date(),
         },
       });
@@ -298,7 +242,7 @@ export async function POST(request: Request) {
           wms_id: wmsId,
           company_code: companyCode,
           owner: companyCode,
-          customs_document_type: mapDocumentTypeToEnum(documentType) as any,
+          customs_document_type: mapDocumentTypeToEnum(customsDocumentType),
           ppkek_number: ppkekNumber || 'N/A',
           customs_registration_date: registrationDate || new Date(),
           outgoing_evidence_number: documentNumber,
@@ -324,12 +268,11 @@ export async function POST(request: Request) {
           qty: new Prisma.Decimal(qty),
           currency: currency,
           amount: new Prisma.Decimal(amount),
+          incoming_ppkek_numbers: incomingPpkekNumbers || [],
         },
       });
 
-      // Handle snapshot recalculation
-      const recalcResult = await handleTxSnapshotRecalc(tx, companyCode, date);
-
+      // Return transaction details
       return {
         wmsId,
         documentNumber,
@@ -338,37 +281,70 @@ export async function POST(request: Request) {
         date,
         scrapCode,
         scrapName,
+        uom,
         qty,
         currency,
         amount,
         recipientName,
-        isBackdated: recalcResult.isBackdated,
       };
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30000,
     });
 
-    // Execute direct snapshot recalculation for backdated transactions
-    if (result.isBackdated) {
+    // Execute direct snapshot recalculation (outside transaction, non-blocking)
+    (async () => {
       try {
         await prisma.$executeRawUnsafe(
-          'SELECT calculate_stock_snapshot($1::int, $2::date)',
+          'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
           companyCode,
+          'SCRAP',
+          result.scrapCode,
+          result.scrapName,
+          result.uom,
           result.date
         );
-        console.log('[API Info] Backdated snapshot recalculation executed', {
+        console.log(
+          '[API Info] Direct snapshot calculation executed',
+          {
+            companyCode,
+            itemType: 'SCRAP',
+            itemCode: result.scrapCode,
+            date: result.date.toISOString().split('T')[0],
+          }
+        );
+
+        // FIX: Cascade recalculate snapshots for all future dates
+        // This ensures forward-looking balance updates when a past transaction is inserted
+        await prisma.$executeRawUnsafe(
+          'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
           companyCode,
-          date: result.date.toISOString().split('T')[0],
-        });
-      } catch (recalcError) {
-        console.warn('[API Warning] Backdated snapshot recalculation failed', {
-          companyCode,
-          date: result.date.toISOString().split('T')[0],
-          errorMessage: recalcError instanceof Error ? recalcError.message : String(recalcError),
-        });
+          'SCRAP',
+          result.scrapCode,
+          result.date
+        );
+        console.log(
+          '[API Info] Cascaded snapshot recalculation executed',
+          {
+            companyCode,
+            itemType: 'SCRAP',
+            itemCode: result.scrapCode,
+            fromDate: result.date.toISOString().split('T')[0],
+          }
+        );
+      } catch (snapshotError) {
+        console.error(
+          '[API Error] Snapshot calculation failed',
+          {
+            companyCode,
+            itemType: 'SCRAP',
+            itemCode: result.scrapCode,
+            date: result.date.toISOString().split('T')[0],
+            errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+          }
+        );
       }
-    }
+    })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
 
     // Log activity
     await logActivity({
@@ -434,6 +410,310 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       { message: 'Error creating outgoing scrap transaction', error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PUT /api/customs/scrap-transactions/out?id=SCRAP_TRANS_ID
+ * Update outgoing scrap transaction
+ */
+export async function PUT(request: Request) {
+  try {
+    // Check authentication
+    const authCheck = await checkAuth();
+    if (!authCheck.authenticated) {
+      return authCheck.response;
+    }
+
+    const { session } = authCheck as { authenticated: true; session: any };
+
+    // Validate company code
+    const companyValidation = validateCompanyCode(session);
+    if (!companyValidation.success) {
+      return companyValidation.response;
+    }
+    const { companyCode } = companyValidation;
+
+    // Get transaction ID from URL query
+    const url = new URL(request.url);
+    const transactionId = url.searchParams.get('id');
+    if (!transactionId) {
+      return NextResponse.json(
+        { message: 'Transaction ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Parse and validate request body
+    const body = await request.json();
+    let validatedData: OutgoingScrapInput;
+
+    try {
+      validatedData = OutgoingScrapSchema.parse(body);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return NextResponse.json(
+          {
+            message: 'Validation failed',
+            errors: error.issues.map((e) => ({
+              field: e.path.join('.'),
+              message: e.message,
+            })),
+          },
+          { status: 400 }
+        );
+      }
+      throw error;
+    }
+
+    const { date, scrapCode, scrapName, uom, qty, currency, amount, recipientName, remarks, ppkekNumber, registrationDate, customsDocumentType, incomingPpkekNumbers } = validatedData;
+
+    // Validate date is not in the future
+    const now = new Date();
+    const today = new Date(Date.UTC(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0, 0, 0, 0
+    ));
+
+    if (date > today) {
+      return NextResponse.json(
+        { message: 'Transaction date cannot be in the future' },
+        { status: 400 }
+      );
+    }
+
+    // Execute transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Find existing scrap_transaction
+      const existingTransaction = await tx.scrap_transactions.findUnique({
+        where: { id: parseInt(transactionId) },
+        include: {
+          items: true,
+        },
+      });
+
+      if (!existingTransaction) {
+        throw new Error(`Scrap transaction with ID ${transactionId} not found`);
+      }
+
+      // 2. Find associated outgoing_goods record
+      const existingItem = existingTransaction.items[0];
+      const outgoingGood = await tx.outgoing_goods.findFirst({
+        where: {
+          company_code: companyCode,
+          outgoing_evidence_number: existingTransaction.document_number,
+        },
+      });
+
+      if (!outgoingGood) {
+        throw new Error('Associated outgoing goods record not found');
+      }
+
+      // 3. Update scrap_transactions
+      // Map document type to ensure valid enum value
+      const mappedDocumentType = mapDocumentTypeToEnum(customsDocumentType);
+      
+      await tx.scrap_transactions.update({
+        where: { id: existingTransaction.id },
+        data: {
+          transaction_date: date,
+          recipient_name: recipientName,
+          remarks: remarks,
+          ppkek_number: ppkekNumber || null,
+          customs_registration_date: registrationDate || null,
+          customs_document_type: mappedDocumentType,
+        },
+      });
+
+      // 4. Update scrap_transaction_items
+      if (existingItem) {
+        await tx.scrap_transaction_items.update({
+          where: { id: existingItem.id },
+          data: {
+            scrap_transaction_date: date,
+            item_name: scrapName,
+            uom: uom,
+            qty: new Prisma.Decimal(qty),
+            currency: currency,
+            amount: new Prisma.Decimal(amount),
+            scrap_reason: remarks,
+          },
+        });
+      }
+
+      // 5. Update outgoing_goods (IMPORTANT: Must include customs_document_type)
+      await tx.outgoing_goods.update({
+        where: { id: outgoingGood.id },
+        data: {
+          customs_document_type: mappedDocumentType,
+          ppkek_number: ppkekNumber || outgoingGood.ppkek_number,
+          customs_registration_date: registrationDate || outgoingGood.customs_registration_date,
+          recipient_name: recipientName,
+          outgoing_date: date,
+          invoice_date: date,
+        },
+      });
+
+      // 6. Update outgoing_good_items
+      const outgoingItems = await tx.outgoing_good_items.findMany({
+        where: {
+          outgoing_good_id: outgoingGood.id,
+        },
+      });
+
+      if (outgoingItems.length > 0) {
+        await tx.outgoing_good_items.update({
+          where: { id: outgoingItems[0].id },
+          data: {
+            outgoing_good_date: date,
+            item_name: scrapName,
+            uom: uom,
+            qty: new Prisma.Decimal(qty),
+            currency: currency,
+            amount: new Prisma.Decimal(amount),
+            incoming_ppkek_numbers: incomingPpkekNumbers || outgoingItems[0].incoming_ppkek_numbers,
+          },
+        });
+      }
+
+      return {
+        transactionId: existingTransaction.id,
+        outgoingGoodId: outgoingGood.id,
+        documentNumber: existingTransaction.document_number,
+        date,
+        scrapCode,
+        scrapName,
+        uom,
+        qty,
+        currency,
+        amount,
+        recipientName,
+      };
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: 30000,
+    });
+
+    // Execute snapshot recalculation (outside transaction, non-blocking)
+    (async () => {
+      try {
+        await prisma.$executeRawUnsafe(
+          'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
+          companyCode,
+          'SCRAP',
+          result.scrapCode,
+          result.scrapName,
+          result.uom,
+          result.date
+        );
+        console.log(
+          '[API Info] Snapshot recalculation executed for edit',
+          {
+            companyCode,
+            itemType: 'SCRAP',
+            itemCode: result.scrapCode,
+            date: result.date.toISOString().split('T')[0],
+          }
+        );
+
+        // Cascade recalculate snapshots for all future dates
+        await prisma.$executeRawUnsafe(
+          'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+          companyCode,
+          'SCRAP',
+          result.scrapCode,
+          result.date
+        );
+        console.log(
+          '[API Info] Cascaded snapshot recalculation executed',
+          {
+            companyCode,
+            itemType: 'SCRAP',
+            itemCode: result.scrapCode,
+            fromDate: result.date.toISOString().split('T')[0],
+          }
+        );
+      } catch (snapshotError) {
+        console.error(
+          '[API Error] Snapshot calculation failed',
+          {
+            companyCode,
+            itemType: 'SCRAP',
+            itemCode: result.scrapCode,
+            date: result.date.toISOString().split('T')[0],
+            errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+          }
+        );
+      }
+    })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
+
+    // Log activity
+    await logActivity({
+      action: 'EDIT_OUT_SCRAP_TRANSACTION',
+      description: `Updated outgoing scrap transaction: ${result.documentNumber} - ${result.scrapName} (${result.qty} ${result.uom}) to ${result.recipientName}`,
+      status: 'success',
+      metadata: {
+        transactionId: result.transactionId.toString(),
+        outgoingGoodId: result.outgoingGoodId.toString(),
+        documentNumber: result.documentNumber,
+        itemCode: result.scrapCode,
+        itemName: result.scrapName,
+        qty: result.qty,
+        currency: result.currency,
+        amount: result.amount,
+        recipientName: result.recipientName,
+        companyCode,
+      },
+    });
+
+    return NextResponse.json(
+      {
+        success: true,
+        message: 'Outgoing scrap transaction updated successfully',
+        data: result,
+      },
+      { status: 200 }
+    );
+
+  } catch (error: any) {
+    console.error('[API Error] Failed to update outgoing scrap transaction:', error);
+
+    // Handle specific Prisma errors
+    if (error.code === 'P2002') {
+      return NextResponse.json(
+        { message: 'Duplicate transaction detected', error: error.message },
+        { status: 400 }
+      );
+    }
+
+    if (error.code === 'P2003') {
+      return NextResponse.json(
+        { message: 'Foreign key constraint failed', error: error.message },
+        { status: 400 }
+      );
+    }
+
+    if (error.code === 'P2034') {
+      return NextResponse.json(
+        { message: 'Transaction conflict detected. Please retry.', error: error.message },
+        { status: 409 }
+      );
+    }
+
+    // Handle custom validation errors
+    if (error.message && error.message.includes('not found')) {
+      return NextResponse.json(
+        { message: error.message },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(
+      { message: 'Error updating outgoing scrap transaction', error: error.message },
       { status: 500 }
     );
   }

@@ -51,28 +51,6 @@ function generateInvoiceNumber(): string {
 }
 
 /**
- * Calculate priority for snapshot recalculation queue
- * Backdated transactions (date < today) should have priority 0
- * Same-day transactions (date = today) should have priority -1
- */
-function calculatePriority(transactionDate: Date): number {
-  const now = new Date();
-  const today = new Date(Date.UTC(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    0, 0, 0, 0
-  ));
-
-  if (transactionDate < today) {
-    return 0; // Backdated transaction
-  } else if (transactionDate.getTime() === today.getTime()) {
-    return -1; // Same-day transaction
-  }
-  return -1; // Default to same-day priority
-}
-
-/**
  * POST /api/customs/scrap/incoming
  * Create incoming scrap transaction
  *
@@ -225,41 +203,13 @@ export async function POST(request: Request) {
         },
       });
 
-      // 6. Queue snapshot recalculation
-      const priority = calculatePriority(date);
-
-      await tx.snapshot_recalc_queue.upsert({
-        where: {
-          company_code_recalc_date_item_type_item_code: {
-            company_code: companyCode,
-            recalc_date: date,
-            item_type: 'SCRAP',
-            item_code: scrapCode,
-          },
-        },
-        create: {
-          company_code: companyCode,
-          item_type: 'SCRAP',
-          item_code: scrapCode,
-          recalc_date: date,
-          status: 'PENDING',
-          priority: priority,
-          reason: `Incoming scrap transaction: ${wmsId}`,
-        },
-        update: {
-          status: 'PENDING',
-          priority: priority,
-          reason: `Incoming scrap transaction: ${wmsId}`,
-          queued_at: new Date(),
-        },
-      });
-
       return {
         wmsId,
         incomingGoodId: incomingGood.id,
         date,
         scrapCode,
         itemName,
+        uom,
         qty,
         currency,
         amount,
@@ -268,6 +218,60 @@ export async function POST(request: Request) {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30000,
     });
+
+    // Execute direct snapshot recalculation (outside transaction, non-blocking)
+    (async () => {
+      try {
+        await prisma.$executeRawUnsafe(
+          'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
+          companyCode,
+          'SCRAP',
+          result.scrapCode,
+          result.itemName,
+          result.uom,
+          result.date
+        );
+        console.log(
+          '[API Info] Direct snapshot calculation executed',
+          {
+            companyCode,
+            itemType: 'SCRAP',
+            itemCode: result.scrapCode,
+            date: result.date.toISOString().split('T')[0],
+          }
+        );
+
+        // FIX: Cascade recalculate snapshots for all future dates
+        // This ensures forward-looking balance updates when a past transaction is inserted
+        await prisma.$executeRawUnsafe(
+          'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+          companyCode,
+          'SCRAP',
+          result.scrapCode,
+          result.date
+        );
+        console.log(
+          '[API Info] Cascaded snapshot recalculation executed',
+          {
+            companyCode,
+            itemType: 'SCRAP',
+            itemCode: result.scrapCode,
+            fromDate: result.date.toISOString().split('T')[0],
+          }
+        );
+      } catch (snapshotError) {
+        console.error(
+          '[API Error] Snapshot calculation failed',
+          {
+            companyCode,
+            itemType: 'SCRAP',
+            itemCode: result.scrapCode,
+            date: result.date.toISOString().split('T')[0],
+            errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+          }
+        );
+      }
+    })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
 
     return NextResponse.json(
       {

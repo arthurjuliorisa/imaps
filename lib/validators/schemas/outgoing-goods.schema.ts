@@ -109,6 +109,11 @@ export const outgoingGoodItemSchema = z.object({
     .optional()
     .nullable(),
   
+  ppkek_number: z
+    .array(z.string().min(1, 'PPKEK number cannot be empty').max(50, 'PPKEK number must not exceed 50 characters'))
+    .optional()
+    .nullable(),
+  
   hs_code: z
     .string()
     .max(20, 'HS code must not exceed 20 characters')
@@ -204,8 +209,13 @@ export const outgoingGoodRequestSchema = z
   // Business rule: customs_registration_date <= outgoing_date
   .refine(
     (data: any) => {
-      const customsDate = new Date(data.customs_registration_date);
-      const outgoingDate = new Date(data.outgoing_date);
+      // Parse both dates in consistent local timezone (YYYY-MM-DD format)
+      const [customsYear, customsMonth, customsDay] = data.customs_registration_date.split('-').map(Number);
+      const customsDate = new Date(customsYear, customsMonth - 1, customsDay, 0, 0, 0, 0);
+      
+      const [outgoingYear, outgoingMonth, outgoingDay] = data.outgoing_date.split('-').map(Number);
+      const outgoingDate = new Date(outgoingYear, outgoingMonth - 1, outgoingDay, 0, 0, 0, 0);
+      
       return customsDate <= outgoingDate;
     },
     {
@@ -223,7 +233,11 @@ export const outgoingGoodRequestSchema = z
         return true;
       }
       
-      const outgoingDate = new Date(data.outgoing_date);
+      // Parse outgoing_date in consistent local timezone (YYYY-MM-DD format)
+      const [year, month, day] = data.outgoing_date.split('-').map(Number);
+      const outgoingDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+      
+      // Get today in same local timezone
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
@@ -334,9 +348,12 @@ export function validateOutgoingGoodsDates(data: OutgoingGoodRequestInput): Vali
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Parse dates
-  const outgoingDate = new Date(data.outgoing_date);
-  const customsRegDate = new Date(data.customs_registration_date);
+  // Parse dates in consistent local timezone (YYYY-MM-DD format)
+  const [outYear, outMonth, outDay] = data.outgoing_date.split('-').map(Number);
+  const outgoingDate = new Date(outYear, outMonth - 1, outDay, 0, 0, 0, 0);
+  
+  const [custYear, custMonth, custDay] = data.customs_registration_date.split('-').map(Number);
+  const customsRegDate = new Date(custYear, custMonth - 1, custDay, 0, 0, 0, 0);
 
   // Validate outgoing_date is not in the future
   if (outgoingDate > today) {

@@ -216,8 +216,12 @@ export const incomingGoodRequestSchema = z
   // Business rule: customs_registration_date <= incoming_date
   .refine(
     (data: any) => {
-      const customsDate = new Date(data.customs_registration_date);
-      const incomingDate = new Date(data.incoming_date);
+      // Parse both dates in consistent local timezone (YYYY-MM-DD format)
+      const [customsYear, customsMonth, customsDay] = data.customs_registration_date.split('-').map(Number);
+      const customsDate = new Date(customsYear, customsMonth - 1, customsDay, 0, 0, 0, 0);
+      
+      const [incomingYear, incomingMonth, incomingDay] = data.incoming_date.split('-').map(Number);
+      const incomingDate = new Date(incomingYear, incomingMonth - 1, incomingDay, 0, 0, 0, 0);
 
       return customsDate <= incomingDate;
     },
@@ -237,7 +241,11 @@ export const incomingGoodRequestSchema = z
         return true; // Allow any date in development
       }
       
-      const incomingDate = new Date(data.incoming_date);
+      // Parse incoming_date in consistent local timezone (YYYY-MM-DD format)
+      const [year, month, day] = data.incoming_date.split('-').map(Number);
+      const incomingDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+      
+      // Get today in same local timezone
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
@@ -332,6 +340,49 @@ export function validateIncomingGoodRequest(data: unknown): ValidationResult {
     success: false,
     errors,
   };
+}
+
+/**
+ * Validate date constraints for incoming goods
+ * - incoming_date cannot be in the future (environment-based)
+ * - customs_registration_date must be before or equal to incoming_date
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors (empty if all dates valid)
+ */
+export function validateIncomingGoodsDates(data: IncomingGoodRequestInput): ValidationErrorDetail[] {
+  const errors: ValidationErrorDetail[] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Parse dates in consistent local timezone (YYYY-MM-DD format)
+  const [inYear, inMonth, inDay] = data.incoming_date.split('-').map(Number);
+  const incomingDate = new Date(inYear, inMonth - 1, inDay, 0, 0, 0, 0);
+  
+  const [custYear, custMonth, custDay] = data.customs_registration_date.split('-').map(Number);
+  const customsRegDate = new Date(custYear, custMonth - 1, custDay, 0, 0, 0, 0);
+
+  // Validate incoming_date is not in the future
+  if (incomingDate > today) {
+    errors.push({
+      location: 'header',
+      field: 'incoming_date',
+      code: 'INVALID_VALUE',
+      message: 'Incoming date cannot be in the future',
+    });
+  }
+
+  // Validate customs_registration_date is before or equal to incoming_date
+  if (customsRegDate > incomingDate) {
+    errors.push({
+      location: 'header',
+      field: 'customs_registration_date',
+      code: 'INVALID_VALUE',
+      message: 'Customs registration date must be before or equal to incoming date',
+    });
+  }
+
+  return errors;
 }
 
 /**

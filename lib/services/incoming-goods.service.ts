@@ -1,5 +1,5 @@
 import { IncomingGoodsRepository } from '../repositories/incoming-goods.repository';
-import { validateIncomingGoodRequest, validateItemTypes } from '../validators/schemas/incoming-goods.schema';
+import { validateIncomingGoodRequest, validateIncomingGoodsDates, validateItemTypes } from '../validators/schemas/incoming-goods.schema';
 import type { IncomingGoodRequestInput } from '../validators/schemas/incoming-goods.schema';
 import type { ErrorDetail, SuccessResponse } from '../types/api-response';
 import { logger } from '../utils/logger';
@@ -50,7 +50,17 @@ export class IncomingGoodsService {
 
       requestLogger.info('Validation passed', { wmsId: data.wms_id });
 
-      // 2. Validate item types
+      // 2. Validate dates
+      const dateErrors = validateIncomingGoodsDates(data);
+      if (dateErrors.length > 0) {
+        requestLogger.warn(
+          'Date validation failed',
+          { errors: dateErrors }
+        );
+        return { success: false, errors: dateErrors };
+      }
+
+      // 3. Validate item types
       const itemTypeErrors = await validateItemTypes(data);
       if (itemTypeErrors.length > 0) {
         requestLogger.warn(
@@ -82,7 +92,7 @@ export class IncomingGoodsService {
         }
       );
 
-      // 4. Return success response
+      // 5. Return success response
       return {
         success: true,
         data: {

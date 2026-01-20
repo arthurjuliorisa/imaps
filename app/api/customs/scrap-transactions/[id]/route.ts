@@ -6,75 +6,7 @@ import { checkStockAvailability, checkScrapInBalance } from '@/lib/utils/stock-c
 import { logActivity } from '@/lib/log-activity';
 import { Prisma } from '@prisma/client';
 
-/**
- * Calculate priority for snapshot recalculation queue
- * Backdated transactions (date < today) should have priority 0
- * Same-day transactions (date = today) should have priority -1
- */
-function calculatePriority(transactionDate: Date): number {
-  const now = new Date();
-  const today = new Date(Date.UTC(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    0, 0, 0, 0
-  ));
 
-  if (transactionDate < today) {
-    return 0; // Backdated transaction
-  } else if (transactionDate.getTime() === today.getTime()) {
-    return -1; // Same-day transaction
-  }
-  return -1; // Default to same-day priority
-}
-
-/**
- * Handle snapshot recalculation in transaction
- * Returns the date and whether it's backdated for later direct execution
- */
-async function handleTxSnapshotRecalc(
-  tx: any,
-  companyCode: number,
-  date: Date
-): Promise<{ date: Date; isBackdated: boolean }> {
-  const priority = calculatePriority(date);
-  const isBackdated = priority === 0;
-
-  const existingQueue = await tx.snapshot_recalc_queue.findFirst({
-    where: {
-      company_code: companyCode,
-      recalc_date: date,
-      item_type: null,
-      item_code: null,
-    },
-  });
-
-  if (existingQueue) {
-    await tx.snapshot_recalc_queue.update({
-      where: { id: existingQueue.id },
-      data: {
-        status: 'PENDING',
-        priority: priority,
-        reason: `Scrap transaction update for ${date.toISOString().split('T')[0]}`,
-        queued_at: new Date(),
-      },
-    });
-  } else {
-    await tx.snapshot_recalc_queue.create({
-      data: {
-        company_code: companyCode,
-        item_type: null,
-        item_code: null,
-        recalc_date: date,
-        status: 'PENDING',
-        priority: priority,
-        reason: `Scrap transaction update for ${date.toISOString().split('T')[0]}`,
-      },
-    });
-  }
-
-  return { date, isBackdated };
-}
 
 /**
  * PUT /api/customs/scrap-transactions/[id]
@@ -144,7 +76,9 @@ export async function PUT(
       remarks,
       ppkekNumber,
       registrationDate,
-      documentType,
+      customsDocumentType,
+      transactionNumber,
+      incomingPpkekNumbers,
     } = body;
 
     // Validate qty is provided and is positive
@@ -328,7 +262,28 @@ export async function PUT(
     }
 
     // Update transaction wrapped in a transaction with snapshot recalculation
-    const recalcResult = await prisma.$transaction(
+    // Collect item info BEFORE transaction for snapshot calculation (needed for both scrap and outgoing)
+    const itemsToSnapshot = [];
+    if (sourceTable === 'scrap_transactions') {
+      itemsToSnapshot.push({
+        itemType: existingItem.item_type,
+        itemCode: existingItem.item_code,
+        itemName: existingItem.item_name,
+        uom: existingItem.uom,
+        date: transaction.transaction_date,
+      });
+    } else {
+      // For outgoing_goods, collect the item being edited (existingItem already set above)
+      itemsToSnapshot.push({
+        itemType: existingItem.item_type,
+        itemCode: existingItem.item_code,
+        itemName: existingItem.item_name,
+        uom: existingItem.uom,
+        date: transaction.outgoing_date,
+      });
+    }
+    
+    await prisma.$transaction(
       async (tx) => {
         if (sourceTable === 'scrap_transactions') {
           // Update the scrap transaction
@@ -339,9 +294,10 @@ export async function PUT(
               data: {
                 ppkek_number: ppkekNumber || '',
                 customs_registration_date: registrationDate ? new Date(registrationDate) : undefined,
-                customs_document_type: documentType || '',
+                customs_document_type: customsDocumentType || '',
                 recipient_name: recipientName || '',
                 remarks: remarks || '',
+                ...(transactionNumber && { document_number: transactionNumber }),
               },
             });
             // console.log('✅ Parent transaction updated successfully');
@@ -357,8 +313,9 @@ export async function PUT(
               data: {
                 ppkek_number: ppkekNumber || '',
                 customs_registration_date: registrationDate ? new Date(registrationDate) : undefined,
-                customs_document_type: documentType || null,
+                customs_document_type: customsDocumentType || null,
                 recipient_name: recipientName || '',
+                ...(transactionNumber && { outgoing_evidence_number: transactionNumber }),
               },
             });
           } catch (error) {
@@ -380,6 +337,7 @@ export async function PUT(
               },
             });
           } else {
+            // For outgoing_goods, update outgoing_good_items
             await tx.outgoing_good_items.update({
               where: {
                 id: existingItem.id,
@@ -388,6 +346,7 @@ export async function PUT(
                 qty: new Prisma.Decimal(qty),
                 currency: currency,
                 amount: new Prisma.Decimal(amount),
+                incoming_ppkek_numbers: incomingPpkekNumbers || [],
               },
             });
           }
@@ -396,30 +355,70 @@ export async function PUT(
           console.error('❌ Error updating items:', error);
           throw error;
         }
-
-        // Handle snapshot recalculation
-        const transactionDate = sourceTable === 'scrap_transactions' 
-          ? transaction.transaction_date 
-          : transaction.outgoing_date;
-        const recalcData = await handleTxSnapshotRecalc(tx, companyCode, transactionDate);
-        return recalcData;
       },
       {
         isolationLevel: 'Serializable',
       }
     );
 
-    // Execute direct snapshot for backdated transactions
-    if (recalcResult.isBackdated) {
-      try {
-        await prisma.$executeRawUnsafe(
-          `SELECT calculate_stock_snapshot($1::int, $2::date)`,
-          companyCode,
-          recalcResult.date
-        );
-      } catch (error) {
-        console.error('⚠️ Warning: Direct snapshot execution failed:', error);
-      }
+    // Execute direct snapshot calculation asynchronously (fire-and-forget)
+    if (itemsToSnapshot.length > 0) {
+      console.log('[EDIT] Starting snapshot recalculation for items:', itemsToSnapshot);
+      (async () => {
+        for (const item of itemsToSnapshot) {
+          try {
+            console.log('[EDIT] Processing item:', item);
+            // Step 1: Upsert snapshot for the edited transaction date
+            await prisma.$executeRawUnsafe(
+              'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
+              companyCode,
+              item.itemType,
+              item.itemCode,
+              item.itemName,
+              item.uom,
+              item.date
+            );
+            console.log('[API Info] Direct snapshot calculation executed', {
+              companyCode,
+              itemType: item.itemType,
+              itemCode: item.itemCode,
+              date: item.date.toISOString().split('T')[0],
+            });
+
+            // Step 2: Cascade recalculate snapshots for all future dates
+            // This ensures all forward-looking balance updates when qty is changed
+            console.log('[EDIT] Calling recalculate_item_snapshots_from_date for:', {
+              companyCode,
+              itemType: item.itemType,
+              itemCode: item.itemCode,
+              fromDate: item.date.toISOString().split('T')[0],
+            });
+            await prisma.$executeRawUnsafe(
+              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+              companyCode,
+              item.itemType,
+              item.itemCode,
+              item.date
+            );
+            console.log('[API Info] Cascaded snapshot recalculation executed', {
+              companyCode,
+              itemType: item.itemType,
+              itemCode: item.itemCode,
+              fromDate: item.date.toISOString().split('T')[0],
+            });
+          } catch (snapshotError) {
+            console.error('[API Error] Snapshot calculation failed', {
+              companyCode,
+              itemType: item.itemType,
+              itemCode: item.itemCode,
+              date: item.date.toISOString().split('T')[0],
+              errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+            });
+          }
+        }
+      })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
+    } else {
+      console.log('[EDIT] No items to snapshot, itemsToSnapshot.length =', itemsToSnapshot.length);
     }
 
     // Log activity
@@ -607,33 +606,82 @@ export async function DELETE(
       console.log(`[DELETE SCRAP IN] Validation passed - proceeding with delete`);
 
       // Delete in transaction with snapshot recalculation
-      const recalcResult = await prisma.$transaction(
+      const snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string; date: Date }> = [];
+      await prisma.$transaction(
         async (tx) => {
           await tx.scrap_transactions.update({
             where: { id: actualId },
             data: { deleted_at: new Date() },
           });
 
-          // Handle snapshot recalculation
-          const recalcData = await handleTxSnapshotRecalc(tx, companyCode, transactionData.transaction_date);
-          return recalcData;
+          // Also soft-delete all scrap_transaction_items for this scrap_transaction
+          // For consistency with SCRAP OUT delete logic
+          await tx.scrap_transaction_items.updateMany({
+            where: { scrap_transaction_id: actualId },
+            data: { deleted_at: new Date() },
+          });
+
+          // Collect item for direct snapshot calculation
+          snapshotItems.push({
+            itemType: item.item_type,
+            itemCode: item.item_code,
+            itemName: item.item_name,
+            uom: item.uom,
+            date: transactionData.transaction_date,
+          });
         },
         {
           isolationLevel: 'Serializable',
         }
       );
 
-      // Execute direct snapshot for backdated transactions
-      if (recalcResult.isBackdated) {
-        try {
-          await prisma.$executeRawUnsafe(
-            `SELECT calculate_stock_snapshot($1::int, $2::date)`,
-            companyCode,
-            recalcResult.date
-          );
-        } catch (error) {
-          console.error('⚠️ Warning: Direct snapshot execution failed:', error);
-        }
+      // Execute direct snapshot calculation asynchronously (fire-and-forget)
+      if (snapshotItems.length > 0) {
+        (async () => {
+          for (const snapItem of snapshotItems) {
+            try {
+              await prisma.$executeRawUnsafe(
+                'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
+                companyCode,
+                snapItem.itemType,
+                snapItem.itemCode,
+                snapItem.itemName,
+                snapItem.uom,
+                snapItem.date
+              );
+              console.log('[API Info] Direct snapshot calculation executed', {
+                companyCode,
+                itemType: snapItem.itemType,
+                itemCode: snapItem.itemCode,
+                date: snapItem.date.toISOString().split('T')[0],
+              });
+
+              // Cascade recalculate snapshots for all future dates
+              // This ensures balance updates propagate forward when a past IN transaction is deleted
+              await prisma.$executeRawUnsafe(
+                'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+                companyCode,
+                snapItem.itemType,
+                snapItem.itemCode,
+                snapItem.date
+              );
+              console.log('[API Info] Cascaded snapshot recalculation executed for SCRAP IN delete', {
+                companyCode,
+                itemType: snapItem.itemType,
+                itemCode: snapItem.itemCode,
+                fromDate: snapItem.date.toISOString().split('T')[0],
+              });
+            } catch (snapshotError) {
+              console.error('[API Error] Snapshot calculation failed', {
+                companyCode,
+                itemType: snapItem.itemType,
+                itemCode: snapItem.itemCode,
+                date: snapItem.date.toISOString().split('T')[0],
+                errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+              });
+            }
+          }
+        })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
       }
     } else {
       console.log(`[DELETE] Using outgoing_goods path`);
@@ -642,6 +690,13 @@ export async function DELETE(
           id: actualId,
           company_code: companyCode,
           deleted_at: null,
+        },
+        include: {
+          items: {
+            where: {
+              deleted_at: null,
+            },
+          },
         },
       });
 
@@ -652,34 +707,132 @@ export async function DELETE(
         );
       }
 
-      // Delete in transaction with snapshot recalculation
-      const recalcResult = await prisma.$transaction(
+      if (!transactionData.items || transactionData.items.length === 0) {
+        return NextResponse.json(
+          { message: 'Transaction item not found' },
+          { status: 404 }
+        );
+      }
+
+      // Collect items for direct snapshot calculation BEFORE deletion
+      const snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string; date: Date }> = [];
+      for (const item of transactionData.items) {
+        snapshotItems.push({
+          itemType: item.item_type,
+          itemCode: item.item_code,
+          itemName: item.item_name,
+          uom: item.uom,
+          date: transactionData.outgoing_date,
+        });
+      }
+
+      // Find and soft-delete corresponding scrap_transactions record (for dual-table consistency)
+      // SCRAP OUT is stored in BOTH outgoing_goods and scrap_transactions
+      const scrapTransaction = await prisma.scrap_transactions.findFirst({
+        where: {
+          company_code: companyCode,
+          transaction_type: 'OUT',
+          transaction_date: transactionData.outgoing_date,
+          deleted_at: null,
+        },
+        include: {
+          items: {
+            where: {
+              deleted_at: null,
+              item_type: 'SCRAP',
+            },
+          },
+        },
+      });
+
+      // Delete in transaction
+      await prisma.$transaction(
         async (tx) => {
+          // Delete outgoing_goods and its items
           await tx.outgoing_goods.update({
             where: { id: actualId },
             data: { deleted_at: new Date() },
           });
 
-          // Handle snapshot recalculation - outgoing_goods uses outgoing_date
-          const recalcData = await handleTxSnapshotRecalc(tx, companyCode, transactionData.outgoing_date);
-          return recalcData;
+          // Also soft-delete all outgoing_good_items for this outgoing_good
+          await tx.outgoing_good_items.updateMany({
+            where: { outgoing_good_id: actualId },
+            data: { deleted_at: new Date() },
+          });
+
+          // Delete corresponding scrap_transactions record if found
+          if (scrapTransaction) {
+            await tx.scrap_transactions.update({
+              where: { id: scrapTransaction.id },
+              data: { deleted_at: new Date() },
+            });
+
+            // Also soft-delete all scrap_transaction_items for this scrap_transaction
+            await tx.scrap_transaction_items.updateMany({
+              where: { scrap_transaction_id: scrapTransaction.id },
+              data: { deleted_at: new Date() },
+            });
+
+            console.log('[DELETE] Soft-deleted corresponding scrap_transactions record and items:', {
+              scrapTransactionId: scrapTransaction.id,
+              outgoingGoodId: actualId,
+            });
+          }
         },
         {
           isolationLevel: 'Serializable',
         }
       );
 
-      // Execute direct snapshot for backdated transactions
-      if (recalcResult.isBackdated) {
-        try {
-          await prisma.$executeRawUnsafe(
-            `SELECT calculate_stock_snapshot($1::int, $2::date)`,
-            companyCode,
-            recalcResult.date
-          );
-        } catch (error) {
-          console.error('⚠️ Warning: Direct snapshot execution failed:', error);
-        }
+      // Execute direct snapshot calculation and cascading recalculation asynchronously (fire-and-forget)
+      // This ensures balance updates propagate forward when a past OUT transaction is deleted
+      if (snapshotItems.length > 0) {
+        (async () => {
+          for (const snapItem of snapshotItems) {
+            try {
+              // Step 1: Upsert snapshot for the deleted transaction date
+              await prisma.$executeRawUnsafe(
+                'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
+                companyCode,
+                snapItem.itemType,
+                snapItem.itemCode,
+                snapItem.itemName,
+                snapItem.uom,
+                snapItem.date
+              );
+              console.log('[API Info] Direct snapshot calculation executed for OUTGOING delete', {
+                companyCode,
+                itemType: snapItem.itemType,
+                itemCode: snapItem.itemCode,
+                date: snapItem.date.toISOString().split('T')[0],
+              });
+
+              // Step 2: Cascade recalculate snapshots for all future dates
+              // This ensures balance updates propagate forward when a past OUT transaction is deleted
+              await prisma.$executeRawUnsafe(
+                'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+                companyCode,
+                snapItem.itemType,
+                snapItem.itemCode,
+                snapItem.date
+              );
+              console.log('[API Info] Cascaded snapshot recalculation executed for SCRAP OUT delete', {
+                companyCode,
+                itemType: snapItem.itemType,
+                itemCode: snapItem.itemCode,
+                fromDate: snapItem.date.toISOString().split('T')[0],
+              });
+            } catch (snapshotError) {
+              console.error('[API Error] Snapshot calculation failed for OUTGOING delete', {
+                companyCode,
+                itemType: snapItem.itemType,
+                itemCode: snapItem.itemCode,
+                date: snapItem.date.toISOString().split('T')[0],
+                errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+              });
+            }
+          }
+        })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
       }
     }
 

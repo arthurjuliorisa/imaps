@@ -155,8 +155,10 @@ export async function GET(request: Request) {
           sti.amount as value_amount,
           st.remarks,
           st.created_at,
-          st.transaction_date,
-          st.transaction_date as sort_date
+          st.transaction_date as sort_date,
+          COALESCE(st.customs_document_type, '') as customs_doc_type,
+          st.document_number as transaction_number,
+          CAST(ARRAY[]::text[] AS text[]) as incoming_ppkek_numbers
         FROM scrap_transactions st
         JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
           AND st.id = sti.scrap_transaction_id
@@ -194,8 +196,10 @@ export async function GET(request: Request) {
           ogi.amount as value_amount,
           '' as remarks,
           og.created_at,
-          og.outgoing_date as transaction_date,
-          og.outgoing_date as sort_date
+          og.outgoing_date as sort_date,
+          og.customs_document_type::text as customs_doc_type,
+          og.wms_id as transaction_number,
+          ogi.incoming_ppkek_numbers
         FROM outgoing_goods og
         JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
           AND og.id = ogi.outgoing_good_id
@@ -229,6 +233,7 @@ export async function GET(request: Request) {
       docNumber: row.doc_number,
       docDate: row.doc_date,
       recipientName: row.recipient_name,
+      incomingPpkekNumbers: row.incoming_ppkek_numbers || [],
       itemType: row.item_type,
       itemCode: row.item_code,
       itemName: row.item_name,
@@ -238,8 +243,9 @@ export async function GET(request: Request) {
       currency: row.currency,
       valueAmount: Number(row.value_amount || 0),
       remarks: row.remarks,
-      transactionDate: row.transaction_date,
       createdAt: row.created_at,
+      customsDocumentType: row.customs_doc_type || '',
+      transactionNumber: row.transaction_number || '',
     }));
 
     return NextResponse.json(

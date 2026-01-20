@@ -304,47 +304,59 @@ export async function PUT(
       },
     });
 
-    // Queue snapshot recalculation for the item on the balance date
-    const priority = normalizedDate < new Date(Date.UTC(
-      new Date().getFullYear(),
-      new Date().getMonth(),
-      new Date().getDate(),
-      0, 0, 0, 0
-    )) ? 0 : -1; // Backdated vs same-day
-
-    // Check if queue entry already exists
-    const existingQueueEntry = await prisma.snapshot_recalc_queue.findFirst({
-      where: {
-        company_code: companyCode,
-        recalc_date: normalizedDate,
-        item_type: null,
-        item_code: null,
-      },
-    });
-
-    if (existingQueueEntry) {
-      // Update existing queue entry
-      await prisma.snapshot_recalc_queue.update({
-        where: { id: existingQueueEntry.id },
-        data: {
-          status: 'PENDING',
-          priority,
-          reason: 'Beginning balance updated',
-        },
+    // Recalculate item-level snapshot for the new date
+    try {
+      await prisma.$executeRawUnsafe(
+        `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
+        companyCode,
+        updated.item_type,
+        updated.item_code,
+        updated.item_name,
+        updated.uom,
+        normalizedDate
+      );
+    } catch (snapshotError) {
+      console.error('[API Warning] Snapshot calculation failed on update:', {
+        companyCode,
+        itemType: updated.item_type,
+        itemCode: updated.item_code,
+        date: normalizedDate.toISOString().split('T')[0],
+        error: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
       });
-    } else {
-      // Create new queue entry
-      await prisma.snapshot_recalc_queue.create({
-        data: {
-          company_code: companyCode,
-          item_type: null,
-          item_code: null,
-          recalc_date: normalizedDate,
-          status: 'PENDING',
-          priority,
-          reason: 'Beginning balance updated',
-        },
-      });
+    }
+
+    // If date changed, recalculate old date and cascade subsequent dates
+    if (normalizedDate.getTime() !== existing.balance_date.getTime()) {
+      try {
+        // Recalculate old date to update its snapshot
+        await prisma.$executeRawUnsafe(
+          `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
+          companyCode,
+          existing.item_type,
+          existing.item_code,
+          existing.item_name,
+          existing.uom,
+          existing.balance_date
+        );
+
+        // Cascade recalculate all dates after the new date
+        await prisma.$executeRawUnsafe(
+          `SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)`,
+          companyCode,
+          updated.item_type,
+          updated.item_code,
+          normalizedDate
+        );
+      } catch (cascadeError) {
+        console.error('[API Warning] Cascade recalculation failed on date change:', {
+          companyCode,
+          itemType: updated.item_type,
+          itemCode: updated.item_code,
+          oldDate: existing.balance_date.toISOString().split('T')[0],
+          newDate: normalizedDate.toISOString().split('T')[0],
+          error: cascadeError instanceof Error ? cascadeError.message : String(cascadeError),
+        });
+      }
     }
 
     return NextResponse.json(transformedRecord);
@@ -444,46 +456,24 @@ export async function DELETE(
       },
     });
 
-    // Queue snapshot recalculation for the item on the balance date
-    const priority = existing.balance_date < new Date(Date.UTC(
-      new Date().getFullYear(),
-      new Date().getMonth(),
-      new Date().getDate(),
-      0, 0, 0, 0
-    )) ? 0 : -1; // Backdated vs same-day
-
-    // Check if queue entry already exists
-    const existingQueueEntry = await prisma.snapshot_recalc_queue.findFirst({
-      where: {
-        company_code: existing.company_code,
-        recalc_date: existing.balance_date,
-        item_type: null,
-        item_code: null,
-      },
-    });
-
-    if (existingQueueEntry) {
-      // Update existing queue entry
-      await prisma.snapshot_recalc_queue.update({
-        where: { id: existingQueueEntry.id },
-        data: {
-          status: 'PENDING',
-          priority,
-          reason: 'Beginning balance deleted',
-        },
-      });
-    } else {
-      // Create new queue entry
-      await prisma.snapshot_recalc_queue.create({
-        data: {
-          company_code: existing.company_code,
-          item_type: null,
-          item_code: null,
-          recalc_date: existing.balance_date,
-          status: 'PENDING',
-          priority,
-          reason: 'Beginning balance deleted',
-        },
+    // Recalculate item-level snapshot for the deleted item on that date
+    try {
+      await prisma.$executeRawUnsafe(
+        `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
+        existing.company_code,
+        existing.item_type,
+        existing.item_code,
+        existing.item_name,
+        existing.uom,
+        existing.balance_date
+      );
+    } catch (snapshotError) {
+      console.error('[API Warning] Snapshot recalculation failed after delete:', {
+        companyCode: existing.company_code,
+        itemType: existing.item_type,
+        itemCode: existing.item_code,
+        date: existing.balance_date.toISOString().split('T')[0],
+        error: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
       });
     }
 

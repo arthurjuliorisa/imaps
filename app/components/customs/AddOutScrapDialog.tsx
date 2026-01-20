@@ -48,7 +48,9 @@ interface FormData {
   remarks: string;
   ppkekNumber: string;
   registrationDate: Dayjs | null;
-  documentType: string;
+  incomingPpkekNumbers: string[];
+  customsDocumentType: string;
+  transactionNumber: string;
 }
 
 interface AddOutScrapDialogProps {
@@ -58,7 +60,7 @@ interface AddOutScrapDialogProps {
 }
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
-const DOCUMENT_TYPES = ['BC25', 'BC27', 'BC41'];
+const CUSTOMS_DOCUMENT_TYPES = ['BC25', 'BC27', 'BC41'];
 
 export function AddOutScrapDialog({
   open,
@@ -83,7 +85,9 @@ export function AddOutScrapDialog({
     remarks: '',
     ppkekNumber: '',
     registrationDate: null,
-    documentType: 'BC27',
+    incomingPpkekNumbers: [],
+    customsDocumentType: 'BC25',
+    transactionNumber: '',
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -233,6 +237,10 @@ export function AddOutScrapDialog({
       newErrors.remarks = 'Remarks cannot exceed 1000 characters';
     }
 
+    if (!formData.customsDocumentType) {
+      newErrors.customsDocumentType = 'Customs document type is required';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -273,7 +281,9 @@ export function AddOutScrapDialog({
           remarks: formData.remarks || undefined,
           ppkekNumber: formData.ppkekNumber || undefined,
           registrationDate: formData.registrationDate?.format('YYYY-MM-DD') || undefined,
-          documentType: formData.documentType || undefined,
+          incomingPpkekNumbers: formData.incomingPpkekNumbers.length > 0 ? formData.incomingPpkekNumbers : undefined,
+          customsDocumentType: formData.customsDocumentType,
+          transactionNumber: formData.transactionNumber || undefined,
         }),
       });
 
@@ -308,7 +318,9 @@ export function AddOutScrapDialog({
       remarks: '',
       ppkekNumber: '',
       registrationDate: null,
-      documentType: 'BC27',
+      incomingPpkekNumbers: [],
+      customsDocumentType: 'BC25',
+      transactionNumber: '',
     });
     setErrors({});
     setStockCheckResult(null);
@@ -330,6 +342,7 @@ export function AddOutScrapDialog({
     formData.amount >= 0 &&
     formData.recipientName.trim() !== '' &&
     formData.remarks.length <= 1000 &&
+    formData.customsDocumentType !== '' &&
     stockCheckResult?.available === true;
 
   return (
@@ -392,12 +405,43 @@ export function AddOutScrapDialog({
               }}
             >
               <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                Customs Information (Optional)
+                Customs Information
               </Typography>
               <Stack spacing={2} sx={{ mt: 2 }}>
                 <TextField
                   fullWidth
-                  label="PPKEK Number"
+                  select
+                  label="Document Type *"
+                  value={formData.customsDocumentType}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, customsDocumentType: e.target.value }));
+                    setErrors((prev) => ({ ...prev, customsDocumentType: undefined }));
+                  }}
+                  required
+                  error={!!errors.customsDocumentType}
+                  helperText={errors.customsDocumentType || 'Select customs document type'}
+                >
+                  {CUSTOMS_DOCUMENT_TYPES.map((docType) => (
+                    <MenuItem key={docType} value={docType}>
+                      {docType}
+                    </MenuItem>
+                  ))}
+                </TextField>
+
+                <TextField
+                  fullWidth
+                  label="Transaction Number"
+                  value={formData.transactionNumber}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, transactionNumber: e.target.value }));
+                  }}
+                  placeholder="Leave empty to auto-generate"
+                  helperText="Optional: Custom transaction number (will replace auto-generated number)"
+                />
+
+                <TextField
+                  fullWidth
+                  label="Nomor Daftar"
                   value={formData.ppkekNumber}
                   onChange={(e) => {
                     setFormData((prev) => ({ ...prev, ppkekNumber: e.target.value }));
@@ -421,22 +465,23 @@ export function AddOutScrapDialog({
                   }}
                 />
 
-                <TextField
-                  fullWidth
-                  select
-                  label="Document Type"
-                  value={formData.documentType}
-                  onChange={(e) => {
-                    setFormData((prev) => ({ ...prev, documentType: e.target.value }));
+                <Autocomplete
+                  multiple
+                  freeSolo
+                  options={[]}
+                  value={formData.incomingPpkekNumbers}
+                  onChange={(event, newValue) => {
+                    setFormData((prev) => ({ ...prev, incomingPpkekNumbers: newValue }));
                   }}
-                  helperText="Customs document type"
-                >
-                  {DOCUMENT_TYPES.map((docType) => (
-                    <MenuItem key={docType} value={docType}>
-                      {docType}
-                    </MenuItem>
-                  ))}
-                </TextField>
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Ex-Nopen (Incoming PPKEK Numbers)"
+                      placeholder="Type and press Enter to add"
+                      helperText="Optional: Add PPKEK numbers from incoming goods that were used"
+                    />
+                  )}
+                />
               </Stack>
             </Box>
 
