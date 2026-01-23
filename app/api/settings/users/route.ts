@@ -108,6 +108,9 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
+    // Parse company_code to integer
+    const companyCode = body.company_code ? parseInt(body.company_code, 10) : null;
+
     // Create user
     const id = `USER-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const user = await prisma.users.create({
@@ -117,6 +120,8 @@ export async function POST(request: NextRequest) {
         email: data.email,
         password: hashedPassword,
         full_name: data.full_name,
+        role: body.role || 'User',
+        company_code: companyCode,
         updated_at: new Date(),
       },
       select: {
@@ -124,6 +129,8 @@ export async function POST(request: NextRequest) {
         username: true,
         email: true,
         full_name: true,
+        role: true,
+        company_code: true,
         created_at: true,
         updated_at: true,
       },

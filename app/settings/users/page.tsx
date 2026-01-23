@@ -29,7 +29,7 @@ interface User {
   full_name: string;
   email: string;
   role: string;
-  company_code?: string | null;
+  company_code?: number | null;
 }
 
 interface Company {
@@ -133,7 +133,7 @@ export default function UsersPage() {
       email: user.email,
       password: '',
       role: user.role,
-      company_code: user.company_code || ''
+      company_code: user.company_code ? user.company_code.toString() : ''
     });
     setCompanyError(false);
     setDialogOpen(true);

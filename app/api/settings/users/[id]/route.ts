@@ -62,13 +62,14 @@ export async function PUT(
     const body = await request.json();
 
     // Validate required fields
-    validateRequiredFields(body, ['username', 'email']);
+    validateRequiredFields(body, ['username', 'email', 'full_name']);
 
     // Trim string fields
     const data = trimStringFields({
       username: body.username,
       email: body.email,
       password: body.password,
+      full_name: body.full_name,
     });
 
     // Validate username length
@@ -85,11 +86,27 @@ export async function PUT(
     const updateData: {
       username: string;
       email: string;
+      full_name: string;
+      role?: string;
+      company_code?: number | null;
       password?: string;
+      updated_at: Date;
     } = {
       username: data.username,
       email: data.email,
+      full_name: data.full_name,
+      updated_at: new Date(),
     };
+
+    // Update role if provided
+    if (body.role) {
+      updateData.role = body.role;
+    }
+
+    // Update company_code if provided (convert string to integer)
+    if (body.company_code !== undefined) {
+      updateData.company_code = body.company_code ? parseInt(body.company_code, 10) : null;
+    }
 
     // If password is provided, validate and hash it
     if (data.password && data.password.trim() !== '') {
@@ -107,6 +124,9 @@ export async function PUT(
         id: true,
         username: true,
         email: true,
+        full_name: true,
+        role: true,
+        company_code: true,
         created_at: true,
         updated_at: true,
       },
