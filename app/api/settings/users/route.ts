@@ -52,6 +52,12 @@ export async function GET(request: NextRequest) {
         full_name: true,
         role: true,
         company_code: true,
+        company: {
+          select: {
+            code: true,
+            name: true,
+          },
+        },
         created_at: true,
         updated_at: true,
       },

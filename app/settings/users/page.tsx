@@ -30,6 +30,10 @@ interface User {
   email: string;
   role: string;
   company_code?: number | null;
+  company?: {
+    code: number;
+    name: string;
+  } | null;
 }
 
 interface Company {
@@ -46,6 +50,14 @@ const columns: Column[] = [
     id: 'role',
     label: 'Role',
     minWidth: 120,
+  },
+  {
+    id: 'company',
+    label: 'Company',
+    minWidth: 200,
+    format: (value: any, row: any) => {
+      return row.company ? `${row.company.code} - ${row.company.name}` : '-';
+    },
   },
 ];
 
