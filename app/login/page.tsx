@@ -121,7 +121,7 @@ export default function LoginPage() {
         position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        bgcolor: '#3B4553',
+        bgcolor: '#2D3748',
         overflow: 'hidden',
       }}
     >
@@ -137,7 +137,7 @@ export default function LoginPage() {
           backgroundSize: '110% auto',
           backgroundPosition: 'center 20%',
           backgroundRepeat: 'no-repeat',
-          backgroundColor: '#3B4553',
+          backgroundColor: '#2D3748',
         }}
       />
 
@@ -149,7 +149,7 @@ export default function LoginPage() {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'linear-gradient(to bottom, rgba(59, 69, 83, 0) 0%, rgba(59, 69, 83, 0) 70%, rgba(59, 69, 83, 0.8) 85%, rgba(59, 69, 83, 1) 100%)',
+          background: 'linear-gradient(to bottom, rgba(45, 55, 72, 0) 0%, rgba(45, 55, 72, 0) 70%, rgba(45, 55, 72, 0.8) 85%, rgba(45, 55, 72, 1) 100%)',
           pointerEvents: 'none',
         }}
       />
@@ -184,10 +184,10 @@ export default function LoginPage() {
               sx={{
                 fontWeight: 700,
                 color: '#ffffff',
-                fontSize: { xs: '1rem', sm: '1.25rem', md: '1.5rem', lg: '1.75rem' },
+                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem', lg: '1.125rem' },
                 textShadow: '2px 2px 8px rgba(0,0,0,0.5)',
                 whiteSpace: 'nowrap',
-                mb: 1,
+                mb: 0.5,
               }}
             >
               仓库管理系统 - 海关 IT 库存报表
@@ -197,7 +197,7 @@ export default function LoginPage() {
               sx={{
                 fontWeight: 700,
                 color: '#ffffff',
-                fontSize: { xs: '1.25rem', sm: '1.5rem', md: '1.75rem', lg: '2rem' },
+                fontSize: { xs: '0.875rem', sm: '1rem', md: '1.125rem', lg: '1.25rem' },
                 textShadow: '2px 2px 8px rgba(0,0,0,0.5)',
                 whiteSpace: 'nowrap',
               }}
@@ -219,8 +219,8 @@ export default function LoginPage() {
           <Paper
             elevation={8}
             sx={{
-              width: { xs: '100%', sm: 336, md: 360 },
-              p: { xs: 2.5, sm: 3.5 },
+              width: { xs: '100%', sm: 280, md: 300 },
+              p: { xs: 2, sm: 2.5 },
               bgcolor: 'white',
               borderRadius: 0,
               boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
@@ -232,9 +232,9 @@ export default function LoginPage() {
               sx={{
                 fontWeight: 600,
                 color: 'text.primary',
-                mb: 2.5,
+                mb: 2,
                 textAlign: 'center',
-                fontSize: { xs: '1rem', sm: '1.1rem' },
+                fontSize: { xs: '0.875rem', sm: '0.95rem' },
               }}
             >
               Halaman Login
@@ -487,7 +487,7 @@ export default function LoginPage() {
           zIndex: 1,
           py: 2,
           px: 4,
-          bgcolor: '#3B4553',
+          bgcolor: '#2D3748',
         }}
       >
       </Box>
