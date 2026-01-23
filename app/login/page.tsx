@@ -121,11 +121,11 @@ export default function LoginPage() {
         position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        bgcolor: '#1a1a1a',
+        bgcolor: '#3B4553',
         overflow: 'hidden',
       }}
     >
-      {/* Full-screen warehouse background with dark overlay */}
+      {/* Full-screen warehouse background */}
       <Box
         sx={{
           position: 'absolute',
@@ -133,19 +133,24 @@ export default function LoginPage() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundImage: 'url(/warehouse-bg.jpg)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
+          backgroundImage: 'url(/login_bg.jpeg)',
+          backgroundSize: '110% auto',
+          backgroundPosition: 'center 20%',
           backgroundRepeat: 'no-repeat',
-          '&::after': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            bgcolor: 'rgba(0, 0, 0, 0.65)',
-          },
+          backgroundColor: '#3B4553',
+        }}
+      />
+
+      {/* Gradient overlay for smooth transition */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'linear-gradient(to bottom, rgba(59, 69, 83, 0) 0%, rgba(59, 69, 83, 0) 70%, rgba(59, 69, 83, 0.8) 85%, rgba(59, 69, 83, 1) 100%)',
+          pointerEvents: 'none',
         }}
       />
 
@@ -158,6 +163,8 @@ export default function LoginPage() {
           display: 'flex',
           flexDirection: { xs: 'column', md: 'row' },
           p: { xs: 2, sm: 3, md: 4 },
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
       >
         {/* Left side - Branding text */}
@@ -172,6 +179,31 @@ export default function LoginPage() {
           }}
         >
           <Box>
+            <Typography
+              variant="h5"
+              sx={{
+                fontWeight: 700,
+                color: '#ffffff',
+                fontSize: { xs: '1rem', sm: '1.25rem', md: '1.5rem', lg: '1.75rem' },
+                textShadow: '2px 2px 8px rgba(0,0,0,0.5)',
+                whiteSpace: 'nowrap',
+                mb: 1,
+              }}
+            >
+              仓库管理系统 - 海关 IT 库存报表
+            </Typography>
+            <Typography
+              variant="h4"
+              sx={{
+                fontWeight: 700,
+                color: '#ffffff',
+                fontSize: { xs: '1.25rem', sm: '1.5rem', md: '1.75rem', lg: '2rem' },
+                textShadow: '2px 2px 8px rgba(0,0,0,0.5)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              WMS - IT Inventory Report
+            </Typography>
           </Box>
         </Box>
 
@@ -448,26 +480,16 @@ export default function LoginPage() {
         </Box>
       </Box>
 
-      {/* Footer */}
+      {/* Footer - Empty section with background color */}
       <Box
         sx={{
           position: 'relative',
           zIndex: 1,
           py: 2,
           px: 4,
-          bgcolor: 'rgba(0, 0, 0, 0.5)',
-          backdropFilter: 'blur(10px)',
+          bgcolor: '#3B4553',
         }}
       >
-        <Typography
-          variant="body2"
-          sx={{
-            color: 'rgba(255, 255, 255, 0.8)',
-            textAlign: 'center',
-            fontSize: '0.875rem',
-          }}
-        >
-        </Typography>
       </Box>
     </Box>
   );

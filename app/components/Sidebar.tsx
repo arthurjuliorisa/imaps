@@ -272,7 +272,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
             justifyContent: collapsed ? 'center' : 'flex-start',
             color: '#ffffff',
             '&:hover': {
-              bgcolor: 'rgba(255, 255, 255, 0.1)',
+              bgcolor: '#409EFF',
             },
             '&.Mui-selected': {
               bgcolor: 'rgba(255, 255, 255, 0.15)',
@@ -284,7 +284,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
                 color: '#ffffff',
               },
               '&:hover': {
-                bgcolor: 'rgba(255, 255, 255, 0.2)',
+                bgcolor: '#409EFF',
               },
             },
           }}
@@ -365,7 +365,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
           px: collapsed ? 1 : 2.5,
           minHeight: 64,
           height: 64,
-          bgcolor: '#4a5568',
+          bgcolor: '#2B3346',
           borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
           display: 'flex',
           justifyContent: 'center',
@@ -377,7 +377,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <Box
               sx={{
-                width: 32,
+                width: 56,
                 height: 32,
                 borderRadius: 0,
                 bgcolor: 'rgba(255, 255, 255, 0.15)',
@@ -389,7 +389,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
                 color: '#ffffff',
               }}
             >
-              M
+              WMS
             </Box>
             <Box>
               <Typography
@@ -401,14 +401,14 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
                   lineHeight: 1.2,
                 }}
               >
-                IT Inventory Report
+                - IT Inventory Report
               </Typography>
             </Box>
           </Box>
         ) : (
           <Box
             sx={{
-              width: 40,
+              width: 56,
               height: 40,
               borderRadius: 0,
               bgcolor: 'rgba(255, 255, 255, 0.15)',
@@ -420,11 +420,11 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
               color: '#ffffff',
             }}
           >
-            M
+            WMS
           </Box>
         )}
       </Toolbar>
-      <Box sx={{ py: 2, overflowY: 'auto', overflowX: 'hidden', height: 'calc(100vh - 64px)', bgcolor: '#334155' }}>
+      <Box sx={{ py: 2, overflowY: 'auto', overflowX: 'hidden', height: 'calc(100vh - 64px)', bgcolor: '#38425D' }}>
         <List component="nav" sx={{ px: collapsed ? 0.5 : 0.5 }}>
           {isLoadingMenus ? (
             <Box sx={{ p: 2, textAlign: 'center' }}>
@@ -468,7 +468,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
             boxSizing: 'border-box',
             borderRadius: 0,
             borderRight: '1px solid rgba(255, 255, 255, 0.1)',
-            bgcolor: '#334155',
+            bgcolor: '#38425D',
           },
         }}
       >
@@ -487,7 +487,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
             boxSizing: 'border-box',
             borderRadius: 0,
             borderRight: '1px solid rgba(255, 255, 255, 0.1)',
-            bgcolor: '#334155',
+            bgcolor: '#38425D',
             transition: theme.transitions.create('width', {
               easing: theme.transitions.easing.sharp,
               duration: theme.transitions.duration.enteringScreen,

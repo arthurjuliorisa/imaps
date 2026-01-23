@@ -78,7 +78,7 @@ export function Header({ onMenuClick, sidebarCollapsed, onToggleCollapse }: Head
       sx={{
         width: { xs: '100%', md: `calc(100% - ${drawerWidth}px)` },
         ml: { xs: 0, md: `${drawerWidth}px` },
-        bgcolor: '#4a5568',
+        bgcolor: '#2B3346',
         color: '#ffffff',
         borderRadius: 0,
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
@@ -151,7 +151,7 @@ export function Header({ onMenuClick, sidebarCollapsed, onToggleCollapse }: Head
                 color: '#ffffff',
               }}
             >
-              M
+              WMS
             </Box>
             <Typography
               variant="h6"
