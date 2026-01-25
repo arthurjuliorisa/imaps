@@ -567,34 +567,94 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
             <Table stickyHeader size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : alpha(theme.palette.primary.main, 0.08),
+                    borderBottom: `2px solid ${theme.palette.divider}`
+                  }}>
                     Status
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : alpha(theme.palette.primary.main, 0.08),
+                    borderBottom: `2px solid ${theme.palette.divider}`
+                  }}>
                     Item Type
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : alpha(theme.palette.primary.main, 0.08),
+                    borderBottom: `2px solid ${theme.palette.divider}`
+                  }}>
                     Item Code
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : alpha(theme.palette.primary.main, 0.08),
+                    borderBottom: `2px solid ${theme.palette.divider}`
+                  }}>
                     Item Name
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : alpha(theme.palette.primary.main, 0.08),
+                    borderBottom: `2px solid ${theme.palette.divider}`
+                  }}>
                     UOM
                   </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell align="right" sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : alpha(theme.palette.primary.main, 0.08),
+                    borderBottom: `2px solid ${theme.palette.divider}`
+                  }}>
                     Qty
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : alpha(theme.palette.primary.main, 0.08),
+                    borderBottom: `2px solid ${theme.palette.divider}`
+                  }}>
                     Balance Date
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : alpha(theme.palette.primary.main, 0.08),
+                    borderBottom: `2px solid ${theme.palette.divider}`
+                  }}>
                     PPKEK Numbers
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : alpha(theme.palette.primary.main, 0.08),
+                    borderBottom: `2px solid ${theme.palette.divider}`
+                  }}>
                     Remarks
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : alpha(theme.palette.primary.main, 0.08),
+                    borderBottom: `2px solid ${theme.palette.divider}`
+                  }}>
                     Errors
                   </TableCell>
                 </TableRow>
