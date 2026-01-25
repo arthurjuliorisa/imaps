@@ -250,6 +250,7 @@ export const getTheme = (mode: 'light' | 'dark') =>
             '& .MuiOutlinedInput-root': {
               borderRadius: 10,
               transition: 'all 0.2s ease-in-out',
+              backgroundColor: mode === 'light' ? '#ffffff' : '#1e293b',
               '&:hover': {
                 '& .MuiOutlinedInput-notchedOutline': {
                   borderWidth: 2,
