@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 /**
  * POST /api/customs/stock-opname/[id]/items/validate-upload
@@ -70,11 +70,42 @@ export async function POST(
       );
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet);
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(arrayBuffer);
+
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
+      return NextResponse.json(
+        { message: 'File Excel tidak memiliki worksheet' },
+        { status: 400 }
+      );
+    }
+
+    // Convert worksheet to JSON (similar to XLSX.utils.sheet_to_json)
+    const data: any[] = [];
+    const headerRow = worksheet.getRow(1);
+    const headers: string[] = [];
+
+    // Get headers from first row
+    headerRow.eachCell((cell, colNumber) => {
+      headers[colNumber] = cell.value?.toString() || '';
+    });
+
+    // Convert each row to object
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return; // Skip header row
+
+      const rowData: any = {};
+      row.eachCell((cell, colNumber) => {
+        const header = headers[colNumber];
+        if (header) {
+          rowData[header] = cell.value;
+        }
+      });
+
+      data.push(rowData);
+    });
 
     if (!data || data.length === 0) {
       return NextResponse.json(
