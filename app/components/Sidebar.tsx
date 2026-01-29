@@ -119,7 +119,7 @@ const menuSections: MenuSection[] = [
     title: 'LPJ Mutasi',
     items: [
       {
-        title: 'Work in Progress',
+        title: 'Laporan Posisi Barang Dalam Proses',
         icon: <DescriptionIcon />,
         path: '/customs/wip',
       },

@@ -8,7 +8,37 @@ import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { MutationReportTable, MutationData } from '@/app/components/customs/MutationReportTable';
-import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
+import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
+
+const EXCEL_HEADERS = [
+  { key: 'no', label: 'No', type: 'number' as const },
+  { key: 'companyName', label: 'Company Name', type: 'text' as const },
+  { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
+  { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
+  { key: 'itemType', label: 'Item Type', type: 'text' as const },
+  { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
+  { key: 'beginning', label: 'Saldo Awal', type: 'number' as const },
+  { key: 'in', label: 'Jumlah Pemasukan Barang', type: 'number' as const },
+  { key: 'out', label: 'Jumlah Pengeluaran Barang', type: 'number' as const },
+  { key: 'adjustment', label: 'Penyesuaian', type: 'number' as const },
+  { key: 'ending', label: 'Saldo Akhir', type: 'number' as const },
+  { key: 'stockOpname', label: 'Hasil Pencacahan', type: 'number' as const },
+  { key: 'variant', label: 'Jumlah Selisih', type: 'number' as const },
+];
+
+const PDF_COLUMNS = [
+  { header: 'No', dataKey: 'no' },
+  { header: 'Company Name', dataKey: 'companyName' },
+  { header: 'Kode Barang', dataKey: 'itemCode' },
+  { header: 'Nama Barang', dataKey: 'itemName' },
+  { header: 'Item Type', dataKey: 'itemType' },
+  { header: 'Satuan Barang', dataKey: 'unit' },
+  { header: 'Saldo Awal', dataKey: 'beginning' },
+  { header: 'Jumlah Pemasukan Barang', dataKey: 'in' },
+  { header: 'Jumlah Pengeluaran Barang', dataKey: 'out' },
+  { header: 'Penyesuaian', dataKey: 'adjustment' },
+  { header: 'Saldo Akhir', dataKey: 'ending' },
+];
 
 export default function ProductionMutationPage() {
   const toast = useToast();
@@ -99,67 +129,50 @@ export default function ProductionMutationPage() {
 
   const handleExportExcel = () => {
     const exportData = filteredData.map((row, index) => ({
-      No: index + 1,
-      'Row Number': row.rowNumber || '-',
-      'Company Code': row.companyCode || '-',
-      'Company Name': row.companyName || '-',
-      'Item Type': row.itemType || '-',
-      'Item Code': row.itemCode,
-      'Item Name': row.itemName,
-      'Unit': row.unit,
-      'Beginning': row.beginning,
-      'In': row.in,
-      'Out': row.out,
-      'Adjustment': row.adjustment,
-      'Ending': row.ending,
-      'Stock Opname': row.stockOpname,
-      'Variant': row.variant,
-      'Value Amount': row.valueAmount || '-',
-      'Currency': row.currency || '-',
+      no: index + 1,
+      companyName: row.companyName || '-',
+      itemCode: row.itemCode,
+      itemName: row.itemName,
+      itemType: row.itemType || '-',
+      unit: row.unit,
+      beginning: row.beginning,
+      in: row.in,
+      out: row.out,
+      adjustment: row.adjustment,
+      ending: row.ending,
+      stockOpname: row.stockOpname,
+      variant: row.variant,
     }));
 
-    exportToExcel(
+    exportToExcelWithHeaders(
       exportData,
-      `LPJ_Mutasi_Hasil_Produksi_${startDate}_${endDate}`,
-      'Production Mutation'
+      EXCEL_HEADERS,
+      `Laporan_Hasil_Produksi_${startDate}_${endDate}`,
+      'Laporan Hasil Produksi'
     );
   };
 
   const handleExportPDF = () => {
     const exportData = filteredData.map((row, index) => ({
       no: index + 1,
+      companyName: row.companyName || '-',
       itemCode: row.itemCode,
       itemName: row.itemName,
+      itemType: row.itemType || '-',
       unit: row.unit,
       beginning: row.beginning.toString(),
       in: row.in.toString(),
       out: row.out.toString(),
       adjustment: row.adjustment.toString(),
       ending: row.ending.toString(),
-      stockOpname: row.stockOpname.toString(),
-      variant: row.variant.toString(),
     }));
-
-    const columns = [
-      { header: 'No', dataKey: 'no' },
-      { header: 'Item Code', dataKey: 'itemCode' },
-      { header: 'Item Name', dataKey: 'itemName' },
-      { header: 'Unit', dataKey: 'unit' },
-      { header: 'Beginning', dataKey: 'beginning' },
-      { header: 'In', dataKey: 'in' },
-      { header: 'Out', dataKey: 'out' },
-      { header: 'Adjustment', dataKey: 'adjustment' },
-      { header: 'Ending', dataKey: 'ending' },
-      { header: 'Stock Opname', dataKey: 'stockOpname' },
-      { header: 'Variant', dataKey: 'variant' },
-    ];
 
     exportToPDF(
       exportData,
-      columns,
-      `LPJ_Mutasi_Hasil_Produksi_${startDate}_${endDate}`,
-      'LPJ Mutasi Hasil Produksi',
-      `Period: ${formatDate(startDate)} - ${formatDate(endDate)}`
+      PDF_COLUMNS,
+      `Laporan_Hasil_Produksi_${startDate}_${endDate}`,
+      'Laporan Hasil Produksi',
+      `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`
     );
   };
 

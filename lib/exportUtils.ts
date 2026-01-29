@@ -142,6 +142,117 @@ export function formatNumber(num: number): string {
 }
 
 /**
+ * Convert date value to Excel Date object
+ * Returns null if date is invalid
+ */
+export function toExcelDate(dateValue: string | Date | null | undefined): Date | null {
+  if (!dateValue) return null;
+
+  try {
+    const date = typeof dateValue === 'string' ? new Date(dateValue) : dateValue;
+    if (!(date instanceof Date) || isNaN(date.getTime())) return null;
+    return date;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Format date for display (short format: dd/mm/yyyy)
+ */
+export function formatDateShort(dateValue: string | Date | null | undefined): string {
+  if (!dateValue) return '-';
+
+  try {
+    const date = typeof dateValue === 'string' ? new Date(dateValue) : dateValue;
+    if (!(date instanceof Date) || isNaN(date.getTime())) return '-';
+
+    return date.toLocaleDateString('id-ID', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  } catch {
+    return '-';
+  }
+}
+
+/**
+ * Enhanced Excel export with proper type handling for dates
+ */
+export async function exportToExcelWithHeaders(
+  data: any[],
+  headers: Array<{ key: string; label: string; type?: 'text' | 'date' | 'number' }>,
+  fileName: string,
+  sheetName: string = 'Sheet1'
+) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet(sheetName);
+
+  if (data.length === 0) return;
+
+  // Add header row
+  const headerRow = worksheet.addRow(headers.map(h => h.label));
+
+  // Style header row
+  headerRow.font = { bold: true };
+  headerRow.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFE2E8F0' },
+  };
+
+  // Add data rows with proper type handling
+  data.forEach((row) => {
+    const rowData = headers.map(header => {
+      const value = row[header.key];
+
+      if (header.type === 'date') {
+        return toExcelDate(value);
+      }
+
+      return value ?? '-';
+    });
+
+    const dataRow = worksheet.addRow(rowData);
+
+    // Apply date format to date columns
+    headers.forEach((header, colIndex) => {
+      if (header.type === 'date') {
+        const cell = dataRow.getCell(colIndex + 1);
+        if (cell.value instanceof Date) {
+          cell.numFmt = 'dd/mm/yyyy';
+        }
+      }
+    });
+  });
+
+  // Auto-adjust column widths
+  worksheet.columns.forEach((column, index) => {
+    const header = headers[index];
+    if (header?.key === 'no') {
+      column.width = 6;
+    } else if (header?.key === 'itemName') {
+      column.width = 30;
+    } else {
+      column.width = 15;
+    }
+  });
+
+  // Generate and download file
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${fileName}.xlsx`;
+  link.click();
+  window.URL.revokeObjectURL(url);
+}
+
+/**
  * Export Stock Opname to Excel with proper styling
  */
 export async function exportStockOpnameToExcel(

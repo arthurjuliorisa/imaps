@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     // console.log('[WIP API] Company Code from session:', companyCode);
     // console.log('[WIP API] Session user:', session.user?.email, 'Company:', session.user?.companyCode);
 
-    // Query from vw_lpj_wip view (WIP balances at specific date)
+    // Query from vw_lpj_wip view (Laporan Posisi Barang Dalam Proses at specific date)
     // Returns all fields except company_code and updated_at
     let query = `
       SELECT
@@ -79,9 +79,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {
-    console.error('[API Error] Failed to fetch WIP records:', error);
+    console.error('[API Error] Failed to fetch Laporan Posisi Barang Dalam Proses records:', error);
     return NextResponse.json(
-      { message: 'Error fetching WIP records' },
+      { message: 'Gagal mengambil data Laporan Posisi Barang Dalam Proses' },
       { status: 500 }
     );
   }

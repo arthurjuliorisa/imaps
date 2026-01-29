@@ -4,6 +4,7 @@ import { seedItemTypes } from './seeders/item-type.seeder';
 import { seedItems } from './seeders/item.seeder';
 import { seedUsers } from './seeders/user.seeder';
 import { seedMenus } from './seeders/menu.seeder';
+import { seedUserAccessMenus } from './seeders/user-access.seeder';
 import { seedTransactions } from './seeders/transaction.seeder';
 
 // NOTE: If you see TypeScript errors below, run `npx prisma generate` first
@@ -139,6 +140,7 @@ async function main() {
   if (shouldRun('item')) await seedItems();
   if (shouldRun('user')) await seedUsers();
   if (shouldRun('menu')) await seedMenus();
+  if (shouldRun('useraccess')) await seedUserAccessMenus();
   if (shouldRun('transaction')) await seedTransactions();
 
   console.log('🎉 Database seeding completed!');
@@ -148,6 +150,7 @@ async function main() {
   if (shouldRun('item')) console.log('   - 2 items (company 1310 only)');
   if (shouldRun('user')) console.log('   - 3 users');
   if (shouldRun('menu')) console.log('   - 6 parent menus with children');
+  if (shouldRun('useraccess')) console.log('   - User access permissions');
   if (shouldRun('transaction')) console.log('   - 4 transactions (company 1310 only)');
 }
 

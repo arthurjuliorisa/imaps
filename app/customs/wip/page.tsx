@@ -7,7 +7,32 @@ import { Search as SearchIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { WIPReportTable, WIPData } from '@/app/components/customs/WIPReportTable';
-import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
+import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
+
+const EXCEL_HEADERS = [
+  { key: 'no', label: 'No', type: 'number' as const },
+  { key: 'companyName', label: 'Company Name', type: 'text' as const },
+  { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
+  { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
+  { key: 'itemType', label: 'Item Type', type: 'text' as const },
+  { key: 'unitQuantity', label: 'Satuan Barang', type: 'text' as const },
+  { key: 'quantity', label: 'jumlah', type: 'number' as const },
+  { key: 'stockDate', label: 'Stock Date', type: 'date' as const },
+  { key: 'remarks', label: 'catatan', type: 'text' as const },
+  { key: 'createdAt', label: 'Created At', type: 'date' as const },
+];
+
+const PDF_COLUMNS = [
+  { header: 'No', dataKey: 'no' },
+  { header: 'Company Name', dataKey: 'companyName' },
+  { header: 'Kode Barang', dataKey: 'itemCode' },
+  { header: 'Nama Barang', dataKey: 'itemName' },
+  { header: 'Item Type', dataKey: 'itemType' },
+  { header: 'Satuan Barang', dataKey: 'unit' },
+  { header: 'jumlah', dataKey: 'quantity' },
+  { header: 'Stock Date', dataKey: 'stockDate' },
+  { header: 'catatan', dataKey: 'remarks' },
+];
 
 export default function WIPMutationPage() {
   const toast = useToast();
@@ -124,22 +149,23 @@ export default function WIPMutationPage() {
 
   const handleExportExcel = () => {
     const exportData = filteredData.map((row) => ({
-      No: row.no,
-      'Company Name': row.companyName || '-',
-      'Item Code': row.itemCode,
-      'Item Name': row.itemName,
-      'Item Type': row.itemType || '-',
-      'Unit': row.unitQuantity,
-      'Quantity': row.quantity,
-      'Stock Date': formatDate(row.stockDate),
-      'Remarks': row.remarks || '-',
-      'Created At': formatDate(row.createdAt),
+      no: row.no,
+      companyName: row.companyName || '-',
+      itemCode: row.itemCode,
+      itemName: row.itemName,
+      itemType: row.itemType || '-',
+      unitQuantity: row.unitQuantity,
+      quantity: row.quantity,
+      stockDate: row.stockDate,
+      remarks: row.remarks || '-',
+      createdAt: row.createdAt,
     }));
 
-    exportToExcel(
+    exportToExcelWithHeaders(
       exportData,
-      `WIP_Stock_Position_${selectedDate}`,
-      'WIP Stock Position'
+      EXCEL_HEADERS,
+      `Laporan_Posisi_Barang_Dalam_Proses_${selectedDate}`,
+      'Laporan Posisi Barang Dalam Proses'
     );
   };
 
@@ -152,30 +178,16 @@ export default function WIPMutationPage() {
       itemType: row.itemType || '-',
       unit: row.unitQuantity,
       quantity: row.quantity.toString(),
-      stockDate: formatDate(row.stockDate),
+      stockDate: formatDateShort(row.stockDate),
       remarks: row.remarks || '-',
-      createdAt: formatDate(row.createdAt),
     }));
-
-    const columns = [
-      { header: 'No', dataKey: 'no' },
-      { header: 'Company', dataKey: 'companyName' },
-      { header: 'Item Code', dataKey: 'itemCode' },
-      { header: 'Item Name', dataKey: 'itemName' },
-      { header: 'Type', dataKey: 'itemType' },
-      { header: 'Unit', dataKey: 'unit' },
-      { header: 'Quantity', dataKey: 'quantity' },
-      { header: 'Stock Date', dataKey: 'stockDate' },
-      { header: 'Remarks', dataKey: 'remarks' },
-      { header: 'Created At', dataKey: 'createdAt' },
-    ];
 
     exportToPDF(
       exportData,
-      columns,
-      `WIP_Stock_Position_${selectedDate}`,
-      'WIP Stock Position Report',
-      `Date: ${formatDate(selectedDate)}`
+      PDF_COLUMNS,
+      `Laporan_Posisi_Barang_Dalam_Proses_${selectedDate}`,
+      'Laporan Posisi Barang Dalam Proses',
+      `Date: ${formatDateShort(selectedDate)}`
     );
   };
 
@@ -191,8 +203,8 @@ export default function WIPMutationPage() {
 
   return (
     <ReportLayout
-      title="LPJ Mutasi WIP"
-      subtitle="Laporan Pertanggungjawaban Mutasi Work In Process"
+      title="Laporan Posisi Barang Dalam Proses"
+      subtitle="Laporan posisi barang dalam proses produksi"
       actions={
         <Stack spacing={3}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>

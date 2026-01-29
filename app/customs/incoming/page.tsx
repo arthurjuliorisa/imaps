@@ -25,7 +25,7 @@ import { Search as SearchIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
-import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
+import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
 import { formatQty, formatAmount } from '@/lib/utils/format';
 
 interface IncomingReportData {
@@ -48,6 +48,39 @@ interface IncomingReportData {
   amount: number;
   createdAt: Date;
 }
+
+const EXCEL_HEADERS = [
+  { key: 'no', label: 'No', type: 'number' as const },
+  { key: 'companyName', label: 'Company Name', type: 'text' as const },
+  { key: 'documentType', label: 'Jenis Dokumen Pabean', type: 'text' as const },
+  { key: 'ppkekNumber', label: 'Nomor Daftar', type: 'text' as const },
+  { key: 'registrationDate', label: 'Tanggal Daftar', type: 'date' as const },
+  { key: 'documentNumber', label: 'Nomor Bukti Penerimaan Barang', type: 'text' as const },
+  { key: 'date', label: 'Tanggal Bukti Penerimaan Barang', type: 'date' as const },
+  { key: 'shipperName', label: 'Pengirim Barang', type: 'text' as const },
+  { key: 'typeCode', label: 'Item Type', type: 'text' as const },
+  { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
+  { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
+  { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
+  { key: 'qty', label: 'Jumlah Barang', type: 'number' as const },
+  { key: 'currency', label: 'valas', type: 'text' as const },
+  { key: 'amount', label: 'nilai barang', type: 'number' as const },
+  { key: 'createdAt', label: 'Created Date', type: 'date' as const },
+];
+
+const PDF_COLUMNS = [
+  { header: 'No', dataKey: 'no' },
+  { header: 'Company Name', dataKey: 'companyName' },
+  { header: 'Jenis Dokumen Pabean', dataKey: 'documentType' },
+  { header: 'Nomor Bukti Penerimaan Barang', dataKey: 'documentNumber' },
+  { header: 'Tanggal Bukti Penerimaan Barang', dataKey: 'date' },
+  { header: 'Pengirim Barang', dataKey: 'shipperName' },
+  { header: 'Kode Barang', dataKey: 'itemCode' },
+  { header: 'Nama Barang', dataKey: 'itemName' },
+  { header: 'Jumlah Barang', dataKey: 'qty' },
+  { header: 'valas', dataKey: 'currency' },
+  { header: 'nilai barang', dataKey: 'amount' },
+];
 
 export default function IncomingGoodsReportPage() {
   const theme = useTheme();
@@ -143,26 +176,27 @@ export default function IncomingGoodsReportPage() {
 
   const handleExportExcel = () => {
     const exportData = filteredData.map((row, index) => ({
-      No: index + 1,
-      'Company Name': row.companyName,
-      'Doc Type': row.documentType,
-      'Nomor Pendaftaran': row.ppkekNumber || '-',
-      'Registration Date': formatDate(row.registrationDate),
-      'Doc Number': row.documentNumber,
-      'Doc Date': formatDate(row.date),
-      'Shipper Name': row.shipperName,
-      'Item Type': row.typeCode,
-      'Item Code': row.itemCode,
-      'Item Name': row.itemName,
-      'Unit': row.unit,
-      'Quantity': row.qty,
-      'Currency': row.currency,
-      'Value Amount': row.amount,
-      'Created Date': formatDate(row.createdAt),
+      no: index + 1,
+      companyName: row.companyName,
+      documentType: row.documentType,
+      ppkekNumber: row.ppkekNumber || '-',
+      registrationDate: row.registrationDate,
+      documentNumber: row.documentNumber,
+      date: row.date,
+      shipperName: row.shipperName,
+      typeCode: row.typeCode,
+      itemCode: row.itemCode,
+      itemName: row.itemName,
+      unit: row.unit,
+      qty: row.qty,
+      currency: row.currency,
+      amount: row.amount,
+      createdAt: row.createdAt,
     }));
 
-    exportToExcel(
+    exportToExcelWithHeaders(
       exportData,
+      EXCEL_HEADERS,
       `Laporan_Pemasukan_Barang_${startDate}_${endDate}`,
       'Laporan Pemasukan Barang'
     );
@@ -171,36 +205,24 @@ export default function IncomingGoodsReportPage() {
   const handleExportPDF = () => {
     const exportData = filteredData.map((row, index) => ({
       no: index + 1,
-      docType: row.documentType,
-      docNumber: row.documentNumber,
-      docDate: formatDate(row.date),
-      shipper: row.shipperName,
+      companyName: row.companyName,
+      documentType: row.documentType,
+      documentNumber: row.documentNumber,
+      date: formatDateShort(row.date),
+      shipperName: row.shipperName,
       itemCode: row.itemCode,
       itemName: row.itemName,
-      qty: row.qty.toString(),
+      qty: formatQty(row.qty),
       currency: row.currency,
       amount: formatAmount(row.amount),
     }));
 
-    const columns = [
-      { header: 'No', dataKey: 'no' },
-      { header: 'Doc Type', dataKey: 'docType' },
-      { header: 'Doc Number', dataKey: 'docNumber' },
-      { header: 'Date', dataKey: 'docDate' },
-      { header: 'Shipper', dataKey: 'shipper' },
-      { header: 'Item Code', dataKey: 'itemCode' },
-      { header: 'Item Name', dataKey: 'itemName' },
-      { header: 'Qty', dataKey: 'qty' },
-      { header: 'Currency', dataKey: 'currency' },
-      { header: 'Amount', dataKey: 'amount' },
-    ];
-
     exportToPDF(
       exportData,
-      columns,
+      PDF_COLUMNS,
       `Laporan_Pemasukan_Barang_${startDate}_${endDate}`,
       'Laporan Pemasukan Barang',
-      `Period: ${formatDate(startDate)} - ${formatDate(endDate)}`
+      `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`
     );
   };
 
