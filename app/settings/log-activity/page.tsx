@@ -41,7 +41,7 @@ const columns: Column[] = [
     id: 'createdAt',
     label: 'Date & Time',
     minWidth: 180,
-    format: (value: any) => dayjs(value).format('DD/MM/YYYY HH:mm:ss'),
+    format: (value: any) => dayjs(value).format('MM/DD/YYYY HH:mm:ss'),
   },
   {
     id: 'user',

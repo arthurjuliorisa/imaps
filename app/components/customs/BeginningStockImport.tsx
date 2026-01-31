@@ -284,7 +284,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
           itemName: row['Item Name'] || '',
           uom: row['UOM'] || '',
           qty,
-          balanceDate: row['Balance Date'] ? dayjs(row['Balance Date']).format('DD/MM/YYYY') : '',
+          balanceDate: row['Balance Date'] ? dayjs(row['Balance Date']).format('MM/DD/YYYY') : '',
           ppkekNumbers,
           remarks: row['Remarks'] || '',
           isValid: validation.isValid,
@@ -571,8 +571,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     fontWeight: 600,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
-                      : alpha(theme.palette.primary.main, 0.08),
-                    borderBottom: `2px solid ${theme.palette.divider}`
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
                   }}>
                     Status
                   </TableCell>
@@ -580,8 +583,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     fontWeight: 600,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
-                      : alpha(theme.palette.primary.main, 0.08),
-                    borderBottom: `2px solid ${theme.palette.divider}`
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
                   }}>
                     Item Type
                   </TableCell>
@@ -589,8 +595,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     fontWeight: 600,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
-                      : alpha(theme.palette.primary.main, 0.08),
-                    borderBottom: `2px solid ${theme.palette.divider}`
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
                   }}>
                     Item Code
                   </TableCell>
@@ -598,8 +607,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     fontWeight: 600,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
-                      : alpha(theme.palette.primary.main, 0.08),
-                    borderBottom: `2px solid ${theme.palette.divider}`
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
                   }}>
                     Item Name
                   </TableCell>
@@ -607,8 +619,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     fontWeight: 600,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
-                      : alpha(theme.palette.primary.main, 0.08),
-                    borderBottom: `2px solid ${theme.palette.divider}`
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
                   }}>
                     UOM
                   </TableCell>
@@ -616,8 +631,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     fontWeight: 600,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
-                      : alpha(theme.palette.primary.main, 0.08),
-                    borderBottom: `2px solid ${theme.palette.divider}`
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
                   }}>
                     Qty
                   </TableCell>
@@ -625,8 +643,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     fontWeight: 600,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
-                      : alpha(theme.palette.primary.main, 0.08),
-                    borderBottom: `2px solid ${theme.palette.divider}`
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
                   }}>
                     Balance Date
                   </TableCell>
@@ -634,8 +655,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     fontWeight: 600,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
-                      : alpha(theme.palette.primary.main, 0.08),
-                    borderBottom: `2px solid ${theme.palette.divider}`
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
                   }}>
                     PPKEK Numbers
                   </TableCell>
@@ -643,8 +667,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     fontWeight: 600,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
-                      : alpha(theme.palette.primary.main, 0.08),
-                    borderBottom: `2px solid ${theme.palette.divider}`
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
                   }}>
                     Remarks
                   </TableCell>
@@ -652,8 +679,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     fontWeight: 600,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
-                      : alpha(theme.palette.primary.main, 0.08),
-                    borderBottom: `2px solid ${theme.palette.divider}`
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
                   }}>
                     Errors
                   </TableCell>

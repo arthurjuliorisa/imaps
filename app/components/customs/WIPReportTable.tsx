@@ -63,7 +63,7 @@ export function WIPReportTable({
         return '-';
       }
 
-      return dateObj.toLocaleDateString('id-ID', {
+      return dateObj.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',

@@ -249,7 +249,7 @@ export function IncomingDocumentForm() {
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography variant="body2" color="text.secondary">Register Date:</Typography>
                     <Typography variant="body2" fontWeight={600}>
-                      {formData.header.registerDate?.toLocaleDateString('id-ID')}
+                      {formData.header.registerDate?.toLocaleDateString('en-US')}
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -259,7 +259,7 @@ export function IncomingDocumentForm() {
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography variant="body2" color="text.secondary">Document Date:</Typography>
                     <Typography variant="body2" fontWeight={600}>
-                      {formData.header.docDate?.toLocaleDateString('id-ID')}
+                      {formData.header.docDate?.toLocaleDateString('en-US')}
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>

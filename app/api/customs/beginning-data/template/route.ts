@@ -47,7 +47,7 @@ export async function GET() {
       'Item description',
       'e.g., KG, PCS, SET',
       'Positive number > 0',
-      'DD/MM/YYYY',
+      'MM/DD/YYYY',
       'Comma-separated, e.g., 001,002,003 (optional)',
       'Optional notes'
     ];
@@ -145,7 +145,7 @@ export async function GET() {
       [],
       ['Balance Date (REQUIRED):'],
       ['  - The date for this beginning balance'],
-      ['  - Format: DD/MM/YYYY (e.g., 01/01/2025)'],
+      ['  - Format: MM/DD/YYYY (e.g., 01/01/2025)'],
       ['  - Must be a valid date'],
       ['  - Cannot be in the future'],
       [],
@@ -158,7 +158,7 @@ export async function GET() {
       ['  - All fields except Remarks are REQUIRED'],
       ['  - Qty must be > 0 (not just >= 0)'],
       ['  - Balance Date cannot be in the future'],
-      ['  - Balance Date must be in DD/MM/YYYY format'],
+      ['  - Balance Date must be in MM/DD/YYYY format'],
       [],
       ['Important Notes:'],
       ['  - All fields except Remarks are REQUIRED'],

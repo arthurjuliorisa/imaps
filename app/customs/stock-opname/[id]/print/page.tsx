@@ -74,7 +74,7 @@ export default function PrintStockOpnamePage({ params }: PageProps) {
   const formatDateTime = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString('id-ID', {
+      return date.toLocaleDateString('en-US', {
         day: '2-digit',
         month: 'long',
         year: 'numeric',
@@ -89,7 +89,7 @@ export default function PrintStockOpnamePage({ params }: PageProps) {
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString('id-ID', {
+      return date.toLocaleDateString('en-US', {
         day: '2-digit',
         month: 'long',
         year: 'numeric',
@@ -360,7 +360,7 @@ export default function PrintStockOpnamePage({ params }: PageProps) {
           }}
         >
           <Typography sx={{ fontSize: '8pt', color: 'text.secondary', textAlign: 'center' }}>
-            Dicetak pada: {new Date().toLocaleDateString('id-ID', {
+            Dicetak pada: {new Date().toLocaleDateString('en-US', {
               day: '2-digit',
               month: 'long',
               year: 'numeric',

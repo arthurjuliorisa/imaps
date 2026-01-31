@@ -139,7 +139,7 @@ export async function GET() {
       ['Column Details:'],
       [],
       ['Date:'],
-      ['  - Format: YYYY-MM-DD (e.g., 2025-01-15) or DD/MM/YYYY (e.g., 27/12/2025)'],
+      ['  - Format: YYYY-MM-DD (e.g., 2025-01-15) or MM/DD/YYYY (e.g., 12/27/2025)'],
       ['  - Required field'],
       ['  - Must be a valid date'],
       ['  - Cannot be in the future'],

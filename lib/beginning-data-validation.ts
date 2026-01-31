@@ -48,7 +48,7 @@ export async function validateBeginningBalanceItem(
   });
 
   if (existingBeginningBalance) {
-    const formattedDate = balanceDate.toLocaleDateString('id-ID', {
+    const formattedDate = balanceDate.toLocaleDateString('en-US', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -185,7 +185,7 @@ export async function validateBeginningBalanceItemsBatch(
 
     // Check 1: Duplicate beginning balance
     if (beginningBalanceKeys.has(key)) {
-      const formattedDate = item.balanceDate.toLocaleDateString('id-ID', {
+      const formattedDate = item.balanceDate.toLocaleDateString('en-US', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',

@@ -95,7 +95,7 @@ export const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 /**
  * Date format for display
  */
-export const DATE_DISPLAY_FORMAT = 'dd/MM/yyyy';
-export const DATETIME_DISPLAY_FORMAT = 'dd/MM/yyyy HH:mm:ss';
+export const DATE_DISPLAY_FORMAT = 'MM/dd/yyyy';
+export const DATETIME_DISPLAY_FORMAT = 'MM/dd/yyyy HH:mm:ss';
 export const DATE_API_FORMAT = 'yyyy-MM-dd';
 export const DATETIME_API_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX";

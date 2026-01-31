@@ -358,14 +358,44 @@ export function ImportCeisaExcelDialog({
               </Paper>
 
               <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
+                <Table size="small" stickyHeader>
                   <TableHead>
                     <TableRow>
-                      <TableCell>Item Code</TableCell>
-                      <TableCell>Item Name</TableCell>
-                      <TableCell>Unit</TableCell>
-                      <TableCell align="right">Quantity</TableCell>
-                      <TableCell align="right">Value</TableCell>
+                      <TableCell sx={{
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10
+                      }}>
+                        Item Code
+                      </TableCell>
+                      <TableCell sx={{
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10
+                      }}>
+                        Item Name
+                      </TableCell>
+                      <TableCell sx={{
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10
+                      }}>
+                        Unit
+                      </TableCell>
+                      <TableCell align="right" sx={{
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10
+                      }}>
+                        Quantity
+                      </TableCell>
+                      <TableCell align="right" sx={{
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10
+                      }}>
+                        Value
+                      </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>

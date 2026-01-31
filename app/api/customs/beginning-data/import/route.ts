@@ -11,20 +11,20 @@ import {
 import { validateBeginningBalanceItemsBatch } from '@/lib/beginning-data-validation';
 
 /**
- * Parse DD/MM/YYYY format to Date
+ * Parse MM/DD/YYYY format to Date
  */
-function parseDDMMYYYY(dateStr: string): Date {
+function parseMMDDYYYY(dateStr: string): Date {
   const parts = dateStr.split('/');
   if (parts.length !== 3) {
-    throw new Error('Invalid date format. Expected DD/MM/YYYY');
+    throw new Error('Invalid date format. Expected MM/DD/YYYY');
   }
 
-  const day = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1; // Months are 0-indexed
+  const month = parseInt(parts[0], 10) - 1; // Months are 0-indexed
+  const day = parseInt(parts[1], 10);
   const year = parseInt(parts[2], 10);
 
   if (isNaN(day) || isNaN(month) || isNaN(year)) {
-    throw new Error('Invalid date format. Expected DD/MM/YYYY');
+    throw new Error('Invalid date format. Expected MM/DD/YYYY');
   }
 
   // Create UTC date
@@ -190,7 +190,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      // Validate Balance Date (required, DD/MM/YYYY format)
+      // Validate Balance Date (required, MM/DD/YYYY format)
       if (!row.balanceDate || String(row.balanceDate).trim() === '') {
         errors.push({ row: rowNum, field: 'Balance Date', error: 'Balance Date is required' });
         continue;
@@ -199,7 +199,7 @@ export async function POST(request: Request) {
       let dateValue: Date;
       try {
         const dateStr = String(row.balanceDate).trim();
-        dateValue = parseDDMMYYYY(dateStr);
+        dateValue = parseMMDDYYYY(dateStr);
 
         // Validate date is not in future
         if (dateValue > today) {
@@ -209,7 +209,7 @@ export async function POST(request: Request) {
         errors.push({
           row: rowNum,
           field: 'Balance Date',
-          error: error.message || 'Invalid date format. Expected DD/MM/YYYY'
+          error: error.message || 'Invalid date format. Expected MM/DD/YYYY'
         });
         continue;
       }

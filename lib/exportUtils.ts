@@ -66,7 +66,7 @@ export function exportToPDF(
   }
 
   // Add date generated
-  const dateStr = new Date().toLocaleDateString('id-ID', {
+  const dateStr = new Date().toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -101,7 +101,7 @@ export function exportToPDF(
 }
 
 export function formatCurrency(amount: number, currency: string = 'IDR'): string {
-  return new Intl.NumberFormat('id-ID', {
+  return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: currency,
   }).format(amount);
@@ -126,7 +126,7 @@ export function formatDate(dateString: string | Date | null | undefined): string
       return '-';
     }
 
-    return date.toLocaleDateString('id-ID', {
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -138,7 +138,7 @@ export function formatDate(dateString: string | Date | null | undefined): string
 }
 
 export function formatNumber(num: number): string {
-  return new Intl.NumberFormat('id-ID').format(num);
+  return new Intl.NumberFormat('en-US').format(num);
 }
 
 /**
@@ -158,7 +158,7 @@ export function toExcelDate(dateValue: string | Date | null | undefined): Date |
 }
 
 /**
- * Format date for display (short format: dd/mm/yyyy)
+ * Format date for display (short format: mm/dd/yyyy)
  */
 export function formatDateShort(dateValue: string | Date | null | undefined): string {
   if (!dateValue) return '-';
@@ -167,7 +167,7 @@ export function formatDateShort(dateValue: string | Date | null | undefined): st
     const date = typeof dateValue === 'string' ? new Date(dateValue) : dateValue;
     if (!(date instanceof Date) || isNaN(date.getTime())) return '-';
 
-    return date.toLocaleDateString('id-ID', {
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -221,7 +221,7 @@ export async function exportToExcelWithHeaders(
       if (header.type === 'date') {
         const cell = dataRow.getCell(colIndex + 1);
         if (cell.value instanceof Date) {
-          cell.numFmt = 'dd/mm/yyyy';
+          cell.numFmt = 'mm/dd/yyyy';
         }
       }
     });

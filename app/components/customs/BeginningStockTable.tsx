@@ -286,7 +286,7 @@ export function BeginningStockTable({
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">
-                      {dayjs(row.beginningDate).format('DD/MM/YYYY')}
+                      {dayjs(row.beginningDate).format('MM/DD/YYYY')}
                     </Typography>
                   </TableCell>
                   <TableCell>

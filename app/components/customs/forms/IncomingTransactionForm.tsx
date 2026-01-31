@@ -607,7 +607,7 @@ export function IncomingTransactionForm() {
                 <Grid size={6}>
                   <Typography variant="body2" color="text.secondary">Customs Registration Date</Typography>
                   <Typography variant="body1" fontWeight={500}>
-                    {header.customs_registration_date?.format('DD/MM/YYYY')}
+                    {header.customs_registration_date?.format('MM/DD/YYYY')}
                   </Typography>
                 </Grid>
                 <Grid size={6}>
@@ -617,7 +617,7 @@ export function IncomingTransactionForm() {
                 <Grid size={6}>
                   <Typography variant="body2" color="text.secondary">Incoming Date</Typography>
                   <Typography variant="body1" fontWeight={500}>
-                    {header.incoming_date?.format('DD/MM/YYYY')}
+                    {header.incoming_date?.format('MM/DD/YYYY')}
                   </Typography>
                 </Grid>
                 <Grid size={6}>
@@ -627,7 +627,7 @@ export function IncomingTransactionForm() {
                 <Grid size={6}>
                   <Typography variant="body2" color="text.secondary">Invoice Date</Typography>
                   <Typography variant="body1" fontWeight={500}>
-                    {header.invoice_date?.format('DD/MM/YYYY')}
+                    {header.invoice_date?.format('MM/DD/YYYY')}
                   </Typography>
                 </Grid>
                 <Grid size={6}>

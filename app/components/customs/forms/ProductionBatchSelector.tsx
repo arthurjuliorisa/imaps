@@ -275,7 +275,7 @@ export function ProductionBatchSelector({
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">
-                          {new Date(batch.productionDate).toLocaleDateString('id-ID')}
+                          {new Date(batch.productionDate).toLocaleDateString('en-US')}
                         </Typography>
                       </TableCell>
                       <TableCell align="right">

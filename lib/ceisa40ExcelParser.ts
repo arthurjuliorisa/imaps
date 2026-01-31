@@ -341,11 +341,11 @@ function parseExcelDate(value: any): string {
       return `${year}-${month}-${day}`;
     }
     
-    // Try to parse DD/MM/YYYY or DD-MM-YYYY formats
+    // Try to parse MM/DD/YYYY or MM-DD-YYYY formats
     const slashMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
     if (slashMatch) {
-      const day = slashMatch[1];
-      const month = slashMatch[2];
+      const month = slashMatch[1];
+      const day = slashMatch[2];
       const year = slashMatch[3];
       return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     }
