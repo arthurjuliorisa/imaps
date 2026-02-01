@@ -17,6 +17,7 @@ import {
   FormControl,
   Chip,
   Divider,
+  useTheme,
 } from '@mui/material';
 import { Visibility, VisibilityOff, PersonOutline, LockOutlined, Language, AdminPanelSettings, Engineering, Visibility as ViewIcon } from '@mui/icons-material';
 import { signIn, useSession } from 'next-auth/react';
@@ -25,6 +26,7 @@ import { useRouter } from 'next/navigation';
 export default function LoginPage() {
   const router = useRouter();
   const { status } = useSession();
+  const theme = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -121,7 +123,7 @@ export default function LoginPage() {
         position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        bgcolor: '#2D3748',
+        bgcolor: theme.palette.mode === 'dark' ? '#0f172a' : '#2D3748',
         overflow: 'hidden',
       }}
     >
@@ -137,7 +139,8 @@ export default function LoginPage() {
           backgroundSize: '110% auto',
           backgroundPosition: 'center 20%',
           backgroundRepeat: 'no-repeat',
-          backgroundColor: '#2D3748',
+          backgroundColor: theme.palette.mode === 'dark' ? '#0f172a' : '#2D3748',
+          opacity: theme.palette.mode === 'dark' ? 0.4 : 1,
         }}
       />
 
@@ -149,7 +152,9 @@ export default function LoginPage() {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'linear-gradient(to bottom, rgba(45, 55, 72, 0) 0%, rgba(45, 55, 72, 0) 70%, rgba(45, 55, 72, 0.8) 85%, rgba(45, 55, 72, 1) 100%)',
+          background: theme.palette.mode === 'dark'
+            ? 'linear-gradient(to bottom, rgba(15, 23, 42, 0) 0%, rgba(15, 23, 42, 0) 70%, rgba(15, 23, 42, 0.8) 85%, rgba(15, 23, 42, 1) 100%)'
+            : 'linear-gradient(to bottom, rgba(45, 55, 72, 0) 0%, rgba(45, 55, 72, 0) 70%, rgba(45, 55, 72, 0.8) 85%, rgba(45, 55, 72, 1) 100%)',
           pointerEvents: 'none',
         }}
       />
@@ -185,7 +190,9 @@ export default function LoginPage() {
                 fontWeight: 700,
                 color: '#ffffff',
                 fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem', lg: '1.125rem' },
-                textShadow: '2px 2px 8px rgba(0,0,0,0.5)',
+                textShadow: theme.palette.mode === 'dark'
+                  ? '2px 2px 8px rgba(0,0,0,0.8)'
+                  : '2px 2px 8px rgba(0,0,0,0.5)',
                 whiteSpace: 'nowrap',
                 mb: 0.5,
               }}
@@ -198,7 +205,9 @@ export default function LoginPage() {
                 fontWeight: 700,
                 color: '#ffffff',
                 fontSize: { xs: '0.875rem', sm: '1rem', md: '1.125rem', lg: '1.25rem' },
-                textShadow: '2px 2px 8px rgba(0,0,0,0.5)',
+                textShadow: theme.palette.mode === 'dark'
+                  ? '2px 2px 8px rgba(0,0,0,0.8)'
+                  : '2px 2px 8px rgba(0,0,0,0.5)',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -221,9 +230,11 @@ export default function LoginPage() {
             sx={{
               width: { xs: '100%', sm: 280, md: 300 },
               p: { xs: 2, sm: 2.5 },
-              bgcolor: 'white',
+              bgcolor: 'background.paper',
               borderRadius: 0,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 8px 32px rgba(0,0,0,0.8)'
+                : '0 8px 32px rgba(0,0,0,0.4)',
             }}
           >
             <Typography
@@ -389,7 +400,7 @@ export default function LoginPage() {
                   }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
-                      bgcolor: 'grey.50',
+                      bgcolor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'grey.50',
                       fontSize: '0.875rem',
                     },
                     '& .MuiInputLabel-root': {
@@ -426,7 +437,7 @@ export default function LoginPage() {
                   }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
-                      bgcolor: 'grey.50',
+                      bgcolor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'grey.50',
                       fontSize: '0.875rem',
                     },
                     '& .MuiInputLabel-root': {
@@ -445,7 +456,7 @@ export default function LoginPage() {
                       </InputAdornment>
                     }
                     sx={{
-                      bgcolor: 'grey.50',
+                      bgcolor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'grey.50',
                       fontSize: '0.875rem',
                     }}
                   >
@@ -487,7 +498,7 @@ export default function LoginPage() {
           zIndex: 1,
           py: 2,
           px: 4,
-          bgcolor: '#2D3748',
+          bgcolor: theme.palette.mode === 'dark' ? '#0f172a' : '#2D3748',
         }}
       >
       </Box>
