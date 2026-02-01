@@ -101,7 +101,7 @@ export async function GET(request: Request) {
         WHERE ig.company_code = $1
           AND ig.deleted_at IS NULL
           AND igi.deleted_at IS NULL
-          AND igi.item_type IN ('HIBE_M', 'HIBE_E', 'HIBE_T')
+          AND igi.item_type IN ('HIBE-M', 'HIBE-E', 'HIBE-T')
           ${dateFilterIncoming}
 
         UNION ALL
@@ -115,7 +115,7 @@ export async function GET(request: Request) {
         WHERE og.company_code = $1
           AND og.deleted_at IS NULL
           AND ogi.deleted_at IS NULL
-          AND ogi.item_type IN ('HIBE_M', 'HIBE_E', 'HIBE_T')
+          AND ogi.item_type IN ('HIBE-M', 'HIBE-E', 'HIBE-T')
           ${dateFilterOutgoing}
       ) combined
     `;
@@ -162,7 +162,7 @@ export async function GET(request: Request) {
         WHERE ig.company_code = $1
           AND ig.deleted_at IS NULL
           AND igi.deleted_at IS NULL
-          AND igi.item_type IN ('HIBE_M', 'HIBE_E', 'HIBE_T')
+          AND igi.item_type IN ('HIBE-M', 'HIBE-E', 'HIBE-T')
           ${dateFilterIncoming}
 
         UNION ALL
@@ -200,7 +200,7 @@ export async function GET(request: Request) {
         WHERE og.company_code = $1
           AND og.deleted_at IS NULL
           AND ogi.deleted_at IS NULL
-          AND ogi.item_type IN ('HIBE_M', 'HIBE_E', 'HIBE_T')
+          AND ogi.item_type IN ('HIBE-M', 'HIBE-E', 'HIBE-T')
           ${dateFilterOutgoing}
       ) combined
       ORDER BY combined.sort_date DESC, combined.id

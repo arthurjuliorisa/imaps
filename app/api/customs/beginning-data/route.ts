@@ -17,7 +17,7 @@ import { validateBeginningBalanceItem } from '@/lib/beginning-data-validation';
  * Get beginning balance records with optional filtering by item type
  *
  * Query Parameters:
- * - itemType: Filter by item type (e.g., ROH, FERT, HIBE_M)
+ * - itemType: Filter by item type (e.g., ROH, FERT, HIBE-M)
  * - itemCode: Filter by item code (partial match, case-insensitive)
  * - itemName: Filter by item name (partial match, case-insensitive)
  * - startDate: Filter by balance date >= startDate
@@ -171,7 +171,7 @@ export async function GET(request: Request) {
  * Create a new beginning balance record
  *
  * Request Body:
- * - itemType: string (required) - Item type code (e.g., ROH, FERT, HIBE_M)
+ * - itemType: string (required) - Item type code (e.g., ROH, FERT, HIBE-M)
  * - itemCode: string (required) - Item code
  * - itemName: string (required) - Item name
  * - uom: string (required) - Unit of measure

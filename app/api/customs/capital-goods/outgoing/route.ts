@@ -162,7 +162,7 @@ export async function POST(request: Request) {
         {
           message: 'Invalid items found',
           missingItems,
-          details: 'The following item codes do not exist or are not capital goods (HIBE_M, HIBE_E, HIBE_T)',
+          details: 'The following item codes do not exist or are not capital goods (HIBE-M, HIBE-E, HIBE-T)',
         },
         { status: 400 }
       );

@@ -512,11 +512,11 @@ async function getTodayTransactions(
           FROM adjustment_items ai
           JOIN adjustments a ON a.company_code = ai.adjustment_company
             AND a.id = ai.adjustment_id
-            AND a.adjustment_date = ai.adjustment_date
+            AND a.transaction_date = ai.adjustment_date
           WHERE a.company_code = $1
             AND ai.item_type = $2
             AND ai.item_code = $3
-            AND a.adjustment_date = $4::DATE
+            AND a.transaction_date = $4::DATE
             AND a.deleted_at IS NULL
             AND ai.deleted_at IS NULL
           

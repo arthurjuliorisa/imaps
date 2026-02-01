@@ -102,7 +102,7 @@ export async function GET() {
       ['  - The unique code of the capital goods item (e.g., CAPITAL-001)'],
       ['  - Required field'],
       ['  - Must exist in the Beginning Balances master data'],
-      ['  - Must be a capital goods type: HIBE_M (Machinery), HIBE_E (Electronics), or HIBE_T (Tools)'],
+      ['  - Must be a capital goods type: HIBE-M (Machinery), HIBE-E (Electronics), or HIBE-T (Tools)'],
       ['  - Case sensitive'],
       [],
       ['Recipient Name:'],
