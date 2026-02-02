@@ -8,22 +8,23 @@ import {
   ValidationError,
   getTodayUTC,
 } from '@/lib/api-utils';
+import { validateBeginningBalanceItemsBatch } from '@/lib/beginning-data-validation';
 
 /**
- * Parse DD/MM/YYYY format to Date
+ * Parse MM/DD/YYYY format to Date
  */
-function parseDDMMYYYY(dateStr: string): Date {
+function parseMMDDYYYY(dateStr: string): Date {
   const parts = dateStr.split('/');
   if (parts.length !== 3) {
-    throw new Error('Invalid date format. Expected DD/MM/YYYY');
+    throw new Error('Invalid date format. Expected MM/DD/YYYY');
   }
 
-  const day = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1; // Months are 0-indexed
+  const month = parseInt(parts[0], 10) - 1; // Months are 0-indexed
+  const day = parseInt(parts[1], 10);
   const year = parseInt(parts[2], 10);
 
   if (isNaN(day) || isNaN(month) || isNaN(year)) {
-    throw new Error('Invalid date format. Expected DD/MM/YYYY');
+    throw new Error('Invalid date format. Expected MM/DD/YYYY');
   }
 
   // Create UTC date
@@ -189,7 +190,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      // Validate Balance Date (required, DD/MM/YYYY format)
+      // Validate Balance Date (required, MM/DD/YYYY format)
       if (!row.balanceDate || String(row.balanceDate).trim() === '') {
         errors.push({ row: rowNum, field: 'Balance Date', error: 'Balance Date is required' });
         continue;
@@ -198,7 +199,7 @@ export async function POST(request: Request) {
       let dateValue: Date;
       try {
         const dateStr = String(row.balanceDate).trim();
-        dateValue = parseDDMMYYYY(dateStr);
+        dateValue = parseMMDDYYYY(dateStr);
 
         // Validate date is not in future
         if (dateValue > today) {
@@ -208,7 +209,7 @@ export async function POST(request: Request) {
         errors.push({
           row: rowNum,
           field: 'Balance Date',
-          error: error.message || 'Invalid date format. Expected DD/MM/YYYY'
+          error: error.message || 'Invalid date format. Expected MM/DD/YYYY'
         });
         continue;
       }
@@ -269,6 +270,49 @@ export async function POST(request: Request) {
       );
     }
 
+    // Validate items for duplicates and existing transactions (batch validation)
+    const itemsToValidate = validRecords.map(record => ({
+      itemCode: record.itemCode,
+      balanceDate: record.balanceDate,
+    }));
+
+    const validationResults = await validateBeginningBalanceItemsBatch(
+      companyCodeInt,
+      itemsToValidate
+    );
+
+    // Check validation results and collect errors
+    const validationErrors: Array<{ row: number; field: string; error: string }> = [];
+    for (const record of validRecords) {
+      const key = `${record.itemCode}|${record.balanceDate.getTime()}`;
+      const validationResult = validationResults[key];
+
+      if (!validationResult.valid) {
+        // Add all validation errors for this record
+        for (const validationError of validationResult.errors) {
+          validationErrors.push({
+            row: record.row,
+            field: 'Item Code',
+            error: validationError.reason,
+          });
+        }
+      }
+    }
+
+    // If there are validation errors, return them
+    if (validationErrors.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Validation failed: ${validationErrors.length} item(s) cannot be added`,
+          successCount: 0,
+          errorCount: validationErrors.length,
+          errors: validationErrors,
+        },
+        { status: 400 }
+      );
+    }
+
     // Import all records in a transaction
     let successCount = 0;
     const byType: Record<string, number> = {};
@@ -276,45 +320,8 @@ export async function POST(request: Request) {
 
     try {
       await prisma.$transaction(async (tx) => {
-        // OPTIMIZATION: Batch check for duplicates (single query instead of N+1)
-        const itemCodes = validRecords.map(r => r.itemCode);
-        const balanceDates = Array.from(uniqueBalanceDates).map(t => new Date(t));
-        
-        const existingRecords = await tx.beginning_balances.findMany({
-          where: {
-            company_code: companyCodeInt,
-            item_code: { in: itemCodes },
-            balance_date: { in: balanceDates },
-          },
-          select: {
-            item_code: true,
-            balance_date: true,
-          },
-        });
-
-        // Build a set for O(1) lookup
-        const existingSet = new Set(
-          existingRecords.map(r => `${r.item_code}|${r.balance_date.getTime()}`)
-        );
-
-        // Check each record against the set
-        const duplicateErrors: Array<{ row: number; field: string; error: string }> = [];
-        for (const record of validRecords) {
-          const key = `${record.itemCode}|${record.balanceDate.getTime()}`;
-          if (existingSet.has(key)) {
-            duplicateErrors.push({
-              row: record.row,
-              field: 'Duplicate',
-              error: `A beginning balance record for item '${record.itemCode}' on this date already exists`,
-            });
-          }
-        }
-
-        // If duplicates found, throw error to rollback transaction
-        if (duplicateErrors.length > 0) {
-          errors.push(...duplicateErrors);
-          throw new ValidationError('Duplicate records detected');
-        }
+        // Note: Duplicate and transaction validation is already done before this transaction
+        // This ensures we fail fast and don't start a transaction if validation fails
 
         // OPTIMIZATION: Bulk insert all records at once instead of one-by-one
         const insertData = validRecords.map(record => ({

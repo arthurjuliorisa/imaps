@@ -273,7 +273,7 @@ export async function POST(request: Request) {
         validationErrors.push({
           index: record.index,
           record: records[record.index],
-          error: `Invalid itemCode: Capital goods item '${record.itemCode}' does not exist or is not a capital goods type (HIBE_M, HIBE_E, HIBE_T)`,
+          error: `Invalid itemCode: Capital goods item '${record.itemCode}' does not exist or is not a capital goods type (HIBE-M, HIBE-E, HIBE-T)`,
         });
       } else {
         validRecords.push(record);

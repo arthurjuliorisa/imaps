@@ -44,7 +44,7 @@ export default function WIPBalanceDetailPage() {
         setData(result.data);
       } catch (error) {
         console.error('Error fetching WIP balance:', error);
-        toast.error('Failed to load WIP balance details');
+        toast.error('Gagal memuat detail posisi barang dalam proses');
       } finally {
         setLoading(false);
       }
@@ -69,7 +69,7 @@ export default function WIPBalanceDetailPage() {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
         <Typography variant="h6" color="text.secondary">
-          WIP balance not found
+          Data posisi barang dalam proses tidak ditemukan
         </Typography>
       </Container>
     );
@@ -109,7 +109,7 @@ export default function WIPBalanceDetailPage() {
           onClick={() => router.push('/customs/wip')}
         >
           <Inventory sx={{ mr: 0.5 }} fontSize="small" />
-          WIP Balance
+          Laporan Posisi Barang Dalam Proses
         </Link>
         <Typography
           sx={{ display: 'flex', alignItems: 'center' }}
@@ -134,10 +134,10 @@ export default function WIPBalanceDetailPage() {
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Box>
             <Typography variant="h4" fontWeight={700} color="primary" gutterBottom>
-              WIP Balance Detail
+              Detail Posisi Barang Dalam Proses
             </Typography>
             <Typography variant="body1" color="text.secondary">
-              View complete information for work-in-process inventory balance
+              Informasi lengkap mengenai posisi barang dalam proses produksi
             </Typography>
           </Box>
           <Button
@@ -145,7 +145,7 @@ export default function WIPBalanceDetailPage() {
             startIcon={<ArrowBack />}
             onClick={() => router.push('/customs/wip')}
           >
-            Back to List
+            Kembali ke Daftar
           </Button>
         </Stack>
       </Paper>
@@ -153,7 +153,7 @@ export default function WIPBalanceDetailPage() {
       {/* WIP Balance Information */}
       <Paper elevation={0} sx={{ p: 3, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
         <Typography variant="h6" fontWeight={600} gutterBottom>
-          Balance Information
+          Informasi Posisi Barang
         </Typography>
         <Divider sx={{ my: 2 }} />
 
@@ -169,7 +169,7 @@ export default function WIPBalanceDetailPage() {
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Company Code
+                Kode Perusahaan
               </Typography>
               <Typography variant="body1">
                 {data.company_code}
@@ -177,7 +177,7 @@ export default function WIPBalanceDetailPage() {
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Item Type
+                Jenis Barang
               </Typography>
               <Box sx={{ mt: 0.5 }}>
                 <Chip label={data.item_type} color="primary" size="small" />
@@ -185,7 +185,7 @@ export default function WIPBalanceDetailPage() {
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Item Code
+                Kode Barang
               </Typography>
               <Typography variant="body1" fontWeight={600}>
                 {data.item_code}
@@ -196,7 +196,7 @@ export default function WIPBalanceDetailPage() {
           <Grid size={{ xs: 12, md: 6 }}>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Item Name
+                Nama Barang
               </Typography>
               <Typography variant="body1">
                 {data.item_name}
@@ -204,7 +204,7 @@ export default function WIPBalanceDetailPage() {
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Stock Date
+                Tanggal Stok
               </Typography>
               <Typography variant="body1">
                 {formatDate(data.stock_date)}
@@ -212,7 +212,7 @@ export default function WIPBalanceDetailPage() {
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Quantity
+                Jumlah
               </Typography>
               <Typography variant="h5" fontWeight={700} color="primary">
                 {data.qty.toLocaleString()} {data.uom}
@@ -220,7 +220,7 @@ export default function WIPBalanceDetailPage() {
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                Unit of Measure
+                Satuan
               </Typography>
               <Typography variant="body1">
                 {data.uom}
@@ -244,7 +244,7 @@ export default function WIPBalanceDetailPage() {
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Box>
                 <Typography variant="caption" color="text.secondary" gutterBottom>
-                  Current WIP Balance
+                  Posisi Barang Dalam Proses Saat Ini
                 </Typography>
                 <Typography variant="h4" fontWeight={700} color="success.main">
                   {data.qty.toLocaleString()} {data.uom}
@@ -252,7 +252,7 @@ export default function WIPBalanceDetailPage() {
               </Box>
               <Box sx={{ textAlign: 'right' }}>
                 <Typography variant="caption" color="text.secondary" gutterBottom>
-                  As of Date
+                  Per Tanggal
                 </Typography>
                 <Typography variant="h6" fontWeight={600}>
                   {formatDate(data.stock_date)}

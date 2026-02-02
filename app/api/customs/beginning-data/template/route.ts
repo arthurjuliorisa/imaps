@@ -42,12 +42,12 @@ export async function GET() {
 
     // Define format hints (row 2)
     const formatHints = [
-      'e.g., ROH, FERT, HALB, HIBE_M, SCRAP',
+      'e.g., ROH, FERT, HALB, HIBE-M, SCRAP',
       'e.g., RM-001, FG-001',
       'Item description',
       'e.g., KG, PCS, SET',
       'Positive number > 0',
-      'DD/MM/YYYY',
+      'MM/DD/YYYY',
       'Comma-separated, e.g., 001,002,003 (optional)',
       'Optional notes'
     ];
@@ -59,7 +59,7 @@ export async function GET() {
       ['HIBE-M', 'CG-MACH-001', 'CNC Machine', 'SET', 2, '01/01/2025', '', 'Capital goods - Machine'],
       ['HALB', 'WIP-1310-001', 'Semi-finished Product', 'PCS', 150, '01/01/2025', '004,005,006', 'WIP stock'],
       ['SCRAP', 'SCRAP-1310-001', 'Waste Materials', 'KG', 10, '01/01/2025', '', 'Waste materials'],
-      ['HIBE_E', 'CG-EQUIP-001', 'Testing Equipment', 'SET', 5, '01/01/2025', '007', 'Quality control equipment'],
+      ['HIBE-E', 'CG-EQUIP-001', 'Testing Equipment', 'SET', 5, '01/01/2025', '007', 'Quality control equipment'],
     ];
 
     // Add rows
@@ -120,7 +120,7 @@ export async function GET() {
       ['Column Details:'],
       [],
       ['Item Type (REQUIRED):'],
-      ['  - The item type code (e.g., ROH, FERT, HALB, HIBE_M, HIBE_E, HIBE_T, SCRAP, HIBE, DIEN)'],
+      ['  - The item type code (e.g., ROH, FERT, HALB, HIBE-M, HIBE-E, HIBE-T, SCRAP, HIBE, DIEN)'],
       ['  - Must match an existing item type code in the system'],
       ['  - Case sensitive'],
       [],
@@ -145,7 +145,7 @@ export async function GET() {
       [],
       ['Balance Date (REQUIRED):'],
       ['  - The date for this beginning balance'],
-      ['  - Format: DD/MM/YYYY (e.g., 01/01/2025)'],
+      ['  - Format: MM/DD/YYYY (e.g., 01/01/2025)'],
       ['  - Must be a valid date'],
       ['  - Cannot be in the future'],
       [],
@@ -158,7 +158,7 @@ export async function GET() {
       ['  - All fields except Remarks are REQUIRED'],
       ['  - Qty must be > 0 (not just >= 0)'],
       ['  - Balance Date cannot be in the future'],
-      ['  - Balance Date must be in DD/MM/YYYY format'],
+      ['  - Balance Date must be in MM/DD/YYYY format'],
       [],
       ['Important Notes:'],
       ['  - All fields except Remarks are REQUIRED'],

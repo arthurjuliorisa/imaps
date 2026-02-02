@@ -151,8 +151,10 @@ export function BeginningStockTable({
           p: 2.5,
           borderRadius: 2,
           border: '1px solid',
-          borderColor: 'grey.300',
-          bgcolor: 'grey.50',
+          borderColor: 'divider',
+          bgcolor: (theme) => theme.palette.mode === 'dark'
+            ? alpha(theme.palette.background.paper, 0.4)
+            : alpha(theme.palette.grey[50], 1),
         }}
       >
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -163,19 +165,6 @@ export function BeginningStockTable({
             size="medium"
             sx={{
               flexGrow: 1,
-              '& .MuiOutlinedInput-root': {
-                bgcolor: 'white',
-                '& fieldset': {
-                  borderColor: 'grey.300',
-                },
-                '&:hover fieldset': {
-                  borderColor: 'primary.main',
-                },
-                '&.Mui-focused fieldset': {
-                  borderColor: 'primary.main',
-                  borderWidth: 2,
-                },
-              },
             }}
             InputProps={{
               startAdornment: (
@@ -195,19 +184,6 @@ export function BeginningStockTable({
                   size: 'medium',
                   sx: {
                     minWidth: 250,
-                    '& .MuiOutlinedInput-root': {
-                      bgcolor: 'white',
-                      '& fieldset': {
-                        borderColor: 'grey.300',
-                      },
-                      '&:hover fieldset': {
-                        borderColor: 'primary.main',
-                      },
-                      '&.Mui-focused fieldset': {
-                        borderColor: 'primary.main',
-                        borderWidth: 2,
-                      },
-                    },
                   },
                 },
                 actionBar: {
@@ -310,7 +286,7 @@ export function BeginningStockTable({
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">
-                      {dayjs(row.beginningDate).format('DD/MM/YYYY')}
+                      {dayjs(row.beginningDate).format('MM/DD/YYYY')}
                     </Typography>
                   </TableCell>
                   <TableCell>

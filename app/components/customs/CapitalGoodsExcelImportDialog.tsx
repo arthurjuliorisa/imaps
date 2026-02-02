@@ -438,34 +438,124 @@ export function CapitalGoodsExcelImportDialog({
             <Table stickyHeader size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Status
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Date
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Item Code
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Recipient
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Doc Number
                   </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell align="right" sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Qty
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Currency
                   </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell align="right" sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Value
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Remarks
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Errors
                   </TableCell>
                 </TableRow>
@@ -489,7 +579,7 @@ export function CapitalGoodsExcelImportDialog({
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontSize="0.875rem">
-                        {record.date ? dayjs(record.date).format('DD/MM/YYYY') : '-'}
+                        {record.date ? dayjs(record.date).format('MM/DD/YYYY') : '-'}
                       </Typography>
                     </TableCell>
                     <TableCell>

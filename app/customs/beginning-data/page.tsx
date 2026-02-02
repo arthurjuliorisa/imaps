@@ -252,23 +252,37 @@ export default function BeginningDataPage() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+
+        // If there are validation errors, create a custom error with details
+        if (errorData.errors && Array.isArray(errorData.errors)) {
+          const customError: any = new Error(errorData.message || 'Validation failed');
+          customError.validationErrors = errorData.errors;
+          throw customError;
+        }
+
         const errorMessage = errorData.message || 'Failed to import data';
         throw new Error(errorMessage);
       }
 
       const result = await response.json();
-      
+
       // Enhanced success message with queue info
       let successMessage = result.message || `Successfully imported ${records.length} beginning stock record(s)!`;
       if (result.success) {
         successMessage += '\n✓ Snapshot recalculation queued for processing';
       }
-      
+
       toast.success(successMessage);
       await fetchData();
     } catch (error: any) {
       console.error('Error importing data:', error);
-      toast.error(error.message || 'Failed to import records. Please try again.');
+
+      // Show different messages based on error type
+      if (error.validationErrors && Array.isArray(error.validationErrors)) {
+        toast.error('Import gagal: Beberapa data tidak dapat ditambahkan. Periksa detail error di modal.');
+      } else {
+        toast.error(error.message || 'Failed to import records. Please try again.');
+      }
       throw error;
     }
   };

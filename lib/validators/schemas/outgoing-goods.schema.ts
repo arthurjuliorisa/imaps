@@ -29,7 +29,7 @@ import { prisma } from '@/lib/db/prisma';
 const VALID_COMPANY_CODES = [1370, 1310, 1380] as const;
 
 // CustomsDocumentType enum values for outgoing goods
-const OUTGOING_CUSTOMS_TYPES = ['BC30', 'BC25', 'BC27'] as const;
+const OUTGOING_CUSTOMS_TYPES = ['BC30', 'BC25', 'BC27', 'BC41', 'BC261'] as const;
 
 // Currency enum values
 const VALID_CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'] as const;

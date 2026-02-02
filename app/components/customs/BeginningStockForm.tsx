@@ -288,6 +288,7 @@ export function BeginningStockForm({
               value={formData.balance_date}
               onChange={(newValue) => setFormData((prev) => ({ ...prev, balance_date: newValue, beginningDate: newValue }))}
               maxDate={dayjs()}
+              format="MM/DD/YYYY"
               slotProps={{
                 textField: {
                   fullWidth: true,

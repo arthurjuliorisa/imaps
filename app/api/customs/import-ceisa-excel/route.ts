@@ -578,9 +578,9 @@ async function importScrapTransactions(
       if (!stockValidation.allAvailable) {
         const insufficientItems = stockValidation.results
           .filter(r => !r.available)
-          .map(r => `${r.itemCode}: stock pada ${docDate.toLocaleDateString('id-ID')} adalah ${r.currentStock}, diminta ${r.qtyRequested}`);
+          .map(r => `${r.itemCode}: stock pada ${docDate.toLocaleDateString('en-US')} adalah ${r.currentStock}, diminta ${r.qtyRequested}`);
 
-        throw new Error(`Import ditolak: stock tidak mencukupi pada tanggal ${docDate.toLocaleDateString('id-ID')} untuk item berikut: ${insufficientItems.join('; ')}`);
+        throw new Error(`Import ditolak: stock tidak mencukupi pada tanggal ${docDate.toLocaleDateString('en-US')} untuk item berikut: ${insufficientItems.join('; ')}`);
       }
 
       // Create scrap_transactions header (for snapshot calculation to query scrap_transaction_items)
@@ -735,9 +735,9 @@ async function importCapitalGoodsTransactions(
       if (!stockValidation.allAvailable) {
         const insufficientItems = stockValidation.results
           .filter(r => !r.available)
-          .map(r => `${r.itemCode}: stock pada ${docDate.toLocaleDateString('id-ID')} adalah ${r.currentStock}, diminta ${r.qtyRequested}`);
+          .map(r => `${r.itemCode}: stock pada ${docDate.toLocaleDateString('en-US')} adalah ${r.currentStock}, diminta ${r.qtyRequested}`);
 
-        throw new Error(`Import ditolak: stock tidak mencukupi pada tanggal ${docDate.toLocaleDateString('id-ID')} untuk item berikut: ${insufficientItems.join('; ')}`);
+        throw new Error(`Import ditolak: stock tidak mencukupi pada tanggal ${docDate.toLocaleDateString('en-US')} untuk item berikut: ${insufficientItems.join('; ')}`);
       }
 
       // Create outgoing_goods record for capital goods

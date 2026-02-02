@@ -7,6 +7,7 @@ export interface ScrapTransaction {
   regDate: string;
   docNumber: string;
   docDate: string;
+  transactionDate: string;
   recipientName: string;
   itemType: string;
   itemCode: string;
@@ -32,6 +33,7 @@ export interface CapitalGoodsTransaction {
   regDate: string;
   docNumber: string;
   docDate: string;
+  transactionDate: string;
   recipientName: string;
   itemType: string;
   itemCode: string;

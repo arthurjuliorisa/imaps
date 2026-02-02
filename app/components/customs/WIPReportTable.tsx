@@ -63,7 +63,7 @@ export function WIPReportTable({
         return '-';
       }
 
-      return dateObj.toLocaleDateString('id-ID', {
+      return dateObj.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
@@ -85,7 +85,7 @@ export function WIPReportTable({
   return (
     <>
       <TableContainer>
-        <Table sx={{ minWidth: 650 }} aria-label="wip report table">
+        <Table sx={{ minWidth: 650 }} aria-label="laporan posisi barang dalam proses table">
           <TableHead>
             <TableRow
               sx={{

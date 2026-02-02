@@ -48,7 +48,7 @@ const menuStructure: MenuInput[] = [
     menu_icon: 'Assessment',
     menu_order: 4,
     children: [
-      { menu_name: 'Work in Progress', menu_path: '/customs/wip', menu_icon: 'Description', menu_order: 1 },
+      { menu_name: 'Laporan Posisi Barang Dalam Proses', menu_path: '/customs/wip', menu_icon: 'Description', menu_order: 1 },
       { menu_name: 'Bahan Baku/Penolong', menu_path: '/customs/raw-material', menu_icon: 'Description', menu_order: 2 },
       { menu_name: 'Hasil Produksi', menu_path: '/customs/production', menu_icon: 'Description', menu_order: 3 },
       { menu_name: 'Barang Scrap/Reject', menu_path: '/customs/scrap', menu_icon: 'Description', menu_order: 4 },
@@ -63,6 +63,7 @@ const menuStructure: MenuInput[] = [
     children: [
       { menu_name: 'Transaksi Scrap', menu_path: '/customs/scrap-transactions', menu_icon: 'Recycling', menu_order: 1 },
       { menu_name: 'Transaksi Barang Modal', menu_path: '/customs/capital-goods-transactions', menu_icon: 'Inventory', menu_order: 2 },
+      { menu_name: 'Stock Opname', menu_path: '/customs/stock-opname', menu_icon: 'Inventory', menu_order: 3 },
     ],
   },
   {

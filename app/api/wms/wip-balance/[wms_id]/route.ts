@@ -1,7 +1,7 @@
 /**
- * WMS API - WIP Balance Detail (v2.4.2)
+ * WMS API - Laporan Posisi Barang Dalam Proses Detail (v2.4.2)
  *
- * Get single WIP balance by wms_id
+ * Get single Laporan Posisi Barang Dalam Proses by wms_id
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -44,7 +44,7 @@ function successResponse<T>(data: T, status = 200): NextResponse<ApiSuccessRespo
 }
 
 // ============================================================================
-// GET - Get WIP balance detail
+// GET - Get Laporan Posisi Barang Dalam Proses detail
 // ============================================================================
 
 export async function GET(
@@ -60,14 +60,14 @@ export async function GET(
 
     const { wms_id } = await params;
 
-    // Get WIP balance (WIP is a flat table, no header-detail pattern)
+    // Get Laporan Posisi Barang Dalam Proses (WIP is a flat table, no header-detail pattern)
     const wipBalance = await prisma.wip_balances.findFirst({
       where: { wms_id }
     });
 
     if (!wipBalance) {
       return errorResponse(
-        `WIP balance with wms_id '${wms_id}' not found`,
+        `Data Posisi Barang Dalam Proses dengan wms_id '${wms_id}' tidak ditemukan`,
         'NOT_FOUND',
         404
       );

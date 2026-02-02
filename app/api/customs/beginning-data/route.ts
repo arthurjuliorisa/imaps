@@ -10,13 +10,14 @@ import {
   validatePositiveNumber,
   ValidationError,
 } from '@/lib/api-utils';
+import { validateBeginningBalanceItem } from '@/lib/beginning-data-validation';
 
 /**
  * GET /api/customs/beginning-data
  * Get beginning balance records with optional filtering by item type
  *
  * Query Parameters:
- * - itemType: Filter by item type (e.g., ROH, FERT, HIBE_M)
+ * - itemType: Filter by item type (e.g., ROH, FERT, HIBE-M)
  * - itemCode: Filter by item code (partial match, case-insensitive)
  * - itemName: Filter by item name (partial match, case-insensitive)
  * - startDate: Filter by balance date >= startDate
@@ -170,7 +171,7 @@ export async function GET(request: Request) {
  * Create a new beginning balance record
  *
  * Request Body:
- * - itemType: string (required) - Item type code (e.g., ROH, FERT, HIBE_M)
+ * - itemType: string (required) - Item type code (e.g., ROH, FERT, HIBE-M)
  * - itemCode: string (required) - Item code
  * - itemName: string (required) - Item name
  * - uom: string (required) - Unit of measure
@@ -256,19 +257,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check for duplicate record (same company, item code, and date)
-    const existingRecord = await prisma.beginning_balances.findFirst({
-      where: {
-        company_code: companyCode,
-        item_code: itemCode,
-        balance_date: normalizedDate,
-      },
-    });
+    // Validate item: check for duplicates and existing transactions
+    const validation = await validateBeginningBalanceItem(
+      companyCode,
+      itemCode,
+      normalizedDate
+    );
 
-    if (existingRecord) {
+    if (!validation.valid) {
+      // Return the first validation error with detailed message
+      const firstError = validation.errors[0];
       return NextResponse.json(
-        { message: 'A beginning balance record for this item and date already exists' },
-        { status: 409 }
+        { message: firstError.reason },
+        { status: 400 }
       );
     }
 

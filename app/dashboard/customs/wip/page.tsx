@@ -48,7 +48,7 @@ export default function WIPReportPage() {
       const response = await fetch(`/api/customs/wip?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result: WIPBalanceData[] = await response.json();
-      
+
       // Transform API response to MutationData format
       const transformedData: MutationData[] = result.map((row) => ({
         id: `${row.itemCode}-${row.stockDate}`,
@@ -64,11 +64,11 @@ export default function WIPReportPage() {
         variant: 0,
         remarks: row.remarks || '-',
       }));
-      
+
       setData(transformedData);
     } catch (error) {
       console.error('Error fetching WIP balance data:', error);
-      toast.error('Failed to load WIP balance data');
+      toast.error('Gagal memuat data posisi barang dalam proses');
       setData([]);
     } finally {
       setLoading(false);
@@ -100,8 +100,8 @@ export default function WIPReportPage() {
 
     exportToExcel(
       exportData,
-      `WIP_Balance_${startDate}_${endDate}`,
-      'WIP Balance'
+      `Laporan_Posisi_Barang_Dalam_Proses_${startDate}_${endDate}`,
+      'Laporan Posisi Barang Dalam Proses'
     );
   };
 
@@ -127,15 +127,15 @@ export default function WIPReportPage() {
     exportToPDF(
       exportData,
       columns,
-      `WIP_Balance_${startDate}_${endDate}`,
-      'WIP Balance Report'
+      `Laporan_Posisi_Barang_Dalam_Proses_${startDate}_${endDate}`,
+      'Laporan Posisi Barang Dalam Proses'
     );
   };
 
   return (
     <ReportLayout
-      title="LPJ Work In Progress"
-      subtitle="Work In Progress Position Report - Bonded Zone"
+      title="Laporan Posisi Barang Dalam Proses"
+      subtitle="Laporan posisi barang dalam proses produksi di kawasan berikat"
       actions={
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
           <DateRangeFilter

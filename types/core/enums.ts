@@ -36,6 +36,7 @@ export enum CustomsDocumentType {
   BC40 = 'BC40',   // Local Purchase from Non-Bonded Zone
   BC30 = 'BC30',   // Export Declaration
   BC25 = 'BC25',   // Local Sales to Non-Bonded Zone
+  BC41 = 'BC41',   // Local Sales to Non-Bonded Zone from Local Purchase (BC40)
   BC261 = 'BC261', // Subcontracting - Incoming
   BC262 = 'BC262'  // Subcontracting - Outgoing
 }

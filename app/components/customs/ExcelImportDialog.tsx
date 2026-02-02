@@ -397,22 +397,76 @@ export function ExcelImportDialog({ open, onClose, onSubmit }: ExcelImportDialog
             <Table stickyHeader size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Status
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Date
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Scrap Code
                   </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell align="right" sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Incoming
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Remarks
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Errors
                   </TableCell>
                 </TableRow>
@@ -436,7 +490,7 @@ export function ExcelImportDialog({ open, onClose, onSubmit }: ExcelImportDialog
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontSize="0.875rem">
-                        {record.date ? dayjs(record.date).format('DD/MM/YYYY') : '-'}
+                        {record.date ? dayjs(record.date).format('MM/DD/YYYY') : '-'}
                       </Typography>
                     </TableCell>
                     <TableCell>

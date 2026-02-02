@@ -119,7 +119,7 @@ const menuSections: MenuSection[] = [
     title: 'LPJ Mutasi',
     items: [
       {
-        title: 'Work in Progress',
+        title: 'Laporan Posisi Barang Dalam Proses',
         icon: <DescriptionIcon />,
         path: '/customs/wip',
       },
@@ -266,24 +266,25 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
           selected={isActive}
           sx={{
             pl: collapsed ? 1.5 : 2,
-            borderRadius: 1,
+            borderRadius: 0,
             mx: 1,
             my: 0.25,
             justifyContent: collapsed ? 'center' : 'flex-start',
+            color: '#ffffff',
             '&:hover': {
-              bgcolor: alpha(theme.palette.primary.main, 0.08),
+              bgcolor: '#409EFF',
             },
             '&.Mui-selected': {
-              bgcolor: alpha(theme.palette.primary.main, 0.12),
+              bgcolor: 'rgba(255, 255, 255, 0.15)',
               '& .MuiListItemIcon-root': {
-                color: theme.palette.primary.main,
+                color: '#ffffff',
               },
               '& .MuiListItemText-primary': {
                 fontWeight: 600,
-                color: theme.palette.primary.main,
+                color: '#ffffff',
               },
               '&:hover': {
-                bgcolor: alpha(theme.palette.primary.main, 0.16),
+                bgcolor: '#409EFF',
               },
             },
           }}
@@ -291,7 +292,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
           <ListItemIcon
             sx={{
               minWidth: collapsed ? 'unset' : 40,
-              color: isActive ? theme.palette.primary.main : 'inherit',
+              color: '#ffffff',
               justifyContent: 'center',
             }}
           >
@@ -303,6 +304,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
               primaryTypographyProps={{
                 fontWeight: isActive ? 600 : 500,
                 fontSize: '0.875rem',
+                color: '#ffffff',
               }}
             />
           )}
@@ -319,7 +321,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
           sx={{
             my: 1.5,
             mx: 1,
-            borderColor: theme.palette.divider,
+            borderColor: 'rgba(255, 255, 255, 0.2)',
           }}
         />
       );
@@ -333,14 +335,14 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
           my: 1.5,
           mx: 1,
           '&::before, &::after': {
-            borderColor: theme.palette.divider,
+            borderColor: 'rgba(255, 255, 255, 0.2)',
           },
         }}
       >
         <Typography
           variant="caption"
           sx={{
-            color: theme.palette.text.secondary,
+            color: 'rgba(255, 255, 255, 0.7)',
             fontWeight: 600,
             fontSize: '0.75rem',
             textTransform: 'uppercase',
@@ -361,79 +363,72 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
       <Toolbar
         sx={{
           px: collapsed ? 1 : 2.5,
-          py: 2.5,
-          bgcolor: 'white',
-          borderBottom: `1px solid ${theme.palette.divider}`,
+          minHeight: 64,
+          height: 64,
+          bgcolor: '#2B3346',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
           position: 'relative',
-          flexDirection: 'column',
-          gap: 1,
         }}
       >
         {!collapsed ? (
-          <>
-            <Image
-              src="/logo.png"
-              alt="iMAPS Logo"
-              width={180}
-              height={60}
-              priority
-              style={{
-                objectFit: 'contain',
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              sx={{
+                width: 56,
+                height: 32,
+                borderRadius: 0,
+                bgcolor: 'rgba(255, 255, 255, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 700,
+                fontSize: '1.25rem',
+                color: '#ffffff',
               }}
-            />
-          </>
+            >
+              WMS
+            </Box>
+            <Box>
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '1rem',
+                  color: '#ffffff',
+                  lineHeight: 1.2,
+                }}
+              >
+                - IT Inventory Report
+              </Typography>
+            </Box>
+          </Box>
         ) : (
           <Box
             sx={{
-              width: 48,
-              height: 48,
+              width: 56,
+              height: 40,
+              borderRadius: 0,
+              bgcolor: 'rgba(255, 255, 255, 0.15)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: '1.25rem',
+              color: '#ffffff',
             }}
           >
-            <Image
-              src="/logo.png"
-              alt="iMAPS Logo"
-              width={48}
-              height={48}
-              priority
-              style={{
-                objectFit: 'contain',
-              }}
-            />
+            WMS
           </Box>
         )}
-        {!isMobile && (
-          <IconButton
-            onClick={onToggleCollapse}
-            sx={{
-              position: 'absolute',
-              right: collapsed ? 12 : 8,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              bgcolor: 'background.paper',
-              border: `1px solid ${theme.palette.divider}`,
-              width: 24,
-              height: 24,
-              '&:hover': {
-                bgcolor: 'action.hover',
-              },
-            }}
-            size="small"
-          >
-            {collapsed ? <ChevronRightIcon fontSize="small" /> : <ChevronLeftIcon fontSize="small" />}
-          </IconButton>
-        )}
       </Toolbar>
-      <Box sx={{ py: 2, overflowY: 'auto', overflowX: 'hidden', height: 'calc(100vh - 88px)' }}>
+      <Box sx={{ py: 2, overflowY: 'auto', overflowX: 'hidden', height: 'calc(100vh - 64px)', bgcolor: '#38425D' }}>
         <List component="nav" sx={{ px: collapsed ? 0.5 : 0.5 }}>
           {isLoadingMenus ? (
             <Box sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
                 Loading menus...
               </Typography>
             </Box>
@@ -446,7 +441,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
             ))
           ) : (
             <Box sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
                 No menus available
               </Typography>
             </Box>
@@ -471,8 +466,9 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
           '& .MuiDrawer-paper': {
             width: DRAWER_WIDTH,
             boxSizing: 'border-box',
-            borderRight: `1px solid ${theme.palette.divider}`,
-            bgcolor: theme.palette.mode === 'light' ? '#ffffff' : 'background.paper',
+            borderRadius: 0,
+            borderRight: '1px solid rgba(255, 255, 255, 0.1)',
+            bgcolor: '#38425D',
           },
         }}
       >
@@ -489,8 +485,9 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
           '& .MuiDrawer-paper': {
             width: drawerWidth,
             boxSizing: 'border-box',
-            borderRight: `1px solid ${theme.palette.divider}`,
-            bgcolor: theme.palette.mode === 'light' ? '#ffffff' : 'background.paper',
+            borderRadius: 0,
+            borderRight: '1px solid rgba(255, 255, 255, 0.1)',
+            bgcolor: '#38425D',
             transition: theme.transitions.create('width', {
               easing: theme.transitions.easing.sharp,
               duration: theme.transitions.duration.enteringScreen,

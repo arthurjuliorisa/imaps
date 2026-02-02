@@ -21,6 +21,9 @@ import {
   Logout,
   NavigateNext,
   Menu as MenuIcon,
+  Warehouse as WarehouseIcon,
+  ChevronLeft as ChevronLeftIcon,
+  ChevronRight as ChevronRightIcon,
 } from '@mui/icons-material';
 import { ThemeToggle } from './ThemeToggle';
 import { signOut, useSession } from 'next-auth/react';
@@ -33,9 +36,10 @@ const DRAWER_WIDTH_COLLAPSED = 72;
 interface HeaderProps {
   onMenuClick: () => void;
   sidebarCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
-export function Header({ onMenuClick, sidebarCollapsed }: HeaderProps) {
+export function Header({ onMenuClick, sidebarCollapsed, onToggleCollapse }: HeaderProps) {
   const { data: session } = useSession();
   const router = useRouter();
   const pathname = usePathname();
@@ -74,9 +78,10 @@ export function Header({ onMenuClick, sidebarCollapsed }: HeaderProps) {
       sx={{
         width: { xs: '100%', md: `calc(100% - ${drawerWidth}px)` },
         ml: { xs: 0, md: `${drawerWidth}px` },
-        bgcolor: 'background.paper',
-        color: 'text.primary',
-        borderBottom: `1px solid ${theme.palette.divider}`,
+        bgcolor: '#2B3346',
+        color: '#ffffff',
+        borderRadius: 0,
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
         transition: theme.transitions.create(['width', 'margin'], {
           easing: theme.transitions.easing.sharp,
           duration: theme.transitions.duration.enteringScreen,
@@ -86,24 +91,98 @@ export function Header({ onMenuClick, sidebarCollapsed }: HeaderProps) {
       <Toolbar>
         {isMobile && (
           <IconButton
-            color="inherit"
             aria-label="open drawer"
             edge="start"
             onClick={onMenuClick}
-            sx={{ mr: 2 }}
+            sx={{ mr: 2, color: '#ffffff' }}
           >
             <MenuIcon />
           </IconButton>
         )}
+
+        {/* Collapse button and vTradEx branding - only show on desktop */}
+        {!isMobile && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mr: 3 }}>
+            <IconButton
+              onClick={onToggleCollapse}
+              sx={{
+                bgcolor: 'rgba(255, 255, 255, 0.15)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: 0,
+                width: 32,
+                height: 32,
+                color: '#ffffff',
+                '&:hover': {
+                  bgcolor: 'rgba(255, 255, 255, 0.25)',
+                },
+              }}
+              size="small"
+            >
+              {sidebarCollapsed ? <ChevronRightIcon fontSize="small" /> : <ChevronLeftIcon fontSize="small" />}
+            </IconButton>
+            <Typography
+              variant="body2"
+              sx={{
+                fontWeight: 600,
+                fontSize: '0.875rem',
+                color: '#ffffff',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              IT Inventory Report
+            </Typography>
+          </Box>
+        )}
+
+        {/* Branding - only show on mobile */}
+        {isMobile && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: 0,
+                bgcolor: 'rgba(255, 255, 255, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 700,
+                fontSize: '1.125rem',
+                color: '#ffffff',
+              }}
+            >
+              WMS
+            </Box>
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 600,
+                fontSize: '1rem',
+                color: '#ffffff',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              IT Inventory Report
+            </Typography>
+          </Box>
+        )}
+
         <Box sx={{ flexGrow: 1 }}>
           <Breadcrumbs
-            separator={<NavigateNext fontSize="small" />}
+            separator={<NavigateNext fontSize="small" sx={{ color: 'rgba(255, 255, 255, 0.7)' }} />}
             aria-label="breadcrumb"
           >
             {breadcrumbs.map((crumb, index) => {
               const isLast = index === breadcrumbs.length - 1;
               return isLast ? (
-                <Typography key={crumb.path} variant="body2" color="primary" fontWeight={600}>
+                <Typography
+                  key={crumb.path}
+                  variant="body2"
+                  sx={{
+                    color: '#ffffff',
+                    fontWeight: 600
+                  }}
+                >
                   {crumb.label}
                 </Typography>
               ) : (
@@ -112,8 +191,13 @@ export function Header({ onMenuClick, sidebarCollapsed }: HeaderProps) {
                   component={Link}
                   href={crumb.path}
                   underline="hover"
-                  color="text.secondary"
-                  sx={{ fontSize: '0.875rem' }}
+                  sx={{
+                    fontSize: '0.875rem',
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    '&:hover': {
+                      color: '#ffffff',
+                    }
+                  }}
                 >
                   {crumb.label}
                 </MuiLink>
@@ -130,7 +214,10 @@ export function Header({ onMenuClick, sidebarCollapsed }: HeaderProps) {
               sx={{
                 width: 36,
                 height: 36,
-                bgcolor: theme.palette.primary.main,
+                borderRadius: 0,
+                bgcolor: 'rgba(255, 255, 255, 0.2)',
+                color: '#ffffff',
+                fontWeight: 600,
               }}
             >
               {session?.user?.name ? session.user.name.charAt(0).toUpperCase() : 'U'}

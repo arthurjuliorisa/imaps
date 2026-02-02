@@ -26,8 +26,8 @@ initAppServices().catch(err => {
 });
 
 export const metadata: Metadata = {
-  title: "iMAPS - Inventory Management & Production System",
-  description: "Manufacturing Process, Inventory Stocks, and Customs Report Management System",
+  title: "WMS - IT Inventory Report",
+  description: "Warehouse Management System - Customs IT Inventory Report",
 };
 
 export default function RootLayout({

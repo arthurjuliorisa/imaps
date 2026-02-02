@@ -90,7 +90,7 @@ export default function DateRangePicker({
   maxDate,
   disableFuture = false,
   disablePast = false,
-  format = 'DD/MM/YYYY',
+  format = 'MM/DD/YYYY',
   size = 'medium',
   fullWidth = true,
   showPresets = false,
