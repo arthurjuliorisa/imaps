@@ -84,17 +84,17 @@ export async function POST(
 
     // Convert worksheet to JSON (similar to XLSX.utils.sheet_to_json)
     const data: any[] = [];
-    const headerRow = worksheet.getRow(1);
+    const headerRow = worksheet.getRow(2);
     const headers: string[] = [];
 
-    // Get headers from first row
+    // Get headers from second row (row 1 is title, row 2 has column headers)
     headerRow.eachCell((cell, colNumber) => {
       headers[colNumber] = cell.value?.toString() || '';
     });
 
     // Convert each row to object
     worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return; // Skip header row
+      if (rowNumber === 1 || rowNumber === 2) return; // Skip first 2 header rows
 
       const rowData: any = {};
       row.eachCell((cell, colNumber) => {
@@ -121,7 +121,7 @@ export async function POST(
     // First pass: Basic validation and collect item codes
     for (let i = 0; i < data.length; i++) {
       const row: any = data[i];
-      const rowNumber = i + 2; // Excel row number (header is row 1)
+      const rowNumber = i + 3; // Excel row number (rows 1-2 are headers, data starts at row 3)
 
       const itemCode = (row.item_code || row['Item Code'] || '').toString().trim();
       const stoQtyRaw = row.sto_qty || row['STO Qty'] || '0';

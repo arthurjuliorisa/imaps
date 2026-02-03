@@ -24,6 +24,7 @@ const EXCEL_HEADERS = [
   { key: 'ending', label: 'Saldo Akhir', type: 'number' as const },
   { key: 'stockOpname', label: 'Hasil Pencacahan', type: 'number' as const },
   { key: 'variant', label: 'Jumlah Selisih', type: 'number' as const },
+  { key: 'remarks', label: 'Keterangan', type: 'text' as const },
 ];
 
 const PDF_COLUMNS = [
@@ -38,6 +39,7 @@ const PDF_COLUMNS = [
   { header: 'Jumlah Pengeluaran Barang', dataKey: 'out' },
   { header: 'Penyesuaian', dataKey: 'adjustment' },
   { header: 'Saldo Akhir', dataKey: 'ending' },
+  { header: 'Keterangan', dataKey: 'remarks' },
 ];
 
 export default function ProductionMutationPage() {
@@ -142,6 +144,7 @@ export default function ProductionMutationPage() {
       ending: row.ending,
       stockOpname: row.stockOpname,
       variant: row.variant,
+      remarks: row.remarks || '-',
     }));
 
     exportToExcelWithHeaders(
@@ -165,6 +168,7 @@ export default function ProductionMutationPage() {
       out: row.out.toString(),
       adjustment: row.adjustment.toString(),
       ending: row.ending.toString(),
+      remarks: row.remarks || '-',
     }));
 
     exportToPDF(
@@ -248,7 +252,7 @@ export default function ProductionMutationPage() {
         onEdit={handleEdit}
         onView={handleView}
         loading={loading}
-        hideRemarks={true}
+        hideRemarks={false}
         hideActions={true}
         hideValueAmount={true}
       />

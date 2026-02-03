@@ -95,8 +95,8 @@ export function CreateDialog({ open, onClose }: CreateDialogProps) {
 
       const result = await response.json();
       toast.success('Stock opname registered successfully');
-      onClose();
       router.push(`/customs/stock-opname/${result.id}`);
+      onClose();
     } catch (error) {
       console.error('Error creating stock opname:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to create stock opname');
