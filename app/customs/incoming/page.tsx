@@ -65,7 +65,6 @@ const EXCEL_HEADERS = [
   { key: 'qty', label: 'Jumlah Barang', type: 'number' as const },
   { key: 'currency', label: 'valas', type: 'text' as const },
   { key: 'amount', label: 'nilai barang', type: 'number' as const },
-  { key: 'createdAt', label: 'Created Date', type: 'date' as const },
 ];
 
 const PDF_COLUMNS = [
@@ -191,7 +190,6 @@ export default function IncomingGoodsReportPage() {
       qty: row.qty,
       currency: row.currency,
       amount: row.amount,
-      createdAt: row.createdAt,
     }));
 
     exportToExcelWithHeaders(
@@ -309,13 +307,12 @@ export default function IncomingGoodsReportPage() {
                 <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>valas</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">nilai barang</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Created Date</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={16} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={15} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -377,7 +374,6 @@ export default function IncomingGoodsReportPage() {
                         {formatAmount(row.amount)}
                       </Typography>
                     </TableCell>
-                    <TableCell>{formatDate(row.createdAt)}</TableCell>
                   </TableRow>
                 ))
               )}

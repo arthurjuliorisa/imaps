@@ -175,6 +175,7 @@ export function ExcelUploadDialog({
             <AlertTitle>Important Information</AlertTitle>
             <Typography variant="body2" component="div">
               <ul style={{ marginTop: 8, marginBottom: 8, paddingLeft: 20 }}>
+                <li><strong>Data Format</strong>: Data will be read starting from row 3. Rows 1-2 should contain headers.</li>
                 <li><strong>Item Code</strong> (required): Must match existing item codes in master data</li>
                 <li><strong>STO Qty</strong> (required): Stock opname quantity (must be a number)</li>
                 <li><strong>Report Area</strong> (optional): Reporting area information</li>
