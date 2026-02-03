@@ -100,7 +100,7 @@ export async function GET(request: Request) {
       variant: Number(row.variant || 0),
       valueAmount: Number(row.value_amount || 0),
       currency: row.currency,
-      remarks: row.remarks,
+      remarks: null,
     }));
 
     return NextResponse.json(serializeBigInt(transformedData));
