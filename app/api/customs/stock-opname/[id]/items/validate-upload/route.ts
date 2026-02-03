@@ -84,17 +84,17 @@ export async function POST(
 
     // Convert worksheet to JSON (similar to XLSX.utils.sheet_to_json)
     const data: any[] = [];
-    const headerRow = worksheet.getRow(2);
+    const headerRow = worksheet.getRow(1);
     const headers: string[] = [];
 
-    // Get headers from second row (row 1 is title, row 2 has column headers)
+    // Get headers from first row (row 1 has column headers, row 2 has format hints)
     headerRow.eachCell((cell, colNumber) => {
       headers[colNumber] = cell.value?.toString() || '';
     });
 
     // Convert each row to object
     worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1 || rowNumber === 2) return; // Skip first 2 header rows
+      if (rowNumber === 1 || rowNumber === 2) return; // Skip header row and format hints row
 
       const rowData: any = {};
       row.eachCell((cell, colNumber) => {
@@ -123,11 +123,12 @@ export async function POST(
       const row: any = data[i];
       const rowNumber = i + 3; // Excel row number (rows 1-2 are headers, data starts at row 3)
 
-      const itemCode = (row.item_code || row['Item Code'] || '').toString().trim();
-      const stoQtyRaw = row.sto_qty || row['STO Qty'] || '0';
-      const stoQty = parseFloat(stoQtyRaw);
-      const reportArea = (row.report_area || row['Report Area'] || '').toString().trim();
-      const remark = (row.remark || row['Remark'] || '').toString().trim();
+      // Headers from template are: 'Item Code', 'STO Qty', 'Report Area', 'Remark'
+      const itemCode = (row['Item Code'] || '').toString().trim();
+      const stoQtyRaw = row['STO Qty'] || 0;
+      const stoQty = parseFloat(stoQtyRaw.toString());
+      const reportArea = (row['Report Area'] || '').toString().trim();
+      const remark = (row['Remark'] || '').toString().trim();
 
       const validatedRow: any = {
         row: rowNumber,
@@ -220,11 +221,11 @@ export async function POST(
     const validItemCodesSet = new Set(itemsFromMaster.map(item => item.item_code));
 
     // Batch check: Get items that already exist in this stock opname
+    // Note: Check for all items including soft-deleted ones because the unique constraint applies to all records
     const existingItems = await prisma.stock_opname_items.findMany({
       where: {
         stock_opname_id: stockOpnameId,
         item_code: { in: validItemCodes },
-        deleted_at: null,
       },
       select: {
         item_code: true,
