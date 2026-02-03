@@ -221,11 +221,12 @@ export async function POST(
     const validItemCodesSet = new Set(itemsFromMaster.map(item => item.item_code));
 
     // Batch check: Get items that already exist in this stock opname
-    // Note: Check for all items including soft-deleted ones because the unique constraint applies to all records
+    // Only check non-deleted items - deleted items can be re-added (will be undeleted by bulk API)
     const existingItems = await prisma.stock_opname_items.findMany({
       where: {
         stock_opname_id: stockOpnameId,
         item_code: { in: validItemCodes },
+        deleted_at: null,
       },
       select: {
         item_code: true,

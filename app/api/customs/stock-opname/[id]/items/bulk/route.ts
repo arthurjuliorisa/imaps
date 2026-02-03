@@ -97,6 +97,23 @@ export async function POST(
       itemsFromMaster.map(item => [item.item_code, item])
     );
 
+    // Check for existing items (including soft-deleted ones)
+    const existingItems = await prisma.stock_opname_items.findMany({
+      where: {
+        stock_opname_id: stockOpnameId,
+        item_code: { in: itemCodes },
+      },
+      select: {
+        id: true,
+        item_code: true,
+        deleted_at: true,
+      },
+    });
+
+    const existingItemsMap = new Map(
+      existingItems.map(item => [item.item_code, item])
+    );
+
     for (const item of items) {
       try {
         const itemMaster = itemsMap.get(item.item_code);
@@ -114,24 +131,50 @@ export async function POST(
         );
         const variance = calculateVariance(item.sto_qty, endStock);
 
-        // Create item
-        const createdItem = await prisma.stock_opname_items.create({
-          data: {
-            stock_opname_id: stockOpnameId,
-            company_code: companyCode,
-            item_code: itemMaster.item_code,
-            item_name: itemMaster.item_name,
-            item_type: itemMaster.item_type,
-            uom: itemMaster.uom,
-            sto_qty: item.sto_qty,
-            end_stock: endStock,
-            variant: variance,
-            report_area: item.report_area || null,
-            remark: item.remark || null,
-          },
-        });
+        const existingItem = existingItemsMap.get(item.item_code);
 
-        createdItems.push(createdItem);
+        // If item exists and is deleted, undelete and update it
+        if (existingItem && existingItem.deleted_at !== null) {
+          const updatedItem = await prisma.stock_opname_items.update({
+            where: { id: existingItem.id },
+            data: {
+              item_name: itemMaster.item_name,
+              item_type: itemMaster.item_type,
+              uom: itemMaster.uom,
+              sto_qty: item.sto_qty,
+              end_stock: endStock,
+              variant: variance,
+              report_area: item.report_area || null,
+              remark: item.remark || null,
+              deleted_at: null, // Undelete
+            },
+          });
+          createdItems.push(updatedItem);
+        }
+        // If item exists and is not deleted, skip (validation should have caught this)
+        else if (existingItem && existingItem.deleted_at === null) {
+          errors.push(`Baris ${item.row}: Item sudah ada dalam stock opname ini`);
+          continue;
+        }
+        // If item doesn't exist, create new
+        else {
+          const createdItem = await prisma.stock_opname_items.create({
+            data: {
+              stock_opname_id: stockOpnameId,
+              company_code: companyCode,
+              item_code: itemMaster.item_code,
+              item_name: itemMaster.item_name,
+              item_type: itemMaster.item_type,
+              uom: itemMaster.uom,
+              sto_qty: item.sto_qty,
+              end_stock: endStock,
+              variant: variance,
+              report_area: item.report_area || null,
+              remark: item.remark || null,
+            },
+          });
+          createdItems.push(createdItem);
+        }
       } catch (error) {
         console.error(`Error creating item ${item.item_code}:`, error);
         errors.push(`Baris ${item.row}: ${error instanceof Error ? error.message : 'Gagal membuat item'}`);
