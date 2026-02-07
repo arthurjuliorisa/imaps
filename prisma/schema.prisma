@@ -214,7 +214,7 @@ model beginning_balances {
   company companies @relation(fields: [company_code], references: [code])
   ppkeks      beginning_balance_ppkeks[]
 
-  @@unique([company_code, item_code, balance_date])
+  @@unique([company_code, item_code, uom])
   @@index([company_code])
   @@index([item_code])
   @@index([balance_date])

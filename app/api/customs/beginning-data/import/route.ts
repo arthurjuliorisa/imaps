@@ -273,7 +273,9 @@ export async function POST(request: Request) {
     // Validate items for duplicates and existing transactions (batch validation)
     const itemsToValidate = validRecords.map(record => ({
       itemCode: record.itemCode,
-      balanceDate: record.balanceDate,
+      itemName: record.itemName,
+      itemType: record.itemType,
+      uom: record.uom,
     }));
 
     const validationResults = await validateBeginningBalanceItemsBatch(
@@ -284,10 +286,10 @@ export async function POST(request: Request) {
     // Check validation results and collect errors
     const validationErrors: Array<{ row: number; field: string; error: string }> = [];
     for (const record of validRecords) {
-      const key = `${record.itemCode}|${record.balanceDate.getTime()}`;
+      const key = `${record.itemCode}|${record.uom}|${record.itemName}|${record.itemType}`;
       const validationResult = validationResults[key];
 
-      if (!validationResult.valid) {
+      if (validationResult && !validationResult.valid) {
         // Add all validation errors for this record
         for (const validationError of validationResult.errors) {
           validationErrors.push({

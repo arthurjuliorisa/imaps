@@ -292,7 +292,55 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
         };
       });
 
-      setRecords(processedRecords);
+      // ============================================
+      // BACKEND BATCH VALIDATION (saat file di-load)
+      // ============================================
+      let finalRecords = processedRecords;
+
+      try {
+        const validationResponse = await fetch('/api/customs/beginning-data/validate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            records: processedRecords.map((r) => ({
+              itemCode: r.itemCode,
+              itemName: r.itemName,
+              itemType: r.itemType,
+              uom: r.uom,
+            })),
+          }),
+        });
+
+        if (validationResponse.ok) {
+          const validationData = await validationResponse.json();
+
+          // Merge backend validation errors with client-side validation
+          finalRecords = processedRecords.map((record) => {
+            const key = `${record.itemCode}|${record.uom}|${record.itemName}|${record.itemType}`;
+            const backendValidation = validationData.validationResults[key];
+
+            if (backendValidation && !backendValidation.valid) {
+              // Add backend errors to client-side errors
+              const backendErrors = backendValidation.errors.map((err: any) => err.reason);
+              return {
+                ...record,
+                isValid: false,
+                errors: [...record.errors, ...backendErrors],
+              };
+            }
+
+            return record;
+          });
+        }
+        // Fail silently if validation endpoint has issues - show only client-side errors
+      } catch (validationError) {
+        // Don't fail file loading if validation endpoint has issues
+      }
+
+      // Set records once with all validation results
+      setRecords(finalRecords);
     } catch (error) {
       console.error('Error parsing Excel file:', error);
       setParseError('Failed to parse Excel file. Please ensure the file format is correct.');
@@ -318,8 +366,6 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
       }
       onClose();
     } catch (error: any) {
-      console.error('Error importing records:', error);
-
       // Check if error contains validation errors from backend
       if (error.validationErrors && Array.isArray(error.validationErrors)) {
         // Map backend validation errors to records
