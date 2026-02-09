@@ -836,7 +836,7 @@ model stock_daily_snapshot {
 
   company companies @relation(fields: [company_code], references: [code], onDelete: Cascade)
 
-  @@unique([company_code, item_type, item_code, snapshot_date])
+  @@unique([company_code, item_type, item_code, uom, snapshot_date], name: "stock_daily_snapshot_uom_company_item_snapshot_key")
   @@index([company_code, snapshot_date])
   @@index([item_type, snapshot_date])
   @@index([snapshot_date])

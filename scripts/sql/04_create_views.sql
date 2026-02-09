@@ -101,10 +101,12 @@ BEGIN
             -- Aggregate mutations for items within the specified date range
             -- For HALB: include BOTH incoming_qty (purchased) + production_qty (from production output)
             -- For other items (ROH, HIBE): only incoming_qty
+            -- CRITICAL: Include UOM in grouping to separate mutations by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
                 sds.item_type,
+                sds.uom,
                 SUM(CASE 
                     WHEN sds.item_type = 'HALB' THEN sds.incoming_qty + sds.production_qty
                     ELSE sds.incoming_qty
@@ -114,36 +116,40 @@ BEGIN
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
-            GROUP BY sds.company_code, sds.item_code, sds.item_type
+            GROUP BY sds.company_code, sds.item_code, sds.item_type, sds.uom
         ),
         opening_balance_data AS (
             -- Priority 1: If snapshot exists ON start_date, use its opening_balance
             -- Priority 2: Otherwise, use closing_balance from latest snapshot ON or BEFORE start_date
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 CASE 
                     WHEN sds.snapshot_date = v_start_date THEN sds.opening_balance
                     ELSE sds.closing_balance
                 END as balance_value,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_start_date
         ),
         closing_balance_data AS (
             -- Get closing_balance FIELD from snapshot ON or BEFORE end_date (most recent snapshot up to period end)
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 sds.closing_balance,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_end_date
         )
         SELECT
-            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code) as no,
+            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code, ai.uom) as no,
             ai.company_code,
             c.name as company_name,
             ai.item_code,
@@ -155,6 +161,7 @@ BEGIN
                 (SELECT obd.balance_value FROM opening_balance_data obd 
                  WHERE obd.company_code = ai.company_code 
                    AND obd.item_code = ai.item_code 
+                   AND obd.uom = ai.uom 
                    AND obd.rn = 1),
                 0::NUMERIC(15,3)
             ) as opening_balance,
@@ -165,6 +172,7 @@ BEGIN
                 (SELECT cbd.closing_balance FROM closing_balance_data cbd 
                  WHERE cbd.company_code = ai.company_code 
                    AND cbd.item_code = ai.item_code 
+                   AND cbd.uom = ai.uom 
                    AND cbd.rn = 1),
                 0::NUMERIC(15,3)
             ) as closing_balance,
@@ -175,8 +183,8 @@ BEGIN
             'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
         FROM all_items ai
         JOIN companies c ON ai.company_code = c.code
-        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code
-        ORDER BY ai.company_code, ai.item_code;
+        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code AND ai.uom = rm.uom
+        ORDER BY ai.company_code, ai.item_code, ai.uom;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
@@ -248,45 +256,51 @@ BEGIN
         ),
         range_mutations AS (
             -- Aggregate mutations for items within the specified date range
+            -- CRITICAL: Include UOM in grouping to separate mutations by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 SUM(sds.production_qty) as total_production_qty,
                 SUM(sds.outgoing_qty) as total_outgoing_qty,
                 SUM(sds.adjustment_qty) as total_adjustment_qty
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
-            GROUP BY sds.company_code, sds.item_code
+            GROUP BY sds.company_code, sds.item_code, sds.uom
         ),
         opening_balance_data AS (
             -- Priority 1: If snapshot exists ON start_date, use its opening_balance
             -- Priority 2: Otherwise, use closing_balance from latest snapshot ON or BEFORE start_date
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 CASE 
                     WHEN sds.snapshot_date = v_start_date THEN sds.opening_balance
                     ELSE sds.closing_balance
                 END as balance_value,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_start_date
         ),
         closing_balance_data AS (
             -- Get closing_balance FIELD from snapshot ON or BEFORE end_date (most recent snapshot up to period end)
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 sds.closing_balance,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_end_date
         )
         SELECT
-            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code) as no,
+            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code, ai.uom) as no,
             ai.company_code,
             c.name as company_name,
             ai.item_code,
@@ -298,6 +312,7 @@ BEGIN
                 (SELECT obd.balance_value FROM opening_balance_data obd 
                  WHERE obd.company_code = ai.company_code 
                    AND obd.item_code = ai.item_code 
+                   AND obd.uom = ai.uom 
                    AND obd.rn = 1),
                 0::NUMERIC(15,3)
             ) as opening_balance,
@@ -308,6 +323,7 @@ BEGIN
                 (SELECT cbd.closing_balance FROM closing_balance_data cbd 
                  WHERE cbd.company_code = ai.company_code 
                    AND cbd.item_code = ai.item_code 
+                   AND cbd.uom = ai.uom 
                    AND cbd.rn = 1),
                 0::NUMERIC(15,3)
             ) as closing_balance,
@@ -318,8 +334,8 @@ BEGIN
             'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
         FROM all_items ai
         JOIN companies c ON ai.company_code = c.code
-        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code
-        ORDER BY ai.company_code, ai.item_code;
+        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code AND ai.uom = rm.uom
+        ORDER BY ai.company_code, ai.item_code, ai.uom;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -557,44 +573,50 @@ BEGIN
         ),
         range_mutations AS (
             -- Aggregate mutations for items within the specified date range
+            -- CRITICAL: Include UOM in grouping to separate mutations by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 SUM(sds.incoming_qty) as total_incoming_qty,
                 SUM(sds.outgoing_qty) as total_outgoing_qty
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
-            GROUP BY sds.company_code, sds.item_code
+            GROUP BY sds.company_code, sds.item_code, sds.uom
         ),
         opening_balance_data AS (
             -- Priority 1: If snapshot exists ON start_date, use its opening_balance
             -- Priority 2: Otherwise, use closing_balance from latest snapshot ON or BEFORE start_date
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 CASE 
                     WHEN sds.snapshot_date = v_start_date THEN sds.opening_balance
                     ELSE sds.closing_balance
                 END as balance_value,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_start_date
         ),
         closing_balance_data AS (
             -- Get closing_balance FIELD from snapshot ON or BEFORE end_date (most recent snapshot up to period end)
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 sds.closing_balance,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_end_date
         )
         SELECT
-            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code) as no,
+            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code, ai.uom) as no,
             ai.company_code,
             c.name as company_name,
             ai.item_code,
@@ -606,6 +628,7 @@ BEGIN
                 (SELECT obd.balance_value FROM opening_balance_data obd 
                  WHERE obd.company_code = ai.company_code 
                    AND obd.item_code = ai.item_code 
+                   AND obd.uom = ai.uom 
                    AND obd.rn = 1),
                 0::NUMERIC(15,3)
             ) as opening_balance,
@@ -616,6 +639,7 @@ BEGIN
                 (SELECT cbd.closing_balance FROM closing_balance_data cbd 
                  WHERE cbd.company_code = ai.company_code 
                    AND cbd.item_code = ai.item_code 
+                   AND cbd.uom = ai.uom 
                    AND cbd.rn = 1),
                 0::NUMERIC(15,3)
             ) as closing_balance,
@@ -626,8 +650,8 @@ BEGIN
             'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
         FROM all_items ai
         JOIN companies c ON ai.company_code = c.code
-        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code
-        ORDER BY ai.company_code, ai.item_code;
+        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code AND ai.uom = rm.uom
+        ORDER BY ai.company_code, ai.item_code, ai.uom;
 END;
 $$ LANGUAGE plpgsql;
 
