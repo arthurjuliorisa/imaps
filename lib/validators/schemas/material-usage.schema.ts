@@ -127,6 +127,7 @@ export const materialUsageBatchRequestSchema = z
       .trim(),
     
     company_code: companyCodeSchema,
+    owner: companyCodeSchema,
     
     work_order_number: z
       .string()

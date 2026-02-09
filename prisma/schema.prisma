@@ -393,6 +393,7 @@ model material_usages {
   id                       Int       @id @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
+  owner                    Int
   work_order_number        String?   @db.VarChar(50)
   cost_center_number       String?
   internal_evidence_number String    @db.VarChar(50)
@@ -470,6 +471,7 @@ model production_outputs {
   id                       Int       @id @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
+  owner                    Int
   internal_evidence_number String    @db.VarChar(50)
   transaction_date         DateTime  @db.Date
   reversal                 String?   @db.VarChar(1)
@@ -576,6 +578,7 @@ model adjustments {
   id                       Int       @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
+  owner                    Int
   wms_doc_type             String?   @db.VarChar(100)
   internal_evidence_number String    @db.VarChar(50)
   transaction_date         DateTime  @db.Date

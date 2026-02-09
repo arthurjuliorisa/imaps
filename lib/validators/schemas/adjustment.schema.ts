@@ -132,6 +132,7 @@ export const adjustmentBatchRequestSchema = z
       .trim(),
     
     company_code: companyCodeSchema,
+    owner: companyCodeSchema,
     
     wms_doc_type: z
       .string()

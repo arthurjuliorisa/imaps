@@ -128,6 +128,7 @@ export const productionOutputBatchRequestSchema = z
       .trim(),
     
     company_code: companyCodeSchema,
+    owner: companyCodeSchema,
     
     internal_evidence_number: z
       .string()
