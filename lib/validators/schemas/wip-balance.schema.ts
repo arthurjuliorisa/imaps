@@ -20,6 +20,8 @@
 
 import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
+import { checkDuplicateWipBalanceItems } from '@/lib/validators/duplicate-item.validator';
+import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
 
 // =============================================================================
 // CONSTANTS
@@ -371,6 +373,78 @@ export async function validateItemTypes(data: WipBalanceBatchRequestInput): Prom
   } catch (error) {
     // If database query fails, log error but don't block validation
     console.error('Error validating item_types:', error);
+  }
+
+  return errors;
+}
+
+/**
+ * Check for duplicate items in wip-balance batch request
+ * Combination: (company_code, item_code, item_name, uom, stock_date)
+ * 
+ * Note: This allows partial success - only duplicate records fail,
+ * others can still be processed
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors (empty if no duplicates)
+ */
+export function checkWipBalanceDuplicates(data: WipBalanceBatchRequestInput): ValidationErrorDetail[] {
+  return checkDuplicateWipBalanceItems(
+    data.records.map(record => ({
+      company_code: record.company_code,
+      item_code: record.item_code,
+      item_name: record.item_name,
+      uom: record.uom,
+      stock_date: record.stock_date,
+    }))
+  );
+}
+
+/**
+ * Validate item_type consistency against existing stock_daily_snapshot records
+ * 
+ * Converts record_index from duplicate check to record_index format
+ * for wip-balance batch processing
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors
+ */
+export async function validateWipBalanceItemTypeConsistency(
+  data: WipBalanceBatchRequestInput
+): Promise<ValidationErrorDetail[]> {
+  const errors: ValidationErrorDetail[] = [];
+
+  // Get unique company codes from batch
+  const uniqueCompanyCodes = [...new Set(data.records.map(r => r.company_code))];
+
+  // For each company, validate item types
+  for (const companyCode of uniqueCompanyCodes) {
+    const companyRecords = data.records.filter(r => r.company_code === companyCode);
+    
+    const consistencyErrors = await validateItemTypeConsistency(
+      companyCode,
+      companyRecords.map(record => ({
+        item_type: record.item_type,
+        item_code: record.item_code,
+        item_name: record.item_name,
+      }))
+    );
+
+    // Convert errors to include record_index for batch context
+    companyRecords.forEach((record, idx) => {
+      const recordIndex = data.records.indexOf(record);
+      
+      // Check if there are errors for this record's item_code
+      consistencyErrors.forEach(err => {
+        if (err.item_code === record.item_code) {
+          errors.push({
+            ...err,
+            location: 'record',
+            record_index: recordIndex,
+          });
+        }
+      });
+    });
   }
 
   return errors;

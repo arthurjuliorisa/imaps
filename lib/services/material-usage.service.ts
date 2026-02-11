@@ -2,6 +2,8 @@ import { logger } from '@/lib/utils/logger';
 import {
   validateMaterialUsageBatch,
   validateItemTypes,
+  checkMaterialUsageDuplicates,
+  validateMaterialUsageItemTypeConsistency,
   type MaterialUsageBatchRequestInput,
   type BatchValidationError,
 } from '@/lib/validators/schemas/material-usage.schema';
@@ -103,7 +105,45 @@ export class MaterialUsageService {
         wmsId: data.wms_id,
       });
 
-      // Step 3: Business validation (company, work order, etc.)
+      // Step 3: Check for duplicate items
+      const duplicateErrors = checkMaterialUsageDuplicates(data);
+      if (duplicateErrors.length > 0) {
+        log.warn('Duplicate items found', {
+          errorCount: duplicateErrors.length,
+        });
+
+        return {
+          status: 'failed',
+          message: 'Validation failed',
+          wms_id: data.wms_id,
+          errors: duplicateErrors as BatchValidationError[],
+        };
+      }
+
+      log.info('Duplicate items check passed', {
+        wmsId: data.wms_id,
+      });
+
+      // Step 4: Validate item_type consistency
+      const itemTypeConsistencyErrors = await validateMaterialUsageItemTypeConsistency(data);
+      if (itemTypeConsistencyErrors.length > 0) {
+        log.warn('Item type consistency validation failed', {
+          errorCount: itemTypeConsistencyErrors.length,
+        });
+
+        return {
+          status: 'failed',
+          message: 'Validation failed',
+          wms_id: data.wms_id,
+          errors: itemTypeConsistencyErrors as BatchValidationError[],
+        };
+      }
+
+      log.info('Item type consistency validated', {
+        wmsId: data.wms_id,
+      });
+
+      // Step 5: Business validation (company, work order, etc.)
       const businessErrors = await this.validateBusiness(data);
 
       if (businessErrors.length > 0) {
@@ -125,7 +165,7 @@ export class MaterialUsageService {
         itemsCount: data.items.length,
       });
 
-      // Step 3: Queue for immediate async insert (non-blocking)
+      // Step 6: Queue for immediate async insert (non-blocking)
       this.repository
         .batchUpsert(data)
         .then(() => {

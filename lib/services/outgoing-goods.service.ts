@@ -5,6 +5,7 @@ import {
   validateOutgoingGoodsDates,
   validateProductionTraceability,
   validateItemTypes,
+  validateOutgoingGoodsItemTypeConsistency,
   type OutgoingGoodRequestInput,
   type ValidationErrorDetail,
 } from '@/lib/validators/schemas/outgoing-goods.schema';
@@ -105,7 +106,17 @@ export class OutgoingGoodsService {
         return { success: false, errors: itemTypeErrors as ErrorDetail[] };
       }
 
-      // 4. Validate production traceability for FERT/HALB items
+      // 4. Validate item_type consistency
+      const itemTypeConsistencyErrors = await validateOutgoingGoodsItemTypeConsistency(data);
+      if (itemTypeConsistencyErrors.length > 0) {
+        requestLogger.warn(
+          'Item type consistency validation failed',
+          { errors: itemTypeConsistencyErrors }
+        );
+        return { success: false, errors: itemTypeConsistencyErrors as ErrorDetail[] };
+      }
+
+      // 5. Validate production traceability for FERT/HALB items
       // const traceabilityErrors = validateProductionTraceability(data);
       // if (traceabilityErrors.length > 0) {
       //   requestLogger.warn(
@@ -115,11 +126,11 @@ export class OutgoingGoodsService {
       //   return { success: false, errors: traceabilityErrors as ErrorDetail[] };
       // }
 
-      // 5. Detect if this is a revision (same wms_id already exists)
+      // 6. Detect if this is a revision (same wms_id already exists)
       const revisionInfo = await this.detectRevision(data);
       requestLogger.info('Revision detection', { isRevision: revisionInfo.isRevision, wmsId: data.wms_id });
 
-      // 6. Business validations - verify production_output_wms_ids exist
+      // 7. Business validations - verify production_output_wms_ids exist
       const productionValidationErrors = await this.validateProductionOutputs(data);
       if (productionValidationErrors.length > 0) {
         requestLogger.warn(
@@ -129,16 +140,16 @@ export class OutgoingGoodsService {
         return { success: false, errors: productionValidationErrors };
       }
 
-      // 7. Check stock and collect warnings (pass revision info)
+      // 8. Check stock and collect warnings (pass revision info)
       const stockCheckResult = await this.checkStockAndCollectWarnings(data, revisionInfo);
 
-      // 8. Queue async database insert
+      // 9. Queue async database insert
       const repository = new OutgoingGoodsRepository();
       repository.insertOutgoingGoodsAsync(data).catch((error) => {
         requestLogger.error('Failed to insert outgoing goods', { error, wmsId: data.wms_id });
       });
 
-      // 9. Return success response immediately (without waiting for DB insert)
+      // 10. Return success response immediately (without waiting for DB insert)
       const response: SuccessResponse = {
         status: 'success',
         message: 'Transaction validated and queued for processing',

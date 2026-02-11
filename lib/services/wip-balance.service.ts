@@ -16,6 +16,8 @@ import { WipBalanceRepository } from '../repositories/wip-balance.repository';
 import {
   validateWIPBalanceBatch,
   validateItemTypes,
+  checkWipBalanceDuplicates,
+  validateWipBalanceItemTypeConsistency,
   type WipBalanceRecordInput,
   type WipBalanceRecordValidated,
   type BatchValidationError,
@@ -106,7 +108,49 @@ export class WIPBalanceService {
         recordCount: batch.records.length,
       });
 
-      // 3. Optimize: Pre-fetch company cache for all unique companies
+      // 3. Check for duplicate items in batch
+      const duplicateErrors = checkWipBalanceDuplicates(batch);
+      if (duplicateErrors.length > 0) {
+        requestLogger.warn(
+          'Duplicate items found in batch',
+          { errors: duplicateErrors }
+        );
+        const errorDetails = duplicateErrors.map((err) => ({
+          location: err.location,
+          field: err.field,
+          code: err.code,
+          message: err.message,
+          ...(err.item_index !== undefined && { record_index: err.item_index }),
+        }));
+        return { success: false, errors: errorDetails as ErrorDetail[] };
+      }
+
+      requestLogger.info('Duplicate items check passed', {
+        recordCount: batch.records.length,
+      });
+
+      // 4. Validate item_type consistency
+      const itemTypeConsistencyErrors = await validateWipBalanceItemTypeConsistency(batch);
+      if (itemTypeConsistencyErrors.length > 0) {
+        requestLogger.warn(
+          'Item type consistency validation failed',
+          { errors: itemTypeConsistencyErrors }
+        );
+        const errorDetails = itemTypeConsistencyErrors.map((err) => ({
+          location: err.location,
+          field: err.field,
+          code: err.code,
+          message: err.message,
+          ...(err.record_index !== undefined && { record_index: err.record_index }),
+        }));
+        return { success: false, errors: errorDetails as ErrorDetail[] };
+      }
+
+      requestLogger.info('Item type consistency validated', {
+        recordCount: batch.records.length,
+      });
+
+      // 5. Optimize: Pre-fetch company cache for all unique companies
       const successRecords: WipBalanceRecordValidated[] = [];
       const failedRecords: BatchFailedRecord[] = [];
 

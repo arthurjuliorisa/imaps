@@ -21,6 +21,7 @@
 import { z } from 'zod';
 import { Currency } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
+import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
 
 // =============================================================================
 // CONSTANTS
@@ -453,4 +454,24 @@ export async function validateItemTypes(data: OutgoingGoodRequestInput): Promise
   }
 
   return errors;
+}
+
+/**
+ * Validate item_type consistency against existing stock_daily_snapshot records
+ * Consistency check only - no duplikasi check for outgoing-goods
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors
+ */
+export async function validateOutgoingGoodsItemTypeConsistency(
+  data: OutgoingGoodRequestInput
+): Promise<ValidationErrorDetail[]> {
+  return validateItemTypeConsistency(
+    data.company_code,
+    data.items.map(item => ({
+      item_type: item.item_type,
+      item_code: item.item_code,
+      item_name: item.item_name,
+    }))
+  );
 }
