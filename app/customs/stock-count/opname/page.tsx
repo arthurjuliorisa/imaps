@@ -20,7 +20,6 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
-import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
 
@@ -55,9 +54,6 @@ export default function StockOpnameReportPage() {
   const toast = useToast();
   const router = useRouter();
 
-  const now = new Date();
-  const [startDate, setStartDate] = useState(now.toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [data, setData] = useState<OpnameHeader[]>([]);
@@ -66,12 +62,7 @@ export default function StockOpnameReportPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        startDate,
-        endDate,
-      });
-
-      const response = await fetch(`/api/customs/stock-count/opname?${params}`);
+      const response = await fetch(`/api/customs/stock-count/opname`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
       setData(result);
@@ -82,7 +73,7 @@ export default function StockOpnameReportPage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, toast]);
+  }, [toast]);
 
   useEffect(() => {
     fetchData();
@@ -113,7 +104,7 @@ export default function StockOpnameReportPage() {
     exportToExcelWithHeaders(
       exportData,
       EXCEL_HEADERS,
-      `Laporan_Stock_Opname_${startDate}_${endDate}`,
+      'Laporan_Stock_Opname',
       'Laporan Stock Opname'
     );
   };
@@ -130,9 +121,8 @@ export default function StockOpnameReportPage() {
     exportToPDF(
       exportData,
       PDF_COLUMNS,
-      `Laporan_Stock_Opname_${startDate}_${endDate}`,
-      'Laporan Stock Opname',
-      `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`
+      'Laporan_Stock_Opname',
+      'Laporan Stock Opname'
     );
   };
 
@@ -143,21 +133,13 @@ export default function StockOpnameReportPage() {
       title="Laporan Stock Opname"
       subtitle="Daftar laporan stock opname"
       actions={
-        <Stack spacing={3}>
-          <DateRangeFilter
-            startDate={startDate}
-            endDate={endDate}
-            onStartDateChange={setStartDate}
-            onEndDateChange={setEndDate}
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <ExportButtons
+            onExportExcel={handleExportExcel}
+            onExportPDF={handleExportPDF}
+            disabled={data.length === 0 || loading}
           />
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <ExportButtons
-              onExportExcel={handleExportExcel}
-              onExportPDF={handleExportPDF}
-              disabled={data.length === 0 || loading}
-            />
-          </Box>
-        </Stack>
+        </Box>
       }
     >
       {loading ? (
@@ -185,7 +167,7 @@ export default function StockOpnameReportPage() {
                 <TableRow>
                   <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
-                      No records found for the selected date range
+                      No records found
                     </Typography>
                   </TableCell>
                 </TableRow>

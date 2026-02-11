@@ -78,9 +78,6 @@ export async function GET(request: Request) {
     }
 
     const { session } = authCheck as { authenticated: true; session: any };
-    const { searchParams } = new URL(request.url);
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
 
     // Validate company code with detailed error messages
     const companyValidation = validateCompanyCode(session);
@@ -90,31 +87,9 @@ export async function GET(request: Request) {
     const { companyCode } = companyValidation;
 
     // MOCK DATA FILTERING - Filter by company code
-    let filteredData = MOCK_ADJUSTMENT_HEADERS.filter(
+    const filteredData = MOCK_ADJUSTMENT_HEADERS.filter(
       (item) => item.companyCode === companyCode
     );
-
-    // Apply date range filter
-    if (startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      filteredData = filteredData.filter((item) => {
-        const itemDate = new Date(item.date);
-        return itemDate >= start && itemDate <= end;
-      });
-    } else if (startDate) {
-      const start = new Date(startDate);
-      filteredData = filteredData.filter((item) => {
-        const itemDate = new Date(item.date);
-        return itemDate >= start;
-      });
-    } else if (endDate) {
-      const end = new Date(endDate);
-      filteredData = filteredData.filter((item) => {
-        const itemDate = new Date(item.date);
-        return itemDate <= end;
-      });
-    }
 
     // Sort by date descending
     filteredData.sort((a, b) => b.date.getTime() - a.date.getTime());

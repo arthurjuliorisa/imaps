@@ -20,7 +20,6 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
-import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
 
@@ -55,9 +54,6 @@ export default function AdjustmentReportPage() {
   const toast = useToast();
   const router = useRouter();
 
-  const now = new Date();
-  const [startDate, setStartDate] = useState(now.toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [data, setData] = useState<AdjustmentHeader[]>([]);
@@ -66,12 +62,7 @@ export default function AdjustmentReportPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        startDate,
-        endDate,
-      });
-
-      const response = await fetch(`/api/customs/stock-count/adjustment?${params}`);
+      const response = await fetch(`/api/customs/stock-count/adjustment`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
       setData(result);
@@ -82,7 +73,7 @@ export default function AdjustmentReportPage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, toast]);
+  }, [toast]);
 
   useEffect(() => {
     fetchData();
@@ -113,7 +104,7 @@ export default function AdjustmentReportPage() {
     exportToExcelWithHeaders(
       exportData,
       EXCEL_HEADERS,
-      `Laporan_Adjustment_${startDate}_${endDate}`,
+      'Laporan_Adjustment',
       'Laporan Adjustment'
     );
   };
@@ -130,9 +121,8 @@ export default function AdjustmentReportPage() {
     exportToPDF(
       exportData,
       PDF_COLUMNS,
-      `Laporan_Adjustment_${startDate}_${endDate}`,
-      'Laporan Adjustment',
-      `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`
+      'Laporan_Adjustment',
+      'Laporan Adjustment'
     );
   };
 
@@ -143,21 +133,13 @@ export default function AdjustmentReportPage() {
       title="Laporan Adjustment"
       subtitle="Daftar laporan adjustment"
       actions={
-        <Stack spacing={3}>
-          <DateRangeFilter
-            startDate={startDate}
-            endDate={endDate}
-            onStartDateChange={setStartDate}
-            onEndDateChange={setEndDate}
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <ExportButtons
+            onExportExcel={handleExportExcel}
+            onExportPDF={handleExportPDF}
+            disabled={data.length === 0 || loading}
           />
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <ExportButtons
-              onExportExcel={handleExportExcel}
-              onExportPDF={handleExportPDF}
-              disabled={data.length === 0 || loading}
-            />
-          </Box>
-        </Stack>
+        </Box>
       }
     >
       {loading ? (
@@ -185,7 +167,7 @@ export default function AdjustmentReportPage() {
                 <TableRow>
                   <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
-                      No records found for the selected date range
+                      No records found
                     </Typography>
                   </TableCell>
                 </TableRow>
