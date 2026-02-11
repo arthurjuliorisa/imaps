@@ -13,6 +13,8 @@
 
 import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
+import { checkDuplicateMaterialUsageItems } from '@/lib/validators/duplicate-item.validator';
+import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
 
 // =============================================================================
 // CONSTANTS
@@ -107,6 +109,13 @@ export const materialUsageItemSchema = z.object({
     .max(50, 'PPKEK number must not exceed 50 characters')
     .nullable()
     .optional(),
+  
+  amount: z
+    .number()
+    .nonnegative('Amount must be greater than or equal to 0')
+    .finite('Amount must be a finite number')
+    .nullable()
+    .optional(),
 });
 
 export type MaterialUsageItemInput = z.infer<typeof materialUsageItemSchema>;
@@ -127,6 +136,7 @@ export const materialUsageBatchRequestSchema = z
       .trim(),
     
     company_code: companyCodeSchema,
+    owner: companyCodeSchema,
     
     work_order_number: z
       .string()
@@ -150,6 +160,13 @@ export const materialUsageBatchRequestSchema = z
     transaction_date: transactionDateSchema,
     
     reversal: z.enum(['Y']).nullable().optional(),
+    
+    section: z
+      .string()
+      .trim()
+      .max(100, 'Section must not exceed 100 characters')
+      .nullable()
+      .optional(),
     
     items: z
       .array(materialUsageItemSchema)
@@ -352,4 +369,61 @@ export async function validateItemTypes(data: MaterialUsageBatchRequestInput): P
   }
 
   return errors;
+}
+
+/**
+ * Check for duplicate items in the request
+ * Combination: (item_code, item_name, uom, ppkek_number)
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors (empty if no duplicates)
+ */
+export function checkMaterialUsageDuplicates(data: MaterialUsageBatchRequestInput): ValidationErrorDetail[] {
+  const errors = checkDuplicateMaterialUsageItems(
+    data.items.map(item => ({
+      item_code: item.item_code,
+      item_name: item.item_name,
+      uom: item.uom,
+      ppkek_number: item.ppkek_number ?? undefined,
+    }))
+  );
+
+  // Convert generic duplicate errors to material-usage format
+  return errors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
+}
+
+/**
+ * Validate item_type consistency against existing stock_daily_snapshot records
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors
+ */
+export async function validateMaterialUsageItemTypeConsistency(
+  data: MaterialUsageBatchRequestInput
+): Promise<ValidationErrorDetail[]> {
+  const itemErrors = await validateItemTypeConsistency(
+    data.company_code,
+    data.items.map(item => ({
+      item_type: item.item_type,
+      item_code: item.item_code,
+      item_name: item.item_name,
+    }))
+  );
+
+  // Convert generic consistency errors to material-usage format
+  return itemErrors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }

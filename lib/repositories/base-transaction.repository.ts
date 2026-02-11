@@ -286,11 +286,13 @@ export abstract class BaseTransactionRepository {
           companyCode,
           item.item_type,
           item.item_code,
+          item.uom,
           fromDate
         );
 
         log.info('Item cascade recalculation completed', {
           item_code: item.item_code,
+          uom: item.uom,
           snapshotsRecalculated: count,
         });
       }

@@ -214,7 +214,7 @@ model beginning_balances {
   company companies @relation(fields: [company_code], references: [code])
   ppkeks      beginning_balance_ppkeks[]
 
-  @@unique([company_code, item_code, balance_date])
+  @@unique([company_code, item_code, uom])
   @@index([company_code])
   @@index([item_code])
   @@index([balance_date])
@@ -393,11 +393,13 @@ model material_usages {
   id                       Int       @id @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
+  owner                    Int
   work_order_number        String?   @db.VarChar(50)
   cost_center_number       String?
   internal_evidence_number String    @db.VarChar(50)
   transaction_date         DateTime  @db.Date
   reversal                 String?   @db.VarChar(1)
+  section                  String?   @db.VarChar(100)
   timestamp                DateTime  @db.Timestamptz(6)
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
@@ -428,6 +430,7 @@ model material_usage_items {
   uom                    String    @db.VarChar(20)
   qty                    Decimal   @db.Decimal(15, 3)
   ppkek_number           String?   @db.VarChar(50)
+  amount                 Decimal?  @db.Decimal(19, 4)
   created_at             DateTime  @default(now()) @db.Timestamptz(6)
   updated_at             DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at             DateTime? @db.Timestamptz(6)
@@ -470,9 +473,11 @@ model production_outputs {
   id                       Int       @id @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
+  owner                    Int
   internal_evidence_number String    @db.VarChar(50)
   transaction_date         DateTime  @db.Date
   reversal                 String?   @db.VarChar(1)
+  section                  String?   @db.VarChar(100)
   timestamp                DateTime  @db.Timestamptz(6)
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
@@ -500,6 +505,7 @@ model production_output_items {
   item_name                 String    @db.VarChar(200)
   uom                       String    @db.VarChar(20)
   qty                       Decimal   @db.Decimal(15, 3)
+  amount                    Decimal?  @db.Decimal(19, 4)
   work_order_numbers        String[]
   created_at                DateTime  @default(now()) @db.Timestamptz(6)
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)
@@ -576,6 +582,7 @@ model adjustments {
   id                       Int       @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
+  owner                    Int
   wms_doc_type             String?   @db.VarChar(100)
   internal_evidence_number String    @db.VarChar(50)
   transaction_date         DateTime  @db.Date
@@ -836,7 +843,7 @@ model stock_daily_snapshot {
 
   company companies @relation(fields: [company_code], references: [code], onDelete: Cascade)
 
-  @@unique([company_code, item_type, item_code, snapshot_date])
+  @@unique([company_code, item_type, item_code, uom, snapshot_date], name: "stock_daily_snapshot_uom_company_item_snapshot_key")
   @@index([company_code, snapshot_date])
   @@index([item_type, snapshot_date])
   @@index([snapshot_date])

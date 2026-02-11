@@ -2,6 +2,8 @@ import { logger } from '@/lib/utils/logger';
 import {
   validateAdjustmentBatch,
   validateItemTypes,
+  checkAdjustmentDuplicates,
+  validateAdjustmentItemTypeConsistency,
   type AdjustmentBatchRequestInput,
 } from '@/lib/validators/schemas/adjustment.schema';
 import { AdjustmentsRepository } from '@/lib/repositories/adjustments.repository';
@@ -83,7 +85,41 @@ export class AdjustmentsService {
         wmsId: data.wms_id,
       });
 
-      // Step 3: Company validation
+      // Step 3: Check for duplicate items
+      const duplicateErrors = checkAdjustmentDuplicates(data);
+      if (duplicateErrors.length > 0) {
+        log.warn('Duplicate items found', {
+          errorCount: duplicateErrors.length,
+        });
+
+        return {
+          success: false,
+          errors: duplicateErrors as ErrorDetail[],
+        };
+      }
+
+      log.info('Duplicate items check passed', {
+        wmsId: data.wms_id,
+      });
+
+      // Step 4: Validate item_type consistency
+      const itemTypeConsistencyErrors = await validateAdjustmentItemTypeConsistency(data);
+      if (itemTypeConsistencyErrors.length > 0) {
+        log.warn('Item type consistency validation failed', {
+          errorCount: itemTypeConsistencyErrors.length,
+        });
+
+        return {
+          success: false,
+          errors: itemTypeConsistencyErrors as ErrorDetail[],
+        };
+      }
+
+      log.info('Item type consistency validated', {
+        wmsId: data.wms_id,
+      });
+
+      // Step 5: Company validation
       const companyExists = await this.validateCompany(data.company_code);
 
       if (!companyExists) {
@@ -110,7 +146,7 @@ export class AdjustmentsService {
         companyCode: data.company_code,
       });
 
-      // Step 4: Queue for immediate async insert (non-blocking)
+      // Step 6: Queue for immediate async insert (non-blocking)
       this.repository
         .create(data)
         .then((result) => {

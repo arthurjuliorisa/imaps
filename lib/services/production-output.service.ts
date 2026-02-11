@@ -2,6 +2,7 @@ import { logger } from '@/lib/utils/logger';
 import {
   validateProductionOutputBatch,
   validateItemTypes,
+  validateProductionOutputItemTypeConsistency,
   type ProductionOutputBatchRequestInput,
 } from '@/lib/validators/schemas/production-output.schema';
 import { ProductionOutputRepository } from '@/lib/repositories/production-output.repository';
@@ -83,7 +84,24 @@ export class ProductionOutputService {
         wmsId: data.wms_id,
       });
 
-      // Step 3: Company validation
+      // Step 3: Validate item_type consistency
+      const itemTypeConsistencyErrors = await validateProductionOutputItemTypeConsistency(data);
+      if (itemTypeConsistencyErrors.length > 0) {
+        log.warn('Item type consistency validation failed', {
+          errorCount: itemTypeConsistencyErrors.length,
+        });
+
+        return {
+          success: false,
+          errors: itemTypeConsistencyErrors as ErrorDetail[],
+        };
+      }
+
+      log.info('Item type consistency validated', {
+        wmsId: data.wms_id,
+      });
+
+      // Step 4: Company validation
       const companyExists = await this.validateCompany(data.company_code);
 
       if (!companyExists) {
@@ -110,7 +128,7 @@ export class ProductionOutputService {
         companyCode: data.company_code,
       });
 
-      // Step 4: Queue for immediate async insert (non-blocking)
+      // Step 5: Queue for immediate async insert (non-blocking)
       this.repository
         .create(data)
         .then((result) => {

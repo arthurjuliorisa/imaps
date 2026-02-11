@@ -12,6 +12,7 @@
 
 import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
+import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
 
 // =============================================================================
 // CONSTANTS
@@ -108,6 +109,13 @@ export const productionOutputItemSchema = z.object({
     .finite('Quantity must be a finite number'),
   
   work_order_numbers: workOrderNumbersSchema,
+  
+  amount: z
+    .number()
+    .nonnegative('Amount must be greater than or equal to 0')
+    .finite('Amount must be a finite number')
+    .nullable()
+    .optional(),
 });
 
 export type ProductionOutputItemInput = z.infer<typeof productionOutputItemSchema>;
@@ -128,6 +136,7 @@ export const productionOutputBatchRequestSchema = z
       .trim(),
     
     company_code: companyCodeSchema,
+    owner: companyCodeSchema,
     
     internal_evidence_number: z
       .string()
@@ -138,6 +147,13 @@ export const productionOutputBatchRequestSchema = z
     transaction_date: transactionDateSchema,
     
     reversal: z.enum(['Y']).nullable().optional(),
+    
+    section: z
+      .string()
+      .trim()
+      .max(100, 'Section must not exceed 100 characters')
+      .nullable()
+      .optional(),
     
     items: z
       .array(productionOutputItemSchema)
@@ -292,4 +308,34 @@ export async function validateItemTypes(data: ProductionOutputBatchRequestInput)
   }
 
   return errors;
+}
+
+/**
+ * Validate item_type consistency against existing stock_daily_snapshot records
+ * Consistency check only - no duplikasi check for production-output
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors
+ */
+export async function validateProductionOutputItemTypeConsistency(
+  data: ProductionOutputBatchRequestInput
+): Promise<ValidationErrorDetail[]> {
+  const itemErrors = await validateItemTypeConsistency(
+    data.company_code,
+    data.items.map(item => ({
+      item_type: item.item_type,
+      item_code: item.item_code,
+      item_name: item.item_name,
+    }))
+  );
+
+  // Convert generic consistency errors to production-output format
+  return itemErrors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }

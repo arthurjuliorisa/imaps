@@ -230,6 +230,10 @@ export default function BeginningDataPage() {
 
   // Handle Excel import submission
   const handleImportSubmit = async (records: any[]) => {
+    console.log('[Page Debug] handleImportSubmit called with records:', {
+      count: records.length,
+      records: records.slice(0, 3),
+    });
     try {
       const response = await fetch('/api/customs/beginning-data/import', {
         method: 'POST',
@@ -248,6 +252,11 @@ export default function BeginningDataPage() {
             remarks: r.remarks,
           })),
         }),
+      });
+
+      console.log('[Page Debug] Fetch response received:', {
+        status: response.status,
+        ok: response.ok,
       });
 
       if (!response.ok) {
@@ -275,8 +284,6 @@ export default function BeginningDataPage() {
       toast.success(successMessage);
       await fetchData();
     } catch (error: any) {
-      console.error('Error importing data:', error);
-
       // Show different messages based on error type
       if (error.validationErrors && Array.isArray(error.validationErrors)) {
         toast.error('Import gagal: Beberapa data tidak dapat ditambahkan. Periksa detail error di modal.');

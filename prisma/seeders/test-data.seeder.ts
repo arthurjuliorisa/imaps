@@ -192,6 +192,7 @@ export async function seedTestData() {
     data: {
       wms_id: 'MAT-1310-20261215-001',
       company_code: COMPANY_CODE,
+      owner: COMPANY_CODE,
       work_order_number: 'WO-1310-20261215-001',
       internal_evidence_number: 'INT-MAT-20261215-001',
       transaction_date: TEST_DATE,
@@ -235,6 +236,7 @@ export async function seedTestData() {
     data: {
       wms_id: 'PROD-1310-20261215-001',
       company_code: COMPANY_CODE,
+      owner: COMPANY_CODE,
       internal_evidence_number: 'INT-PROD-20261215-001',
       transaction_date: TEST_DATE,
       timestamp: new Date(),

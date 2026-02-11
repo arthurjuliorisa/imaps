@@ -74,6 +74,7 @@ export async function seedTransactions() {
     data: {
       wms_id: 'MAT-1310-20251214-001',
       company_code: 1310,
+      owner: 1310,
       work_order_number: 'WO-1310-001',
       internal_evidence_number: 'INT-MAT-001',
       transaction_date: new Date('2026-12-14'),
@@ -102,6 +103,7 @@ export async function seedTransactions() {
     data: {
       wms_id: 'PROD-1310-20251214-001',
       company_code: 1310,
+      owner: 1310,
       internal_evidence_number: 'INT-PROD-001',
       transaction_date: new Date('2026-12-14'),
       timestamp: new Date(),

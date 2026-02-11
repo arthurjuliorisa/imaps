@@ -261,7 +261,9 @@ export async function POST(request: Request) {
     const validation = await validateBeginningBalanceItem(
       companyCode,
       itemCode,
-      normalizedDate
+      itemName,
+      itemType,
+      uom
     );
 
     if (!validation.valid) {
@@ -316,15 +318,8 @@ export async function POST(request: Request) {
         normalizedDate
       );
     } catch (snapshotError) {
-      // Log the error but don't fail the entire request
-      console.error('[API Warning] Snapshot calculation failed:', {
-        companyCode,
-        itemType: newRecord.item_type,
-        itemCode: newRecord.item_code,
-        date: normalizedDate.toISOString().split('T')[0],
-        error: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
-      });
-      // Continue - data is created even if snapshot calc fails
+      // Snapshot calculation is non-blocking - continue even if it fails
+      // Data is created successfully regardless
     }
 
     // Fetch the created record with ppkeks to return complete data

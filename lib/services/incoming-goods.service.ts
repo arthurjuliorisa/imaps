@@ -1,5 +1,5 @@
 import { IncomingGoodsRepository } from '../repositories/incoming-goods.repository';
-import { validateIncomingGoodRequest, validateIncomingGoodsDates, validateItemTypes } from '../validators/schemas/incoming-goods.schema';
+import { validateIncomingGoodRequest, validateIncomingGoodsDates, validateItemTypes, checkIncomingGoodsDuplicates, validateIncomingGoodsItemTypeConsistency } from '../validators/schemas/incoming-goods.schema';
 import type { IncomingGoodRequestInput } from '../validators/schemas/incoming-goods.schema';
 import type { ErrorDetail, SuccessResponse } from '../types/api-response';
 import { logger } from '../utils/logger';
@@ -60,7 +60,17 @@ export class IncomingGoodsService {
         return { success: false, errors: dateErrors };
       }
 
-      // 3. Validate item types
+      // 3. Check for duplicate items
+      const duplicateErrors = checkIncomingGoodsDuplicates(data);
+      if (duplicateErrors.length > 0) {
+        requestLogger.warn(
+          'Duplicate items found',
+          { errors: duplicateErrors }
+        );
+        return { success: false, errors: duplicateErrors };
+      }
+
+      // 4. Validate item types
       const itemTypeErrors = await validateItemTypes(data);
       if (itemTypeErrors.length > 0) {
         requestLogger.warn(
@@ -70,7 +80,17 @@ export class IncomingGoodsService {
         return { success: false, errors: itemTypeErrors };
       }
 
-      // 3. Business validations (database checks)
+      // 5. Validate item_type consistency against stock_daily_snapshot
+      const itemTypeConsistencyErrors = await validateIncomingGoodsItemTypeConsistency(data);
+      if (itemTypeConsistencyErrors.length > 0) {
+        requestLogger.warn(
+          'Item type consistency validation failed',
+          { errors: itemTypeConsistencyErrors }
+        );
+        return { success: false, errors: itemTypeConsistencyErrors };
+      }
+
+      // 6. Business validations (database checks)
       const businessErrors = await this.validateBusiness(data);
       if (businessErrors.length > 0) {
         requestLogger.warn(
@@ -80,7 +100,7 @@ export class IncomingGoodsService {
         return { success: false, errors: businessErrors };
       }
 
-      // 4. Save to database
+      // 7. Save to database
       const result = await this.repository.createOrUpdate(data);
 
       requestLogger.info(
@@ -92,7 +112,7 @@ export class IncomingGoodsService {
         }
       );
 
-      // 5. Return success response
+      // 8. Return success response
       return {
         success: true,
         data: {

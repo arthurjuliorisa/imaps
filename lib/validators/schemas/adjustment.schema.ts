@@ -13,6 +13,8 @@
 
 import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
+import { checkDuplicateItems } from '@/lib/validators/duplicate-item.validator';
+import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
 
 // =============================================================================
 // CONSTANTS
@@ -132,6 +134,7 @@ export const adjustmentBatchRequestSchema = z
       .trim(),
     
     company_code: companyCodeSchema,
+    owner: companyCodeSchema,
     
     wms_doc_type: z
       .string()
@@ -298,4 +301,61 @@ export async function validateItemTypes(data: AdjustmentBatchRequestInput): Prom
   }
 
   return errors;
+}
+
+/**
+ * Check for duplicate items in the request
+ * Combination: (item_code, item_name, uom)
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors (empty if no duplicates)
+ */
+export function checkAdjustmentDuplicates(data: AdjustmentBatchRequestInput): ValidationErrorDetail[] {
+  const errors = checkDuplicateItems(
+    data.items.map(item => ({
+      item_code: item.item_code,
+      item_name: item.item_name,
+      uom: item.uom,
+    })),
+    'adjustment'
+  );
+
+  // Convert generic duplicate errors to adjustment format
+  return errors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
+}
+
+/**
+ * Validate item_type consistency against existing stock_daily_snapshot records
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors
+ */
+export async function validateAdjustmentItemTypeConsistency(
+  data: AdjustmentBatchRequestInput
+): Promise<ValidationErrorDetail[]> {
+  const itemErrors = await validateItemTypeConsistency(
+    data.company_code,
+    data.items.map(item => ({
+      item_type: item.item_type,
+      item_code: item.item_code,
+      item_name: item.item_name,
+    }))
+  );
+
+  // Convert generic consistency errors to adjustment format
+  return itemErrors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }

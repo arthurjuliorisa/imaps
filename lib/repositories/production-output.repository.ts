@@ -128,6 +128,7 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
           update: {
             internal_evidence_number: data.internal_evidence_number,
             reversal: data.reversal || null,
+            section: data.section || null,
             timestamp: new Date(data.timestamp),
             updated_at: new Date(),
             deleted_at: null,
@@ -135,9 +136,11 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
           create: {
             wms_id: data.wms_id,
             company_code: data.company_code,
+            owner: data.owner,
             internal_evidence_number: data.internal_evidence_number,
             transaction_date: transactionDate,
             reversal: data.reversal || null,
+            section: data.section || null,
             timestamp: new Date(data.timestamp),
           },
         });
@@ -203,6 +206,7 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
             item_name: item.item_name,
             uom: item.uom,
             qty: new Prisma.Decimal(item.qty),
+            amount: item.amount ? new Prisma.Decimal(item.amount) : null,
           }));
 
           await tx.production_output_items.createMany({
@@ -244,6 +248,7 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
             item_name: item.item_name,
             uom: item.uom,
             qty: new Prisma.Decimal(item.qty),
+            amount: item.amount ? new Prisma.Decimal(item.amount) : null,
           }));
 
           await tx.production_output_items.createMany({

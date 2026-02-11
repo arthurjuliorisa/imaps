@@ -989,8 +989,9 @@ CREATE TABLE stock_daily_snapshot_2026 PARTITION OF stock_daily_snapshot
 ALTER TABLE stock_daily_snapshot_2026 OWNER TO appuser;
 
 -- Create indexes with Prisma naming convention
-CREATE UNIQUE INDEX stock_snapshot_company_item_date_key 
-    ON stock_daily_snapshot (company_code, item_type, item_code, snapshot_date);
+-- UNIQUE INDEX for ON CONFLICT support with UOM
+CREATE UNIQUE INDEX stock_daily_snapshot_uom_company_item_snapshot_key 
+    ON stock_daily_snapshot (company_code, item_type, item_code, uom, snapshot_date);
 CREATE INDEX stock_snapshot_company_date_idx 
     ON stock_daily_snapshot (company_code, snapshot_date);
 CREATE INDEX stock_snapshot_item_date_idx 

@@ -21,6 +21,8 @@ const SQL_FILES = [
   '02_traceability_tables.sql',
   '03_functions.sql',
   '04_create_views.sql',
+  '05_item_level_snapshot_functions.sql',
+  '05_permissions.sql',
 ];
 
 function log(message: string) {
