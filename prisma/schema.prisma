@@ -399,6 +399,7 @@ model material_usages {
   internal_evidence_number String    @db.VarChar(50)
   transaction_date         DateTime  @db.Date
   reversal                 String?   @db.VarChar(1)
+  section                  String?   @db.VarChar(100)
   timestamp                DateTime  @db.Timestamptz(6)
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
@@ -429,6 +430,7 @@ model material_usage_items {
   uom                    String    @db.VarChar(20)
   qty                    Decimal   @db.Decimal(15, 3)
   ppkek_number           String?   @db.VarChar(50)
+  amount                 Decimal?  @db.Decimal(19, 4)
   created_at             DateTime  @default(now()) @db.Timestamptz(6)
   updated_at             DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at             DateTime? @db.Timestamptz(6)
@@ -475,6 +477,7 @@ model production_outputs {
   internal_evidence_number String    @db.VarChar(50)
   transaction_date         DateTime  @db.Date
   reversal                 String?   @db.VarChar(1)
+  section                  String?   @db.VarChar(100)
   timestamp                DateTime  @db.Timestamptz(6)
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
@@ -502,6 +505,7 @@ model production_output_items {
   item_name                 String    @db.VarChar(200)
   uom                       String    @db.VarChar(20)
   qty                       Decimal   @db.Decimal(15, 3)
+  amount                    Decimal?  @db.Decimal(19, 4)
   work_order_numbers        String[]
   created_at                DateTime  @default(now()) @db.Timestamptz(6)
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)

@@ -145,6 +145,7 @@ export interface MaterialUsageHeader extends BaseHeader {
   internal_evidence_number: string;
   transaction_date: Date;
   reversal?: string;
+  section?: string | null;
   deleted_at?: Date;
 
   // Relations
@@ -161,6 +162,7 @@ export interface MaterialUsageDetail extends BaseDetail {
   material_usage_company: number;
   material_usage_date: Date;
   ppkek_number?: string;
+  amount?: number | string | null;
   deleted_at?: Date;
 }
 
@@ -177,6 +179,7 @@ export interface ProductionOutputHeader extends BaseHeader {
   internal_evidence_number: string;
   transaction_date: Date;
   reversal?: string;
+  section?: string | null;
   deleted_at?: Date;
 
   // Relations
@@ -193,6 +196,7 @@ export interface ProductionOutputDetail extends BaseDetail {
   production_output_company: number;
   production_output_date: Date;
   work_order_numbers: string[];
+  amount?: number | string | null;
   deleted_at?: Date;
 }
 

@@ -674,6 +674,72 @@ SELECT * FROM fn_calculate_lpj_barang_sisa(
 COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - Independent scrap transactions (SCRAP) - YTD';
 
 -- ============================================================================
+-- REPORT #8: INTERNAL INCOMING (Production Output Activity)
+-- ============================================================================
+-- Real-time view of internal production activities (goods produced/created)
+-- Data source: production_outputs + production_output_items (transaction-based)
+
+CREATE OR REPLACE VIEW vw_internal_incoming AS
+SELECT 
+    po.id,
+    po.company_code,
+    c.name as company_name,
+    po.internal_evidence_number,
+    po.transaction_date,
+    po.section,
+    
+    -- Item details
+    poi.item_type as type_code,
+    poi.item_code,
+    poi.item_name,
+    poi.uom as unit,
+    poi.qty as quantity,
+    poi.amount as value_amount
+FROM production_outputs po
+JOIN production_output_items poi ON po.company_code = poi.production_output_company
+    AND po.id = poi.production_output_id
+    AND po.transaction_date = poi.production_output_date
+JOIN companies c ON po.company_code = c.code
+WHERE po.deleted_at IS NULL
+  AND poi.deleted_at IS NULL
+ORDER BY po.transaction_date DESC, po.id, poi.id;
+
+COMMENT ON VIEW vw_internal_incoming IS 'Report #8: Internal Incoming - Real-time view of production output activities (goods produced internally)';
+
+-- ============================================================================
+-- REPORT #9: INTERNAL OUTGOING (Material Usage Activity)
+-- ============================================================================
+-- Real-time view of internal material usage activities (materials consumed in production)
+-- Data source: material_usages + material_usage_items (transaction-based)
+
+CREATE OR REPLACE VIEW vw_internal_outgoing AS
+SELECT 
+    mu.id,
+    mu.company_code,
+    c.name as company_name,
+    mu.internal_evidence_number,
+    mu.transaction_date,
+    mu.section,
+    
+    -- Item details
+    mui.item_type as type_code,
+    mui.item_code,
+    mui.item_name,
+    mui.uom as unit,
+    mui.qty as quantity,
+    mui.amount as value_amount
+FROM material_usages mu
+JOIN material_usage_items mui ON mu.company_code = mui.material_usage_company
+    AND mu.id = mui.material_usage_id
+    AND mu.transaction_date = mui.material_usage_date
+JOIN companies c ON mu.company_code = c.code
+WHERE mu.deleted_at IS NULL
+  AND mui.deleted_at IS NULL
+ORDER BY mu.transaction_date DESC, mu.id, mui.id;
+
+COMMENT ON VIEW vw_internal_outgoing IS 'Report #9: Internal Outgoing - Real-time view of material usage activities (materials consumed in production)';
+
+-- ============================================================================
 -- ADDITIONAL HELPER VIEWS
 -- ============================================================================
 

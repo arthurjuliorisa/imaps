@@ -109,6 +109,13 @@ export const materialUsageItemSchema = z.object({
     .max(50, 'PPKEK number must not exceed 50 characters')
     .nullable()
     .optional(),
+  
+  amount: z
+    .number()
+    .nonnegative('Amount must be greater than or equal to 0')
+    .finite('Amount must be a finite number')
+    .nullable()
+    .optional(),
 });
 
 export type MaterialUsageItemInput = z.infer<typeof materialUsageItemSchema>;
@@ -153,6 +160,13 @@ export const materialUsageBatchRequestSchema = z
     transaction_date: transactionDateSchema,
     
     reversal: z.enum(['Y']).nullable().optional(),
+    
+    section: z
+      .string()
+      .trim()
+      .max(100, 'Section must not exceed 100 characters')
+      .nullable()
+      .optional(),
     
     items: z
       .array(materialUsageItemSchema)

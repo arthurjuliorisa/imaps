@@ -109,6 +109,13 @@ export const productionOutputItemSchema = z.object({
     .finite('Quantity must be a finite number'),
   
   work_order_numbers: workOrderNumbersSchema,
+  
+  amount: z
+    .number()
+    .nonnegative('Amount must be greater than or equal to 0')
+    .finite('Amount must be a finite number')
+    .nullable()
+    .optional(),
 });
 
 export type ProductionOutputItemInput = z.infer<typeof productionOutputItemSchema>;
@@ -140,6 +147,13 @@ export const productionOutputBatchRequestSchema = z
     transaction_date: transactionDateSchema,
     
     reversal: z.enum(['Y']).nullable().optional(),
+    
+    section: z
+      .string()
+      .trim()
+      .max(100, 'Section must not exceed 100 characters')
+      .nullable()
+      .optional(),
     
     items: z
       .array(productionOutputItemSchema)
