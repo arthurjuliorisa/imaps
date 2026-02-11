@@ -56,10 +56,30 @@ const menuStructure: MenuInput[] = [
     ],
   },
   {
-    menu_name: 'Transaksi',
+    menu_name: 'Internal Transaction',
     menu_path: null,
     menu_icon: 'SwapHoriz',
     menu_order: 5,
+    children: [
+      { menu_name: 'Incoming', menu_path: '/customs/internal-transaction/incoming', menu_icon: 'LocalShipping', menu_order: 1 },
+      { menu_name: 'Outgoing', menu_path: '/customs/internal-transaction/outgoing', menu_icon: 'LocalShipping', menu_order: 2 },
+    ],
+  },
+  {
+    menu_name: 'LPJ Stock Count',
+    menu_path: null,
+    menu_icon: 'Inventory',
+    menu_order: 6,
+    children: [
+      { menu_name: 'Laporan Stock Opname', menu_path: '/customs/stock-count/opname', menu_icon: 'Assessment', menu_order: 1 },
+      { menu_name: 'Laporan Adjustment', menu_path: '/customs/stock-count/adjustment', menu_icon: 'Assessment', menu_order: 2 },
+    ],
+  },
+  {
+    menu_name: 'Transaksi',
+    menu_path: null,
+    menu_icon: 'CompareArrows',
+    menu_order: 7,
     children: [
       { menu_name: 'Transaksi Scrap', menu_path: '/customs/scrap-transactions', menu_icon: 'Recycling', menu_order: 1 },
       { menu_name: 'Transaksi Barang Modal', menu_path: '/customs/capital-goods-transactions', menu_icon: 'Inventory', menu_order: 2 },
@@ -70,13 +90,13 @@ const menuStructure: MenuInput[] = [
     menu_name: 'Beginning Data',
     menu_path: '/customs/beginning-data',
     menu_icon: 'PlaylistAdd',
-    menu_order: 6,
+    menu_order: 8,
   },
   {
     menu_name: 'Settings',
     menu_path: null,
     menu_icon: 'Settings',
-    menu_order: 7,
+    menu_order: 9,
     children: [
       { menu_name: 'User Management', menu_path: '/settings/users', menu_icon: 'People', menu_order: 1 },
       { menu_name: 'Access Menu', menu_path: '/settings/access-menu', menu_icon: 'Settings', menu_order: 2 },

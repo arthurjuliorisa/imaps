@@ -30,6 +30,12 @@ import {
   ChevronRight as ChevronRightIcon,
   History as HistoryIcon,
   Recycling as RecyclingIcon,
+  SwapHoriz as SwapHorizIcon,
+  Assessment as AssessmentIcon,
+  Storage as StorageIcon,
+  PlaylistAdd as PlaylistAddIcon,
+  Inventory as InventoryIcon,
+  CompareArrows as CompareArrowsIcon,
 } from '@mui/icons-material';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -76,6 +82,12 @@ const getIconComponent = (iconName: string | null): React.ReactNode => {
     AttachMoney: <AttachMoneyIcon />,
     History: <HistoryIcon />,
     Recycling: <RecyclingIcon />,
+    SwapHoriz: <SwapHorizIcon />,
+    Assessment: <AssessmentIcon />,
+    Storage: <StorageIcon />,
+    PlaylistAdd: <PlaylistAddIcon />,
+    Inventory: <InventoryIcon />,
+    CompareArrows: <CompareArrowsIcon />,
   };
 
   return iconMap[iconName] || <DescriptionIcon />;
