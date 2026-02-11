@@ -10,7 +10,23 @@
  * - Returns array of validation errors (empty if no duplicates)
  */
 
-import type { ValidationErrorDetail } from '@/lib/validators/schemas/incoming-goods.schema';
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/**
+ * Generic validation error detail
+ * Used by duplicate checking functions
+ */
+export interface DuplicateCheckError {
+  location: string;
+  field: string;
+  code: string;
+  message: string;
+  item_index?: number;  // For incoming-goods, material-usage, adjustment
+  record_index?: number; // For wip-balance
+  item_code?: string;
+}
 
 // ============================================================================
 // INTERFACES
@@ -49,8 +65,8 @@ export interface DuplicateCheckWipItem {
 export function checkDuplicateItems(
   items: DuplicateCheckItem[],
   endpointType: 'incoming-goods' | 'adjustment'
-): ValidationErrorDetail[] {
-  const errors: ValidationErrorDetail[] = [];
+): DuplicateCheckError[] {
+  const errors: DuplicateCheckError[] = [];
   const seen = new Map<string, number>();
 
   items.forEach((item, index) => {
@@ -83,8 +99,8 @@ export function checkDuplicateItems(
  */
 export function checkDuplicateMaterialUsageItems(
   items: DuplicateCheckItem[]
-): ValidationErrorDetail[] {
-  const errors: ValidationErrorDetail[] = [];
+): DuplicateCheckError[] {
+  const errors: DuplicateCheckError[] = [];
   const seen = new Map<string, number>();
 
   items.forEach((item, index) => {
@@ -122,8 +138,8 @@ export function checkDuplicateMaterialUsageItems(
  */
 export function checkDuplicateWipBalanceItems(
   items: DuplicateCheckWipItem[]
-): ValidationErrorDetail[] {
-  const errors: ValidationErrorDetail[] = [];
+): DuplicateCheckError[] {
+  const errors: DuplicateCheckError[] = [];
   const seen = new Map<string, number>();
 
   items.forEach((item, index) => {
@@ -132,11 +148,11 @@ export function checkDuplicateWipBalanceItems(
     if (seen.has(key)) {
       const firstIndex = seen.get(key)!;
       errors.push({
-        location: 'item',
+        location: 'record',
         field: 'item_code',
         code: 'DUPLICATE_ITEM',
         message: `Duplicate item in batch: company_code="${item.company_code}", item_code="${item.item_code}", item_name="${item.item_name}", uom="${item.uom}", stock_date="${item.stock_date}" found at row ${firstIndex + 1} and row ${index + 1}`,
-        item_index: index,
+        record_index: index,
         item_code: item.item_code,
       });
     } else {

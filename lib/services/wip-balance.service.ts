@@ -120,7 +120,7 @@ export class WIPBalanceService {
           field: err.field,
           code: err.code,
           message: err.message,
-          ...(err.item_index !== undefined && { record_index: err.item_index }),
+          ...(err.record_index !== undefined && { record_index: err.record_index }),
         }));
         return { success: false, errors: errorDetails as ErrorDetail[] };
       }

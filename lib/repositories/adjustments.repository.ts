@@ -132,6 +132,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
           create: {
             wms_id: data.wms_id,
             company_code: data.company_code,
+            owner: data.owner,
             wms_doc_type: data.wms_doc_type || null,
             internal_evidence_number: data.internal_evidence_number,
             transaction_date: transactionDate,

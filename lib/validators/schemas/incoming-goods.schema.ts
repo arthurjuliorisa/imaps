@@ -444,7 +444,7 @@ export async function validateItemTypes(data: IncomingGoodRequestInput): Promise
  * @returns Array of validation errors (empty if no duplicates)
  */
 export function checkIncomingGoodsDuplicates(data: IncomingGoodRequestInput): ValidationErrorDetail[] {
-  return checkDuplicateItems(
+  const errors = checkDuplicateItems(
     data.items.map(item => ({
       item_code: item.item_code,
       item_name: item.item_name,
@@ -452,8 +452,24 @@ export function checkIncomingGoodsDuplicates(data: IncomingGoodRequestInput): Va
     })),
     'incoming-goods'
   );
+
+  // Convert generic duplicate errors to incoming-goods format
+  return errors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }
 
+/**
+ * Validate item_type consistency against existing stock_daily_snapshot records
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors
+ */
 /**
  * Validate item_type consistency against existing stock_daily_snapshot records
  *
@@ -463,7 +479,7 @@ export function checkIncomingGoodsDuplicates(data: IncomingGoodRequestInput): Va
 export async function validateIncomingGoodsItemTypeConsistency(
   data: IncomingGoodRequestInput
 ): Promise<ValidationErrorDetail[]> {
-  return validateItemTypeConsistency(
+  const itemErrors = await validateItemTypeConsistency(
     data.company_code,
     data.items.map(item => ({
       item_type: item.item_type,
@@ -471,4 +487,14 @@ export async function validateIncomingGoodsItemTypeConsistency(
       item_name: item.item_name,
     }))
   );
+
+  // Convert generic consistency errors to incoming-goods format
+  return itemErrors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }

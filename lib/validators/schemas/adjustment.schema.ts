@@ -311,7 +311,7 @@ export async function validateItemTypes(data: AdjustmentBatchRequestInput): Prom
  * @returns Array of validation errors (empty if no duplicates)
  */
 export function checkAdjustmentDuplicates(data: AdjustmentBatchRequestInput): ValidationErrorDetail[] {
-  return checkDuplicateItems(
+  const errors = checkDuplicateItems(
     data.items.map(item => ({
       item_code: item.item_code,
       item_name: item.item_name,
@@ -319,6 +319,16 @@ export function checkAdjustmentDuplicates(data: AdjustmentBatchRequestInput): Va
     })),
     'adjustment'
   );
+
+  // Convert generic duplicate errors to adjustment format
+  return errors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }
 
 /**
@@ -330,7 +340,7 @@ export function checkAdjustmentDuplicates(data: AdjustmentBatchRequestInput): Va
 export async function validateAdjustmentItemTypeConsistency(
   data: AdjustmentBatchRequestInput
 ): Promise<ValidationErrorDetail[]> {
-  return validateItemTypeConsistency(
+  const itemErrors = await validateItemTypeConsistency(
     data.company_code,
     data.items.map(item => ({
       item_type: item.item_type,
@@ -338,4 +348,14 @@ export async function validateAdjustmentItemTypeConsistency(
       item_name: item.item_name,
     }))
   );
+
+  // Convert generic consistency errors to adjustment format
+  return itemErrors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }

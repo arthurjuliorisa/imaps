@@ -379,7 +379,7 @@ export async function validateItemTypes(data: MaterialUsageBatchRequestInput): P
  * @returns Array of validation errors (empty if no duplicates)
  */
 export function checkMaterialUsageDuplicates(data: MaterialUsageBatchRequestInput): ValidationErrorDetail[] {
-  return checkDuplicateMaterialUsageItems(
+  const errors = checkDuplicateMaterialUsageItems(
     data.items.map(item => ({
       item_code: item.item_code,
       item_name: item.item_name,
@@ -387,6 +387,16 @@ export function checkMaterialUsageDuplicates(data: MaterialUsageBatchRequestInpu
       ppkek_number: item.ppkek_number ?? undefined,
     }))
   );
+
+  // Convert generic duplicate errors to material-usage format
+  return errors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }
 
 /**
@@ -398,7 +408,7 @@ export function checkMaterialUsageDuplicates(data: MaterialUsageBatchRequestInpu
 export async function validateMaterialUsageItemTypeConsistency(
   data: MaterialUsageBatchRequestInput
 ): Promise<ValidationErrorDetail[]> {
-  return validateItemTypeConsistency(
+  const itemErrors = await validateItemTypeConsistency(
     data.company_code,
     data.items.map(item => ({
       item_type: item.item_type,
@@ -406,4 +416,14 @@ export async function validateMaterialUsageItemTypeConsistency(
       item_name: item.item_name,
     }))
   );
+
+  // Convert generic consistency errors to material-usage format
+  return itemErrors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }

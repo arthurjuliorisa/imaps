@@ -13,7 +13,23 @@
  */
 
 import { prisma } from '@/lib/db/prisma';
-import type { ValidationErrorDetail } from '@/lib/validators/schemas/incoming-goods.schema';
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/**
+ * Generic validation error for consistency checks
+ */
+export interface ItemTypeConsistencyError {
+  location: string;
+  field: string;
+  code: string;
+  message: string;
+  item_index?: number;  // For item-level errors
+  record_index?: number; // For wip-balance records
+  item_code?: string;
+}
 
 // ============================================================================
 // INTERFACES
@@ -45,8 +61,8 @@ export interface ItemTypeCheckItem {
 export async function validateItemTypeConsistency(
   companyCode: number,
   items: ItemTypeCheckItem[]
-): Promise<ValidationErrorDetail[]> {
-  const errors: ValidationErrorDetail[] = [];
+): Promise<ItemTypeConsistencyError[]> {
+  const errors: ItemTypeConsistencyError[] = [];
 
   // Get unique item_code combinations
   const uniqueItemCodes = [...new Set(items.map(item => item.item_code))];

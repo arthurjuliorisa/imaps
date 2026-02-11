@@ -389,7 +389,7 @@ export async function validateItemTypes(data: WipBalanceBatchRequestInput): Prom
  * @returns Array of validation errors (empty if no duplicates)
  */
 export function checkWipBalanceDuplicates(data: WipBalanceBatchRequestInput): ValidationErrorDetail[] {
-  return checkDuplicateWipBalanceItems(
+  const errors = checkDuplicateWipBalanceItems(
     data.records.map(record => ({
       company_code: record.company_code,
       item_code: record.item_code,
@@ -398,13 +398,22 @@ export function checkWipBalanceDuplicates(data: WipBalanceBatchRequestInput): Va
       stock_date: record.stock_date,
     }))
   );
+
+  // Convert generic duplicate errors to wip-balance format
+  return errors.map(err => ({
+    location: 'record' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    record_index: err.item_index, // item_index from validator is the record index in wip-balance context
+    wms_id: data.records[err.item_index ?? 0]?.wms_id,
+  }));
 }
 
 /**
  * Validate item_type consistency against existing stock_daily_snapshot records
  * 
- * Converts record_index from duplicate check to record_index format
- * for wip-balance batch processing
+ * Converts errors to include record_index for batch context
  *
  * @param data - Validated request data
  * @returns Array of validation errors
@@ -431,15 +440,17 @@ export async function validateWipBalanceItemTypeConsistency(
     );
 
     // Convert errors to include record_index for batch context
-    companyRecords.forEach((record, idx) => {
+    companyRecords.forEach((record) => {
       const recordIndex = data.records.indexOf(record);
       
       // Check if there are errors for this record's item_code
       consistencyErrors.forEach(err => {
         if (err.item_code === record.item_code) {
           errors.push({
-            ...err,
-            location: 'record',
+            location: 'record' as const,
+            field: err.field,
+            code: err.code,
+            message: err.message,
             record_index: recordIndex,
           });
         }

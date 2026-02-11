@@ -320,7 +320,7 @@ export async function validateItemTypes(data: ProductionOutputBatchRequestInput)
 export async function validateProductionOutputItemTypeConsistency(
   data: ProductionOutputBatchRequestInput
 ): Promise<ValidationErrorDetail[]> {
-  return validateItemTypeConsistency(
+  const itemErrors = await validateItemTypeConsistency(
     data.company_code,
     data.items.map(item => ({
       item_type: item.item_type,
@@ -328,4 +328,14 @@ export async function validateProductionOutputItemTypeConsistency(
       item_name: item.item_name,
     }))
   );
+
+  // Convert generic consistency errors to production-output format
+  return itemErrors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }

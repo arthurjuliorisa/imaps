@@ -466,7 +466,7 @@ export async function validateItemTypes(data: OutgoingGoodRequestInput): Promise
 export async function validateOutgoingGoodsItemTypeConsistency(
   data: OutgoingGoodRequestInput
 ): Promise<ValidationErrorDetail[]> {
-  return validateItemTypeConsistency(
+  const itemErrors = await validateItemTypeConsistency(
     data.company_code,
     data.items.map(item => ({
       item_type: item.item_type,
@@ -474,4 +474,14 @@ export async function validateOutgoingGoodsItemTypeConsistency(
       item_name: item.item_name,
     }))
   );
+
+  // Convert generic consistency errors to outgoing-goods format
+  return itemErrors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }
