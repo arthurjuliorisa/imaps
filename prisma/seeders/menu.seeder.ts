@@ -58,7 +58,7 @@ const menuStructure: MenuInput[] = [
   {
     menu_name: 'Internal Transaction',
     menu_path: null,
-    menu_icon: 'SwapHoriz',
+    menu_icon: 'Assessment',
     menu_order: 5,
     children: [
       { menu_name: 'Incoming', menu_path: '/customs/internal-transaction/incoming', menu_icon: 'LocalShipping', menu_order: 1 },
