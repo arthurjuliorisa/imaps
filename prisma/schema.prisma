@@ -78,6 +78,14 @@ enum StockOpnameStatus {
   @@map("stock_opname_status")
 }
 
+enum WmsStockOpnameStatus {
+  ACTIVE
+  CONFIRMED
+  CANCELLED
+
+  @@map("wms_stock_opname_status")
+}
+
 // ============================================================================
 // MASTER DATA TABLES
 // ============================================================================
@@ -106,6 +114,8 @@ model companies {
   stock_daily_snapshot         stock_daily_snapshot[]
   scrap_transactions           scrap_transactions[]
   stock_opnames                stock_opnames[]
+  wms_stock_opnames            wms_stock_opnames[]
+  wms_stock_opname_items       wms_stock_opname_items[]
 
   @@index([code])
   @@index([status])
@@ -881,4 +891,66 @@ model snapshot_recalc_queue {
   @@unique([company_code, recalc_date, item_type, item_code])
   @@index([status, priority, queued_at])
   @@index([company_code, recalc_date])
+}
+// ============================================================================
+// WMS STOCK OPNAME TABLES (API Integration)
+// ============================================================================
+
+model wms_stock_opnames {
+  id                    BigInt                      @id @default(autoincrement())
+  wms_id                String                      @db.VarChar(100) // External WMS identifier for idempotency
+  company_code          Int
+  owner                 Int? // For consignment tracking
+  document_date         DateTime                    @db.Date
+  status                WmsStockOpnameStatus        @default(ACTIVE) // ACTIVE, CONFIRMED, CANCELLED
+  notes                 String?                     @db.Text
+  created_at            DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime                    @updatedAt @db.Timestamptz(6)
+  confirmed_at          DateTime?                   @db.Timestamptz(6)
+  
+  // Relations
+  company               companies                   @relation(fields: [company_code], references: [code], onDelete: Cascade)
+  items                 wms_stock_opname_items[]
+
+  @@unique([company_code, wms_id])
+  @@index([status])
+  @@index([company_code, document_date])
+  @@index([created_at])
+  @@index([wms_id])
+}
+
+model wms_stock_opname_items {
+  id                        BigInt              @id @default(autoincrement())
+  wms_stock_opname_id       BigInt
+  company_code              Int
+  item_code                 String              @db.VarChar(50)
+  item_type                 String              @db.VarChar(10)
+  
+  // Reconciliation data (locked at POST time)
+  beginning_qty             Decimal             @db.Decimal(15, 3)
+  incoming_qty_on_date      Decimal             @db.Decimal(15, 3) // Sum of incoming goods up to document_date
+  outgoing_qty_on_date      Decimal             @db.Decimal(15, 3) // Sum of outgoing goods up to document_date
+  system_qty                Decimal             @db.Decimal(15, 3) // Calculated: beginning + incoming - outgoing
+  
+  // Physical count from WMS
+  physical_qty              Decimal             @db.Decimal(15, 3)
+  
+  // Variance & adjustment
+  variance_qty              Decimal             @db.Decimal(15, 3) // physical_qty - system_qty
+  adjustment_qty_signed     Decimal             @db.Decimal(15, 3) // Signed: negative=LOSS, positive=GAIN
+  adjustment_type           String?             @db.VarChar(10) // GAIN, LOSS (from created adjustment, nullable before PATCH)
+  
+  uom                       String              @db.VarChar(20)
+  notes                     String?             @db.Text
+  created_at                DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime            @updatedAt @db.Timestamptz(6)
+  
+  // Relations
+  wms_stock_opname          wms_stock_opnames   @relation(fields: [wms_stock_opname_id], references: [id], onDelete: Cascade)
+  company                   companies           @relation(fields: [company_code], references: [code], onDelete: Cascade)
+
+  @@index([wms_stock_opname_id])
+  @@index([company_code, item_code])
+  @@index([item_type])
+  @@index([company_code])
 }
