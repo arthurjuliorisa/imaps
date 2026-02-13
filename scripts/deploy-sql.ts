@@ -18,7 +18,7 @@ console.log(`[DEPLOY] Database: ${DATABASE_URL?.split('@')[1] || 'unknown'}`);
 // SQL files to execute in order (excluding 00_init_database.sql)
 const SQL_FILES = [
   '01_setup_partitions.sql',
-  '02_traceability_tables.sql',
+  // '02_traceability_tables.sql',
   '03_functions.sql',
   '04_create_views.sql',
   '05_item_level_snapshot_functions.sql',
