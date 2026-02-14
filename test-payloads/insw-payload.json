@@ -1,0 +1,489 @@
+{
+  "api_documentation": {
+    "title": "IT INVENTORY - Kawasan Ekonomi Khusus",
+    "system": "Sistem Indonesia Nasional Single Window (SINSW)",
+    "organization": "Lembaga National Single Window (LNSW)",
+
+    "authorization": {
+      "api_keys": {
+        "x-insw-key": "RqT40lH7Hy202uUybBLkFhtNnfAvxrlp",
+        "x-unique-key": {
+          "data_percobaan": "Didapatkan pada dashboard sidebar",
+          "data_real": "Didapatkan ketika pendaftaran"
+        }
+      }
+    },
+
+    "endpoints": [
+      {
+        "id": 1,
+        "name": "Saldo Awal (Data Percobaan dan Data Real)",
+        "method": "POST",
+        "description": "Digunakan untuk membuat data saldo awal barang di awal periode pencatatan",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/saldoAwal",
+        "endpoint_real": "https://api.insw.go.id/api-prod/inventory/saldoAwal",
+        "request_body": {
+          "data": {
+            "no_kegiatan": "001/SAL/2025",
+            "tgl_kegiatan": "30-06-2023 14:32:10.234",
+            "barangSaldo": [
+              {
+                "kd_kategori_barang": "1",
+                "kd_barang": "barang1",
+                "uraian_barang": "Uraian barang 1",
+                "jumlah": 100000,
+                "satuan": "KGM",
+                "nilai": 100000,
+                "tanggal_declare": "05-06-2023 14:32:10.134"
+              }
+            ]
+          }
+        }
+      },
+
+      {
+        "id": 2,
+        "name": "Saldo Awal Final (Data Percobaan)",
+        "method": "PUT",
+        "description": "Digunakan untuk mengunci saldo awal yang telah ditetapkan sebagai acuan final",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/registrasi",
+        "request_body": null,
+        "note": "Endpoint ini tidak memerlukan request body, hanya authorization header"
+      },
+
+      {
+        "id": 3,
+        "name": "Pemasukan (Data Percobaan dan Data Real)",
+        "method": "POST",
+        "description": "Digunakan untuk mencatat data barang masuk ke dalam sistem",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/transaksi",
+        "endpoint_real": "https://api.insw.go.id/api-prod/inventory/transaksi",
+        "request_body": {
+          "data": [
+            {
+              "kdKegiatan": "30",
+              "dokumenKegiatan": [
+                {
+                  "nomorDokKegiatan": "001/PEM/2025",
+                  "tanggalKegiatan": "16-06-2025",
+                  "namaEntitas": "Aulia",
+                  "barangTransaksi": [
+                    {
+                      "kdKategoriBarang": "2",
+                      "kdBarang": "barang2",
+                      "uraianBarang": "Uraian barang 2",
+                      "jumlah": 40000,
+                      "kdSatuan": "KGM",
+                      "nilai": 200000,
+                      "dokumen": [
+                        {
+                          "kodeDokumen": "0407020",
+                          "nomorDokumen": "200/LDP-Masuk",
+                          "tanggalDokumen": "16-06-2023"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+
+      {
+        "id": 4,
+        "name": "Pengeluaran (Data Percobaan dan Data Real)",
+        "method": "POST",
+        "description": "Digunakan untuk mencatat data barang keluar dari sistem",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/transaksi",
+        "endpoint_real": "https://api.insw.go.id/api-prod/inventory/transaksi",
+        "request_body": {
+          "data": [
+            {
+              "kdKegiatan": "31",
+              "dokumenKegiatan": [
+                {
+                  "nomorDokKegiatan": "001/PEN/2025",
+                  "tanggalKegiatan": "06-05-2023 14:32:10.134",
+                  "namaEntitas": "Aulia",
+                  "barangTransaksi": [
+                    {
+                      "kdKategoriBarang": "2",
+                      "kdBarang": "barang2",
+                      "uraianBarang": "Uraian barang 2",
+                      "jumlah": 40000,
+                      "kdSatuan": "KGM",
+                      "nilai": 200000,
+                      "dokumen": [
+                        {
+                          "kodeDokumen": "0407631",
+                          "nomorDokumen": "200/LDP-Masuk",
+                          "tanggalDokumen": "05-06-2023"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+
+      {
+        "id": 5,
+        "name": "Stock Opname (Data Percobaan dan Data Real)",
+        "method": "POST",
+        "description": "Digunakan untuk mencatat hasil pengecekan fisik terhadap stok barang guna memastikan kesesuaian dengan sistem",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/transaksi",
+        "endpoint_real": "https://api.insw.go.id/api-prod/inventory/transaksi",
+        "request_body": {
+          "data": [
+            {
+              "kdKegiatan": "32",
+              "dokumenKegiatan": [
+                {
+                  "nomorDokKegiatan": "001/STO/2025",
+                  "tanggalKegiatan": "06-05-2023 14:32:10.134",
+                  "namaEntitas": "Aulia",
+                  "barangTransaksi": [
+                    {
+                      "kdKategoriBarang": "1",
+                      "kdBarang": "barang1",
+                      "uraianBarang": "Uraian barang 1",
+                      "jumlah": 20000,
+                      "kdSatuan": "KGM",
+                      "nilai": 100000,
+                      "dokumen": [
+                        {
+                          "kodeDokumen": "0407632",
+                          "nomorDokumen": "100/LDP-Masuk",
+                          "tanggalDokumen": "05-06-2023"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+
+      {
+        "id": 6,
+        "name": "Adjustment (Data Percobaan dan Data Real)",
+        "method": "POST",
+        "description": "Digunakan untuk mencatat hasil pengecekan fisik terhadap stok barang guna memastikan kesesuaian dengan sistem",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/transaksi",
+        "endpoint_real": "https://api.insw.go.id/api-prod/inventory/transaksi",
+        "request_body": {
+          "data": [
+            {
+              "kdKegiatan": "33",
+              "dokumenKegiatan": [
+                {
+                  "nomorDokKegiatan": "001/ADJ/2025",
+                  "tanggalKegiatan": "06-05-2023 14:32:10.134",
+                  "keterangan": "Adjustmen bulanan",
+                  "namaEntitas": "Aulia",
+                  "barangTransaksi": [
+                    {
+                      "kdKategoriBarang": "1",
+                      "kdBarang": "barang1",
+                      "uraianBarang": "Uraian barang 1",
+                      "jumlah": -20000,
+                      "kdSatuan": "KGM",
+                      "nilai": 100000,
+                      "dokumen": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+
+      {
+        "id": 7,
+        "name": "Cleansing Data (Data Percobaan)",
+        "method": "DELETE",
+        "description": "Digunakan untuk mengunci saldo awal yang telah ditetapkan sebagai acuan final",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/transaksi",
+        "request_params": {
+          "npwp": "Nomor NPWP"
+        },
+        "response_example": {
+          "code": "01",
+          "status": true,
+          "message": "Success",
+          "data": "cleansing success"
+        }
+      },
+
+      {
+        "id": 8,
+        "name": "Update Dokumen Barang (Data Percobaan dan Data Real)",
+        "method": "PUT",
+        "description": "Digunakan untuk memperbarui dokumen terkait data pemasukan atau pengeluaran barang",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/transaksi/dokumen",
+        "endpoint_real": "https://api.insw.go.id/api-prod/inventory/transaksi/dokumen",
+        "response_example": {
+          "code": "01",
+          "status": true,
+          "message": "Success",
+          "data": [
+            {
+              "idBrgTransaksi": "4f4ad682-23d2-4cfd-8a9e-467abcdd4c3a",
+              "idDokPabean": null
+            }
+          ]
+        }
+      },
+
+      {
+        "id": 9,
+        "name": "Get Pemasukan (Data Percobaan dan Data Real)",
+        "method": "POST",
+        "description": "Digunakan untuk mengambil data barang yang telah dicatat sebagai pemasukan",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/transaksi/30/tglAwal=${tglAwal}&tglAkhir=${tglAkhir}",
+        "endpoint_real": "https://api.insw.go.id/api-prod/inventory/transaksi/30/tglAwal=${tglAwal}&tglAkhir=${tglAkhir}",
+        "response_example": {
+          "code": "01",
+          "status": true,
+          "message": "Success",
+          "data": [
+            {
+              "idTransaksi": "80a851c1-6570-417e-8a08-b27bbe6edd89",
+              "kdKegiatan": "30",
+              "nomorDokKegiatan": "001/PEM/2025",
+              "tanggalKegiatan": "2025-06-15T17:00:00.000Z",
+              "namaEntitas": "Aulia",
+              "barangTransaksi": [
+                {
+                  "idBarangTransaksi": "4f4ad682-23d2-4cfd-8a9e-467abcdd4c3a",
+                  "kdKategoriBarang": "2",
+                  "kdBarang": "barang2",
+                  "uraianBarang": "Uraian barang 2",
+                  "jumlah": "40000.0000",
+                  "kdSatuan": "KGM",
+                  "nilai": "200000.0000",
+                  "dokumen": []
+                }
+              ]
+            }
+          ]
+        }
+      },
+
+      {
+        "id": 10,
+        "name": "Get Pengeluaran (Data Percobaan dan Data Real)",
+        "method": "POST",
+        "description": "Digunakan untuk mengambil data barang yang telah dicatat sebagai pengeluaran",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/transaksi/31/tglAwal=${tglAwal}&tglAkhir=${tglAkhir}",
+        "endpoint_real": "https://api.insw.go.id/api-prod/inventory/transaksi/31/tglAwal=${tglAwal}&tglAkhir=${tglAkhir}",
+        "response_example": {
+          "code": "01",
+          "status": true,
+          "message": "Success",
+          "data": [
+            {
+              "idTransaksi": "a0a62781-5f34-4857-84ca-a5bcf1f012aa",
+              "kdKegiatan": "31",
+              "nomorDokKegiatan": "001/PEN/2025",
+              "tanggalKegiatan": "2023-05-06T07:13:04.134Z",
+              "namaEntitas": "Aulia",
+              "barangTransaksi": [
+                {
+                  "idBarangTransaksi": "6cb22af4-7fbe-4ecf-a5a1-2120865bc951",
+                  "kdKategoriBarang": "2",
+                  "kdBarang": "barang2",
+                  "uraianBarang": "Uraian barang 2",
+                  "jumlah": "40000.0000",
+                  "kdSatuan": "KGM",
+                  "nilai": "200000.0000",
+                  "dokumen": []
+                }
+              ]
+            }
+          ]
+        }
+      },
+
+      {
+        "id": 11,
+        "name": "Get Adjustment (Data Percobaan dan Data Real)",
+        "method": "POST",
+        "description": "Digunakan untuk mengambil data penyesuaian stok barang",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/transaksi/33/tglAwal=${tglAwal}&tglAkhir=${tglAkhir}",
+        "endpoint_real": "https://api.insw.go.id/api-prod/inventory/transaksi/33/tglAwal=${tglAwal}&tglAkhir=${tglAkhir}",
+        "response_example": {
+          "code": "01",
+          "status": true,
+          "message": "Success",
+          "data": [
+            {
+              "idTransaksi": "6b46cf84-887f-4baf-a132-b83dd220ffa7",
+              "kdKegiatan": "33",
+              "nomorDokKegiatan": "001/ADJ/2025",
+              "tanggalKegiatan": "2023-05-06T07:13:04.134Z",
+              "namaEntitas": "Aulia",
+              "barangTransaksi": [
+                {
+                  "idBarangTransaksi": "e072fce1-86be-4f5e-8117-d5dedc90f568",
+                  "kdKategoriBarang": "1",
+                  "kdBarang": "barang1",
+                  "uraianBarang": "Uraian barang 1",
+                  "jumlah": "-20000.0000",
+                  "kdSatuan": "KGM",
+                  "nilai": "100000.0000",
+                  "dokumen": []
+                }
+              ]
+            }
+          ]
+        }
+      },
+
+      {
+        "id": 12,
+        "name": "Get Stock Opname (Data Percobaan dan Data Real)",
+        "method": "PUT",
+        "description": "Digunakan untuk mengambil data penyesuaian stok barang",
+        "endpoint_dummy": "https://api.insw.go.id/api-prod/inventory/temp/transaksi/32/tglAwal=${tglAwal}&tglAkhir=${tglAkhir}",
+        "endpoint_real": "https://api.insw.go.id/api-prod/inventory/transaksi/32/tglAwal=${tglAwal}&tglAkhir=${tglAkhir}",
+        "response_example": {
+          "code": "01",
+          "status": true,
+          "message": "Success",
+          "data": [
+            {
+              "idTransaksi": "d52fbaad-225a-4c6e-a333-03d82253f9bb",
+              "kdKegiatan": "32",
+              "nomorDokKegiatan": "001/STO/2025",
+              "tanggalKegiatan": "2023-05-06T07:13:04.134Z",
+              "namaEntitas": "Aulia",
+              "barangTransaksi": [
+                {
+                  "idBarangTransaksi": "f388762b-c0cf-4257-8eb6-b4ad1250dd06",
+                  "kdKategoriBarang": "1",
+                  "kdBarang": "barang1",
+                  "uraianBarang": "Uraian barang 1",
+                  "jumlah": "20000.0000",
+                  "kdSatuan": "KGM",
+                  "nilai": "100000.0000",
+                  "dokumen": []
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+
+    "data_referensi": {
+      "jenis_transaksi": [
+        { "kode": 30, "uraian": "Pemasukkan" },
+        { "kode": 31, "uraian": "Pengeluaran" },
+        { "kode": 32, "uraian": "Stock Opname" },
+        { "kode": 33, "uraian": "Adjustment" }
+      ],
+      "kategori_barang": [
+        { "kode": 1, "uraian": "Bahan Baku" },
+        { "kode": 2, "uraian": "Bahan Penolong" },
+        { "kode": 3, "uraian": "Bahan Habis Pakai" },
+        { "kode": 4, "uraian": "Barang Dagangan" },
+        { "kode": 5, "uraian": "Mesin dan Peralatan" },
+        { "kode": 6, "uraian": "Barang dalam proses" },
+        { "kode": 7, "uraian": "Barang Jadi" },
+        { "kode": 8, "uraian": "Barang Reject & Scrap" }
+      ],
+      "dokumen_pabean": [
+        { "kode": "0407021", "uraian": "BC 2.1" },
+        { "kode": "0407024", "uraian": "BC 24" },
+        { "kode": "0407261", "uraian": "BC 2.6.1" },
+        { "kode": "0407262", "uraian": "BC 2.6.2" },
+        { "kode": "0407027", "uraian": "BC 2.7" },
+        { "kode": "0407032", "uraian": "BC 3.2" },
+        { "kode": "0407033", "uraian": "BC 3.3" },
+        { "kode": "0407034", "uraian": "BC 3.4" },
+        { "kode": "0407040", "uraian": "BC 4.0" },
+        { "kode": "0407041", "uraian": "BC 4.1" },
+        { "kode": "0407051", "uraian": "FTZ 01" },
+        { "kode": "0407020", "uraian": "BC 2.0" },
+        { "kode": "0407030", "uraian": "BC 3.0" },
+        { "kode": "0407016", "uraian": "BC 1.6" },
+        { "kode": "0407028", "uraian": "BC 2.8" },
+        { "kode": "0407025", "uraian": "BC 2.5" },
+        { "kode": "0407023", "uraian": "BC 2.3" },
+        {
+          "kode": "0407512",
+          "uraian": "FTZ01 - Pengeluaran ke Luar Daerah Pabean"
+        },
+        { "kode": "0407052", "uraian": "FTZ 02" },
+        {
+          "kode": "0407521",
+          "uraian": "FTZ02 - Pemasukan dari Kawasan Berikat, KEK, FTZ lain, atau Kawasan dengan Fasilitas lainnya"
+        },
+        {
+          "kode": "0407522",
+          "uraian": "FTZ02 - Pengeluaran ke Kawasan Berikat, KEK, FTZ lain, atau Kawasan dengan Fasilitas lainnya"
+        },
+        { "kode": "0407053", "uraian": "FTZ 03" },
+        {
+          "kode": "0407531",
+          "uraian": "FTZ03 - Pemasukan dari Tempat Lain dalam Daerah Pabean"
+        },
+        {
+          "kode": "0407612",
+          "uraian": "KEK - Pemasukan Melalui Barang Kiriman"
+        },
+        { "kode": "0407613", "uraian": "KEK - Pemasukan dari TLDDP" },
+        { "kode": "0407614", "uraian": "KEK - Pemasukan dari TLDDP Subkon" },
+        { "kode": "0407621", "uraian": "KEK - Pengeluaran ke KEK/TPB/FTZP" },
+        { "kode": "0407631", "uraian": "KEK - Pengeluaran ke LDP" },
+        { "kode": "0407633", "uraian": "KEK - Pengeluaran ke TLDDP Subkon" },
+        { "kode": "0407634", "uraian": "KEK - Pengeluaran ke TLDDP Ex 613" },
+        {
+          "kode": "0407511",
+          "uraian": "FTZ01 - Pemasukan dari Luar Daerah Pabean"
+        },
+        {
+          "kode": "0407513",
+          "uraian": "FTZ01 - Pengeluaran ke Tempat Lain dalam Daerah Pabean"
+        },
+        { "kode": "0407611", "uraian": "KEK - Pemasukan dari LDP" },
+        { "kode": "0407632", "uraian": "KEK - Pengeluaran ke TLDDP" }
+      ],
+      "dokumen_perpindahan": [{ "kode": "0407008", "uraian": "Free Movement" }],
+      "kode_kegiatan": [
+        {
+          "kode": 30,
+          "uraian": "Incoming Goods"
+        },
+        {
+          "kode": 31,
+          "uraian": "Outgoing Goods"
+        },
+        {
+          "kode": 32,
+          "uraian": "Stock Opname Goods"
+        },
+        {
+          "kode": 33,
+          "uraian": "Adjustment Goods"
+        }
+      ]
+    },
+
+    "catatan_penting": [
+      "Field 'jumlah' dan 'nilai' wajib diisi dengan angka 0 jika tidak ada nilai",
+      "Field 'dokumen' wajib diisi dengan [] (array kosong) jika tidak ada dokumen",
+      "Format tanggal dapat menggunakan YYYY-MM-DD atau DD-MM-YYYY",
+      "Untuk adjustment, nilai 'jumlah' bisa negatif untuk pengurangan stok"
+    ]
+  }
+}

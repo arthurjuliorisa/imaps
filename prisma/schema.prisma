@@ -954,3 +954,46 @@ model wms_stock_opname_items {
   @@index([item_type])
   @@index([company_code])
 }
+
+// ============================================================================
+// INSW TRACKING LOG
+// ============================================================================
+// Track all INSW transmission attempts for monitoring and debugging
+// Flow: WMS -> iMAPS (saved) -> INSW (transmitted & logged here)
+// ============================================================================
+
+model insw_tracking_log {
+  id                    BigInt    @id @default(autoincrement())
+
+  // Transaction reference
+  transaction_type      String    @db.VarChar(20) // 'incoming', 'outgoing', 'adjustment', 'stock_opname', 'saldo_awal'
+  transaction_id        Int? // ID from source table (incoming_goods.id, outgoing_goods.id, etc)
+  wms_id                String?   @db.VarChar(100) // WMS ID for reference
+  company_code          Int
+
+  // INSW transmission details
+  insw_status           String    @default("PENDING") @db.VarChar(20) // 'PENDING', 'SENT', 'SUCCESS', 'FAILED', 'SKIPPED'
+  insw_activity_code    String?   @db.VarChar(10) // '30' (Pemasukan), '31' (Pengeluaran), '32' (Stock Opname), '33' (Adjustment)
+
+  // Request/Response data
+  insw_request_payload  Json? // Payload sent to INSW
+  insw_response         Json? // Response from INSW API
+  insw_error            String?   @db.Text // Error message if failed
+
+  // Timing
+  sent_at               DateTime? @db.Timestamptz(6) // When sent to INSW
+  retry_count           Int       @default(0) // Number of retry attempts
+
+  // Metadata
+  metadata              Json? // Additional metadata (batch_id, user_id, etc)
+
+  // Audit
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@index([transaction_type, transaction_id])
+  @@index([wms_id, company_code])
+  @@index([insw_status, company_code])
+  @@index([company_code, created_at(sort: Desc)])
+  @@index([sent_at(sort: Desc)])
+}
