@@ -93,10 +93,19 @@ const menuStructure: MenuInput[] = [
     menu_order: 8,
   },
   {
+    menu_name: 'Host to Host INSW',
+    menu_path: null,
+    menu_icon: 'SwapHoriz',
+    menu_order: 9,
+    children: [
+      { menu_name: 'INSW Logs', menu_path: '/insw/logs', menu_icon: 'History', menu_order: 1 },
+    ],
+  },
+  {
     menu_name: 'Settings',
     menu_path: null,
     menu_icon: 'Settings',
-    menu_order: 9,
+    menu_order: 10,
     children: [
       { menu_name: 'User Management', menu_path: '/settings/users', menu_icon: 'People', menu_order: 1 },
       { menu_name: 'Access Menu', menu_path: '/settings/access-menu', menu_icon: 'Settings', menu_order: 2 },
