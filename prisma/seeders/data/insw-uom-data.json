@@ -1,0 +1,7286 @@
+[
+  {
+    "kode": "6",
+    "uraian": "small spray"
+  },
+  {
+    "kode": "8",
+    "uraian": "heat lot"
+  },
+  {
+    "kode": "10",
+    "uraian": "group"
+  },
+  {
+    "kode": "11",
+    "uraian": "outfit"
+  },
+  {
+    "kode": "13",
+    "uraian": "ration"
+  },
+  {
+    "kode": "14",
+    "uraian": "shot"
+  },
+  {
+    "kode": "15",
+    "uraian": "stick"
+  },
+  {
+    "kode": "16",
+    "uraian": "hundred fifteen kg drum"
+  },
+  {
+    "kode": "17",
+    "uraian": "hundred lb drum"
+  },
+  {
+    "kode": "18",
+    "uraian": "fiftyfive gallon (US) drum"
+  },
+  {
+    "kode": "19",
+    "uraian": "tank truck"
+  },
+  {
+    "kode": "1A",
+    "uraian": "car mile"
+  },
+  {
+    "kode": "1B",
+    "uraian": "car count"
+  },
+  {
+    "kode": "1C",
+    "uraian": "locomotive count"
+  },
+  {
+    "kode": "1D",
+    "uraian": "caboose count"
+  },
+  {
+    "kode": "1E",
+    "uraian": "empty car"
+  },
+  {
+    "kode": "1F",
+    "uraian": "train mile"
+  },
+  {
+    "kode": "1G",
+    "uraian": "fuel usage gallon (US)"
+  },
+  {
+    "kode": "1H",
+    "uraian": "caboose mile"
+  },
+  {
+    "kode": "1I",
+    "uraian": "fixed rate"
+  },
+  {
+    "kode": "1J",
+    "uraian": "ton mile"
+  },
+  {
+    "kode": "1K",
+    "uraian": "locomotive mile"
+  },
+  {
+    "kode": "1L",
+    "uraian": "total car count"
+  },
+  {
+    "kode": "1M",
+    "uraian": "total car mile"
+  },
+  {
+    "kode": "1X",
+    "uraian": "quarter mile"
+  },
+  {
+    "kode": "20",
+    "uraian": "twenty foot container"
+  },
+  {
+    "kode": "21",
+    "uraian": "forty foot container"
+  },
+  {
+    "kode": "22",
+    "uraian": "decilitre per gram"
+  },
+  {
+    "kode": "23",
+    "uraian": "gram per cubic centimetre"
+  },
+  {
+    "kode": "24",
+    "uraian": "theoretical pound"
+  },
+  {
+    "kode": "25",
+    "uraian": "gram per square centimetre"
+  },
+  {
+    "kode": "26",
+    "uraian": "actual ton"
+  },
+  {
+    "kode": "27",
+    "uraian": "theoretical ton"
+  },
+  {
+    "kode": "28",
+    "uraian": "kilogram per square metre"
+  },
+  {
+    "kode": "29",
+    "uraian": "pound per thousand square foot"
+  },
+  {
+    "kode": "2A",
+    "uraian": "radian per second"
+  },
+  {
+    "kode": "2B",
+    "uraian": "radian per second squared"
+  },
+  {
+    "kode": "2C",
+    "uraian": "roentgen"
+  },
+  {
+    "kode": "2G",
+    "uraian": "volt AC"
+  },
+  {
+    "kode": "2H",
+    "uraian": "volt DC"
+  },
+  {
+    "kode": "2I",
+    "uraian": "British thermal unit (international table) per hour"
+  },
+  {
+    "kode": "2J",
+    "uraian": "cubic centimetre per second"
+  },
+  {
+    "kode": "2K",
+    "uraian": "cubic foot per hour"
+  },
+  {
+    "kode": "2L",
+    "uraian": "cubic foot per minute"
+  },
+  {
+    "kode": "2M",
+    "uraian": "centimetre per second"
+  },
+  {
+    "kode": "2N",
+    "uraian": "decibel"
+  },
+  {
+    "kode": "2P",
+    "uraian": "kilobyte"
+  },
+  {
+    "kode": "2Q",
+    "uraian": "kilobecquerel"
+  },
+  {
+    "kode": "2R",
+    "uraian": "kilocurie"
+  },
+  {
+    "kode": "2U",
+    "uraian": "megagram"
+  },
+  {
+    "kode": "2V",
+    "uraian": "megagram per hour"
+  },
+  {
+    "kode": "2W",
+    "uraian": "bin"
+  },
+  {
+    "kode": "2X",
+    "uraian": "metre per minute"
+  },
+  {
+    "kode": "2Y",
+    "uraian": "milliroentgen"
+  },
+  {
+    "kode": "2Z",
+    "uraian": "millivolt"
+  },
+  {
+    "kode": "30",
+    "uraian": "horse power day per air dry metric ton"
+  },
+  {
+    "kode": "31",
+    "uraian": "catch weight"
+  },
+  {
+    "kode": "32",
+    "uraian": "kilogram per air dry metric ton"
+  },
+  {
+    "kode": "33",
+    "uraian": "kilopascal square metre per gram"
+  },
+  {
+    "kode": "34",
+    "uraian": "kilopascal per millimetre"
+  },
+  {
+    "kode": "35",
+    "uraian": "millilitre per square centimetre second"
+  },
+  {
+    "kode": "36",
+    "uraian": "cubic foot per minute per square foot"
+  },
+  {
+    "kode": "37",
+    "uraian": "ounce per square foot"
+  },
+  {
+    "kode": "38",
+    "uraian": "ounce per square foot per 0"
+  },
+  {
+    "kode": "3B",
+    "uraian": "megajoule"
+  },
+  {
+    "kode": "3C",
+    "uraian": "manmonth"
+  },
+  {
+    "kode": "3E",
+    "uraian": "pound per pound of product"
+  },
+  {
+    "kode": "3G",
+    "uraian": "pound per piece of product"
+  },
+  {
+    "kode": "3H",
+    "uraian": "kilogram per kilogram of product"
+  },
+  {
+    "kode": "3I",
+    "uraian": "kilogram per piece of product"
+  },
+  {
+    "kode": "40",
+    "uraian": "millilitre per second"
+  },
+  {
+    "kode": "41",
+    "uraian": "millilitre per minute"
+  },
+  {
+    "kode": "43",
+    "uraian": "super bulk bag"
+  },
+  {
+    "kode": "44",
+    "uraian": "fivehundred kg bulk bag"
+  },
+  {
+    "kode": "45",
+    "uraian": "threehundred kg bulk bag"
+  },
+  {
+    "kode": "46",
+    "uraian": "fifty lb bulk bag"
+  },
+  {
+    "kode": "47",
+    "uraian": "fifty lb bag"
+  },
+  {
+    "kode": "48",
+    "uraian": "bulk car load"
+  },
+  {
+    "kode": "4A",
+    "uraian": "bobbin"
+  },
+  {
+    "kode": "4B",
+    "uraian": "cap"
+  },
+  {
+    "kode": "4C",
+    "uraian": "centistokes"
+  },
+  {
+    "kode": "4E",
+    "uraian": "twenty pack"
+  },
+  {
+    "kode": "4G",
+    "uraian": "microlitre"
+  },
+  {
+    "kode": "4H",
+    "uraian": "micrometre (micron)"
+  },
+  {
+    "kode": "4K",
+    "uraian": "milliampere"
+  },
+  {
+    "kode": "4L",
+    "uraian": "megabyte"
+  },
+  {
+    "kode": "4M",
+    "uraian": "milligram per hour"
+  },
+  {
+    "kode": "4N",
+    "uraian": "megabecquerel"
+  },
+  {
+    "kode": "4O",
+    "uraian": "microfarad"
+  },
+  {
+    "kode": "4P",
+    "uraian": "newton per metre"
+  },
+  {
+    "kode": "4Q",
+    "uraian": "ounce inch"
+  },
+  {
+    "kode": "4R",
+    "uraian": "ounce foot"
+  },
+  {
+    "kode": "4T",
+    "uraian": "picofarad"
+  },
+  {
+    "kode": "4U",
+    "uraian": "pound per hour"
+  },
+  {
+    "kode": "4W",
+    "uraian": "ton (US) per hour"
+  },
+  {
+    "kode": "4X",
+    "uraian": "kilolitre per hour"
+  },
+  {
+    "kode": "53",
+    "uraian": "theoretical kilogram"
+  },
+  {
+    "kode": "54",
+    "uraian": "theoretical tonne"
+  },
+  {
+    "kode": "56",
+    "uraian": "sitas"
+  },
+  {
+    "kode": "57",
+    "uraian": "mesh"
+  },
+  {
+    "kode": "58",
+    "uraian": "net kilogram"
+  },
+  {
+    "kode": "59",
+    "uraian": "part per million"
+  },
+  {
+    "kode": "5A",
+    "uraian": "barrel (US) per minute"
+  },
+  {
+    "kode": "5B",
+    "uraian": "batch"
+  },
+  {
+    "kode": "5C",
+    "uraian": "gallon(US) per thousand"
+  },
+  {
+    "kode": "5E",
+    "uraian": "MMSCF/day"
+  },
+  {
+    "kode": "5F",
+    "uraian": "pound per thousand"
+  },
+  {
+    "kode": "5G",
+    "uraian": "pump"
+  },
+  {
+    "kode": "5H",
+    "uraian": "stage"
+  },
+  {
+    "kode": "5I",
+    "uraian": "standard cubic foot"
+  },
+  {
+    "kode": "5J",
+    "uraian": "hydraulic horse power"
+  },
+  {
+    "kode": "5K",
+    "uraian": "count per minute"
+  },
+  {
+    "kode": "5P",
+    "uraian": "seismic level"
+  },
+  {
+    "kode": "5Q",
+    "uraian": "seismic line"
+  },
+  {
+    "kode": "60",
+    "uraian": "percent weight"
+  },
+  {
+    "kode": "61",
+    "uraian": "part per billion (US)"
+  },
+  {
+    "kode": "62",
+    "uraian": "percent per 1000 hour"
+  },
+  {
+    "kode": "63",
+    "uraian": "failure rate in time"
+  },
+  {
+    "kode": "64",
+    "uraian": "pound per square inch"
+  },
+  {
+    "kode": "66",
+    "uraian": "oersted"
+  },
+  {
+    "kode": "69",
+    "uraian": "test specific scale"
+  },
+  {
+    "kode": "71",
+    "uraian": "volt ampere per pound"
+  },
+  {
+    "kode": "72",
+    "uraian": "watt per pound"
+  },
+  {
+    "kode": "73",
+    "uraian": "ampere tum per centimetre"
+  },
+  {
+    "kode": "74",
+    "uraian": "millipascal"
+  },
+  {
+    "kode": "76",
+    "uraian": "gauss"
+  },
+  {
+    "kode": "77",
+    "uraian": "milli-inch"
+  },
+  {
+    "kode": "78",
+    "uraian": "kilogauss"
+  },
+  {
+    "kode": "80",
+    "uraian": "pound per square inch absolute"
+  },
+  {
+    "kode": "81",
+    "uraian": "henry"
+  },
+  {
+    "kode": "84",
+    "uraian": "kilopound-force per square inch"
+  },
+  {
+    "kode": "85",
+    "uraian": "foot pound-force"
+  },
+  {
+    "kode": "87",
+    "uraian": "pound per cubic foot"
+  },
+  {
+    "kode": "89",
+    "uraian": "poise"
+  },
+  {
+    "kode": "90",
+    "uraian": "Saybold universal second"
+  },
+  {
+    "kode": "91",
+    "uraian": "stokes"
+  },
+  {
+    "kode": "92",
+    "uraian": "calorie per cubic centimetre"
+  },
+  {
+    "kode": "93",
+    "uraian": "calorie per gram"
+  },
+  {
+    "kode": "94",
+    "uraian": "curl unit"
+  },
+  {
+    "kode": "95",
+    "uraian": "twenty thousand gallon (US) tankcar"
+  },
+  {
+    "kode": "96",
+    "uraian": "ten thousand gallon (US) tankcar"
+  },
+  {
+    "kode": "97",
+    "uraian": "ten kg drum"
+  },
+  {
+    "kode": "98",
+    "uraian": "fifteen kg drum"
+  },
+  {
+    "kode": "A1",
+    "uraian": "15 °C calorie"
+  },
+  {
+    "kode": "A10",
+    "uraian": "ampere square metre per joule second"
+  },
+  {
+    "kode": "A11",
+    "uraian": "angstrom"
+  },
+  {
+    "kode": "A12",
+    "uraian": "astronomical unit"
+  },
+  {
+    "kode": "A13",
+    "uraian": "attojoule"
+  },
+  {
+    "kode": "A14",
+    "uraian": "barn"
+  },
+  {
+    "kode": "A15",
+    "uraian": "barn per electronvolt"
+  },
+  {
+    "kode": "A16",
+    "uraian": "barn per steradian electronvolt"
+  },
+  {
+    "kode": "A17",
+    "uraian": "barn per steradian"
+  },
+  {
+    "kode": "A18",
+    "uraian": "becquerel per kilogram"
+  },
+  {
+    "kode": "A19",
+    "uraian": "becquerel per cubic metre"
+  },
+  {
+    "kode": "A2",
+    "uraian": "ampere per centimetre"
+  },
+  {
+    "kode": "A20",
+    "uraian": "British thermal unit (international table) per second"
+  },
+  {
+    "kode": "A21",
+    "uraian": "British thermal unit (international table) per pound"
+  },
+  {
+    "kode": "A22",
+    "uraian": "British thermal unit (international table) per second"
+  },
+  {
+    "kode": "A23",
+    "uraian": "British thermal unit (international table) per hour"
+  },
+  {
+    "kode": "A24",
+    "uraian": "candela per square metre"
+  },
+  {
+    "kode": "A25",
+    "uraian": "cheval vapeur"
+  },
+  {
+    "kode": "A26",
+    "uraian": "coulomb metre"
+  },
+  {
+    "kode": "A27",
+    "uraian": "coulomb metre squared per volt"
+  },
+  {
+    "kode": "A28",
+    "uraian": "coulomb per cubic centimetre"
+  },
+  {
+    "kode": "A29",
+    "uraian": "coulomb per cubic metre"
+  },
+  {
+    "kode": "A3",
+    "uraian": "ampere per millimetre"
+  },
+  {
+    "kode": "A30",
+    "uraian": "coulomb per cubic millimetre"
+  },
+  {
+    "kode": "A31",
+    "uraian": "coulomb per kilogram second"
+  },
+  {
+    "kode": "A32",
+    "uraian": "coulomb per mole"
+  },
+  {
+    "kode": "A33",
+    "uraian": "coulomb per square centimetre"
+  },
+  {
+    "kode": "A34",
+    "uraian": "coulomb per square metre"
+  },
+  {
+    "kode": "A35",
+    "uraian": "coulomb per square millimetre"
+  },
+  {
+    "kode": "A36",
+    "uraian": "cubic centimetre per mole"
+  },
+  {
+    "kode": "A37",
+    "uraian": "cubic decimetre per mole"
+  },
+  {
+    "kode": "A38",
+    "uraian": "cubic metre per coulomb"
+  },
+  {
+    "kode": "A39",
+    "uraian": "cubic metre per kilogram"
+  },
+  {
+    "kode": "A4",
+    "uraian": "ampere per square centimetre"
+  },
+  {
+    "kode": "A40",
+    "uraian": "cubic metre per mole"
+  },
+  {
+    "kode": "A41",
+    "uraian": "ampere per square metre"
+  },
+  {
+    "kode": "A42",
+    "uraian": "curie per kilogram"
+  },
+  {
+    "kode": "A43",
+    "uraian": "deadweight tonnage"
+  },
+  {
+    "kode": "A44",
+    "uraian": "decalitre"
+  },
+  {
+    "kode": "A45",
+    "uraian": "decametre"
+  },
+  {
+    "kode": "A47",
+    "uraian": "decitex"
+  },
+  {
+    "kode": "A48",
+    "uraian": "degree Rankine"
+  },
+  {
+    "kode": "A49",
+    "uraian": "denier"
+  },
+  {
+    "kode": "A5",
+    "uraian": "ampere square metre"
+  },
+  {
+    "kode": "A50",
+    "uraian": "dyne second per cubic centimetre"
+  },
+  {
+    "kode": "A51",
+    "uraian": "dyne second per centimetre"
+  },
+  {
+    "kode": "A52",
+    "uraian": "dyne second per centimetre to the fifth power"
+  },
+  {
+    "kode": "A53",
+    "uraian": "electronvolt"
+  },
+  {
+    "kode": "A54",
+    "uraian": "electronvolt per metre"
+  },
+  {
+    "kode": "A55",
+    "uraian": "electronvolt square metre"
+  },
+  {
+    "kode": "A56",
+    "uraian": "electronvolt square metre per kilogram"
+  },
+  {
+    "kode": "A57",
+    "uraian": "erg"
+  },
+  {
+    "kode": "A58",
+    "uraian": "erg per centimetre"
+  },
+  {
+    "kode": "A59",
+    "uraian": "8-part cloud cover"
+  },
+  {
+    "kode": "A6",
+    "uraian": "ampere per square metre kelvin squared"
+  },
+  {
+    "kode": "A60",
+    "uraian": "erg per cubic centimetre"
+  },
+  {
+    "kode": "A61",
+    "uraian": "erg per gram"
+  },
+  {
+    "kode": "A62",
+    "uraian": "erg per gram second"
+  },
+  {
+    "kode": "A63",
+    "uraian": "erg per second"
+  },
+  {
+    "kode": "A64",
+    "uraian": "erg per second square centimetre"
+  },
+  {
+    "kode": "A65",
+    "uraian": "erg per square centimetre second"
+  },
+  {
+    "kode": "A66",
+    "uraian": "erg square centimetre"
+  },
+  {
+    "kode": "A67",
+    "uraian": "erg square centimetre per gram"
+  },
+  {
+    "kode": "A68",
+    "uraian": "exajoule"
+  },
+  {
+    "kode": "A69",
+    "uraian": "farad per metre"
+  },
+  {
+    "kode": "A7",
+    "uraian": "ampere per square millimetre"
+  },
+  {
+    "kode": "A70",
+    "uraian": "femtojoule"
+  },
+  {
+    "kode": "A71",
+    "uraian": "femtometre"
+  },
+  {
+    "kode": "A73",
+    "uraian": "foot per second squared"
+  },
+  {
+    "kode": "A74",
+    "uraian": "foot pound-force per second"
+  },
+  {
+    "kode": "A75",
+    "uraian": "freight ton"
+  },
+  {
+    "kode": "A76",
+    "uraian": "gal"
+  },
+  {
+    "kode": "A77",
+    "uraian": "Gaussian CGS unit of displacement"
+  },
+  {
+    "kode": "A78",
+    "uraian": "Gaussian CGS unit of electric current"
+  },
+  {
+    "kode": "A79",
+    "uraian": "Gaussian CGS unit of electric charge"
+  },
+  {
+    "kode": "A8",
+    "uraian": "ampere second"
+  },
+  {
+    "kode": "A80",
+    "uraian": "Gaussian CGS unit of electric field strength"
+  },
+  {
+    "kode": "A81",
+    "uraian": "Gaussian CGS unit of electric polarization"
+  },
+  {
+    "kode": "A82",
+    "uraian": "Gaussian CGS unit of electric potential"
+  },
+  {
+    "kode": "A83",
+    "uraian": "Gaussian CGS unit of magnetization"
+  },
+  {
+    "kode": "A84",
+    "uraian": "gigacoulomb per cubic metre"
+  },
+  {
+    "kode": "A85",
+    "uraian": "gigaelectronvolt"
+  },
+  {
+    "kode": "A86",
+    "uraian": "gigahertz"
+  },
+  {
+    "kode": "A87",
+    "uraian": "gigaohm"
+  },
+  {
+    "kode": "A88",
+    "uraian": "gigaohm metre"
+  },
+  {
+    "kode": "A89",
+    "uraian": "gigapascal"
+  },
+  {
+    "kode": "A9",
+    "uraian": "rate"
+  },
+  {
+    "kode": "A90",
+    "uraian": "gigawatt"
+  },
+  {
+    "kode": "A91",
+    "uraian": "gon"
+  },
+  {
+    "kode": "A93",
+    "uraian": "gram per cubic metre"
+  },
+  {
+    "kode": "A94",
+    "uraian": "gram per mole"
+  },
+  {
+    "kode": "A95",
+    "uraian": "gray"
+  },
+  {
+    "kode": "A96",
+    "uraian": "gray per second"
+  },
+  {
+    "kode": "A97",
+    "uraian": "hectopascal"
+  },
+  {
+    "kode": "A98",
+    "uraian": "henry per metre"
+  },
+  {
+    "kode": "A99",
+    "uraian": "bit"
+  },
+  {
+    "kode": "AA",
+    "uraian": "ball"
+  },
+  {
+    "kode": "AB",
+    "uraian": "bulk pack"
+  },
+  {
+    "kode": "ACR",
+    "uraian": "Acre (4840 yd2)"
+  },
+  {
+    "kode": "ACT",
+    "uraian": "activity"
+  },
+  {
+    "kode": "AD",
+    "uraian": "byte"
+  },
+  {
+    "kode": "AE",
+    "uraian": "ampere per metre"
+  },
+  {
+    "kode": "AH",
+    "uraian": "additional minute"
+  },
+  {
+    "kode": "AI",
+    "uraian": "average minute per call"
+  },
+  {
+    "kode": "AJ",
+    "uraian": "cop"
+  },
+  {
+    "kode": "AK",
+    "uraian": "fathom"
+  },
+  {
+    "kode": "AL",
+    "uraian": "access line"
+  },
+  {
+    "kode": "AM",
+    "uraian": "ampoule"
+  },
+  {
+    "kode": "AMH",
+    "uraian": "Ampere-hour"
+  },
+  {
+    "kode": "AMP",
+    "uraian": "Ampere"
+  },
+  {
+    "kode": "ANN",
+    "uraian": "Year"
+  },
+  {
+    "kode": "AP",
+    "uraian": "aluminium pound only"
+  },
+  {
+    "kode": "APZ",
+    "uraian": "Ounce GB"
+  },
+  {
+    "kode": "AQ",
+    "uraian": "anti-hemophilic factor (AHF) unit"
+  },
+  {
+    "kode": "AR",
+    "uraian": "suppository"
+  },
+  {
+    "kode": "ARE",
+    "uraian": "Are (100m2)"
+  },
+  {
+    "kode": "AS",
+    "uraian": "assortment"
+  },
+  {
+    "kode": "ASM",
+    "uraian": "alcoholic strength by mass"
+  },
+  {
+    "kode": "ASU",
+    "uraian": "alcoholic strength by volume"
+  },
+  {
+    "kode": "ATM",
+    "uraian": "Standard atmosphere (101325 Pa)"
+  },
+  {
+    "kode": "ATT",
+    "uraian": "Technical atmosphere (98066 Pa)"
+  },
+  {
+    "kode": "AV",
+    "uraian": "Capsule"
+  },
+  {
+    "kode": "AW",
+    "uraian": "Powder Filled Vial"
+  },
+  {
+    "kode": "AY",
+    "uraian": "assembly"
+  },
+  {
+    "kode": "AZ",
+    "uraian": "British thermal unit (international table) per pound"
+  },
+  {
+    "kode": "B0",
+    "uraian": "Btu per cubic foot"
+  },
+  {
+    "kode": "B1",
+    "uraian": "barrel (US) per day"
+  },
+  {
+    "kode": "B10",
+    "uraian": "bit per second"
+  },
+  {
+    "kode": "B11",
+    "uraian": "joule per kilogram kelvin"
+  },
+  {
+    "kode": "B12",
+    "uraian": "joule per metre"
+  },
+  {
+    "kode": "B13",
+    "uraian": "joule per square metre"
+  },
+  {
+    "kode": "B14",
+    "uraian": "joule per metre to the fourth power"
+  },
+  {
+    "kode": "B15",
+    "uraian": "joule per mole"
+  },
+  {
+    "kode": "B16",
+    "uraian": "joule per mole kelvin"
+  },
+  {
+    "kode": "B17",
+    "uraian": "credit"
+  },
+  {
+    "kode": "B18",
+    "uraian": "joule second"
+  },
+  {
+    "kode": "B19",
+    "uraian": "digit"
+  },
+  {
+    "kode": "B2",
+    "uraian": "bunk"
+  },
+  {
+    "kode": "B20",
+    "uraian": "joule square metre per kilogram"
+  },
+  {
+    "kode": "B21",
+    "uraian": "kelvin per watt"
+  },
+  {
+    "kode": "B22",
+    "uraian": "kiloampere"
+  },
+  {
+    "kode": "B23",
+    "uraian": "kiloampere per square metre"
+  },
+  {
+    "kode": "B24",
+    "uraian": "kiloampere per metre"
+  },
+  {
+    "kode": "B25",
+    "uraian": "kilobecquerel per kilogram"
+  },
+  {
+    "kode": "B26",
+    "uraian": "kilocoulomb"
+  },
+  {
+    "kode": "B27",
+    "uraian": "kilocoulomb per cubic metre"
+  },
+  {
+    "kode": "B28",
+    "uraian": "kilocoulomb per square metre"
+  },
+  {
+    "kode": "B29",
+    "uraian": "kiloelectronvolt"
+  },
+  {
+    "kode": "B3",
+    "uraian": "batting pound"
+  },
+  {
+    "kode": "B30",
+    "uraian": "gibibit"
+  },
+  {
+    "kode": "B31",
+    "uraian": "kilogram metre per second"
+  },
+  {
+    "kode": "B32",
+    "uraian": "kilogram metre squared"
+  },
+  {
+    "kode": "B33",
+    "uraian": "kilogram metre squared per second"
+  },
+  {
+    "kode": "B34",
+    "uraian": "kilogram per cubic decimetre"
+  },
+  {
+    "kode": "B35",
+    "uraian": "kilogram per litre"
+  },
+  {
+    "kode": "B36",
+    "uraian": "calorie (thermochemical) per gram"
+  },
+  {
+    "kode": "B37",
+    "uraian": "kilogram-force"
+  },
+  {
+    "kode": "B38",
+    "uraian": "kilogram-force metre"
+  },
+  {
+    "kode": "B39",
+    "uraian": "kilogram-force metre per second"
+  },
+  {
+    "kode": "B4",
+    "uraian": "barrel"
+  },
+  {
+    "kode": "B40",
+    "uraian": "kilogram-force per square metre"
+  },
+  {
+    "kode": "B41",
+    "uraian": "kilojoule per kelvin"
+  },
+  {
+    "kode": "B42",
+    "uraian": "kilojoule per kilogram"
+  },
+  {
+    "kode": "B43",
+    "uraian": "kilojoule per kilogram kelvin"
+  },
+  {
+    "kode": "B44",
+    "uraian": "kilojoule per mole"
+  },
+  {
+    "kode": "B45",
+    "uraian": "kilomole"
+  },
+  {
+    "kode": "B46",
+    "uraian": "kilomole per cubic metre"
+  },
+  {
+    "kode": "B47",
+    "uraian": "kilonewton"
+  },
+  {
+    "kode": "B48",
+    "uraian": "kilonewton metre"
+  },
+  {
+    "kode": "B49",
+    "uraian": "kiloohm"
+  },
+  {
+    "kode": "B5",
+    "uraian": "billet"
+  },
+  {
+    "kode": "B50",
+    "uraian": "kiloohm metre"
+  },
+  {
+    "kode": "B51",
+    "uraian": "kilopond"
+  },
+  {
+    "kode": "B52",
+    "uraian": "kilosecond"
+  },
+  {
+    "kode": "B53",
+    "uraian": "kilosiemens"
+  },
+  {
+    "kode": "B54",
+    "uraian": "kilosiemens per metre"
+  },
+  {
+    "kode": "B55",
+    "uraian": "kilovolt per metre"
+  },
+  {
+    "kode": "B56",
+    "uraian": "kiloweber per metre"
+  },
+  {
+    "kode": "B57",
+    "uraian": "light year"
+  },
+  {
+    "kode": "B58",
+    "uraian": "litre per mole"
+  },
+  {
+    "kode": "B59",
+    "uraian": "lumen hour"
+  },
+  {
+    "kode": "B6",
+    "uraian": "bun"
+  },
+  {
+    "kode": "B60",
+    "uraian": "lumen per square metre"
+  },
+  {
+    "kode": "B61",
+    "uraian": "lumen per watt"
+  },
+  {
+    "kode": "B62",
+    "uraian": "lumen second"
+  },
+  {
+    "kode": "B63",
+    "uraian": "lux hour"
+  },
+  {
+    "kode": "B64",
+    "uraian": "lux second"
+  },
+  {
+    "kode": "B65",
+    "uraian": "maxwell"
+  },
+  {
+    "kode": "B66",
+    "uraian": "megaampere per square metre"
+  },
+  {
+    "kode": "B67",
+    "uraian": "megabecquerel per kilogram"
+  },
+  {
+    "kode": "B68",
+    "uraian": "gigabit"
+  },
+  {
+    "kode": "B69",
+    "uraian": "megacoulomb per cubic metre"
+  },
+  {
+    "kode": "B7",
+    "uraian": "cycle"
+  },
+  {
+    "kode": "B70",
+    "uraian": "megacoulomb per square metre"
+  },
+  {
+    "kode": "B71",
+    "uraian": "megaelectronvolt"
+  },
+  {
+    "kode": "B72",
+    "uraian": "megagram per cubic metre"
+  },
+  {
+    "kode": "B73",
+    "uraian": "meganewton"
+  },
+  {
+    "kode": "B74",
+    "uraian": "meganewton metre"
+  },
+  {
+    "kode": "B75",
+    "uraian": "megaohm"
+  },
+  {
+    "kode": "B76",
+    "uraian": "megaohm metre"
+  },
+  {
+    "kode": "B77",
+    "uraian": "megasiemens per metre"
+  },
+  {
+    "kode": "B78",
+    "uraian": "megavolt"
+  },
+  {
+    "kode": "B79",
+    "uraian": "megavolt per metre"
+  },
+  {
+    "kode": "B8",
+    "uraian": "joule per cubic metre"
+  },
+  {
+    "kode": "B80",
+    "uraian": "gigabit per second"
+  },
+  {
+    "kode": "B81",
+    "uraian": "reciprocal metre squared reciprocal second"
+  },
+  {
+    "kode": "B82",
+    "uraian": "inch per linear foot"
+  },
+  {
+    "kode": "B83",
+    "uraian": "metre to the fourth power"
+  },
+  {
+    "kode": "B84",
+    "uraian": "microampere"
+  },
+  {
+    "kode": "B85",
+    "uraian": "microbar"
+  },
+  {
+    "kode": "B86",
+    "uraian": "microcoulomb"
+  },
+  {
+    "kode": "B87",
+    "uraian": "microcoulomb per cubic metre"
+  },
+  {
+    "kode": "B88",
+    "uraian": "microcoulomb per square metre"
+  },
+  {
+    "kode": "B89",
+    "uraian": "microfarad per metre"
+  },
+  {
+    "kode": "B9",
+    "uraian": "batt"
+  },
+  {
+    "kode": "B90",
+    "uraian": "microhenry"
+  },
+  {
+    "kode": "B91",
+    "uraian": "microhenry per metre"
+  },
+  {
+    "kode": "B92",
+    "uraian": "micronewton"
+  },
+  {
+    "kode": "B93",
+    "uraian": "micronewton metre"
+  },
+  {
+    "kode": "B94",
+    "uraian": "microohm"
+  },
+  {
+    "kode": "B95",
+    "uraian": "microohm metre"
+  },
+  {
+    "kode": "B96",
+    "uraian": "micropascal"
+  },
+  {
+    "kode": "B97",
+    "uraian": "microradian"
+  },
+  {
+    "kode": "B98",
+    "uraian": "microsecond"
+  },
+  {
+    "kode": "B99",
+    "uraian": "microsiemens"
+  },
+  {
+    "kode": "BAR",
+    "uraian": "Bar"
+  },
+  {
+    "kode": "BB",
+    "uraian": "base box"
+  },
+  {
+    "kode": "BD",
+    "uraian": "board"
+  },
+  {
+    "kode": "BE",
+    "uraian": "bundle"
+  },
+  {
+    "kode": "BFT",
+    "uraian": "board foot"
+  },
+  {
+    "kode": "BG",
+    "uraian": "bag"
+  },
+  {
+    "kode": "BH",
+    "uraian": "brush"
+  },
+  {
+    "kode": "BHP",
+    "uraian": "brake horse power"
+  },
+  {
+    "kode": "BIL",
+    "uraian": "Billion"
+  },
+  {
+    "kode": "BJ",
+    "uraian": "bucket"
+  },
+  {
+    "kode": "BK",
+    "uraian": "basket"
+  },
+  {
+    "kode": "BL",
+    "uraian": "bale"
+  },
+  {
+    "kode": "BLD",
+    "uraian": "Dry barrel (115 dm3)"
+  },
+  {
+    "kode": "BLL",
+    "uraian": "Barrel (petroleum) (158.987 dm3)"
+  },
+  {
+    "kode": "BO",
+    "uraian": "bottle"
+  },
+  {
+    "kode": "BP",
+    "uraian": "hundred board foot"
+  },
+  {
+    "kode": "BQL",
+    "uraian": "Becquerel"
+  },
+  {
+    "kode": "BR",
+    "uraian": "bar [unit of packaging]"
+  },
+  {
+    "kode": "BT",
+    "uraian": "bolt"
+  },
+  {
+    "kode": "BTU",
+    "uraian": "British thermal unit (international table)"
+  },
+  {
+    "kode": "BUA",
+    "uraian": "Bushel (35.2391 dm3)"
+  },
+  {
+    "kode": "BUI",
+    "uraian": "Bushel (36.3687 dm3)"
+  },
+  {
+    "kode": "BW",
+    "uraian": "base weight"
+  },
+  {
+    "kode": "BX",
+    "uraian": "box"
+  },
+  {
+    "kode": "BZ",
+    "uraian": "million BTUs"
+  },
+  {
+    "kode": "C0",
+    "uraian": "call"
+  },
+  {
+    "kode": "C1",
+    "uraian": "composite product pound (total weight)"
+  },
+  {
+    "kode": "C10",
+    "uraian": "millifarad"
+  },
+  {
+    "kode": "C11",
+    "uraian": "milligal"
+  },
+  {
+    "kode": "C12",
+    "uraian": "milligram per metre"
+  },
+  {
+    "kode": "C13",
+    "uraian": "milligray"
+  },
+  {
+    "kode": "C14",
+    "uraian": "millihenry"
+  },
+  {
+    "kode": "C15",
+    "uraian": "millijoule"
+  },
+  {
+    "kode": "C16",
+    "uraian": "millimetre per second"
+  },
+  {
+    "kode": "C17",
+    "uraian": "millimetre squared per second"
+  },
+  {
+    "kode": "C18",
+    "uraian": "millimole"
+  },
+  {
+    "kode": "C19",
+    "uraian": "mole per kilogram"
+  },
+  {
+    "kode": "C2",
+    "uraian": "carset"
+  },
+  {
+    "kode": "C20",
+    "uraian": "millinewton"
+  },
+  {
+    "kode": "C21",
+    "uraian": "kibibit"
+  },
+  {
+    "kode": "C22",
+    "uraian": "millinewton per metre"
+  },
+  {
+    "kode": "C23",
+    "uraian": "milliohm metre"
+  },
+  {
+    "kode": "C24",
+    "uraian": "millipascal second"
+  },
+  {
+    "kode": "C25",
+    "uraian": "milliradian"
+  },
+  {
+    "kode": "C26",
+    "uraian": "millisecond"
+  },
+  {
+    "kode": "C27",
+    "uraian": "millisiemens"
+  },
+  {
+    "kode": "C28",
+    "uraian": "millisievert"
+  },
+  {
+    "kode": "C29",
+    "uraian": "millitesla"
+  },
+  {
+    "kode": "C3",
+    "uraian": "microvolt per metre"
+  },
+  {
+    "kode": "C30",
+    "uraian": "millivolt per metre"
+  },
+  {
+    "kode": "C31",
+    "uraian": "milliwatt"
+  },
+  {
+    "kode": "C32",
+    "uraian": "milliwatt per square metre"
+  },
+  {
+    "kode": "C33",
+    "uraian": "milliweber"
+  },
+  {
+    "kode": "C34",
+    "uraian": "mole"
+  },
+  {
+    "kode": "C35",
+    "uraian": "mole per cubic decimetre"
+  },
+  {
+    "kode": "C36",
+    "uraian": "mole per cubic metre"
+  },
+  {
+    "kode": "C37",
+    "uraian": "kilobit"
+  },
+  {
+    "kode": "C38",
+    "uraian": "mole per litre"
+  },
+  {
+    "kode": "C39",
+    "uraian": "nanoampere"
+  },
+  {
+    "kode": "C4",
+    "uraian": "carload"
+  },
+  {
+    "kode": "C40",
+    "uraian": "nanocoulomb"
+  },
+  {
+    "kode": "C41",
+    "uraian": "nanofarad"
+  },
+  {
+    "kode": "C42",
+    "uraian": "nanofarad per metre"
+  },
+  {
+    "kode": "C43",
+    "uraian": "nanohenry"
+  },
+  {
+    "kode": "C44",
+    "uraian": "nanohenry per metre"
+  },
+  {
+    "kode": "C45",
+    "uraian": "nanometre"
+  },
+  {
+    "kode": "C46",
+    "uraian": "nanoohm metre"
+  },
+  {
+    "kode": "C47",
+    "uraian": "nanosecond"
+  },
+  {
+    "kode": "C48",
+    "uraian": "nanotesla"
+  },
+  {
+    "kode": "C49",
+    "uraian": "nanowatt"
+  },
+  {
+    "kode": "C5",
+    "uraian": "cost"
+  },
+  {
+    "kode": "C50",
+    "uraian": "neper"
+  },
+  {
+    "kode": "C51",
+    "uraian": "neper per second"
+  },
+  {
+    "kode": "C52",
+    "uraian": "picometre"
+  },
+  {
+    "kode": "C53",
+    "uraian": "newton metre second"
+  },
+  {
+    "kode": "C54",
+    "uraian": "newton metre squared kilogram squared"
+  },
+  {
+    "kode": "C55",
+    "uraian": "newton per square metre"
+  },
+  {
+    "kode": "C56",
+    "uraian": "newton per square millimetre"
+  },
+  {
+    "kode": "C57",
+    "uraian": "newton second"
+  },
+  {
+    "kode": "C58",
+    "uraian": "newton second per metre"
+  },
+  {
+    "kode": "C59",
+    "uraian": "octave"
+  },
+  {
+    "kode": "C6",
+    "uraian": "cell"
+  },
+  {
+    "kode": "C60",
+    "uraian": "ohm centimetre"
+  },
+  {
+    "kode": "C61",
+    "uraian": "ohm metre"
+  },
+  {
+    "kode": "C62",
+    "uraian": "one"
+  },
+  {
+    "kode": "C63",
+    "uraian": "parsec"
+  },
+  {
+    "kode": "C64",
+    "uraian": "pascal per kelvin"
+  },
+  {
+    "kode": "C65",
+    "uraian": "pascal second"
+  },
+  {
+    "kode": "C66",
+    "uraian": "pascal second per cubic metre"
+  },
+  {
+    "kode": "C67",
+    "uraian": "pascal second per metre"
+  },
+  {
+    "kode": "C68",
+    "uraian": "petajoule"
+  },
+  {
+    "kode": "C69",
+    "uraian": "phon"
+  },
+  {
+    "kode": "C7",
+    "uraian": "centipoise"
+  },
+  {
+    "kode": "C70",
+    "uraian": "picoampere"
+  },
+  {
+    "kode": "C71",
+    "uraian": "picocoulomb"
+  },
+  {
+    "kode": "C72",
+    "uraian": "picofarad per metre"
+  },
+  {
+    "kode": "C73",
+    "uraian": "picohenry"
+  },
+  {
+    "kode": "C74",
+    "uraian": "kilobit per second"
+  },
+  {
+    "kode": "C75",
+    "uraian": "picowatt"
+  },
+  {
+    "kode": "C76",
+    "uraian": "picowatt per square metre"
+  },
+  {
+    "kode": "C77",
+    "uraian": "pound gage"
+  },
+  {
+    "kode": "C78",
+    "uraian": "pound-force"
+  },
+  {
+    "kode": "C79",
+    "uraian": "kilovolt ampere hour"
+  },
+  {
+    "kode": "C8",
+    "uraian": "millicoulomb per kilogram"
+  },
+  {
+    "kode": "C80",
+    "uraian": "rad"
+  },
+  {
+    "kode": "C81",
+    "uraian": "radian"
+  },
+  {
+    "kode": "C82",
+    "uraian": "radian square metre per mole"
+  },
+  {
+    "kode": "C83",
+    "uraian": "radian square metre per kilogram"
+  },
+  {
+    "kode": "C84",
+    "uraian": "radian per metre"
+  },
+  {
+    "kode": "C85",
+    "uraian": "reciprocal angstrom"
+  },
+  {
+    "kode": "C86",
+    "uraian": "reciprocal cubic metre"
+  },
+  {
+    "kode": "C87",
+    "uraian": "reciprocal cubic metre per second"
+  },
+  {
+    "kode": "C88",
+    "uraian": "reciprocal electron volt per cubic metre"
+  },
+  {
+    "kode": "C89",
+    "uraian": "reciprocal henry"
+  },
+  {
+    "kode": "C9",
+    "uraian": "coil group"
+  },
+  {
+    "kode": "C90",
+    "uraian": "reciprocal joule per cubic metre"
+  },
+  {
+    "kode": "C91",
+    "uraian": "reciprocal kelvin or kelvin to the power minus one"
+  },
+  {
+    "kode": "C92",
+    "uraian": "reciprocal metre"
+  },
+  {
+    "kode": "C93",
+    "uraian": "reciprocal square metre"
+  },
+  {
+    "kode": "C94",
+    "uraian": "reciprocal minute"
+  },
+  {
+    "kode": "C95",
+    "uraian": "reciprocal mole"
+  },
+  {
+    "kode": "C96",
+    "uraian": "reciprocal pascal or pascal to the power minus one"
+  },
+  {
+    "kode": "C97",
+    "uraian": "reciprocal second"
+  },
+  {
+    "kode": "C98",
+    "uraian": "reciprocal second per cubic metre"
+  },
+  {
+    "kode": "C99",
+    "uraian": "reciprocal second per metre squared"
+  },
+  {
+    "kode": "CA",
+    "uraian": "can"
+  },
+  {
+    "kode": "CCT",
+    "uraian": "Carrying capacity in metric tonnes"
+  },
+  {
+    "kode": "CDL",
+    "uraian": "Candela"
+  },
+  {
+    "kode": "CEL",
+    "uraian": "Degree celcius"
+  },
+  {
+    "kode": "CEN",
+    "uraian": "Hundred"
+  },
+  {
+    "kode": "CG",
+    "uraian": "card"
+  },
+  {
+    "kode": "CGM",
+    "uraian": "centigram"
+  },
+  {
+    "kode": "CH",
+    "uraian": "container"
+  },
+  {
+    "kode": "CJ",
+    "uraian": "cone"
+  },
+  {
+    "kode": "CK",
+    "uraian": "connector"
+  },
+  {
+    "kode": "CKG",
+    "uraian": "Coulomb per kilogram"
+  },
+  {
+    "kode": "CL",
+    "uraian": "coil"
+  },
+  {
+    "kode": "CLF",
+    "uraian": "hundred leave"
+  },
+  {
+    "kode": "CLT",
+    "uraian": "Centilitre"
+  },
+  {
+    "kode": "CMK",
+    "uraian": "Square centimetre"
+  },
+  {
+    "kode": "CMQ",
+    "uraian": "Cubic centimetre"
+  },
+  {
+    "kode": "CMT",
+    "uraian": "Centimetre"
+  },
+  {
+    "kode": "CNP",
+    "uraian": "Hundred packs"
+  },
+  {
+    "kode": "CNT",
+    "uraian": "Cental GB (45.3592 kg)"
+  },
+  {
+    "kode": "CO",
+    "uraian": "carboy"
+  },
+  {
+    "kode": "COU",
+    "uraian": "Coulomb"
+  },
+  {
+    "kode": "CQ",
+    "uraian": "cartridge"
+  },
+  {
+    "kode": "CR",
+    "uraian": "crate"
+  },
+  {
+    "kode": "CS",
+    "uraian": "case"
+  },
+  {
+    "kode": "CT",
+    "uraian": "carton"
+  },
+  {
+    "kode": "CTG",
+    "uraian": "content gram"
+  },
+  {
+    "kode": "CTM",
+    "uraian": "Metric carat (200 mg = 2.10-4 kg)"
+  },
+  {
+    "kode": "CTN",
+    "uraian": "content ton (metric)"
+  },
+  {
+    "kode": "CU",
+    "uraian": "cup"
+  },
+  {
+    "kode": "CUR",
+    "uraian": "Curie"
+  },
+  {
+    "kode": "CV",
+    "uraian": "cover"
+  },
+  {
+    "kode": "CWA",
+    "uraian": "Hundredweight"
+  },
+  {
+    "kode": "CWI",
+    "uraian": "Long/hundredweight GB (50.8023 kg)"
+  },
+  {
+    "kode": "CY",
+    "uraian": "cylinder"
+  },
+  {
+    "kode": "CZ",
+    "uraian": "combo"
+  },
+  {
+    "kode": "D03",
+    "uraian": "kilowatt hour per hour"
+  },
+  {
+    "kode": "D04",
+    "uraian": "lot [unit of weight]"
+  },
+  {
+    "kode": "D1",
+    "uraian": "reciprocal second per steradian"
+  },
+  {
+    "kode": "D10",
+    "uraian": "siemens per metre"
+  },
+  {
+    "kode": "D11",
+    "uraian": "mebibit"
+  },
+  {
+    "kode": "D12",
+    "uraian": "siemens square metre per mole"
+  },
+  {
+    "kode": "D13",
+    "uraian": "sievert"
+  },
+  {
+    "kode": "D14",
+    "uraian": "thousand linear yard"
+  },
+  {
+    "kode": "D15",
+    "uraian": "sone"
+  },
+  {
+    "kode": "D16",
+    "uraian": "square centimetre per erg"
+  },
+  {
+    "kode": "D17",
+    "uraian": "square centimetre per steradian erg"
+  },
+  {
+    "kode": "D18",
+    "uraian": "metre kelvin"
+  },
+  {
+    "kode": "D19",
+    "uraian": "square metre kelvin per watt"
+  },
+  {
+    "kode": "D2",
+    "uraian": "reciprocal second per steradian metre squared"
+  },
+  {
+    "kode": "D20",
+    "uraian": "square metre per joule"
+  },
+  {
+    "kode": "D21",
+    "uraian": "square metre per kilogram"
+  },
+  {
+    "kode": "D22",
+    "uraian": "square metre per mole"
+  },
+  {
+    "kode": "D23",
+    "uraian": "pen gram (protein)"
+  },
+  {
+    "kode": "D24",
+    "uraian": "square metre per steradian"
+  },
+  {
+    "kode": "D25",
+    "uraian": "square metre per steradian joule"
+  },
+  {
+    "kode": "D26",
+    "uraian": "square metre per volt second"
+  },
+  {
+    "kode": "D27",
+    "uraian": "steradian"
+  },
+  {
+    "kode": "D28",
+    "uraian": "syphon"
+  },
+  {
+    "kode": "D29",
+    "uraian": "terahertz"
+  },
+  {
+    "kode": "D30",
+    "uraian": "terajoule"
+  },
+  {
+    "kode": "D31",
+    "uraian": "terawatt"
+  },
+  {
+    "kode": "D32",
+    "uraian": "terawatt hour"
+  },
+  {
+    "kode": "D33",
+    "uraian": "tesla"
+  },
+  {
+    "kode": "D34",
+    "uraian": "tex"
+  },
+  {
+    "kode": "D35",
+    "uraian": "calorie (thermochemical)"
+  },
+  {
+    "kode": "D36",
+    "uraian": "megabit"
+  },
+  {
+    "kode": "D37",
+    "uraian": "calorie (thermochemical) per gram kelvin"
+  },
+  {
+    "kode": "D38",
+    "uraian": "calorie (thermochemical) per second centimetre kelvin"
+  },
+  {
+    "kode": "D39",
+    "uraian": "calorie (thermochemical) per second square centimetre"
+  },
+  {
+    "kode": "D40",
+    "uraian": "thousand litre"
+  },
+  {
+    "kode": "D41",
+    "uraian": "tonne per cubic metre"
+  },
+  {
+    "kode": "D42",
+    "uraian": "tropical year"
+  },
+  {
+    "kode": "D43",
+    "uraian": "unified atomic mass unit"
+  },
+  {
+    "kode": "D44",
+    "uraian": "var"
+  },
+  {
+    "kode": "D45",
+    "uraian": "volt squared per kelvin squared"
+  },
+  {
+    "kode": "D46",
+    "uraian": "volt - ampere"
+  },
+  {
+    "kode": "D47",
+    "uraian": "volt per centimetre"
+  },
+  {
+    "kode": "D48",
+    "uraian": "volt per kelvin"
+  },
+  {
+    "kode": "D49",
+    "uraian": "millivolt per kelvin"
+  },
+  {
+    "kode": "D5",
+    "uraian": "kilogram per square centimetre"
+  },
+  {
+    "kode": "D50",
+    "uraian": "volt per metre"
+  },
+  {
+    "kode": "D51",
+    "uraian": "volt per millimetre"
+  },
+  {
+    "kode": "D52",
+    "uraian": "watt per kelvin"
+  },
+  {
+    "kode": "D53",
+    "uraian": "watt per metre kelvin"
+  },
+  {
+    "kode": "D54",
+    "uraian": "watt per square metre"
+  },
+  {
+    "kode": "D55",
+    "uraian": "watt per square metre kelvin"
+  },
+  {
+    "kode": "D56",
+    "uraian": "watt per square metre kelvin to the fourth power"
+  },
+  {
+    "kode": "D57",
+    "uraian": "watt per steradian"
+  },
+  {
+    "kode": "D58",
+    "uraian": "watt per steradian square metre"
+  },
+  {
+    "kode": "D59",
+    "uraian": "weber per metre"
+  },
+  {
+    "kode": "D6",
+    "uraian": "roentgen per second"
+  },
+  {
+    "kode": "D60",
+    "uraian": "weber per millimetre"
+  },
+  {
+    "kode": "D61",
+    "uraian": "minute [unit of angle]"
+  },
+  {
+    "kode": "D62",
+    "uraian": "second [unit of angle]"
+  },
+  {
+    "kode": "D63",
+    "uraian": "book"
+  },
+  {
+    "kode": "D64",
+    "uraian": "block"
+  },
+  {
+    "kode": "D65",
+    "uraian": "round"
+  },
+  {
+    "kode": "D66",
+    "uraian": "cassette"
+  },
+  {
+    "kode": "D67",
+    "uraian": "dollar per hour"
+  },
+  {
+    "kode": "D68",
+    "uraian": "number of words"
+  },
+  {
+    "kode": "D69",
+    "uraian": "inch to the fourth power"
+  },
+  {
+    "kode": "D7",
+    "uraian": "sandwich"
+  },
+  {
+    "kode": "D70",
+    "uraian": "International Table (IT) calorie"
+  },
+  {
+    "kode": "D71",
+    "uraian": "International Table (IT) calorie per second centimetre"
+  },
+  {
+    "kode": "D72",
+    "uraian": "International Table (IT) calorie per second square"
+  },
+  {
+    "kode": "D73",
+    "uraian": "joule square metre"
+  },
+  {
+    "kode": "D74",
+    "uraian": "kilogram per mole"
+  },
+  {
+    "kode": "D75",
+    "uraian": "calorie (international table) per gram"
+  },
+  {
+    "kode": "D76",
+    "uraian": "calorie (international table) per gram kelvin"
+  },
+  {
+    "kode": "D77",
+    "uraian": "megacoulomb"
+  },
+  {
+    "kode": "D78",
+    "uraian": "megajoule per second"
+  },
+  {
+    "kode": "D79",
+    "uraian": "beam"
+  },
+  {
+    "kode": "D8",
+    "uraian": "draize score"
+  },
+  {
+    "kode": "D80",
+    "uraian": "microwatt"
+  },
+  {
+    "kode": "D81",
+    "uraian": "microtesla"
+  },
+  {
+    "kode": "D82",
+    "uraian": "microvolt"
+  },
+  {
+    "kode": "D83",
+    "uraian": "millinewton metre"
+  },
+  {
+    "kode": "D85",
+    "uraian": "microwatt per square metre"
+  },
+  {
+    "kode": "D86",
+    "uraian": "millicoulomb"
+  },
+  {
+    "kode": "D87",
+    "uraian": "millimole per kilogram"
+  },
+  {
+    "kode": "D88",
+    "uraian": "millicoulomb per cubic metre"
+  },
+  {
+    "kode": "D89",
+    "uraian": "millicoulomb per square metre"
+  },
+  {
+    "kode": "D9",
+    "uraian": "dyne per square centimetre"
+  },
+  {
+    "kode": "D90",
+    "uraian": "cubic metre (net)"
+  },
+  {
+    "kode": "D91",
+    "uraian": "rem"
+  },
+  {
+    "kode": "D92",
+    "uraian": "band"
+  },
+  {
+    "kode": "D93",
+    "uraian": "second per cubic metre"
+  },
+  {
+    "kode": "D94",
+    "uraian": "second per cubic metre radian"
+  },
+  {
+    "kode": "D95",
+    "uraian": "joule per gram"
+  },
+  {
+    "kode": "D96",
+    "uraian": "pound gross"
+  },
+  {
+    "kode": "D97",
+    "uraian": "pallet/unit load"
+  },
+  {
+    "kode": "D98",
+    "uraian": "mass pound"
+  },
+  {
+    "kode": "D99",
+    "uraian": "sleeve"
+  },
+  {
+    "kode": "DAA",
+    "uraian": "Decare"
+  },
+  {
+    "kode": "DAD",
+    "uraian": "Ten day"
+  },
+  {
+    "kode": "DAY",
+    "uraian": "Day"
+  },
+  {
+    "kode": "DB",
+    "uraian": "dry pound"
+  },
+  {
+    "kode": "DBC",
+    "uraian": "Decade (ten years)"
+  },
+  {
+    "kode": "DC",
+    "uraian": "disk (disc)"
+  },
+  {
+    "kode": "DD",
+    "uraian": "degree [unit of angle]"
+  },
+  {
+    "kode": "DE",
+    "uraian": "deal"
+  },
+  {
+    "kode": "DEC",
+    "uraian": "decade"
+  },
+  {
+    "kode": "DG",
+    "uraian": "decigram"
+  },
+  {
+    "kode": "DI",
+    "uraian": "dispenser"
+  },
+  {
+    "kode": "DJ",
+    "uraian": "decagram"
+  },
+  {
+    "kode": "DLT",
+    "uraian": "decilitre"
+  },
+  {
+    "kode": "DMA",
+    "uraian": "cubic decametre"
+  },
+  {
+    "kode": "DMK",
+    "uraian": "Square decimetre"
+  },
+  {
+    "kode": "DMO",
+    "uraian": "standard kilolitre"
+  },
+  {
+    "kode": "DMQ",
+    "uraian": "Cubic decimetre"
+  },
+  {
+    "kode": "DMT",
+    "uraian": "Decimetre"
+  },
+  {
+    "kode": "DN",
+    "uraian": "decinewton metre"
+  },
+  {
+    "kode": "DPC",
+    "uraian": "dozen piece"
+  },
+  {
+    "kode": "DPR",
+    "uraian": "Dozen pairs"
+  },
+  {
+    "kode": "DPT",
+    "uraian": "Displecement tonnege"
+  },
+  {
+    "kode": "DQ",
+    "uraian": "data record"
+  },
+  {
+    "kode": "DR",
+    "uraian": "drum"
+  },
+  {
+    "kode": "DRA",
+    "uraian": "Dram US"
+  },
+  {
+    "kode": "DRI",
+    "uraian": "Dram GB"
+  },
+  {
+    "kode": "DRL",
+    "uraian": "Dozen rolls"
+  },
+  {
+    "kode": "DRM",
+    "uraian": "Drachm"
+  },
+  {
+    "kode": "DS",
+    "uraian": "display"
+  },
+  {
+    "kode": "DT",
+    "uraian": "dry ton"
+  },
+  {
+    "kode": "DTN",
+    "uraian": "Centner"
+  },
+  {
+    "kode": "DU",
+    "uraian": "dyne"
+  },
+  {
+    "kode": "DWT",
+    "uraian": "Pennyweight GB"
+  },
+  {
+    "kode": "DX",
+    "uraian": "dyne per centimetre"
+  },
+  {
+    "kode": "DY",
+    "uraian": "directory book"
+  },
+  {
+    "kode": "DZN",
+    "uraian": "Dozen"
+  },
+  {
+    "kode": "DZP",
+    "uraian": "Dozen packs"
+  },
+  {
+    "kode": "E01",
+    "uraian": "newton per square centimetre"
+  },
+  {
+    "kode": "E07",
+    "uraian": "megawatt hour per hour"
+  },
+  {
+    "kode": "E08",
+    "uraian": "megawatt per hertz"
+  },
+  {
+    "kode": "E09",
+    "uraian": "milliampere hour"
+  },
+  {
+    "kode": "E10",
+    "uraian": "degree day"
+  },
+  {
+    "kode": "E11",
+    "uraian": "gigacalorie"
+  },
+  {
+    "kode": "E12",
+    "uraian": "mille"
+  },
+  {
+    "kode": "E14",
+    "uraian": "kilocalorie (international table)"
+  },
+  {
+    "kode": "E15",
+    "uraian": "kilocalorie (thermochemical) per hour"
+  },
+  {
+    "kode": "E16",
+    "uraian": "million Btu(IT) per hour"
+  },
+  {
+    "kode": "E17",
+    "uraian": "cubic foot per second"
+  },
+  {
+    "kode": "E18",
+    "uraian": "tonne per hour"
+  },
+  {
+    "kode": "E19",
+    "uraian": "ping"
+  },
+  {
+    "kode": "E2",
+    "uraian": "belt"
+  },
+  {
+    "kode": "E20",
+    "uraian": "megabit per second"
+  },
+  {
+    "kode": "E21",
+    "uraian": "shares"
+  },
+  {
+    "kode": "E22",
+    "uraian": "TEU"
+  },
+  {
+    "kode": "E23",
+    "uraian": "tyre"
+  },
+  {
+    "kode": "E25",
+    "uraian": "active unit"
+  },
+  {
+    "kode": "E27",
+    "uraian": "dose"
+  },
+  {
+    "kode": "E28",
+    "uraian": "air dry ton"
+  },
+  {
+    "kode": "E3",
+    "uraian": "trailer"
+  },
+  {
+    "kode": "E30",
+    "uraian": "strand"
+  },
+  {
+    "kode": "E31",
+    "uraian": "square metre per litre"
+  },
+  {
+    "kode": "E32",
+    "uraian": "litre per hour"
+  },
+  {
+    "kode": "E33",
+    "uraian": "foot per thousand"
+  },
+  {
+    "kode": "E34",
+    "uraian": "gigabyte"
+  },
+  {
+    "kode": "E35",
+    "uraian": "terabyte"
+  },
+  {
+    "kode": "E36",
+    "uraian": "petabyte"
+  },
+  {
+    "kode": "E37",
+    "uraian": "pixel"
+  },
+  {
+    "kode": "E38",
+    "uraian": "megapixel"
+  },
+  {
+    "kode": "E39",
+    "uraian": "dots per inch"
+  },
+  {
+    "kode": "E4",
+    "uraian": "gross kilogram"
+  },
+  {
+    "kode": "E40",
+    "uraian": "part per hundred thousand"
+  },
+  {
+    "kode": "E41",
+    "uraian": "kilogram-force per square millimetre"
+  },
+  {
+    "kode": "E42",
+    "uraian": "kilogram-force per square centimetre"
+  },
+  {
+    "kode": "E43",
+    "uraian": "joule per square centimetre"
+  },
+  {
+    "kode": "E44",
+    "uraian": "kilogram-force metre per square centimetre"
+  },
+  {
+    "kode": "E45",
+    "uraian": "milliohm"
+  },
+  {
+    "kode": "E46",
+    "uraian": "kilowatt hour per cubic metre"
+  },
+  {
+    "kode": "E47",
+    "uraian": "kilowatt hour per kelvin"
+  },
+  {
+    "kode": "E48",
+    "uraian": "service unit"
+  },
+  {
+    "kode": "E49",
+    "uraian": "working day"
+  },
+  {
+    "kode": "E5",
+    "uraian": "metric long ton"
+  },
+  {
+    "kode": "E50",
+    "uraian": "accounting unit"
+  },
+  {
+    "kode": "E51",
+    "uraian": "job"
+  },
+  {
+    "kode": "E52",
+    "uraian": "run foot"
+  },
+  {
+    "kode": "E53",
+    "uraian": "test"
+  },
+  {
+    "kode": "E54",
+    "uraian": "trip"
+  },
+  {
+    "kode": "E55",
+    "uraian": "use"
+  },
+  {
+    "kode": "E56",
+    "uraian": "well"
+  },
+  {
+    "kode": "E57",
+    "uraian": "zone"
+  },
+  {
+    "kode": "E58",
+    "uraian": "exabit per second"
+  },
+  {
+    "kode": "E59",
+    "uraian": "exbibyte"
+  },
+  {
+    "kode": "E60",
+    "uraian": "pebibyte"
+  },
+  {
+    "kode": "E61",
+    "uraian": "tebibyte"
+  },
+  {
+    "kode": "E62",
+    "uraian": "gibibyte"
+  },
+  {
+    "kode": "E63",
+    "uraian": "mebibyte"
+  },
+  {
+    "kode": "E64",
+    "uraian": "kibibyte"
+  },
+  {
+    "kode": "E65",
+    "uraian": "exbibit per metre"
+  },
+  {
+    "kode": "E66",
+    "uraian": "exbibit per square metre"
+  },
+  {
+    "kode": "E67",
+    "uraian": "exbibit per cubic metre"
+  },
+  {
+    "kode": "E68",
+    "uraian": "gigabyte per second"
+  },
+  {
+    "kode": "E69",
+    "uraian": "gibibit per metre"
+  },
+  {
+    "kode": "E70",
+    "uraian": "gibibit per square metre"
+  },
+  {
+    "kode": "E71",
+    "uraian": "gibibit per cubic metre"
+  },
+  {
+    "kode": "E72",
+    "uraian": "kibibit per metre"
+  },
+  {
+    "kode": "E73",
+    "uraian": "kibibit per square metre"
+  },
+  {
+    "kode": "E74",
+    "uraian": "kibibit per cubic metre"
+  },
+  {
+    "kode": "E75",
+    "uraian": "mebibit per metre"
+  },
+  {
+    "kode": "E76",
+    "uraian": "mebibit per square metre"
+  },
+  {
+    "kode": "E77",
+    "uraian": "mebibit per cubic metre"
+  },
+  {
+    "kode": "E78",
+    "uraian": "petabit"
+  },
+  {
+    "kode": "E79",
+    "uraian": "petabit per second"
+  },
+  {
+    "kode": "E80",
+    "uraian": "pebibit per metre"
+  },
+  {
+    "kode": "E81",
+    "uraian": "pebibit per square metre"
+  },
+  {
+    "kode": "E82",
+    "uraian": "pebibit per cubic metre"
+  },
+  {
+    "kode": "E83",
+    "uraian": "terabit"
+  },
+  {
+    "kode": "E84",
+    "uraian": "terabit per second"
+  },
+  {
+    "kode": "E85",
+    "uraian": "tebibit per metre"
+  },
+  {
+    "kode": "E86",
+    "uraian": "tebibit per cubic metre"
+  },
+  {
+    "kode": "E87",
+    "uraian": "tebibit per square metre"
+  },
+  {
+    "kode": "E88",
+    "uraian": "bit per metre"
+  },
+  {
+    "kode": "E89",
+    "uraian": "bit per square metre"
+  },
+  {
+    "kode": "E90",
+    "uraian": "reciprocal centimetre"
+  },
+  {
+    "kode": "E91",
+    "uraian": "reciprocal day"
+  },
+  {
+    "kode": "E92",
+    "uraian": "cubic decimetre per hour"
+  },
+  {
+    "kode": "E93",
+    "uraian": "kilogram per hour"
+  },
+  {
+    "kode": "E94",
+    "uraian": "kilomole per second"
+  },
+  {
+    "kode": "E95",
+    "uraian": "mole per second"
+  },
+  {
+    "kode": "E96",
+    "uraian": "degree per second"
+  },
+  {
+    "kode": "E97",
+    "uraian": "millimetre per degree Celcius metre"
+  },
+  {
+    "kode": "E98",
+    "uraian": "degree celsius per kelvin"
+  },
+  {
+    "kode": "E99",
+    "uraian": "hektopascal per bar"
+  },
+  {
+    "kode": "EA",
+    "uraian": "each"
+  },
+  {
+    "kode": "EB",
+    "uraian": "electronic mail box"
+  },
+  {
+    "kode": "EC",
+    "uraian": "each per month"
+  },
+  {
+    "kode": "EP",
+    "uraian": "eleven pack"
+  },
+  {
+    "kode": "EQ",
+    "uraian": "equivalent gallon"
+  },
+  {
+    "kode": "EV",
+    "uraian": "envelope"
+  },
+  {
+    "kode": "F01",
+    "uraian": "bit per cubic metre"
+  },
+  {
+    "kode": "F02",
+    "uraian": "kelvin per kelvin"
+  },
+  {
+    "kode": "F03",
+    "uraian": "kilopascal per bar"
+  },
+  {
+    "kode": "F04",
+    "uraian": "millibar per bar"
+  },
+  {
+    "kode": "F05",
+    "uraian": "megapascal per bar"
+  },
+  {
+    "kode": "F06",
+    "uraian": "poise per bar"
+  },
+  {
+    "kode": "F07",
+    "uraian": "pascal per bar"
+  },
+  {
+    "kode": "F08",
+    "uraian": "milliampere per inch"
+  },
+  {
+    "kode": "F1",
+    "uraian": "thousand cubic foot per day"
+  },
+  {
+    "kode": "F10",
+    "uraian": "kelvin per hour"
+  },
+  {
+    "kode": "F11",
+    "uraian": "kelvin per minute"
+  },
+  {
+    "kode": "F12",
+    "uraian": "kelvin per second"
+  },
+  {
+    "kode": "F13",
+    "uraian": "slug"
+  },
+  {
+    "kode": "F14",
+    "uraian": "gram per kelvin"
+  },
+  {
+    "kode": "F15",
+    "uraian": "kilogram per kelvin"
+  },
+  {
+    "kode": "F16",
+    "uraian": "milligram per kelvin"
+  },
+  {
+    "kode": "F17",
+    "uraian": "pound-force per foot"
+  },
+  {
+    "kode": "F18",
+    "uraian": "kilogram square centimetre"
+  },
+  {
+    "kode": "F19",
+    "uraian": "kilogram square millimetre"
+  },
+  {
+    "kode": "F20",
+    "uraian": "pound inch squared"
+  },
+  {
+    "kode": "F21",
+    "uraian": "pound-force inch"
+  },
+  {
+    "kode": "F22",
+    "uraian": "pound-force foot per ampere"
+  },
+  {
+    "kode": "F23",
+    "uraian": "gram per cubic decimetre"
+  },
+  {
+    "kode": "F24",
+    "uraian": "kilogram per kilomol"
+  },
+  {
+    "kode": "F25",
+    "uraian": "gram per hertz"
+  },
+  {
+    "kode": "F26",
+    "uraian": "gram per day"
+  },
+  {
+    "kode": "F27",
+    "uraian": "gram per hour"
+  },
+  {
+    "kode": "F28",
+    "uraian": "gram per minute"
+  },
+  {
+    "kode": "F29",
+    "uraian": "gram per second"
+  },
+  {
+    "kode": "F30",
+    "uraian": "kilogram per day"
+  },
+  {
+    "kode": "F31",
+    "uraian": "kilogram per minute"
+  },
+  {
+    "kode": "F32",
+    "uraian": "milligram per day"
+  },
+  {
+    "kode": "F33",
+    "uraian": "milligram per minute"
+  },
+  {
+    "kode": "F34",
+    "uraian": "milligram per second"
+  },
+  {
+    "kode": "F35",
+    "uraian": "gram per day kelvin"
+  },
+  {
+    "kode": "F36",
+    "uraian": "gram per hour kelvin"
+  },
+  {
+    "kode": "F37",
+    "uraian": "gram per minute kelvin"
+  },
+  {
+    "kode": "F38",
+    "uraian": "gram per second kelvin"
+  },
+  {
+    "kode": "F39",
+    "uraian": "kilogram per day kelvin"
+  },
+  {
+    "kode": "F40",
+    "uraian": "kilogram per hour kelvin"
+  },
+  {
+    "kode": "F41",
+    "uraian": "kilogram per minute kelvin"
+  },
+  {
+    "kode": "F42",
+    "uraian": "kilogram per second kelvin"
+  },
+  {
+    "kode": "F43",
+    "uraian": "milligram per day kelvin"
+  },
+  {
+    "kode": "F44",
+    "uraian": "milligram per hour kelvin"
+  },
+  {
+    "kode": "F45",
+    "uraian": "milligram per minute kelvin"
+  },
+  {
+    "kode": "F46",
+    "uraian": "milligram per second kelvin"
+  },
+  {
+    "kode": "F47",
+    "uraian": "newton per millimetre"
+  },
+  {
+    "kode": "F48",
+    "uraian": "pound-force per inch"
+  },
+  {
+    "kode": "F49",
+    "uraian": "rod [unit of distance]"
+  },
+  {
+    "kode": "F50",
+    "uraian": "micrometre per kelvin"
+  },
+  {
+    "kode": "F51",
+    "uraian": "centimetre per kelvin"
+  },
+  {
+    "kode": "F52",
+    "uraian": "metre per kelvin"
+  },
+  {
+    "kode": "F53",
+    "uraian": "millimetre per kelvin"
+  },
+  {
+    "kode": "F54",
+    "uraian": "milliohm per metre"
+  },
+  {
+    "kode": "F55",
+    "uraian": "ohm per mile"
+  },
+  {
+    "kode": "F56",
+    "uraian": "ohm per kilometre"
+  },
+  {
+    "kode": "F57",
+    "uraian": "milliampere per pound-force per square inch"
+  },
+  {
+    "kode": "F58",
+    "uraian": "reciprocal bar"
+  },
+  {
+    "kode": "F59",
+    "uraian": "milliampere per bar"
+  },
+  {
+    "kode": "F60",
+    "uraian": "degree Celsius per bar"
+  },
+  {
+    "kode": "F61",
+    "uraian": "kelvin per bar"
+  },
+  {
+    "kode": "F62",
+    "uraian": "gram per day bar"
+  },
+  {
+    "kode": "F63",
+    "uraian": "gram per hour bar"
+  },
+  {
+    "kode": "F64",
+    "uraian": "gram per minute bar"
+  },
+  {
+    "kode": "F65",
+    "uraian": "gram per second bar"
+  },
+  {
+    "kode": "F66",
+    "uraian": "kilogram per day bar"
+  },
+  {
+    "kode": "F67",
+    "uraian": "kilogram per hour bar"
+  },
+  {
+    "kode": "F68",
+    "uraian": "kilogram per minute bar"
+  },
+  {
+    "kode": "F69",
+    "uraian": "kilogram per second bar"
+  },
+  {
+    "kode": "F70",
+    "uraian": "milligram per day bar"
+  },
+  {
+    "kode": "F71",
+    "uraian": "milligram per hour bar"
+  },
+  {
+    "kode": "F72",
+    "uraian": "milligram per minute bar"
+  },
+  {
+    "kode": "F73",
+    "uraian": "milligram per second bar"
+  },
+  {
+    "kode": "F74",
+    "uraian": "gram per bar"
+  },
+  {
+    "kode": "F75",
+    "uraian": "milligram per bar"
+  },
+  {
+    "kode": "F76",
+    "uraian": "milliampere per millimetre"
+  },
+  {
+    "kode": "F77",
+    "uraian": "pascal second per kelvin"
+  },
+  {
+    "kode": "F78",
+    "uraian": "inch of water"
+  },
+  {
+    "kode": "F79",
+    "uraian": "inch of mercury"
+  },
+  {
+    "kode": "F80",
+    "uraian": "water horse power"
+  },
+  {
+    "kode": "F81",
+    "uraian": "bar per kelvin"
+  },
+  {
+    "kode": "F82",
+    "uraian": "hektopascal per kelvin"
+  },
+  {
+    "kode": "F83",
+    "uraian": "kilopascal per kelvin"
+  },
+  {
+    "kode": "F84",
+    "uraian": "millibar per kelvin"
+  },
+  {
+    "kode": "F85",
+    "uraian": "megapascal per kelvin"
+  },
+  {
+    "kode": "F86",
+    "uraian": "poise per kelvin"
+  },
+  {
+    "kode": "F87",
+    "uraian": "volt per litre minute"
+  },
+  {
+    "kode": "F88",
+    "uraian": "newton centimetre"
+  },
+  {
+    "kode": "F89",
+    "uraian": "newton metre per degree"
+  },
+  {
+    "kode": "F9",
+    "uraian": "fibre per cubic centimetre of air"
+  },
+  {
+    "kode": "F90",
+    "uraian": "newton metre per ampere"
+  },
+  {
+    "kode": "F91",
+    "uraian": "bar litre per second"
+  },
+  {
+    "kode": "F92",
+    "uraian": "bar cubic metre per second"
+  },
+  {
+    "kode": "F93",
+    "uraian": "hektopascal litre per second"
+  },
+  {
+    "kode": "F94",
+    "uraian": "hektopascal cubic metre per second"
+  },
+  {
+    "kode": "F95",
+    "uraian": "millibar litre per second"
+  },
+  {
+    "kode": "F96",
+    "uraian": "millibar cubic metre per second"
+  },
+  {
+    "kode": "F97",
+    "uraian": "megapascal litre per second"
+  },
+  {
+    "kode": "F98",
+    "uraian": "megapascal cubic metre per second"
+  },
+  {
+    "kode": "F99",
+    "uraian": "pascal litre per second"
+  },
+  {
+    "kode": "FAH",
+    "uraian": "degree Fahrenheit"
+  },
+  {
+    "kode": "FAR",
+    "uraian": "farad"
+  },
+  {
+    "kode": "FB",
+    "uraian": "field"
+  },
+  {
+    "kode": "FBM",
+    "uraian": "fibre metre"
+  },
+  {
+    "kode": "FC",
+    "uraian": "thousand cubic foot"
+  },
+  {
+    "kode": "FD",
+    "uraian": "million particle per cubic foot"
+  },
+  {
+    "kode": "FE",
+    "uraian": "track foot"
+  },
+  {
+    "kode": "FF",
+    "uraian": "hundred cubic metre"
+  },
+  {
+    "kode": "FG",
+    "uraian": "transdermal patch"
+  },
+  {
+    "kode": "FH",
+    "uraian": "micromole"
+  },
+  {
+    "kode": "FIT",
+    "uraian": "failures in time"
+  },
+  {
+    "kode": "FL",
+    "uraian": "flake ton"
+  },
+  {
+    "kode": "FM",
+    "uraian": "million cubic foot"
+  },
+  {
+    "kode": "FOT",
+    "uraian": "Foot (0.3048 m)"
+  },
+  {
+    "kode": "FP",
+    "uraian": "pound per square foot"
+  },
+  {
+    "kode": "FR",
+    "uraian": "foot per minute"
+  },
+  {
+    "kode": "FS",
+    "uraian": "foot per second"
+  },
+  {
+    "kode": "FTK",
+    "uraian": "Square foot"
+  },
+  {
+    "kode": "FTQ",
+    "uraian": "Cubic foot"
+  },
+  {
+    "kode": "G01",
+    "uraian": "pascal cubic metre per second"
+  },
+  {
+    "kode": "G04",
+    "uraian": "centimetre per bar"
+  },
+  {
+    "kode": "G05",
+    "uraian": "metre per bar"
+  },
+  {
+    "kode": "G06",
+    "uraian": "millimetre per bar"
+  },
+  {
+    "kode": "G08",
+    "uraian": "square inch per second"
+  },
+  {
+    "kode": "G09",
+    "uraian": "square metre per second kelvin"
+  },
+  {
+    "kode": "G10",
+    "uraian": "stokes per kelvin"
+  },
+  {
+    "kode": "G11",
+    "uraian": "gram per cubic centimetre bar"
+  },
+  {
+    "kode": "G12",
+    "uraian": "gram per cubic decimetre bar"
+  },
+  {
+    "kode": "G13",
+    "uraian": "gram per litre bar"
+  },
+  {
+    "kode": "G14",
+    "uraian": "gram per cubic metre bar"
+  },
+  {
+    "kode": "G15",
+    "uraian": "gram per millilitre bar"
+  },
+  {
+    "kode": "G16",
+    "uraian": "kilogram per cubic centimetre bar"
+  },
+  {
+    "kode": "G17",
+    "uraian": "kilogram per litre bar"
+  },
+  {
+    "kode": "G18",
+    "uraian": "kilogram per cubic metre bar"
+  },
+  {
+    "kode": "G19",
+    "uraian": "newton metre per kilogram"
+  },
+  {
+    "kode": "G2",
+    "uraian": "US gallon per minute"
+  },
+  {
+    "kode": "G20",
+    "uraian": "pound-force foot per pound"
+  },
+  {
+    "kode": "G21",
+    "uraian": "cup [unit of volume]"
+  },
+  {
+    "kode": "G23",
+    "uraian": "peck"
+  },
+  {
+    "kode": "G24",
+    "uraian": "tablespoon (US)"
+  },
+  {
+    "kode": "G25",
+    "uraian": "teaspoon (US)"
+  },
+  {
+    "kode": "G26",
+    "uraian": "stere"
+  },
+  {
+    "kode": "G27",
+    "uraian": "cubic centimetre per kelvin"
+  },
+  {
+    "kode": "G28",
+    "uraian": "litre per kelvin"
+  },
+  {
+    "kode": "G29",
+    "uraian": "cubic metre per kelvin"
+  },
+  {
+    "kode": "G3",
+    "uraian": "Imperial gallon per minute"
+  },
+  {
+    "kode": "G30",
+    "uraian": "millilitre per kelvin"
+  },
+  {
+    "kode": "G31",
+    "uraian": "kilogram per cubic centimetre"
+  },
+  {
+    "kode": "G32",
+    "uraian": "ounce (avoirdupois) per cubic yard"
+  },
+  {
+    "kode": "G33",
+    "uraian": "gram per cubic centimetre kelvin"
+  },
+  {
+    "kode": "G34",
+    "uraian": "gram per cubic decimetre kelvin"
+  },
+  {
+    "kode": "G35",
+    "uraian": "gram per litre kelvin"
+  },
+  {
+    "kode": "G36",
+    "uraian": "gram per cubic metre kelvin"
+  },
+  {
+    "kode": "G37",
+    "uraian": "gram per millilitre kelvin"
+  },
+  {
+    "kode": "G38",
+    "uraian": "kilogram per cubic centimetre kelvin"
+  },
+  {
+    "kode": "G39",
+    "uraian": "kilogram per litre kelvin"
+  },
+  {
+    "kode": "G40",
+    "uraian": "kilogram per cubic metre kelvin"
+  },
+  {
+    "kode": "G41",
+    "uraian": "square metre per second bar"
+  },
+  {
+    "kode": "G42",
+    "uraian": "microsiemens per centimetre"
+  },
+  {
+    "kode": "G43",
+    "uraian": "microsiemens per metre"
+  },
+  {
+    "kode": "G44",
+    "uraian": "nanosiemens per centimetre"
+  },
+  {
+    "kode": "G45",
+    "uraian": "nanosiemens per metre"
+  },
+  {
+    "kode": "G46",
+    "uraian": "stokes per bar"
+  },
+  {
+    "kode": "G47",
+    "uraian": "cubic centimetre per day"
+  },
+  {
+    "kode": "G48",
+    "uraian": "cubic centimetre per hour"
+  },
+  {
+    "kode": "G49",
+    "uraian": "cubic centimetre per minute"
+  },
+  {
+    "kode": "G50",
+    "uraian": "gallon (US) per hour"
+  },
+  {
+    "kode": "G51",
+    "uraian": "litre per second"
+  },
+  {
+    "kode": "G52",
+    "uraian": "cubic metre per day"
+  },
+  {
+    "kode": "G53",
+    "uraian": "cubic metre per minute"
+  },
+  {
+    "kode": "G54",
+    "uraian": "millilitre per day"
+  },
+  {
+    "kode": "G55",
+    "uraian": "millilitre per hour"
+  },
+  {
+    "kode": "G56",
+    "uraian": "cubic inch per hour"
+  },
+  {
+    "kode": "G57",
+    "uraian": "cubic inch per minute"
+  },
+  {
+    "kode": "G58",
+    "uraian": "cubic inch per second"
+  },
+  {
+    "kode": "G59",
+    "uraian": "milliampere per litre minute"
+  },
+  {
+    "kode": "G60",
+    "uraian": "volt per bar"
+  },
+  {
+    "kode": "G61",
+    "uraian": "cubic centimetre per day kelvin"
+  },
+  {
+    "kode": "G62",
+    "uraian": "cubic centimetre per hour kelvin"
+  },
+  {
+    "kode": "G63",
+    "uraian": "cubic centimetre per minute kelvin"
+  },
+  {
+    "kode": "G64",
+    "uraian": "cubic centimetre per second kelvin"
+  },
+  {
+    "kode": "G65",
+    "uraian": "litre per day kelvin"
+  },
+  {
+    "kode": "G66",
+    "uraian": "litre per hour kelvin"
+  },
+  {
+    "kode": "G67",
+    "uraian": "litre per minute kelvin"
+  },
+  {
+    "kode": "G68",
+    "uraian": "litre per second kelvin"
+  },
+  {
+    "kode": "G69",
+    "uraian": "cubic metre per day kelvin"
+  },
+  {
+    "kode": "G7",
+    "uraian": "microfiche sheet"
+  },
+  {
+    "kode": "G70",
+    "uraian": "cubic metre per hour kelvin"
+  },
+  {
+    "kode": "G71",
+    "uraian": "cubic metre per minute kelvin"
+  },
+  {
+    "kode": "G72",
+    "uraian": "cubic metre per second kelvin"
+  },
+  {
+    "kode": "G73",
+    "uraian": "millilitre per day kelvin"
+  },
+  {
+    "kode": "G74",
+    "uraian": "millilitre per hour kelvin"
+  },
+  {
+    "kode": "G75",
+    "uraian": "millilitre per minute kelvin"
+  },
+  {
+    "kode": "G76",
+    "uraian": "millilitre per second kelvin"
+  },
+  {
+    "kode": "G77",
+    "uraian": "millimetre to the fourth power"
+  },
+  {
+    "kode": "G78",
+    "uraian": "cubic centimetre per day bar"
+  },
+  {
+    "kode": "G79",
+    "uraian": "cubic centimetre per hour bar"
+  },
+  {
+    "kode": "G80",
+    "uraian": "cubic centimetre per minute bar"
+  },
+  {
+    "kode": "G81",
+    "uraian": "cubic centimetre per second bar"
+  },
+  {
+    "kode": "G82",
+    "uraian": "litre per day bar"
+  },
+  {
+    "kode": "G83",
+    "uraian": "litre per hour bar"
+  },
+  {
+    "kode": "G84",
+    "uraian": "litre per minute bar"
+  },
+  {
+    "kode": "G85",
+    "uraian": "litre per second bar"
+  },
+  {
+    "kode": "G86",
+    "uraian": "cubic metre per day bar"
+  },
+  {
+    "kode": "G87",
+    "uraian": "cubic metre per hour bar"
+  },
+  {
+    "kode": "G88",
+    "uraian": "cubic metre per minute bar"
+  },
+  {
+    "kode": "G89",
+    "uraian": "cubic metre per second bar"
+  },
+  {
+    "kode": "G90",
+    "uraian": "millilitre per day bar"
+  },
+  {
+    "kode": "G91",
+    "uraian": "millilitre per hour bar"
+  },
+  {
+    "kode": "G92",
+    "uraian": "millilitre per minute bar"
+  },
+  {
+    "kode": "G93",
+    "uraian": "millilitre per second bar"
+  },
+  {
+    "kode": "G94",
+    "uraian": "cubic centimetre per bar"
+  },
+  {
+    "kode": "G95",
+    "uraian": "litre per bar"
+  },
+  {
+    "kode": "G96",
+    "uraian": "cubic metre per bar"
+  },
+  {
+    "kode": "G97",
+    "uraian": "millilitre per bar"
+  },
+  {
+    "kode": "G98",
+    "uraian": "microhenry per kiloohm"
+  },
+  {
+    "kode": "G99",
+    "uraian": "microhenry per ohm"
+  },
+  {
+    "kode": "GB",
+    "uraian": "gallon (US) per day"
+  },
+  {
+    "kode": "GBQ",
+    "uraian": "Gigabecquerel"
+  },
+  {
+    "kode": "GC",
+    "uraian": "gram per 100 gram"
+  },
+  {
+    "kode": "GD",
+    "uraian": "gross barrel"
+  },
+  {
+    "kode": "GDW",
+    "uraian": "gram"
+  },
+  {
+    "kode": "GE",
+    "uraian": "pound per gallon (US)"
+  },
+  {
+    "kode": "GF",
+    "uraian": "gram per metre (gram per 100 centimetres)"
+  },
+  {
+    "kode": "GFI",
+    "uraian": "gram of fissile isotope"
+  },
+  {
+    "kode": "GGR",
+    "uraian": "Great gross (12 gross)"
+  },
+  {
+    "kode": "GH",
+    "uraian": "half gallon (US)"
+  },
+  {
+    "kode": "GIA",
+    "uraian": "Gill (118.294 cm3)"
+  },
+  {
+    "kode": "GIC",
+    "uraian": "gram"
+  },
+  {
+    "kode": "GII",
+    "uraian": "Gill (142.065 cm3)"
+  },
+  {
+    "kode": "GIP",
+    "uraian": "gram"
+  },
+  {
+    "kode": "GJ",
+    "uraian": "gram per millilitre"
+  },
+  {
+    "kode": "GK",
+    "uraian": "gram per kilogram"
+  },
+  {
+    "kode": "GL",
+    "uraian": "gram per litre"
+  },
+  {
+    "kode": "GLD",
+    "uraian": "Dry gallon (4.40488 dm3)"
+  },
+  {
+    "kode": "GLI",
+    "uraian": "Gallon (4.54609 dm3)"
+  },
+  {
+    "kode": "GLL",
+    "uraian": "Liquid gallon (3.78541 dm3)"
+  },
+  {
+    "kode": "GM",
+    "uraian": "gram per square metre"
+  },
+  {
+    "kode": "GN",
+    "uraian": "gross gallon"
+  },
+  {
+    "kode": "GO",
+    "uraian": "milligram per square metre"
+  },
+  {
+    "kode": "GP",
+    "uraian": "milligram per cubic metre"
+  },
+  {
+    "kode": "GQ",
+    "uraian": "microgram per cubic metre"
+  },
+  {
+    "kode": "GRM",
+    "uraian": "Gram"
+  },
+  {
+    "kode": "GRN",
+    "uraian": "Grain GB"
+  },
+  {
+    "kode": "GRO",
+    "uraian": "Gross"
+  },
+  {
+    "kode": "GRT",
+    "uraian": "Gross (register) ton"
+  },
+  {
+    "kode": "GT",
+    "uraian": "gross ton"
+  },
+  {
+    "kode": "GV",
+    "uraian": "gigajoule"
+  },
+  {
+    "kode": "GW",
+    "uraian": "gallon per thousand cubic foot"
+  },
+  {
+    "kode": "GWH",
+    "uraian": "Gigawatt-hour (1 million KW/h)"
+  },
+  {
+    "kode": "GY",
+    "uraian": "gross yard"
+  },
+  {
+    "kode": "GZ",
+    "uraian": "gage system"
+  },
+  {
+    "kode": "H03",
+    "uraian": "henry per kiloohm"
+  },
+  {
+    "kode": "H04",
+    "uraian": "henry per ohm"
+  },
+  {
+    "kode": "H05",
+    "uraian": "millihenry per kiloohm"
+  },
+  {
+    "kode": "H06",
+    "uraian": "millihenry per ohm"
+  },
+  {
+    "kode": "H07",
+    "uraian": "pascal second per bar"
+  },
+  {
+    "kode": "H08",
+    "uraian": "microbecquerel"
+  },
+  {
+    "kode": "H09",
+    "uraian": "reciprocal year"
+  },
+  {
+    "kode": "H1",
+    "uraian": "half page - electronic"
+  },
+  {
+    "kode": "H10",
+    "uraian": "reciprocal hour"
+  },
+  {
+    "kode": "H11",
+    "uraian": "reciprocal month"
+  },
+  {
+    "kode": "H12",
+    "uraian": "degree Celsius per hour"
+  },
+  {
+    "kode": "H13",
+    "uraian": "degree Celsius per minute"
+  },
+  {
+    "kode": "H14",
+    "uraian": "degree Celsius per second"
+  },
+  {
+    "kode": "H15",
+    "uraian": "square centimetre per gram"
+  },
+  {
+    "kode": "H16",
+    "uraian": "square decametre"
+  },
+  {
+    "kode": "H18",
+    "uraian": "square hectometre"
+  },
+  {
+    "kode": "H19",
+    "uraian": "cubic hectometre"
+  },
+  {
+    "kode": "H2",
+    "uraian": "half litre"
+  },
+  {
+    "kode": "H20",
+    "uraian": "cubic kilometre"
+  },
+  {
+    "kode": "H21",
+    "uraian": "blank"
+  },
+  {
+    "kode": "H22",
+    "uraian": "volt square inch per pound-force"
+  },
+  {
+    "kode": "H23",
+    "uraian": "volt per inch"
+  },
+  {
+    "kode": "H24",
+    "uraian": "volt per microsecond"
+  },
+  {
+    "kode": "H25",
+    "uraian": "percent per kelvin"
+  },
+  {
+    "kode": "H26",
+    "uraian": "ohm per metre"
+  },
+  {
+    "kode": "H27",
+    "uraian": "degree per metre"
+  },
+  {
+    "kode": "H28",
+    "uraian": "microfarad per kilometre"
+  },
+  {
+    "kode": "H29",
+    "uraian": "microgram per litre"
+  },
+  {
+    "kode": "H30",
+    "uraian": "square micrometre"
+  },
+  {
+    "kode": "H31",
+    "uraian": "ampere per kilogram"
+  },
+  {
+    "kode": "H32",
+    "uraian": "ampere squared second"
+  },
+  {
+    "kode": "H33",
+    "uraian": "farad per kilometre"
+  },
+  {
+    "kode": "H34",
+    "uraian": "hertz metre"
+  },
+  {
+    "kode": "H35",
+    "uraian": "kelvin metre per watt"
+  },
+  {
+    "kode": "H36",
+    "uraian": "megaohm per kilometre"
+  },
+  {
+    "kode": "H37",
+    "uraian": "megaohm per metre"
+  },
+  {
+    "kode": "H38",
+    "uraian": "megaampere"
+  },
+  {
+    "kode": "H39",
+    "uraian": "megahertz kilometre"
+  },
+  {
+    "kode": "H40",
+    "uraian": "newton per ampere"
+  },
+  {
+    "kode": "H41",
+    "uraian": "newton metre watt to the power minus 0"
+  },
+  {
+    "kode": "H42",
+    "uraian": "pascal per metre"
+  },
+  {
+    "kode": "H43",
+    "uraian": "siemens per centimetre"
+  },
+  {
+    "kode": "H44",
+    "uraian": "teraohm"
+  },
+  {
+    "kode": "H45",
+    "uraian": "volt second per metre"
+  },
+  {
+    "kode": "H46",
+    "uraian": "volt per second"
+  },
+  {
+    "kode": "H47",
+    "uraian": "watt per cubic metre"
+  },
+  {
+    "kode": "H48",
+    "uraian": "attofarad"
+  },
+  {
+    "kode": "H49",
+    "uraian": "centimetre per hour"
+  },
+  {
+    "kode": "H50",
+    "uraian": "reciprocal cubic centimetre"
+  },
+  {
+    "kode": "H51",
+    "uraian": "decibel per kilometre"
+  },
+  {
+    "kode": "H52",
+    "uraian": "decibel per metre"
+  },
+  {
+    "kode": "H53",
+    "uraian": "kilogram per bar"
+  },
+  {
+    "kode": "H54",
+    "uraian": "kilogram per cubic decimetre kelvin"
+  },
+  {
+    "kode": "H55",
+    "uraian": "kilogram per cubic decimetre bar"
+  },
+  {
+    "kode": "H56",
+    "uraian": "kilogram per square metre second"
+  },
+  {
+    "kode": "H57",
+    "uraian": "inch per two pi radiant"
+  },
+  {
+    "kode": "H58",
+    "uraian": "metre per volt second"
+  },
+  {
+    "kode": "H59",
+    "uraian": "square metre per newton"
+  },
+  {
+    "kode": "H60",
+    "uraian": "cubic metre per cubic metre"
+  },
+  {
+    "kode": "H61",
+    "uraian": "millisiemens per centimetre"
+  },
+  {
+    "kode": "H62",
+    "uraian": "millivolt per minute"
+  },
+  {
+    "kode": "H63",
+    "uraian": "milligram per square centimetre"
+  },
+  {
+    "kode": "H64",
+    "uraian": "milligram per gram"
+  },
+  {
+    "kode": "H65",
+    "uraian": "millilitre per cubic metre"
+  },
+  {
+    "kode": "H66",
+    "uraian": "millimetre per year"
+  },
+  {
+    "kode": "H67",
+    "uraian": "millimetre per hour"
+  },
+  {
+    "kode": "H68",
+    "uraian": "millimole per gram"
+  },
+  {
+    "kode": "H69",
+    "uraian": "picopascal per kilometre"
+  },
+  {
+    "kode": "H70",
+    "uraian": "picosecond"
+  },
+  {
+    "kode": "H71",
+    "uraian": "percent per month"
+  },
+  {
+    "kode": "H72",
+    "uraian": "percent per hectobar"
+  },
+  {
+    "kode": "H73",
+    "uraian": "percent per decakelvin"
+  },
+  {
+    "kode": "H74",
+    "uraian": "watt per metre"
+  },
+  {
+    "kode": "H75",
+    "uraian": "decapascal"
+  },
+  {
+    "kode": "H76",
+    "uraian": "gram per millimetre"
+  },
+  {
+    "kode": "H77",
+    "uraian": "module width"
+  },
+  {
+    "kode": "H78",
+    "uraian": "conventional centimetre of water"
+  },
+  {
+    "kode": "H79",
+    "uraian": "French gauge"
+  },
+  {
+    "kode": "H80",
+    "uraian": "rack unit"
+  },
+  {
+    "kode": "H81",
+    "uraian": "millimetre per minute"
+  },
+  {
+    "kode": "H82",
+    "uraian": "big point"
+  },
+  {
+    "kode": "H83",
+    "uraian": "litre per kilogram"
+  },
+  {
+    "kode": "H84",
+    "uraian": "gram millimetre"
+  },
+  {
+    "kode": "H85",
+    "uraian": "reciprocal week"
+  },
+  {
+    "kode": "H87",
+    "uraian": "piece"
+  },
+  {
+    "kode": "H88",
+    "uraian": "megaohm kilometre"
+  },
+  {
+    "kode": "H89",
+    "uraian": "percent per ohm"
+  },
+  {
+    "kode": "H90",
+    "uraian": "percent per degree"
+  },
+  {
+    "kode": "H91",
+    "uraian": "percent per ten thousand"
+  },
+  {
+    "kode": "H92",
+    "uraian": "percent per one hundred thousand"
+  },
+  {
+    "kode": "H93",
+    "uraian": "percent per hundred"
+  },
+  {
+    "kode": "H94",
+    "uraian": "percent per thousand"
+  },
+  {
+    "kode": "H95",
+    "uraian": "percent per volt"
+  },
+  {
+    "kode": "H96",
+    "uraian": "percent per bar"
+  },
+  {
+    "kode": "H98",
+    "uraian": "percent per inch"
+  },
+  {
+    "kode": "H99",
+    "uraian": "percent per metre"
+  },
+  {
+    "kode": "HA",
+    "uraian": "hank"
+  },
+  {
+    "kode": "HAR",
+    "uraian": "Hectare"
+  },
+  {
+    "kode": "HBA",
+    "uraian": "Hectobar"
+  },
+  {
+    "kode": "HBX",
+    "uraian": "hundred boxes"
+  },
+  {
+    "kode": "HC",
+    "uraian": "hundred count"
+  },
+  {
+    "kode": "HD",
+    "uraian": "half dozen"
+  },
+  {
+    "kode": "HDW",
+    "uraian": "hundred kilogram"
+  },
+  {
+    "kode": "HE",
+    "uraian": "hundredth of a carat"
+  },
+  {
+    "kode": "HF",
+    "uraian": "hundred foot"
+  },
+  {
+    "kode": "HGM",
+    "uraian": "Hectogram"
+  },
+  {
+    "kode": "HH",
+    "uraian": "hundred cubic foot"
+  },
+  {
+    "kode": "HI",
+    "uraian": "hundred sheet"
+  },
+  {
+    "kode": "HIU",
+    "uraian": "Hundred international units"
+  },
+  {
+    "kode": "HJ",
+    "uraian": "metric horse power"
+  },
+  {
+    "kode": "HK",
+    "uraian": "hundred kilogram"
+  },
+  {
+    "kode": "HKM",
+    "uraian": "hundred kilogram"
+  },
+  {
+    "kode": "HL",
+    "uraian": "hundred foot (linear)"
+  },
+  {
+    "kode": "HLT",
+    "uraian": "Hectolitre"
+  },
+  {
+    "kode": "HM",
+    "uraian": "mile per hour"
+  },
+  {
+    "kode": "HMQ",
+    "uraian": "Million cubic metres"
+  },
+  {
+    "kode": "HMT",
+    "uraian": "Hectometre"
+  },
+  {
+    "kode": "HN",
+    "uraian": "conventional millimetre of mercury"
+  },
+  {
+    "kode": "HO",
+    "uraian": "hundred troy ounce"
+  },
+  {
+    "kode": "HP",
+    "uraian": "conventional millimetre of water"
+  },
+  {
+    "kode": "HPA",
+    "uraian": "Hectolitre of pure alcohol"
+  },
+  {
+    "kode": "HS",
+    "uraian": "hundred square foot"
+  },
+  {
+    "kode": "HT",
+    "uraian": "half hour"
+  },
+  {
+    "kode": "HTZ",
+    "uraian": "Hertz"
+  },
+  {
+    "kode": "HUR",
+    "uraian": "Hour"
+  },
+  {
+    "kode": "HY",
+    "uraian": "hundred yard"
+  },
+  {
+    "kode": "IA",
+    "uraian": "inch pound (pound inch)"
+  },
+  {
+    "kode": "IC",
+    "uraian": "count per inch"
+  },
+  {
+    "kode": "IE",
+    "uraian": "person"
+  },
+  {
+    "kode": "IF",
+    "uraian": "inches of water"
+  },
+  {
+    "kode": "II",
+    "uraian": "column inch"
+  },
+  {
+    "kode": "IL",
+    "uraian": "inch per minute"
+  },
+  {
+    "kode": "IM",
+    "uraian": "impression"
+  },
+  {
+    "kode": "INH",
+    "uraian": "Inch (2.54 mm)"
+  },
+  {
+    "kode": "INK",
+    "uraian": "Square inch"
+  },
+  {
+    "kode": "INQ",
+    "uraian": "Cubic inch"
+  },
+  {
+    "kode": "IP",
+    "uraian": "insurance policy"
+  },
+  {
+    "kode": "ISD",
+    "uraian": "international sugar degree"
+  },
+  {
+    "kode": "IT",
+    "uraian": "count per centimetre"
+  },
+  {
+    "kode": "IU",
+    "uraian": "inch per second"
+  },
+  {
+    "kode": "IV",
+    "uraian": "inch per second squared"
+  },
+  {
+    "kode": "J10",
+    "uraian": "percent per millimetre"
+  },
+  {
+    "kode": "J12",
+    "uraian": "per mille per psi"
+  },
+  {
+    "kode": "J13",
+    "uraian": "degree API"
+  },
+  {
+    "kode": "J14",
+    "uraian": "degree Baume (origin scale)"
+  },
+  {
+    "kode": "J15",
+    "uraian": "degree Baume (US heavy)"
+  },
+  {
+    "kode": "J16",
+    "uraian": "degree Baume (US light)"
+  },
+  {
+    "kode": "J17",
+    "uraian": "degree Balling"
+  },
+  {
+    "kode": "J18",
+    "uraian": "degree Brix"
+  },
+  {
+    "kode": "J19",
+    "uraian": "degree Fahrenheit hour square foot per British thermal unit"
+  },
+  {
+    "kode": "J2",
+    "uraian": "joule per kilogram"
+  },
+  {
+    "kode": "J20",
+    "uraian": "degree Fahrenheit per kelvin"
+  },
+  {
+    "kode": "J21",
+    "uraian": "degree Fahrenheit per bar"
+  },
+  {
+    "kode": "J22",
+    "uraian": "degree Fahrenheit hour square foot per British thermal unit"
+  },
+  {
+    "kode": "J23",
+    "uraian": "degree Fahrenheit per hour"
+  },
+  {
+    "kode": "J24",
+    "uraian": "degree Fahrenheit per minute"
+  },
+  {
+    "kode": "J25",
+    "uraian": "degree Fahrenheit per second"
+  },
+  {
+    "kode": "J26",
+    "uraian": "reciprocal degree Fahrenheit"
+  },
+  {
+    "kode": "J27",
+    "uraian": "degree Oechsle"
+  },
+  {
+    "kode": "J28",
+    "uraian": "degree Rankine per hour"
+  },
+  {
+    "kode": "J29",
+    "uraian": "degree Rankine per minute"
+  },
+  {
+    "kode": "J30",
+    "uraian": "degree Rankine per second"
+  },
+  {
+    "kode": "J31",
+    "uraian": "degree Twaddell"
+  },
+  {
+    "kode": "J32",
+    "uraian": "micropoise"
+  },
+  {
+    "kode": "J33",
+    "uraian": "microgram per kilogram"
+  },
+  {
+    "kode": "J34",
+    "uraian": "microgram per cubic metre kelvin"
+  },
+  {
+    "kode": "J35",
+    "uraian": "microgram per cubic metre bar"
+  },
+  {
+    "kode": "J36",
+    "uraian": "microlitre per litre"
+  },
+  {
+    "kode": "J38",
+    "uraian": "baud"
+  },
+  {
+    "kode": "J39",
+    "uraian": "British thermal unit (mean)"
+  },
+  {
+    "kode": "J40",
+    "uraian": "British thermal unit (international table) foot per hour"
+  },
+  {
+    "kode": "J41",
+    "uraian": "British thermal unit (international table) inch per hour"
+  },
+  {
+    "kode": "J42",
+    "uraian": "British thermal unit (international table) inch per second"
+  },
+  {
+    "kode": "J43",
+    "uraian": "British thermal unit (international table) per pound"
+  },
+  {
+    "kode": "J44",
+    "uraian": "British thermal unit (international table) per minute"
+  },
+  {
+    "kode": "J45",
+    "uraian": "British thermal unit (international table) per second"
+  },
+  {
+    "kode": "J46",
+    "uraian": "British thermal unit (thermochemical) foot per hour"
+  },
+  {
+    "kode": "J47",
+    "uraian": "British thermal unit (thermochemical) per hour"
+  },
+  {
+    "kode": "J48",
+    "uraian": "British thermal unit (thermochemical) inch per hour"
+  },
+  {
+    "kode": "J49",
+    "uraian": "British thermal unit (thermochemical) inch per second"
+  },
+  {
+    "kode": "J50",
+    "uraian": "British thermal unit (thermochemical) per pound degree"
+  },
+  {
+    "kode": "J51",
+    "uraian": "British thermal unit (thermochemical) per minute"
+  },
+  {
+    "kode": "J52",
+    "uraian": "British thermal unit (thermochemical) per second"
+  },
+  {
+    "kode": "J53",
+    "uraian": "coulomb square metre per kilogram"
+  },
+  {
+    "kode": "J54",
+    "uraian": "megabaud"
+  },
+  {
+    "kode": "J55",
+    "uraian": "watt second"
+  },
+  {
+    "kode": "J56",
+    "uraian": "bar per bar"
+  },
+  {
+    "kode": "J57",
+    "uraian": "barrel (UK petroleum)"
+  },
+  {
+    "kode": "J58",
+    "uraian": "barrel (UK petroleum) per minute"
+  },
+  {
+    "kode": "J59",
+    "uraian": "barrel (UK petroleum) per day"
+  },
+  {
+    "kode": "J60",
+    "uraian": "barrel (UK petroleum) per hour"
+  },
+  {
+    "kode": "J61",
+    "uraian": "barrel (UK petroleum) per second"
+  },
+  {
+    "kode": "J62",
+    "uraian": "barrel (US petroleum) per hour"
+  },
+  {
+    "kode": "J63",
+    "uraian": "barrel (US petroleum) per second"
+  },
+  {
+    "kode": "J64",
+    "uraian": "bushel (UK) per day"
+  },
+  {
+    "kode": "J65",
+    "uraian": "bushel (UK) per hour"
+  },
+  {
+    "kode": "J66",
+    "uraian": "bushel (UK) per minute"
+  },
+  {
+    "kode": "J67",
+    "uraian": "bushel (UK) per second"
+  },
+  {
+    "kode": "J68",
+    "uraian": "bushel (US dry) per day"
+  },
+  {
+    "kode": "J69",
+    "uraian": "bushel (US dry) per hour"
+  },
+  {
+    "kode": "J70",
+    "uraian": "bushel (US dry) per minute"
+  },
+  {
+    "kode": "J71",
+    "uraian": "bushel (US dry) per second"
+  },
+  {
+    "kode": "J72",
+    "uraian": "centinewton metre"
+  },
+  {
+    "kode": "J73",
+    "uraian": "centipoise per kelvin"
+  },
+  {
+    "kode": "J74",
+    "uraian": "centipoise per bar"
+  },
+  {
+    "kode": "J75",
+    "uraian": "calorie (mean)"
+  },
+  {
+    "kode": "J76",
+    "uraian": "calorie (international table) per gram degree Celsius"
+  },
+  {
+    "kode": "J78",
+    "uraian": "calorie (thermochemical) per centimetre second degree"
+  },
+  {
+    "kode": "J79",
+    "uraian": "calorie (thermochemical) per gram degree Celsius"
+  },
+  {
+    "kode": "J81",
+    "uraian": "calorie (thermochemical) per minute"
+  },
+  {
+    "kode": "J82",
+    "uraian": "calorie (thermochemical) per second"
+  },
+  {
+    "kode": "J83",
+    "uraian": "clo"
+  },
+  {
+    "kode": "J84",
+    "uraian": "centimetre per second kelvin"
+  },
+  {
+    "kode": "J85",
+    "uraian": "centimetre per second bar"
+  },
+  {
+    "kode": "J87",
+    "uraian": "cubic centimetre per cubic metre"
+  },
+  {
+    "kode": "J89",
+    "uraian": "centimetre of mercury"
+  },
+  {
+    "kode": "J90",
+    "uraian": "cubic decimetre per day"
+  },
+  {
+    "kode": "J91",
+    "uraian": "cubic decimetre per cubic metre"
+  },
+  {
+    "kode": "J92",
+    "uraian": "cubic decimetre per minute"
+  },
+  {
+    "kode": "J93",
+    "uraian": "cubic decimetre per second"
+  },
+  {
+    "kode": "J94",
+    "uraian": "dyne centimetre"
+  },
+  {
+    "kode": "J95",
+    "uraian": "ounce (UK fluid) per day"
+  },
+  {
+    "kode": "J96",
+    "uraian": "ounce (UK fluid) per hour"
+  },
+  {
+    "kode": "J97",
+    "uraian": "ounce (UK fluid) per minute"
+  },
+  {
+    "kode": "J98",
+    "uraian": "ounce (UK fluid) per second"
+  },
+  {
+    "kode": "J99",
+    "uraian": "ounce (US fluid) per day"
+  },
+  {
+    "kode": "JB",
+    "uraian": "jumbo"
+  },
+  {
+    "kode": "JE",
+    "uraian": "joule per kelvin"
+  },
+  {
+    "kode": "JG",
+    "uraian": "jug"
+  },
+  {
+    "kode": "JK",
+    "uraian": "megajoule per kilogram"
+  },
+  {
+    "kode": "JM",
+    "uraian": "megajoule per cubic metre"
+  },
+  {
+    "kode": "JNT",
+    "uraian": "pipeline joint"
+  },
+  {
+    "kode": "JO",
+    "uraian": "joint"
+  },
+  {
+    "kode": "JOU",
+    "uraian": "Joule"
+  },
+  {
+    "kode": "JPS",
+    "uraian": "hundred metre"
+  },
+  {
+    "kode": "JR",
+    "uraian": "jar"
+  },
+  {
+    "kode": "JWL",
+    "uraian": "number of jewels"
+  },
+  {
+    "kode": "K1",
+    "uraian": "kilowatt demand"
+  },
+  {
+    "kode": "K10",
+    "uraian": "ounce (US fluid) per hour"
+  },
+  {
+    "kode": "K11",
+    "uraian": "ounce (US fluid) per minute"
+  },
+  {
+    "kode": "K12",
+    "uraian": "ounce (US fluid) per second"
+  },
+  {
+    "kode": "K13",
+    "uraian": "foot per degree Fahrenheit"
+  },
+  {
+    "kode": "K14",
+    "uraian": "foot per hour"
+  },
+  {
+    "kode": "K15",
+    "uraian": "foot pound-force per hour"
+  },
+  {
+    "kode": "K16",
+    "uraian": "foot pound-force per minute"
+  },
+  {
+    "kode": "K17",
+    "uraian": "foot per psi"
+  },
+  {
+    "kode": "K18",
+    "uraian": "foot per second degree Fahrenheit"
+  },
+  {
+    "kode": "K19",
+    "uraian": "foot per second psi"
+  },
+  {
+    "kode": "K2",
+    "uraian": "kilovolt ampere reactive demand"
+  },
+  {
+    "kode": "K20",
+    "uraian": "reciprocal cubic foot"
+  },
+  {
+    "kode": "K21",
+    "uraian": "cubic foot per degree Fahrenheit"
+  },
+  {
+    "kode": "K22",
+    "uraian": "cubic foot per day"
+  },
+  {
+    "kode": "K23",
+    "uraian": "cubic foot per psi"
+  },
+  {
+    "kode": "K24",
+    "uraian": "foot of water"
+  },
+  {
+    "kode": "K25",
+    "uraian": "foot of mercury"
+  },
+  {
+    "kode": "K26",
+    "uraian": "gallon (UK) per day"
+  },
+  {
+    "kode": "K27",
+    "uraian": "gallon (UK) per hour"
+  },
+  {
+    "kode": "K28",
+    "uraian": "gallon (UK) per second"
+  },
+  {
+    "kode": "K3",
+    "uraian": "kilovolt ampere reactive hour"
+  },
+  {
+    "kode": "K30",
+    "uraian": "gallon (US liquid) per second"
+  },
+  {
+    "kode": "K31",
+    "uraian": "gram-force per square centimetre"
+  },
+  {
+    "kode": "K32",
+    "uraian": "gill (UK) per day"
+  },
+  {
+    "kode": "K33",
+    "uraian": "gill (UK) per hour"
+  },
+  {
+    "kode": "K34",
+    "uraian": "gill (UK) per minute"
+  },
+  {
+    "kode": "K35",
+    "uraian": "gill (UK) per second"
+  },
+  {
+    "kode": "K36",
+    "uraian": "gill (US) per day"
+  },
+  {
+    "kode": "K37",
+    "uraian": "gill (US) per hour"
+  },
+  {
+    "kode": "K38",
+    "uraian": "gill (US) per minute"
+  },
+  {
+    "kode": "K39",
+    "uraian": "gill (US) per second"
+  },
+  {
+    "kode": "K40",
+    "uraian": "standard acceleration of free fall"
+  },
+  {
+    "kode": "K41",
+    "uraian": "grain per gallon (US)"
+  },
+  {
+    "kode": "K42",
+    "uraian": "horsepower (boiler)"
+  },
+  {
+    "kode": "K43",
+    "uraian": "horsepower (electric)"
+  },
+  {
+    "kode": "K45",
+    "uraian": "inch per degree Fahrenheit"
+  },
+  {
+    "kode": "K46",
+    "uraian": "inch per psi"
+  },
+  {
+    "kode": "K47",
+    "uraian": "inch per second degree Fahrenheit"
+  },
+  {
+    "kode": "K48",
+    "uraian": "inch per second psi"
+  },
+  {
+    "kode": "K49",
+    "uraian": "reciprocal cubic inch"
+  },
+  {
+    "kode": "K5",
+    "uraian": "kilovolt ampere (reactive)"
+  },
+  {
+    "kode": "K50",
+    "uraian": "kilobaud"
+  },
+  {
+    "kode": "K51",
+    "uraian": "kilocalorie (mean)"
+  },
+  {
+    "kode": "K52",
+    "uraian": "kilocalorie (international table) per hour metre degree"
+  },
+  {
+    "kode": "K53",
+    "uraian": "kilocalorie (thermochemical)"
+  },
+  {
+    "kode": "K54",
+    "uraian": "kilocalorie (thermochemical) per minute"
+  },
+  {
+    "kode": "K55",
+    "uraian": "kilocalorie (thermochemical) per second"
+  },
+  {
+    "kode": "K58",
+    "uraian": "kilomole per hour"
+  },
+  {
+    "kode": "K59",
+    "uraian": "kilomole per cubic metre kelvin"
+  },
+  {
+    "kode": "K6",
+    "uraian": "Kilolitre"
+  },
+  {
+    "kode": "K60",
+    "uraian": "kilomole per cubic metre bar"
+  },
+  {
+    "kode": "K61",
+    "uraian": "kilomole per minute"
+  },
+  {
+    "kode": "K62",
+    "uraian": "litre per litre"
+  },
+  {
+    "kode": "K63",
+    "uraian": "reciprocal litre"
+  },
+  {
+    "kode": "K64",
+    "uraian": "pound (avoirdupois) per degree Fahrenheit"
+  },
+  {
+    "kode": "K65",
+    "uraian": "pound (avoirdupois) square foot"
+  },
+  {
+    "kode": "K66",
+    "uraian": "pound (avoirdupois) per day"
+  },
+  {
+    "kode": "K67",
+    "uraian": "pound per foot hour"
+  },
+  {
+    "kode": "K68",
+    "uraian": "pound per foot second"
+  },
+  {
+    "kode": "K69",
+    "uraian": "pound (avoirdupois) per cubic foot degree Fahrenheit"
+  },
+  {
+    "kode": "K70",
+    "uraian": "pound (avoirdupois) per cubic foot psi"
+  },
+  {
+    "kode": "K71",
+    "uraian": "pound (avoirdupois) per gallon (UK)"
+  },
+  {
+    "kode": "K73",
+    "uraian": "pound (avoirdupois) per hour degree Fahrenheit"
+  },
+  {
+    "kode": "K74",
+    "uraian": "pound (avoirdupois) per hour psi"
+  },
+  {
+    "kode": "K75",
+    "uraian": "pound (avoirdupois) per cubic inch degree Fahrenheit"
+  },
+  {
+    "kode": "K76",
+    "uraian": "pound (avoirdupois) per cubic inch psi"
+  },
+  {
+    "kode": "K77",
+    "uraian": "pound (avoirdupois) per psi"
+  },
+  {
+    "kode": "K78",
+    "uraian": "pound (avoirdupois) per minute"
+  },
+  {
+    "kode": "K79",
+    "uraian": "pound (avoirdupois) per minute degree Fahrenheit"
+  },
+  {
+    "kode": "K80",
+    "uraian": "pound (avoirdupois) per minute psi"
+  },
+  {
+    "kode": "K81",
+    "uraian": "pound (avoirdupois) per second"
+  },
+  {
+    "kode": "K82",
+    "uraian": "pound (avoirdupois) per second degree Fahrenheit"
+  },
+  {
+    "kode": "K83",
+    "uraian": "pound (avoirdupois) per second psi"
+  },
+  {
+    "kode": "K84",
+    "uraian": "pound per cubic yard"
+  },
+  {
+    "kode": "K85",
+    "uraian": "pound-force per square foot"
+  },
+  {
+    "kode": "K86",
+    "uraian": "pound-force per square inch degree Fahrenheit"
+  },
+  {
+    "kode": "K87",
+    "uraian": "psi cubic inch per second"
+  },
+  {
+    "kode": "K88",
+    "uraian": "psi litre per second"
+  },
+  {
+    "kode": "K89",
+    "uraian": "psi cubic metre per second"
+  },
+  {
+    "kode": "K90",
+    "uraian": "psi cubic yard per second"
+  },
+  {
+    "kode": "K91",
+    "uraian": "pound-force second per square foot"
+  },
+  {
+    "kode": "K92",
+    "uraian": "pound-force second per square inch"
+  },
+  {
+    "kode": "K93",
+    "uraian": "reciprocal psi"
+  },
+  {
+    "kode": "K94",
+    "uraian": "quart (UK liquid) per day"
+  },
+  {
+    "kode": "K95",
+    "uraian": "quart (UK liquid) per hour"
+  },
+  {
+    "kode": "K96",
+    "uraian": "quart (UK liquid) per minute"
+  },
+  {
+    "kode": "K97",
+    "uraian": "quart (UK liquid) per second"
+  },
+  {
+    "kode": "K98",
+    "uraian": "quart (US liquid) per day"
+  },
+  {
+    "kode": "K99",
+    "uraian": "quart (US liquid) per hour"
+  },
+  {
+    "kode": "KA",
+    "uraian": "cake"
+  },
+  {
+    "kode": "KAT",
+    "uraian": "katal"
+  },
+  {
+    "kode": "KB",
+    "uraian": "kilocharacter"
+  },
+  {
+    "kode": "KBA",
+    "uraian": "Kilobar"
+  },
+  {
+    "kode": "KCC",
+    "uraian": "kilogram of choline chloride"
+  },
+  {
+    "kode": "KD",
+    "uraian": "kilogram decimal"
+  },
+  {
+    "kode": "KDW",
+    "uraian": "kilogram drained net weight"
+  },
+  {
+    "kode": "KEL",
+    "uraian": "Kelvin"
+  },
+  {
+    "kode": "KF",
+    "uraian": "kilopacket"
+  },
+  {
+    "kode": "KG",
+    "uraian": "keg"
+  },
+  {
+    "kode": "KGM",
+    "uraian": "Kilogram"
+  },
+  {
+    "kode": "KGS",
+    "uraian": "kilogram per second"
+  },
+  {
+    "kode": "KHY",
+    "uraian": "kilogram of hydrogen peroxide"
+  },
+  {
+    "kode": "KHZ",
+    "uraian": "kilohertz"
+  },
+  {
+    "kode": "KI",
+    "uraian": "kilogram per millimetre width"
+  },
+  {
+    "kode": "KIC",
+    "uraian": "kilogram"
+  },
+  {
+    "kode": "KIP",
+    "uraian": "kilogram"
+  },
+  {
+    "kode": "KJ",
+    "uraian": "kilosegment"
+  },
+  {
+    "kode": "KJO",
+    "uraian": "Kilojoule"
+  },
+  {
+    "kode": "KL",
+    "uraian": "kilogram per metre"
+  },
+  {
+    "kode": "KLK",
+    "uraian": "lactic dry material percentage"
+  },
+  {
+    "kode": "KMA",
+    "uraian": "kilogram of methylamine"
+  },
+  {
+    "kode": "KMH",
+    "uraian": "Kilometre per hour"
+  },
+  {
+    "kode": "KMK",
+    "uraian": "Square kilometre"
+  },
+  {
+    "kode": "KMQ",
+    "uraian": "Kilogram per cubic meter"
+  },
+  {
+    "kode": "KMT",
+    "uraian": "Kilometre"
+  },
+  {
+    "kode": "KNI",
+    "uraian": "Kilogram of nitrogen"
+  },
+  {
+    "kode": "KNS",
+    "uraian": "Kilogram of named substance"
+  },
+  {
+    "kode": "KNT",
+    "uraian": "Knot (1 nautical mile per hour)"
+  },
+  {
+    "kode": "KO",
+    "uraian": "milliequivalence caustic potash per gram of product"
+  },
+  {
+    "kode": "KPA",
+    "uraian": "kilopascal"
+  },
+  {
+    "kode": "KPH",
+    "uraian": "Kilogram of potassium hydroxide (caustic potash)"
+  },
+  {
+    "kode": "KPO",
+    "uraian": "Kilogram of potassium oxide"
+  },
+  {
+    "kode": "KPP",
+    "uraian": "Kilogram of phosphorus pentoxide (phosphoric anhydride)"
+  },
+  {
+    "kode": "KR",
+    "uraian": "kiloroentgen"
+  },
+  {
+    "kode": "KS",
+    "uraian": "thousand pound per square inch"
+  },
+  {
+    "kode": "KSD",
+    "uraian": "Kilogram of substance 90 per cent dry"
+  },
+  {
+    "kode": "KSH",
+    "uraian": "Kilogram of sodium hydroxide (caustic soda)"
+  },
+  {
+    "kode": "KT",
+    "uraian": "kit"
+  },
+  {
+    "kode": "KTM",
+    "uraian": "kilometre"
+  },
+  {
+    "kode": "KTN",
+    "uraian": "Kilotonne"
+  },
+  {
+    "kode": "KUR",
+    "uraian": "Kilogram of uranium"
+  },
+  {
+    "kode": "KVA",
+    "uraian": "Kilovolt - ampere"
+  },
+  {
+    "kode": "KVR",
+    "uraian": "kilovar"
+  },
+  {
+    "kode": "KVT",
+    "uraian": "kilovolt"
+  },
+  {
+    "kode": "KW",
+    "uraian": "kilogram per millimetre"
+  },
+  {
+    "kode": "KWH",
+    "uraian": "Kilowatt-hour"
+  },
+  {
+    "kode": "KWO",
+    "uraian": "kilogram of tungsten trioxide"
+  },
+  {
+    "kode": "KWT",
+    "uraian": "Kilowatt"
+  },
+  {
+    "kode": "KX",
+    "uraian": "millilitre per kilogram"
+  },
+  {
+    "kode": "L10",
+    "uraian": "quart (US liquid) per minute"
+  },
+  {
+    "kode": "L11",
+    "uraian": "quart (US liquid) per second"
+  },
+  {
+    "kode": "L12",
+    "uraian": "metre per second kelvin"
+  },
+  {
+    "kode": "L13",
+    "uraian": "metre per second bar"
+  },
+  {
+    "kode": "L14",
+    "uraian": "square metre hour degree Celsius per kilocalorie"
+  },
+  {
+    "kode": "L15",
+    "uraian": "millipascal second per kelvin"
+  },
+  {
+    "kode": "L16",
+    "uraian": "millipascal second per bar"
+  },
+  {
+    "kode": "L17",
+    "uraian": "milligram per cubic metre kelvin"
+  },
+  {
+    "kode": "L18",
+    "uraian": "milligram per cubic metre bar"
+  },
+  {
+    "kode": "L19",
+    "uraian": "millilitre per litre"
+  },
+  {
+    "kode": "L2",
+    "uraian": "litre per minute"
+  },
+  {
+    "kode": "L20",
+    "uraian": "reciprocal cubic millimetre"
+  },
+  {
+    "kode": "L21",
+    "uraian": "cubic millimetre per cubic metre"
+  },
+  {
+    "kode": "L23",
+    "uraian": "mole per hour"
+  },
+  {
+    "kode": "L24",
+    "uraian": "mole per kilogram kelvin"
+  },
+  {
+    "kode": "L25",
+    "uraian": "mole per kilogram bar"
+  },
+  {
+    "kode": "L26",
+    "uraian": "mole per litre kelvin"
+  },
+  {
+    "kode": "L27",
+    "uraian": "mole per litre bar"
+  },
+  {
+    "kode": "L28",
+    "uraian": "mole per cubic metre kelvin"
+  },
+  {
+    "kode": "L29",
+    "uraian": "mole per cubic metre bar"
+  },
+  {
+    "kode": "L30",
+    "uraian": "mole per minute"
+  },
+  {
+    "kode": "L31",
+    "uraian": "milliroentgen aequivalent men"
+  },
+  {
+    "kode": "L32",
+    "uraian": "nanogram per kilogram"
+  },
+  {
+    "kode": "L33",
+    "uraian": "ounce (avoirdupois) per day"
+  },
+  {
+    "kode": "L34",
+    "uraian": "ounce (avoirdupois) per hour"
+  },
+  {
+    "kode": "L35",
+    "uraian": "ounce (avoirdupois) per minute"
+  },
+  {
+    "kode": "L36",
+    "uraian": "ounce (avoirdupois) per second"
+  },
+  {
+    "kode": "L37",
+    "uraian": "ounce (avoirdupois) per gallon (UK)"
+  },
+  {
+    "kode": "L38",
+    "uraian": "ounce (avoirdupois) per gallon (US)"
+  },
+  {
+    "kode": "L39",
+    "uraian": "ounce (avoirdupois) per cubic inch"
+  },
+  {
+    "kode": "L40",
+    "uraian": "ounce (avoirdupois)-force"
+  },
+  {
+    "kode": "L41",
+    "uraian": "ounce (avoirdupois)-force inch"
+  },
+  {
+    "kode": "L42",
+    "uraian": "pikosiemens per metre"
+  },
+  {
+    "kode": "L43",
+    "uraian": "peck (UK)"
+  },
+  {
+    "kode": "L44",
+    "uraian": "peck (UK) per day"
+  },
+  {
+    "kode": "L45",
+    "uraian": "peck (UK) per hour"
+  },
+  {
+    "kode": "L46",
+    "uraian": "peck (UK) per minute"
+  },
+  {
+    "kode": "L47",
+    "uraian": "peck (UK) per second"
+  },
+  {
+    "kode": "L48",
+    "uraian": "peck (US dry) per day"
+  },
+  {
+    "kode": "L49",
+    "uraian": "peck (US dry) per hour"
+  },
+  {
+    "kode": "L50",
+    "uraian": "peck (US dry) per minute"
+  },
+  {
+    "kode": "L51",
+    "uraian": "peck (US dry) per second"
+  },
+  {
+    "kode": "L52",
+    "uraian": "psi per psi"
+  },
+  {
+    "kode": "L53",
+    "uraian": "pint (UK) per day"
+  },
+  {
+    "kode": "L54",
+    "uraian": "pint (UK) per hour"
+  },
+  {
+    "kode": "L55",
+    "uraian": "pint (UK) per minute"
+  },
+  {
+    "kode": "L56",
+    "uraian": "pint (UK) per second"
+  },
+  {
+    "kode": "L57",
+    "uraian": "pint (US liquid) per day"
+  },
+  {
+    "kode": "L58",
+    "uraian": "pint (US liquid) per hour"
+  },
+  {
+    "kode": "L59",
+    "uraian": "pint (US liquid) per minute"
+  },
+  {
+    "kode": "L60",
+    "uraian": "pint (US liquid) per second"
+  },
+  {
+    "kode": "L61",
+    "uraian": "pint (US dry)"
+  },
+  {
+    "kode": "L62",
+    "uraian": "quart (US dry)"
+  },
+  {
+    "kode": "L63",
+    "uraian": "slug per day"
+  },
+  {
+    "kode": "L64",
+    "uraian": "slug per foot second"
+  },
+  {
+    "kode": "L65",
+    "uraian": "slug per cubic foot"
+  },
+  {
+    "kode": "L66",
+    "uraian": "slug per hour"
+  },
+  {
+    "kode": "L67",
+    "uraian": "slug per minute"
+  },
+  {
+    "kode": "L68",
+    "uraian": "slug per second"
+  },
+  {
+    "kode": "L69",
+    "uraian": "tonne per kelvin"
+  },
+  {
+    "kode": "L70",
+    "uraian": "tonne per bar"
+  },
+  {
+    "kode": "L71",
+    "uraian": "tonne per day"
+  },
+  {
+    "kode": "L72",
+    "uraian": "tonne per day kelvin"
+  },
+  {
+    "kode": "L73",
+    "uraian": "tonne per day bar"
+  },
+  {
+    "kode": "L74",
+    "uraian": "tonne per hour kelvin"
+  },
+  {
+    "kode": "L75",
+    "uraian": "tonne per hour bar"
+  },
+  {
+    "kode": "L76",
+    "uraian": "tonne per cubic metre kelvin"
+  },
+  {
+    "kode": "L77",
+    "uraian": "tonne per cubic metre bar"
+  },
+  {
+    "kode": "L78",
+    "uraian": "tonne per minute"
+  },
+  {
+    "kode": "L79",
+    "uraian": "tonne per minute kelvin"
+  },
+  {
+    "kode": "L80",
+    "uraian": "tonne per minute bar"
+  },
+  {
+    "kode": "L81",
+    "uraian": "tonne per second"
+  },
+  {
+    "kode": "L82",
+    "uraian": "tonne per second kelvin"
+  },
+  {
+    "kode": "L83",
+    "uraian": "tonne per second bar"
+  },
+  {
+    "kode": "L84",
+    "uraian": "ton (UK shipping)"
+  },
+  {
+    "kode": "L85",
+    "uraian": "ton long per day"
+  },
+  {
+    "kode": "L86",
+    "uraian": "ton (US shipping)"
+  },
+  {
+    "kode": "L87",
+    "uraian": "ton short per degree Fahrenheit"
+  },
+  {
+    "kode": "L88",
+    "uraian": "ton short per day"
+  },
+  {
+    "kode": "L89",
+    "uraian": "ton short per hour degree Fahrenheit"
+  },
+  {
+    "kode": "L90",
+    "uraian": "ton short per hour psi"
+  },
+  {
+    "kode": "L91",
+    "uraian": "ton short per psi"
+  },
+  {
+    "kode": "L92",
+    "uraian": "ton (UK long) per cubic yard"
+  },
+  {
+    "kode": "L93",
+    "uraian": "ton (US short) per cubic yard"
+  },
+  {
+    "kode": "L94",
+    "uraian": "ton-force (US short)"
+  },
+  {
+    "kode": "L95",
+    "uraian": "common year"
+  },
+  {
+    "kode": "L96",
+    "uraian": "sidereal year"
+  },
+  {
+    "kode": "L98",
+    "uraian": "yard per degree Fahrenheit"
+  },
+  {
+    "kode": "L99",
+    "uraian": "yard per psi"
+  },
+  {
+    "kode": "LA",
+    "uraian": "pound per cubic inch"
+  },
+  {
+    "kode": "LAC",
+    "uraian": "lactose excess percentage"
+  },
+  {
+    "kode": "LBR",
+    "uraian": "Pound GB"
+  },
+  {
+    "kode": "LBT",
+    "uraian": "Troy pound"
+  },
+  {
+    "kode": "LC",
+    "uraian": "linear centimetre"
+  },
+  {
+    "kode": "LD",
+    "uraian": "litre per day"
+  },
+  {
+    "kode": "LE",
+    "uraian": "lite"
+  },
+  {
+    "kode": "LEF",
+    "uraian": "leaf"
+  },
+  {
+    "kode": "LF",
+    "uraian": "linear foot"
+  },
+  {
+    "kode": "LH",
+    "uraian": "labour hour"
+  },
+  {
+    "kode": "LI",
+    "uraian": "linear inch"
+  },
+  {
+    "kode": "LJ",
+    "uraian": "large spray"
+  },
+  {
+    "kode": "LK",
+    "uraian": "link"
+  },
+  {
+    "kode": "LM",
+    "uraian": "linear metre"
+  },
+  {
+    "kode": "LN",
+    "uraian": "length"
+  },
+  {
+    "kode": "LNT",
+    "uraian": "Long ton GB"
+  },
+  {
+    "kode": "LO",
+    "uraian": "lot [unit of procurement]"
+  },
+  {
+    "kode": "LP",
+    "uraian": "liquid pound"
+  },
+  {
+    "kode": "LPA",
+    "uraian": "Litre of pure alcohol"
+  },
+  {
+    "kode": "LR",
+    "uraian": "layer"
+  },
+  {
+    "kode": "LS",
+    "uraian": "lump sum"
+  },
+  {
+    "kode": "LTN",
+    "uraian": "ton (UK) or long ton (US)"
+  },
+  {
+    "kode": "LTR",
+    "uraian": "Litre (1 dm3)"
+  },
+  {
+    "kode": "LUB",
+    "uraian": "metric ton"
+  },
+  {
+    "kode": "LUM",
+    "uraian": "Lumen"
+  },
+  {
+    "kode": "LUX",
+    "uraian": "lux"
+  },
+  {
+    "kode": "LX",
+    "uraian": "linear yard per pound"
+  },
+  {
+    "kode": "LY",
+    "uraian": "linear yard"
+  },
+  {
+    "kode": "M0",
+    "uraian": "magnetic tape"
+  },
+  {
+    "kode": "M1",
+    "uraian": "milligram per litre"
+  },
+  {
+    "kode": "M10",
+    "uraian": "reciprocal cubic yard"
+  },
+  {
+    "kode": "M11",
+    "uraian": "cubic yard per degree Fahrenheit"
+  },
+  {
+    "kode": "M12",
+    "uraian": "cubic yard per day"
+  },
+  {
+    "kode": "M13",
+    "uraian": "cubic yard per hour"
+  },
+  {
+    "kode": "M14",
+    "uraian": "cubic yard per psi"
+  },
+  {
+    "kode": "M15",
+    "uraian": "cubic yard per minute"
+  },
+  {
+    "kode": "M16",
+    "uraian": "cubic yard per second"
+  },
+  {
+    "kode": "M17",
+    "uraian": "kilohertz metre"
+  },
+  {
+    "kode": "M18",
+    "uraian": "gigahertz metre"
+  },
+  {
+    "kode": "M19",
+    "uraian": "Beaufort"
+  },
+  {
+    "kode": "M20",
+    "uraian": "reciprocal megakelvin or megakelvin to the power minus one"
+  },
+  {
+    "kode": "M21",
+    "uraian": "reciprocal kilovolt - ampere hour"
+  },
+  {
+    "kode": "M22",
+    "uraian": "millilitre per square centimetre minute"
+  },
+  {
+    "kode": "M23",
+    "uraian": "newton per centimetre"
+  },
+  {
+    "kode": "M24",
+    "uraian": "ohm kilometre"
+  },
+  {
+    "kode": "M25",
+    "uraian": "percent per degree Celsius"
+  },
+  {
+    "kode": "M26",
+    "uraian": "gigaohm per metre"
+  },
+  {
+    "kode": "M27",
+    "uraian": "megahertz metre"
+  },
+  {
+    "kode": "M29",
+    "uraian": "kilogram per kilogram"
+  },
+  {
+    "kode": "M30",
+    "uraian": "reciprocal volt - ampere second"
+  },
+  {
+    "kode": "M31",
+    "uraian": "kilogram per kilometre"
+  },
+  {
+    "kode": "M32",
+    "uraian": "pascal second per litre"
+  },
+  {
+    "kode": "M33",
+    "uraian": "millimole per litre"
+  },
+  {
+    "kode": "M34",
+    "uraian": "newton metre per square metre"
+  },
+  {
+    "kode": "M35",
+    "uraian": "millivolt - ampere"
+  },
+  {
+    "kode": "M36",
+    "uraian": "30-day month"
+  },
+  {
+    "kode": "M37",
+    "uraian": "actual/360"
+  },
+  {
+    "kode": "M4",
+    "uraian": "monetary value"
+  },
+  {
+    "kode": "M5",
+    "uraian": "microcurie"
+  },
+  {
+    "kode": "M7",
+    "uraian": "micro-inch"
+  },
+  {
+    "kode": "M9",
+    "uraian": "million Btu per 1000 cubic foot"
+  },
+  {
+    "kode": "MA",
+    "uraian": "machine per unit"
+  },
+  {
+    "kode": "MAH",
+    "uraian": "megavolt ampere reactive hour"
+  },
+  {
+    "kode": "MAL",
+    "uraian": "Megalitre"
+  },
+  {
+    "kode": "MAM",
+    "uraian": "Megametre"
+  },
+  {
+    "kode": "MAR",
+    "uraian": "megavolt ampere reactive"
+  },
+  {
+    "kode": "MAW",
+    "uraian": "Megawatt"
+  },
+  {
+    "kode": "MBE",
+    "uraian": "thousand standard brick equivalent"
+  },
+  {
+    "kode": "MBF",
+    "uraian": "thousand board foot"
+  },
+  {
+    "kode": "MBR",
+    "uraian": "millibar"
+  },
+  {
+    "kode": "MC",
+    "uraian": "microgram"
+  },
+  {
+    "kode": "MCU",
+    "uraian": "millicurie"
+  },
+  {
+    "kode": "MD",
+    "uraian": "air dry metric ton"
+  },
+  {
+    "kode": "MF",
+    "uraian": "milligram per square foot per side"
+  },
+  {
+    "kode": "MGM",
+    "uraian": "Milligram"
+  },
+  {
+    "kode": "MHZ",
+    "uraian": "megahertz"
+  },
+  {
+    "kode": "MID",
+    "uraian": "Thousand"
+  },
+  {
+    "kode": "MIK",
+    "uraian": "Square mile"
+  },
+  {
+    "kode": "MIL",
+    "uraian": "thousand"
+  },
+  {
+    "kode": "MIN",
+    "uraian": "Minute"
+  },
+  {
+    "kode": "MIO",
+    "uraian": "Million"
+  },
+  {
+    "kode": "MIU",
+    "uraian": "Million international units"
+  },
+  {
+    "kode": "MK",
+    "uraian": "milligram per square inch"
+  },
+  {
+    "kode": "MLD",
+    "uraian": "Billion US"
+  },
+  {
+    "kode": "MLT",
+    "uraian": "Millilitre"
+  },
+  {
+    "kode": "MMK",
+    "uraian": "Square millimetre"
+  },
+  {
+    "kode": "MMQ",
+    "uraian": "Cubic millimetre"
+  },
+  {
+    "kode": "MMT",
+    "uraian": "Millimetre"
+  },
+  {
+    "kode": "MND",
+    "uraian": "kilogram"
+  },
+  {
+    "kode": "MON",
+    "uraian": "Month"
+  },
+  {
+    "kode": "MPA",
+    "uraian": "megapascal"
+  },
+  {
+    "kode": "MQ",
+    "uraian": "thousand metre"
+  },
+  {
+    "kode": "MQH",
+    "uraian": "cubic metre per hour"
+  },
+  {
+    "kode": "MQS",
+    "uraian": "cubic metre per second"
+  },
+  {
+    "kode": "MSK",
+    "uraian": "Metre per second squared"
+  },
+  {
+    "kode": "MT",
+    "uraian": "mat"
+  },
+  {
+    "kode": "MTK",
+    "uraian": "Square metre"
+  },
+  {
+    "kode": "MTQ",
+    "uraian": "Cubic metre"
+  },
+  {
+    "kode": "MTR",
+    "uraian": "Metre"
+  },
+  {
+    "kode": "MTS",
+    "uraian": "metre per second"
+  },
+  {
+    "kode": "MV",
+    "uraian": "number of mults"
+  },
+  {
+    "kode": "MVA",
+    "uraian": "Megavolt - ampere (1000 KVA)"
+  },
+  {
+    "kode": "MWH",
+    "uraian": "Megawatt-hour (1000 KW/h)"
+  },
+  {
+    "kode": "N1",
+    "uraian": "pen calorie"
+  },
+  {
+    "kode": "N2",
+    "uraian": "number of lines"
+  },
+  {
+    "kode": "N3",
+    "uraian": "print point"
+  },
+  {
+    "kode": "NA",
+    "uraian": "milligram per kilogram"
+  },
+  {
+    "kode": "NAR",
+    "uraian": "Number of articles"
+  },
+  {
+    "kode": "NB",
+    "uraian": "barge"
+  },
+  {
+    "kode": "NBB",
+    "uraian": "Number bobbins"
+  },
+  {
+    "kode": "NC",
+    "uraian": "car"
+  },
+  {
+    "kode": "NCL",
+    "uraian": "number of cells"
+  },
+  {
+    "kode": "ND",
+    "uraian": "net barrel"
+  },
+  {
+    "kode": "NE",
+    "uraian": "net litre"
+  },
+  {
+    "kode": "NEW",
+    "uraian": "Newton"
+  },
+  {
+    "kode": "NF",
+    "uraian": "message"
+  },
+  {
+    "kode": "NG",
+    "uraian": "net gallon (us)"
+  },
+  {
+    "kode": "NH",
+    "uraian": "message hour"
+  },
+  {
+    "kode": "NI",
+    "uraian": "net imperial gallon"
+  },
+  {
+    "kode": "NIL",
+    "uraian": "nil"
+  },
+  {
+    "kode": "NIU",
+    "uraian": "Number of international units"
+  },
+  {
+    "kode": "NJ",
+    "uraian": "number of screens"
+  },
+  {
+    "kode": "NL",
+    "uraian": "load"
+  },
+  {
+    "kode": "NMB",
+    "uraian": "Number"
+  },
+  {
+    "kode": "NMI",
+    "uraian": "Nautical mile (1852 m)"
+  },
+  {
+    "kode": "NMP",
+    "uraian": "Number of packs"
+  },
+  {
+    "kode": "NN",
+    "uraian": "train"
+  },
+  {
+    "kode": "NPL",
+    "uraian": "Number of parcels"
+  },
+  {
+    "kode": "NPR",
+    "uraian": "number of pairs"
+  },
+  {
+    "kode": "NPT",
+    "uraian": "Number of parts"
+  },
+  {
+    "kode": "NQ",
+    "uraian": "mho"
+  },
+  {
+    "kode": "NR",
+    "uraian": "micromho"
+  },
+  {
+    "kode": "NRL",
+    "uraian": "Number of rolls"
+  },
+  {
+    "kode": "NT",
+    "uraian": "net ton"
+  },
+  {
+    "kode": "NTT",
+    "uraian": "Net (register) ton"
+  },
+  {
+    "kode": "NU",
+    "uraian": "newton metre"
+  },
+  {
+    "kode": "NV",
+    "uraian": "vehicle"
+  },
+  {
+    "kode": "NX",
+    "uraian": "part per thousand"
+  },
+  {
+    "kode": "NY",
+    "uraian": "pound per air dry metric ton"
+  },
+  {
+    "kode": "OA",
+    "uraian": "panel"
+  },
+  {
+    "kode": "ODE",
+    "uraian": "ozone depletion equivalent"
+  },
+  {
+    "kode": "OHM",
+    "uraian": "Ohm"
+  },
+  {
+    "kode": "ON",
+    "uraian": "ounce per square yard"
+  },
+  {
+    "kode": "ONZ",
+    "uraian": "Ounce GB"
+  },
+  {
+    "kode": "OP",
+    "uraian": "two pack"
+  },
+  {
+    "kode": "OT",
+    "uraian": "overtime hour"
+  },
+  {
+    "kode": "OZ",
+    "uraian": "ounce av"
+  },
+  {
+    "kode": "OZA",
+    "uraian": "Fluid ounce (29.5735 cm3)"
+  },
+  {
+    "kode": "OZI",
+    "uraian": "Fluid ounce (28.413 cm3)"
+  },
+  {
+    "kode": "P0",
+    "uraian": "page - electronic"
+  },
+  {
+    "kode": "P1",
+    "uraian": "percent"
+  },
+  {
+    "kode": "P2",
+    "uraian": "pound per foot"
+  },
+  {
+    "kode": "P3",
+    "uraian": "three pack"
+  },
+  {
+    "kode": "P4",
+    "uraian": "four pack"
+  },
+  {
+    "kode": "P5",
+    "uraian": "five pack"
+  },
+  {
+    "kode": "P6",
+    "uraian": "six pack"
+  },
+  {
+    "kode": "P7",
+    "uraian": "seven pack"
+  },
+  {
+    "kode": "P8",
+    "uraian": "eight pack"
+  },
+  {
+    "kode": "P9",
+    "uraian": "nine pack"
+  },
+  {
+    "kode": "PA",
+    "uraian": "packet"
+  },
+  {
+    "kode": "PAL",
+    "uraian": "Pascal"
+  },
+  {
+    "kode": "PB",
+    "uraian": "pair inch"
+  },
+  {
+    "kode": "PCE",
+    "uraian": "Piece"
+  },
+  {
+    "kode": "PD",
+    "uraian": "pad"
+  },
+  {
+    "kode": "PE",
+    "uraian": "pound equivalent"
+  },
+  {
+    "kode": "PF",
+    "uraian": "pallet (lift)"
+  },
+  {
+    "kode": "PFL",
+    "uraian": "proof litre"
+  },
+  {
+    "kode": "PG",
+    "uraian": "plate"
+  },
+  {
+    "kode": "PGL",
+    "uraian": "Proof gallon"
+  },
+  {
+    "kode": "PI",
+    "uraian": "pitch"
+  },
+  {
+    "kode": "PK",
+    "uraian": "pack"
+  },
+  {
+    "kode": "PL",
+    "uraian": "pail"
+  },
+  {
+    "kode": "PLA",
+    "uraian": "degree Plato"
+  },
+  {
+    "kode": "PM",
+    "uraian": "pound percentage"
+  },
+  {
+    "kode": "PN",
+    "uraian": "pound net"
+  },
+  {
+    "kode": "PO",
+    "uraian": "pound per inch of length"
+  },
+  {
+    "kode": "PQ",
+    "uraian": "page per inch"
+  },
+  {
+    "kode": "PR",
+    "uraian": "pair"
+  },
+  {
+    "kode": "PS",
+    "uraian": "pound-force per square inch"
+  },
+  {
+    "kode": "PT",
+    "uraian": "pint (US)"
+  },
+  {
+    "kode": "PTD",
+    "uraian": "Dry pint (0.55061 dm3)"
+  },
+  {
+    "kode": "PTI",
+    "uraian": "Pint (0.568262 dm3)"
+  },
+  {
+    "kode": "PTL",
+    "uraian": "Liquid Pint (0.473176 dm3)"
+  },
+  {
+    "kode": "PU",
+    "uraian": "tray / tray pack"
+  },
+  {
+    "kode": "PV",
+    "uraian": "half pint (US)"
+  },
+  {
+    "kode": "PW",
+    "uraian": "pound per inch of width"
+  },
+  {
+    "kode": "PY",
+    "uraian": "peck dry (US)"
+  },
+  {
+    "kode": "PZ",
+    "uraian": "peck dry (UK)"
+  },
+  {
+    "kode": "Q3",
+    "uraian": "meal"
+  },
+  {
+    "kode": "QA",
+    "uraian": "page - facsimile"
+  },
+  {
+    "kode": "QAN",
+    "uraian": "Quarter (of a year)"
+  },
+  {
+    "kode": "QB",
+    "uraian": "page - hardcopy"
+  },
+  {
+    "kode": "QD",
+    "uraian": "quarter dozen"
+  },
+  {
+    "kode": "QH",
+    "uraian": "quarter hour"
+  },
+  {
+    "kode": "QK",
+    "uraian": "quarter kilogram"
+  },
+  {
+    "kode": "QR",
+    "uraian": "quire"
+  },
+  {
+    "kode": "QT",
+    "uraian": "quart (US)"
+  },
+  {
+    "kode": "QTD",
+    "uraian": "Dry quart (1.10122 dm3)"
+  },
+  {
+    "kode": "QTI",
+    "uraian": "Quart (1.13652 dm3)"
+  },
+  {
+    "kode": "QTL",
+    "uraian": "Liquid quart (0.946353 dm3)"
+  },
+  {
+    "kode": "QTR",
+    "uraian": "Quarter GB (12.7006 kg)"
+  },
+  {
+    "kode": "R1",
+    "uraian": "pica"
+  },
+  {
+    "kode": "R4",
+    "uraian": "calorie"
+  },
+  {
+    "kode": "R9",
+    "uraian": "thousand cubic metre"
+  },
+  {
+    "kode": "RA",
+    "uraian": "rack"
+  },
+  {
+    "kode": "RD",
+    "uraian": "rod"
+  },
+  {
+    "kode": "RG",
+    "uraian": "ring"
+  },
+  {
+    "kode": "RH",
+    "uraian": "running or operating hour"
+  },
+  {
+    "kode": "RK",
+    "uraian": "roll metric measure"
+  },
+  {
+    "kode": "RL",
+    "uraian": "reel"
+  },
+  {
+    "kode": "RM",
+    "uraian": "ream"
+  },
+  {
+    "kode": "RN",
+    "uraian": "ream metric measure"
+  },
+  {
+    "kode": "RO",
+    "uraian": "roll"
+  },
+  {
+    "kode": "RP",
+    "uraian": "pound per ream"
+  },
+  {
+    "kode": "RPM",
+    "uraian": "Revolution per minute"
+  },
+  {
+    "kode": "RPS",
+    "uraian": "Revolution per second"
+  },
+  {
+    "kode": "RS",
+    "uraian": "reset"
+  },
+  {
+    "kode": "RT",
+    "uraian": "revenue ton mile"
+  },
+  {
+    "kode": "RU",
+    "uraian": "run"
+  },
+  {
+    "kode": "S3",
+    "uraian": "square foot per second"
+  },
+  {
+    "kode": "S4",
+    "uraian": "square metre per second"
+  },
+  {
+    "kode": "S5",
+    "uraian": "sixty fourths of an inch"
+  },
+  {
+    "kode": "S6",
+    "uraian": "session"
+  },
+  {
+    "kode": "S7",
+    "uraian": "storage unit"
+  },
+  {
+    "kode": "S8",
+    "uraian": "standard advertising unit"
+  },
+  {
+    "kode": "SA",
+    "uraian": "sack"
+  },
+  {
+    "kode": "SAN",
+    "uraian": "Half year (six Months)"
+  },
+  {
+    "kode": "SCO",
+    "uraian": "Score"
+  },
+  {
+    "kode": "SCR",
+    "uraian": "Scruple GP"
+  },
+  {
+    "kode": "SD",
+    "uraian": "solid pound"
+  },
+  {
+    "kode": "SE",
+    "uraian": "section"
+  },
+  {
+    "kode": "SEC",
+    "uraian": "Second"
+  },
+  {
+    "kode": "SET",
+    "uraian": "Set"
+  },
+  {
+    "kode": "SG",
+    "uraian": "segment"
+  },
+  {
+    "kode": "SHT",
+    "uraian": "Shipping ton"
+  },
+  {
+    "kode": "SIE",
+    "uraian": "Siemens"
+  },
+  {
+    "kode": "SK",
+    "uraian": "split tank truck"
+  },
+  {
+    "kode": "SL",
+    "uraian": "slipsheet"
+  },
+  {
+    "kode": "SMI",
+    "uraian": "Statute mile (1609.344 m)"
+  },
+  {
+    "kode": "SN",
+    "uraian": "square rod"
+  },
+  {
+    "kode": "SO",
+    "uraian": "spool"
+  },
+  {
+    "kode": "SP",
+    "uraian": "shelf package"
+  },
+  {
+    "kode": "SQ",
+    "uraian": "square"
+  },
+  {
+    "kode": "SQR",
+    "uraian": "square"
+  },
+  {
+    "kode": "SR",
+    "uraian": "Strip"
+  },
+  {
+    "kode": "SS",
+    "uraian": "sheet metric measure"
+  },
+  {
+    "kode": "SST",
+    "uraian": "Short standard (7200 matches)"
+  },
+  {
+    "kode": "ST",
+    "uraian": "sheet"
+  },
+  {
+    "kode": "STI",
+    "uraian": "Stone GB (6.35029 kg)"
+  },
+  {
+    "kode": "STK",
+    "uraian": "stick"
+  },
+  {
+    "kode": "STL",
+    "uraian": "standard litre"
+  },
+  {
+    "kode": "STN",
+    "uraian": "Short ton GB"
+  },
+  {
+    "kode": "SV",
+    "uraian": "skid"
+  },
+  {
+    "kode": "SW",
+    "uraian": "skein"
+  },
+  {
+    "kode": "SX",
+    "uraian": "shipment"
+  },
+  {
+    "kode": "T0",
+    "uraian": "telecommunication line in service"
+  },
+  {
+    "kode": "T1",
+    "uraian": "thousand pound gross"
+  },
+  {
+    "kode": "T3",
+    "uraian": "thousand piece"
+  },
+  {
+    "kode": "T4",
+    "uraian": "thousand bag"
+  },
+  {
+    "kode": "T5",
+    "uraian": "thousand casing"
+  },
+  {
+    "kode": "T6",
+    "uraian": "thousand gallon (US)"
+  },
+  {
+    "kode": "T7",
+    "uraian": "thousand impression"
+  },
+  {
+    "kode": "T8",
+    "uraian": "thousand linear inch"
+  },
+  {
+    "kode": "TA",
+    "uraian": "tenth cubic foot"
+  },
+  {
+    "kode": "TAH",
+    "uraian": "Thousand ampere-hour"
+  },
+  {
+    "kode": "TC",
+    "uraian": "truckload"
+  },
+  {
+    "kode": "TD",
+    "uraian": "therm"
+  },
+  {
+    "kode": "TE",
+    "uraian": "tote"
+  },
+  {
+    "kode": "TF",
+    "uraian": "ten square yard"
+  },
+  {
+    "kode": "TI",
+    "uraian": "thousand square inch"
+  },
+  {
+    "kode": "TIC",
+    "uraian": "metric ton"
+  },
+  {
+    "kode": "TIP",
+    "uraian": "metric ton"
+  },
+  {
+    "kode": "TJ",
+    "uraian": "thousand square centimetre"
+  },
+  {
+    "kode": "TK",
+    "uraian": "tank"
+  },
+  {
+    "kode": "TL",
+    "uraian": "thousand foot (linear)"
+  },
+  {
+    "kode": "TMS",
+    "uraian": "kilogram of imported meat"
+  },
+  {
+    "kode": "TN",
+    "uraian": "tin"
+  },
+  {
+    "kode": "TNE",
+    "uraian": "Metric ton (1000 kg)"
+  },
+  {
+    "kode": "TP",
+    "uraian": "ten pack"
+  },
+  {
+    "kode": "TPR",
+    "uraian": "Ten pairs"
+  },
+  {
+    "kode": "TQ",
+    "uraian": "thousand foot"
+  },
+  {
+    "kode": "TQD",
+    "uraian": "thousand cubic metres per day"
+  },
+  {
+    "kode": "TR",
+    "uraian": "ten square foot"
+  },
+  {
+    "kode": "TRL",
+    "uraian": "Trillion Eur"
+  },
+  {
+    "kode": "TS",
+    "uraian": "thousand square foot"
+  },
+  {
+    "kode": "TSD",
+    "uraian": "Tonne of substance 90 per cent dry"
+  },
+  {
+    "kode": "TSH",
+    "uraian": "Ton of steam per hour"
+  },
+  {
+    "kode": "TT",
+    "uraian": "thousand linear metre"
+  },
+  {
+    "kode": "TU",
+    "uraian": "tube"
+  },
+  {
+    "kode": "TV",
+    "uraian": "thousand kilogram"
+  },
+  {
+    "kode": "TW",
+    "uraian": "thousand sheet"
+  },
+  {
+    "kode": "TY",
+    "uraian": "tank"
+  },
+  {
+    "kode": "U1",
+    "uraian": "treatment"
+  },
+  {
+    "kode": "U2",
+    "uraian": "Tablet"
+  },
+  {
+    "kode": "UA",
+    "uraian": "torr"
+  },
+  {
+    "kode": "UB",
+    "uraian": "telecommunication line in service average"
+  },
+  {
+    "kode": "UC",
+    "uraian": "telecommunication port"
+  },
+  {
+    "kode": "UD",
+    "uraian": "tenth minute"
+  },
+  {
+    "kode": "UE",
+    "uraian": "tenth hour"
+  },
+  {
+    "kode": "UF",
+    "uraian": "usage per telecommunication line average"
+  },
+  {
+    "kode": "UH",
+    "uraian": "ten thousand yard"
+  },
+  {
+    "kode": "UM",
+    "uraian": "million unit"
+  },
+  {
+    "kode": "VA",
+    "uraian": "volt - ampere per kilogram"
+  },
+  {
+    "kode": "VI",
+    "uraian": "vial"
+  },
+  {
+    "kode": "VLT",
+    "uraian": "Volt"
+  },
+  {
+    "kode": "VP",
+    "uraian": "percent volume"
+  },
+  {
+    "kode": "VQ",
+    "uraian": "bulk"
+  },
+  {
+    "kode": "VS",
+    "uraian": "visit"
+  },
+  {
+    "kode": "W2",
+    "uraian": "wet kilo"
+  },
+  {
+    "kode": "W4",
+    "uraian": "two week"
+  },
+  {
+    "kode": "WA",
+    "uraian": "watt per kilogram"
+  },
+  {
+    "kode": "WB",
+    "uraian": "wet pound"
+  },
+  {
+    "kode": "WCD",
+    "uraian": "Cord (3.63 m3)"
+  },
+  {
+    "kode": "WE",
+    "uraian": "wet ton"
+  },
+  {
+    "kode": "WEB",
+    "uraian": "Weber"
+  },
+  {
+    "kode": "WEE",
+    "uraian": "Week"
+  },
+  {
+    "kode": "WG",
+    "uraian": "wine gallon"
+  },
+  {
+    "kode": "WH",
+    "uraian": "wheel"
+  },
+  {
+    "kode": "WHR",
+    "uraian": "Watt-hour"
+  },
+  {
+    "kode": "WI",
+    "uraian": "weight per square inch"
+  },
+  {
+    "kode": "WM",
+    "uraian": "working month"
+  },
+  {
+    "kode": "WR",
+    "uraian": "wrap"
+  },
+  {
+    "kode": "WSD",
+    "uraian": "Standard"
+  },
+  {
+    "kode": "WTT",
+    "uraian": "Watt"
+  },
+  {
+    "kode": "WW",
+    "uraian": "millilitre of water"
+  },
+  {
+    "kode": "X1",
+    "uraian": "Gunter's chain"
+  },
+  {
+    "kode": "YDK",
+    "uraian": "Square yard"
+  },
+  {
+    "kode": "YDQ",
+    "uraian": "Cubic yard"
+  },
+  {
+    "kode": "YL",
+    "uraian": "hundred linear yard"
+  },
+  {
+    "kode": "YRD",
+    "uraian": "Yard (0.9144 m)"
+  },
+  {
+    "kode": "YT",
+    "uraian": "ten yard"
+  },
+  {
+    "kode": "Z1",
+    "uraian": "lift van"
+  },
+  {
+    "kode": "Z2",
+    "uraian": "chest"
+  },
+  {
+    "kode": "Z3",
+    "uraian": "cask"
+  },
+  {
+    "kode": "Z4",
+    "uraian": "hogshead"
+  },
+  {
+    "kode": "Z5",
+    "uraian": "lug"
+  },
+  {
+    "kode": "Z6",
+    "uraian": "conference point"
+  },
+  {
+    "kode": "Z8",
+    "uraian": "newspage agate line"
+  },
+  {
+    "kode": "ZP",
+    "uraian": "page"
+  },
+  {
+    "kode": "ZZ",
+    "uraian": "mutually defined"
+  }
+]

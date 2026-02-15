@@ -99,6 +99,7 @@ const menuStructure: MenuInput[] = [
     menu_order: 9,
     children: [
       { menu_name: 'INSW Logs', menu_path: '/insw/logs', menu_icon: 'History', menu_order: 1 },
+      { menu_name: 'INSW UOM', menu_path: '/insw/uom', menu_icon: 'Category', menu_order: 2 },
     ],
   },
   {

@@ -997,3 +997,23 @@ model insw_tracking_log {
   @@index([company_code, created_at(sort: Desc)])
   @@index([sent_at(sort: Desc)])
 }
+
+// ============================================================================
+// INSW UOM REFERENCE
+// ============================================================================
+// Reference data for Unit of Measure from INSW
+// Source: INSW Data Referensi - data_satuan
+// ============================================================================
+
+model insw_uom_reference {
+  id         Int      @id @default(autoincrement())
+  kode       String   @unique @db.VarChar(10) // UOM code from INSW
+  uraian     String   @db.VarChar(255) // Description
+  is_active  Boolean  @default(true) // For soft delete/deactivate
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([kode])
+  @@index([is_active])
+  @@map("insw_uom_reference")
+}
