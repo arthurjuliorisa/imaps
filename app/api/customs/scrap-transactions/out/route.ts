@@ -4,6 +4,7 @@ import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { checkStockAvailability } from '@/lib/utils/stock-checker';
 import { logActivity } from '@/lib/log-activity';
+import { INSWIntegrationService } from '@/lib/services/insw-integration.service';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -365,6 +366,59 @@ export async function POST(request: Request) {
         companyCode,
       },
     });
+
+    // Transmit to INSW (async, non-blocking)
+    (async () => {
+      try {
+        const inswService = new INSWIntegrationService(
+          process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
+          process.env.INSW_UNIQUE_KEY_TEST || '',
+          process.env.INSW_USE_TEST_MODE === 'true'
+        );
+
+        const payload = await inswService.convertScrapOutToINSW(
+          companyCode,
+          [result.transactionId]
+        );
+
+        const inswResponse = await inswService.postPengeluaran(payload);
+
+        console.log('[INSW] Scrap OUT transmitted successfully:', {
+          transactionId: result.transactionId,
+          documentNumber: result.documentNumber,
+          inswResponse,
+        });
+
+        await logActivity({
+          action: 'INSW_TRANSMIT_SCRAP_OUT',
+          description: `INSW transmit for scrap OUT: ${result.documentNumber}`,
+          status: 'success',
+          metadata: {
+            transactionId: result.transactionId.toString(),
+            documentNumber: result.documentNumber,
+            wmsId: result.wmsId,
+            inswResponse,
+          },
+        });
+      } catch (inswError) {
+        console.error('[INSW] Failed to transmit scrap OUT:', {
+          transactionId: result.transactionId,
+          error: inswError instanceof Error ? inswError.message : String(inswError),
+        });
+
+        await logActivity({
+          action: 'INSW_TRANSMIT_SCRAP_OUT',
+          description: `INSW transmit failed for scrap OUT: ${result.documentNumber}`,
+          status: 'error',
+          metadata: {
+            transactionId: result.transactionId.toString(),
+            documentNumber: result.documentNumber,
+            wmsId: result.wmsId,
+            error: inswError instanceof Error ? inswError.message : String(inswError),
+          },
+        });
+      }
+    })().catch(err => console.error('[INSW] Background INSW transmit task failed:', err));
 
     return NextResponse.json(
       {

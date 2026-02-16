@@ -18,6 +18,7 @@ import {
   LaporanPemasukanView,
   LaporanPengeluaranView,
   BeginningBalanceData,
+  ScrapTransactionData,
 } from '@/lib/repositories/insw-integration.repository';
 
 export class INSWIntegrationService {
@@ -250,6 +251,181 @@ export class INSWIntegrationService {
     };
   }
 
+  async convertScrapInToINSW(
+    companyCode: number,
+    transactionIds: number[]
+  ): Promise<INSWTransaksiPayload> {
+    const data = await this.repository.getScrapTransactionByIds(
+      companyCode,
+      transactionIds
+    );
+
+    if (data.length === 0) {
+      return {
+        data: [
+          {
+            kdKegiatan: INSWActivityCode.PEMASUKAN,
+            dokumenKegiatan: [],
+          },
+        ],
+      };
+    }
+
+    const groupedByDoc = this.groupScrapTransactionsByDocument(data);
+
+    const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
+      (group) => ({
+        nomorDokKegiatan: group.document_number,
+        tanggalKegiatan: this.formatINSWDateOnly(group.transaction_date),
+        namaEntitas: group.source || 'Scrap Collection',
+        barangTransaksi: group.items.map((item) => ({
+          kdKategoriBarang: this.mapItemTypeToINSWCategory(item.item_type),
+          kdBarang: item.item_code,
+          uraianBarang: item.item_name,
+          jumlah: Number(item.qty),
+          kdSatuan: item.uom,
+          nilai: Number(item.amount || 0),
+          dokumen: [
+            {
+              kodeDokumen: '0407020',
+              nomorDokumen: group.document_number,
+              tanggalDokumen: this.formatINSWDateOnly(group.transaction_date),
+            },
+          ],
+        })),
+      })
+    );
+
+    return {
+      data: [
+        {
+          kdKegiatan: INSWActivityCode.PEMASUKAN,
+          dokumenKegiatan,
+        },
+      ],
+    };
+  }
+
+  async convertScrapOutToINSW(
+    companyCode: number,
+    transactionIds: number[]
+  ): Promise<INSWTransaksiPayload> {
+    const data = await this.repository.getScrapTransactionByIds(
+      companyCode,
+      transactionIds
+    );
+
+    if (data.length === 0) {
+      return {
+        data: [
+          {
+            kdKegiatan: INSWActivityCode.PENGELUARAN,
+            dokumenKegiatan: [],
+          },
+        ],
+      };
+    }
+
+    const groupedByDoc = this.groupScrapTransactionsByDocument(data);
+
+    const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
+      (group) => ({
+        nomorDokKegiatan: group.document_number,
+        tanggalKegiatan: this.formatINSWDateOnly(group.transaction_date),
+        namaEntitas: group.recipient_name || 'Unknown',
+        barangTransaksi: group.items.map((item) => ({
+          kdKategoriBarang: this.mapItemTypeToINSWCategory(item.item_type),
+          kdBarang: item.item_code,
+          uraianBarang: item.item_name,
+          jumlah: Number(item.qty),
+          kdSatuan: item.uom,
+          nilai: Number(item.amount || 0),
+          dokumen: [
+            {
+              kodeDokumen:
+                this.mapCustomsDocTypeToINSWDocCode(
+                  item.customs_document_type || ''
+                ) || '0407631',
+              nomorDokumen: item.ppkek_number || group.document_number,
+              tanggalDokumen: this.formatINSWDateOnly(
+                item.customs_registration_date || group.transaction_date
+              ),
+            },
+          ],
+        })),
+      })
+    );
+
+    return {
+      data: [
+        {
+          kdKegiatan: INSWActivityCode.PENGELUARAN,
+          dokumenKegiatan,
+        },
+      ],
+    };
+  }
+
+  async convertCapitalGoodsOutToINSWByWmsIds(
+    companyCode: number,
+    wmsIds: string[]
+  ): Promise<INSWTransaksiPayload> {
+    const data = await this.repository.getLaporanPengeluaranByWmsIds(
+      companyCode,
+      wmsIds
+    );
+
+    if (data.length === 0) {
+      return {
+        data: [
+          {
+            kdKegiatan: INSWActivityCode.PENGELUARAN,
+            dokumenKegiatan: [],
+          },
+        ],
+      };
+    }
+
+    const groupedByDoc = this.groupPengeluaranByDocument(data);
+
+    const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
+      (group) => ({
+        nomorDokKegiatan: group.doc_number,
+        tanggalKegiatan: this.formatINSWDateOnly(group.doc_date),
+        namaEntitas: group.recipient_name || 'Unknown',
+        barangTransaksi: group.items.map((item) => ({
+          kdKategoriBarang: this.mapItemTypeToINSWCategory(item.type_code),
+          kdBarang: item.item_code,
+          uraianBarang: item.item_name,
+          jumlah: Number(item.quantity),
+          kdSatuan: item.unit,
+          nilai: Number(item.value_amount || 0),
+          dokumen: [
+            {
+              kodeDokumen:
+                this.mapCustomsDocTypeToINSWDocCode(
+                  item.customs_document_type
+                ) || '0407631',
+              nomorDokumen: item.cust_doc_registration_no || item.doc_number,
+              tanggalDokumen: this.formatINSWDateOnly(
+                item.reg_date || item.doc_date
+              ),
+            },
+          ],
+        })),
+      })
+    );
+
+    return {
+      data: [
+        {
+          kdKegiatan: INSWActivityCode.PENGELUARAN,
+          dokumenKegiatan,
+        },
+      ],
+    };
+  }
+
   async convertSaldoAwalToINSW(
     companyCode: number,
     balanceDate?: Date
@@ -279,6 +455,26 @@ export class INSWIntegrationService {
         barangSaldo,
       },
     };
+  }
+
+  private groupScrapTransactionsByDocument(data: ScrapTransactionData[]) {
+    const grouped = new Map<string, ScrapTransactionData[]>();
+
+    data.forEach((item) => {
+      const key = `${item.document_number}_${format(item.transaction_date, 'yyyy-MM-dd')}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+      }
+      grouped.get(key)!.push(item);
+    });
+
+    return Array.from(grouped.values()).map((items) => ({
+      document_number: items[0].document_number,
+      transaction_date: items[0].transaction_date,
+      source: items[0].source,
+      recipient_name: items[0].recipient_name,
+      items,
+    }));
   }
 
   private groupPemasukanByDocument(data: LaporanPemasukanView[]) {
