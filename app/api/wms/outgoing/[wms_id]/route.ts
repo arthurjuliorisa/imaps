@@ -81,6 +81,9 @@ export async function GET(
         outgoing_good_company: header.company_code,
         outgoing_good_date: header.outgoing_date
       },
+      include: {
+        outgoing_work_order_allocations: true
+      },
       orderBy: { id: 'asc' }
     });
 
@@ -116,10 +119,11 @@ export async function GET(
         currency: detail.currency,
         amount: Number(detail.amount),
         hs_code: detail.hs_code || undefined,
-        production_output_wms_ids: detail.production_output_wms_ids || [],
+        incoming_ppkek_numbers: detail.incoming_ppkek_numbers || [],
+        work_order_allocations: detail.outgoing_work_order_allocations || [],
         created_at: detail.created_at,
         updated_at: detail.updated_at
-      } as OutgoingDetail))
+      } as any))
     };
 
     return successResponse(response);

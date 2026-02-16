@@ -263,12 +263,12 @@ export async function POST(request: Request) {
           item_type: 'SCRAP',
           item_code: scrapCode,
           item_name: scrapName,
+          incoming_ppkek_numbers: incomingPpkekNumbers || [],
           hs_code: null,
           uom: uom,
           qty: new Prisma.Decimal(qty),
           currency: currency,
           amount: new Prisma.Decimal(amount),
-          incoming_ppkek_numbers: incomingPpkekNumbers || [],
         },
       });
 

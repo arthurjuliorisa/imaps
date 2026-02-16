@@ -63,6 +63,15 @@ enum CompanyStatus {
   INACTIVE
 }
 
+enum CompanyType {
+  BZ
+  SEZ
+  FTZ
+  REG
+
+  @@map("company_type")
+}
+
 enum CalculationMethod {
   TRANSACTION
   WIP_SNAPSHOT
@@ -91,13 +100,14 @@ enum WmsStockOpnameStatus {
 // ============================================================================
 
 model companies {
-  id         Int           @id @default(autoincrement())
-  code       Int           @unique
-  name       String        @db.VarChar(200)
-  status     CompanyStatus @default(ACTIVE)
-  created_at DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at DateTime      @updatedAt @db.Timestamptz(6)
-  deleted_at DateTime?     @db.Timestamptz(6)
+  id            Int         @id @default(autoincrement())
+  code          Int         @unique
+  name          String      @db.VarChar(200)
+  company_type  CompanyType?
+  status        CompanyStatus @default(ACTIVE)
+  created_at    DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime    @updatedAt @db.Timestamptz(6)
+  deleted_at    DateTime?   @db.Timestamptz(6)
 
   // Relations
   incoming_goods               incoming_goods[]
@@ -358,6 +368,7 @@ model incoming_goods {
   deleted_at                DateTime?           @db.Timestamptz(6)
 
   company companies @relation(fields: [company_code], references: [code])
+  traceability_links outgoing_fg_production_traceability[]
   // NOTE: items relation removed - use manual joins in queries
   // items   incoming_good_items[]
 
@@ -439,6 +450,7 @@ model material_usage_items {
   item_name              String    @db.VarChar(200)
   uom                    String    @db.VarChar(20)
   qty                    Decimal   @db.Decimal(15, 3)
+  component_demand_qty   Decimal?  @db.Decimal(15, 3)   // NEW: Material quantity planned for the Work Order
   ppkek_number           String?   @db.VarChar(50)
   amount                 Decimal?  @db.Decimal(19, 4)
   created_at             DateTime  @default(now()) @db.Timestamptz(6)
@@ -517,6 +529,8 @@ model production_output_items {
   qty                       Decimal   @db.Decimal(15, 3)
   amount                    Decimal?  @db.Decimal(19, 4)
   work_order_numbers        String[]
+  planned_production_qty    Decimal?  @db.Decimal(15, 3)  // NEW: Target FG quantity for the Work Order
+  identify_product          String?   @db.VarChar(1)     // NEW: Traceability flag (Y/N)
   created_at                DateTime  @default(now()) @db.Timestamptz(6)
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime? @db.Timestamptz(6)
@@ -568,8 +582,7 @@ model outgoing_good_items {
   item_type                 String    @db.VarChar(10)
   item_code                 String    @db.VarChar(50)
   item_name                 String    @db.VarChar(200)
-  production_output_wms_ids String[]
-  incoming_ppkek_numbers    String[]  @default([])
+  incoming_ppkek_numbers    String[]  @db.VarChar(50)   // For non-production export traceability (direct incoming goods reference)
   hs_code                   String?   @db.VarChar(20)
   uom                       String    @db.VarChar(20)
   qty                       Decimal   @db.Decimal(15, 3)
@@ -581,11 +594,40 @@ model outgoing_good_items {
 
   outgoing_good                       outgoing_goods                        @relation(fields: [outgoing_good_company, outgoing_good_id, outgoing_good_date], references: [company_code, id, outgoing_date], onDelete: Cascade)
   outgoing_fg_production_traceability outgoing_fg_production_traceability[]
+  outgoing_work_order_allocations     outgoing_work_order_allocations[]    // NEW: Normalized work order allocation tracking
 
   @@index([outgoing_good_id])
   @@index([outgoing_good_id, outgoing_good_company, outgoing_good_date])
   @@index([item_code])
   @@index([item_type])
+}
+
+// ============================================================================
+// WORK ORDER ALLOCATION - NORMALIZED JUNCTION TABLE
+// ============================================================================
+// NEW: Efficient work order quantity tracking for traceability
+// Stores {work_order_number, qty} breakdown per outgoing item
+// Enables fast queries for material allocation calculations
+// ============================================================================
+
+model outgoing_work_order_allocations {
+  id                    Int       @id @default(autoincrement())
+  outgoing_good_item_id Int
+  work_order_number     String    @db.VarChar(50)
+  qty                   Decimal   @db.Decimal(15, 3)      // FG quantity shipped from this work order
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @updatedAt @db.Timestamptz(6)
+
+  outgoing_good_item    outgoing_good_items @relation(fields: [outgoing_good_item_id], references: [id], onDelete: Cascade)
+
+  // Unique constraint: one allocation per work order per outgoing item
+  @@unique([outgoing_good_item_id, work_order_number])
+  
+  // Index for efficient work order lookups
+  @@index([work_order_number])
+  
+  // Index for joins and cascade deletes
+  @@index([outgoing_good_item_id])
 }
 
 model adjustments {
@@ -821,13 +863,31 @@ model outgoing_fg_production_traceability {
   created_at            DateTime @default(now()) @db.Timestamptz(6)
   updated_at            DateTime @updatedAt @db.Timestamptz(6)
 
+  // ===== NEW FIELDS FOR DETAILED TRACEABILITY =====
+  work_order_number        String?   @db.VarChar(50)  // Link to work order
+  material_item_code       String?   @db.VarChar(50)  // ROH/HALB material code
+  material_item_name       String?   @db.VarChar(200) // ROH/HALB name
+  material_qty_allocated   Decimal?  @db.Decimal(15, 3)   // Result of: qty_per_wo × ratio
+  consumption_ratio        Decimal?  @db.Decimal(15, 8)   // Result of: component_demand / planned_qty
+  ppkek_number_incoming    String?   @db.VarChar(50)     // PPKEK from incoming goods
+  incoming_goods_id        Int?      // FK to incoming_goods
+  customs_registration_date DateTime? @db.Date           // From incoming_goods
+  customs_document_type    String?   @db.VarChar(20)    // From incoming_goods (BC23, BC27, etc)
+  incoming_date            DateTime? @db.Date           // From incoming_goods (for reference)
+
   outgoing_good_item outgoing_good_items @relation(fields: [outgoing_good_item_id], references: [id], onDelete: Cascade)
+  incoming_good      incoming_goods?     @relation(fields: [incoming_goods_id], references: [id])
 
   @@unique([outgoing_wms_id, production_wms_id, item_code])
   @@index([outgoing_wms_id])
   @@index([production_wms_id])
   @@index([company_code])
   @@index([trx_date])
+  @@index([work_order_number])
+  @@index([material_item_code])
+  @@index([ppkek_number_incoming])
+  @@index([incoming_goods_id])
+  @@index([customs_registration_date])
 }
 
 model stock_daily_snapshot {

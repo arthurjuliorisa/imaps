@@ -12,6 +12,7 @@ import {
   Currency,
   AdjustmentType
 } from './enums';
+import { Decimal } from '@prisma/client/runtime/library';
 
 // ============================================================================
 // BASE TYPES
@@ -123,7 +124,12 @@ export interface OutgoingDetail extends BaseDetail {
   outgoing_good_id: number;
   outgoing_good_company: number;
   outgoing_good_date: Date;
-  production_output_wms_ids: string[];
+  incoming_ppkek_numbers?: string[];  // For non-production outgoing (scrap, capital goods, etc)
+  work_order_allocations?: Array<{
+    id: number;
+    work_order_number: string;
+    qty: number | Decimal;
+  }>;
   hs_code?: string;
   currency: Currency;
   amount: number;

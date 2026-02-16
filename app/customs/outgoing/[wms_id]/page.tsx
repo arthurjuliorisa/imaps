@@ -304,7 +304,7 @@ export default function OutgoingDetailPage() {
                 <TableCell sx={{ fontWeight: 600 }}>UOM</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Amount</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Production Output WMS IDs</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Traceability (Work Orders / PPKEK)</TableCell>
                 <TableCell sx={{ fontWeight: 600, textAlign: 'center' }}>Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -337,13 +337,24 @@ export default function OutgoingDetailPage() {
                     <Chip label={detail.currency} size="small" />
                   </TableCell>
                   <TableCell>
-                    {detail.production_output_wms_ids.length > 0 ? (
+                    {detail.work_order_allocations && detail.work_order_allocations.length > 0 ? (
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {detail.production_output_wms_ids.map((id, idx) => (
-                          <Chip key={idx} label={id} size="small" variant="outlined" />
+                        {detail.work_order_allocations.map((wo, idx) => (
+                          <Chip
+                            key={idx}
+                            label={`${wo.work_order_number} (${formatQuantity(Number(wo.qty))})`}
+                            size="small"
+                            variant="outlined"
+                          />
                         ))}
                       </Box>
-                    ) : '-'}
+                    ) : (
+                      <Typography variant="caption" color="text.secondary">
+                        {detail.incoming_ppkek_numbers && detail.incoming_ppkek_numbers.length > 0
+                          ? detail.incoming_ppkek_numbers.join(', ')
+                          : '-'}
+                      </Typography>
+                    )}
                   </TableCell>
                   <TableCell sx={{ textAlign: 'center' }}>
                     <IconButton

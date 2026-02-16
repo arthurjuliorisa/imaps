@@ -110,12 +110,12 @@ export async function GET(request: NextRequest) {
             if (existingWOs.has(wo.work_order_number)) {
               // Merge materials
               const existingMaterials = existingWOs.get(wo.work_order_number)!.materials;
-              const materialSet = new Map(existingMaterials.map((m) => [m.item_code, m]));
+              const materialSet = new Map(existingMaterials.map((m) => [m.material_item_code, m]));
               
               wo.materials.forEach((material) => {
-                // Use item_code as unique key for materials
-                if (!materialSet.has(material.item_code)) {
-                  materialSet.set(material.item_code, material);
+                // Use material_item_code as unique key for materials
+                if (!materialSet.has(material.material_item_code)) {
+                  materialSet.set(material.material_item_code, material);
                 }
               });
               

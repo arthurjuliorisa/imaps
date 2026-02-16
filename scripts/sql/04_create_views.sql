@@ -411,7 +411,7 @@ SELECT
     ogi.qty as quantity,
     ogi.currency,
     ogi.amount as value_amount,
-    ogi.production_output_wms_ids,
+    ogi.incoming_ppkek_numbers,
     
     -- Audit fields
     og.created_at,

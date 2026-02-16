@@ -152,7 +152,6 @@ export async function seedTransactions() {
       item_type: 'FERT',
       item_code: 'FG-1310-001',
       item_name: 'Finished Fabric Roll Grade A',
-      production_output_wms_ids: ['PROD-1310-20251214-001'],
       hs_code: '5407.42.00',
       uom: 'ROLL',
       qty: 30,
