@@ -254,7 +254,9 @@ export async function seedTestData() {
         item_name: 'Finished Fabric Roll Grade A',
         uom: 'ROLL',
         qty: 50,
-        work_order_numbers: ['WO-1310-20261215-001'],
+        work_order_number: 'WO-1310-20261215-001',
+        planned_production_qty: 500,
+        identify_product: 'Y',
       },
       {
         production_output_id: production.id,
@@ -265,7 +267,9 @@ export async function seedTestData() {
         item_name: 'Fabric Waste Grade B',
         uom: 'KG',
         qty: 25,
-        work_order_numbers: ['WO-1310-20261215-001'],
+        work_order_number: 'WO-1310-20261215-001',
+        planned_production_qty: 200,
+        identify_product: 'N',
       },
     ],
   });

@@ -4,7 +4,8 @@ import type { OutgoingGoodRequestInput } from '@/lib/validators/schemas/outgoing
 import { Prisma } from '@prisma/client';
 import { BaseTransactionRepository } from './base-transaction.repository';
 import type { SnapshotItem } from './snapshot.repository';
-import { resolvePPKEKToIncoming } from '@/lib/services/traceability.service';
+import { ppkekResolutionService, resolvePPKEKToIncoming } from '@/lib/services/ppkek-resolution.service';
+import { bomCalculationService } from '@/lib/services/bom-calculation.service';
 
 /**
  * Outgoing Goods Repository
@@ -25,14 +26,23 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
    * Enrich traceability record with BOM calculation and PPKEK resolution
    *
    * This method:
-   * 1. Gets work order details and material usage
-   * 2. Calculates consumption ratio = component_demand_qty / planned_production_qty (only if identify_product = 'Y')
-   * 3. Calculates allocated qty per material
-   * 4. Resolves PPKEK number to incoming goods
-   * 5. Returns enriched traceability data
+   * 1. Resolves production WMS ID to work order number
+   * 2. Calls BOM Calculation Service to calculate material allocations
+   * 3. For each allocation, resolves PPKEK to incoming goods
+   * 4. Returns enriched traceability data ready for database insertion
+   * 
+   * @param tx - Prisma transaction context
+   * @param productionWmsId - Production output WMS ID
+   * @param itemCode - FG item code
+   * @param qtyFG - Quantity of FG exported
+   * @param companyCode - Company code
+   * @param outgoingDate - Outgoing goods date
+   * @param outgoingWmsId - Outgoing goods WMS ID
+   * @param ppkekNumbersArray - Optional PPKEK numbers from outgoing goods header
+   * @returns Array of enriched allocations or null if calculation failed
    */
   private async enrichTraceability(
-    tx: any, // Prisma transaction
+    tx: any, // Prisma transaction context
     productionWmsId: string,
     itemCode: string,
     qtyFG: Prisma.Decimal,
@@ -48,7 +58,9 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
     });
 
     try {
-      // 1. Get work order details from production output
+      // ====================================================================
+      // STEP 1: Resolve production WMS ID to work order number
+      // ====================================================================
       const workOrderFG = await tx.work_order_fg_production.findFirst({
         where: {
           production_wms_id: productionWmsId,
@@ -64,120 +76,112 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
 
       const workOrderNumber = workOrderFG.work_order_number;
 
-      // 2. Get production output item to check identify_product flag
-      const productionOutputItem = await tx.production_output_items.findFirst({
-        where: {
-          production_output_id: workOrderFG.production_output_id,
-          production_output_company: companyCode,
-          item_code: itemCode,
-        },
-        select: {
-          planned_production_qty: true,
-          identify_product: true,
-        },
-      });
+      // ====================================================================
+      // STEP 2: Use BOM Calculation Service to calculate allocations
+      // ====================================================================
+      const bomResult = await bomCalculationService.calculateBOM(
+        workOrderNumber,
+        itemCode,
+        qtyFG,
+        companyCode
+      );
 
-      if (!productionOutputItem) {
-        logger_sub.warn('No production output item found', { productionWmsId, itemCode });
-        return null;
-      }
-
-      // 3. If identify_product = 'N', skip material traceability enrichment
-      if (productionOutputItem.identify_product !== 'Y') {
-        logger_sub.debug('identify_product is not Y, skipping material traceability', {
-          identify_product: productionOutputItem.identify_product,
+      if (bomResult.calculation_status !== 'success') {
+        logger_sub.debug('BOM calculation did not return success', {
+          status: bomResult.calculation_status,
+          message: bomResult.error_message,
         });
+        
+        // For identify_product = 'N', this is expected behavior
+        if (bomResult.calculation_status === 'identified_product_n') {
+          return null;
+        }
+        
+        // For other failures, log and return null
         return null;
       }
 
-      // 4. Get latest material usage for this work order
-      const materialUsages = await tx.material_usage_items.findMany({
-        where: {
-          item_type: { in: ['ROH', 'HALB'] },
-          // Join through material_usages to get work_order_number
-          // We need to filter by work order, but material_usage_items doesn't have work_order_number directly
-          // So we need to get it through the material_usages relation
-        },
-        select: {
-          item_code: true,
-          item_name: true,
-          qty: true,
-          component_demand_qty: true,
-          ppkek_number: true,
-        },
-        orderBy: { material_usage_date: 'desc' },
-      });
-
-      // Actually, we need to filter by work order. Let me rewrite this query
-      // We need to join material_usage_items with material_usages to filter by work_order_number
-      const materialUsagesForWO = await tx.$queryRaw`
-        SELECT mui.item_code, mui.item_name, mui.qty, mui.component_demand_qty, mui.ppkek_number
-        FROM material_usage_items mui
-        JOIN material_usages mu ON mui.material_usage_id = mu.id 
-          AND mui.material_usage_company = mu.company_code 
-          AND mui.material_usage_date = mu.transaction_date
-        WHERE mu.work_order_number = ${workOrderNumber}
-          AND mu.company_code = ${companyCode}
-          AND mui.component_demand_qty IS NOT NULL
-          AND mui.deleted_at IS NULL
-        ORDER BY mu.transaction_date DESC
-        LIMIT 1
-      `;
-
-      if (!materialUsagesForWO || materialUsagesForWO.length === 0) {
-        logger_sub.warn('No material usage found for work order', { workOrderNumber, companyCode });
+      if (bomResult.allocations.length === 0) {
+        logger_sub.debug('No allocations from BOM calculation');
         return null;
       }
 
-      // For each material in the usage, calculate allocation
-      const traceallocations: any[] = [];
+      // ====================================================================
+      // STEP 3: Resolve PPKEK numbers for each allocation and enrich
+      // ====================================================================
+      const traceAllocations: any[] = [];
 
-      for (const materialUsage of materialUsagesForWO) {
-        // Calculate consumption ratio = component_demand_qty / planned_production_qty
-        const consumptionRatio = new Prisma.Decimal(
-          materialUsage.component_demand_qty
-        ).dividedBy(new Prisma.Decimal(productionOutputItem.planned_production_qty || 1));
-
-        // Calculate allocated qty = qty_per_wo × ratio
-        const allocatedQty = qtyFG.mul(consumptionRatio);
-
-        // Resolve PPKEK if provided
+      for (const allocation of bomResult.allocations) {
         let resolvedPPKEK = null;
-        if (materialUsage.ppkek_number) {
-          resolvedPPKEK = await resolvePPKEKToIncoming(
-            materialUsage.ppkek_number,
-            materialUsage.item_code,
-            companyCode,
-            outgoingDate
-          );
+
+        // Try to resolve PPKEK from material usage first
+        if (allocation) {
+          // Get the PPKEK from material usage
+          const materialUsageWithPPKEK = await tx.$queryRaw<any[]>`
+            SELECT mui.ppkek_number
+            FROM material_usage_items mui
+            JOIN material_usages mu ON 
+              mui.material_usage_id = mu.id 
+              AND mui.material_usage_company = mu.company_code 
+              AND mui.material_usage_date = mu.transaction_date
+            WHERE mu.work_order_number = ${workOrderNumber}
+              AND mui.item_code = ${allocation.material_item_code}
+              AND mu.company_code = ${companyCode}
+              AND mui.component_demand_qty IS NOT NULL
+              AND mui.deleted_at IS NULL
+            ORDER BY mu.transaction_date DESC
+            LIMIT 1
+          `;
+
+          if (materialUsageWithPPKEK && materialUsageWithPPKEK.length > 0) {
+            const ppkekNumber = materialUsageWithPPKEK[0].ppkek_number;
+            if (ppkekNumber) {
+              // Resolve PPKEK using service
+              resolvedPPKEK = await ppkekResolutionService.resolve(
+                ppkekNumber,
+                allocation.material_item_code,
+                companyCode,
+                outgoingDate
+              );
+            }
+          }
         }
 
-        // Or resolve from provided ppkek_number_incoming array
+        // Fallback: try to resolve from outgoing goods header PPKEK array
         if (!resolvedPPKEK && ppkekNumbersArray && ppkekNumbersArray.length > 0) {
-          // Try to resolve first ppkek in array
-          resolvedPPKEK = await resolvePPKEKToIncoming(
+          resolvedPPKEK = await ppkekResolutionService.resolve(
             ppkekNumbersArray[0],
-            materialUsage.item_code,
+            allocation.material_item_code,
             companyCode,
             outgoingDate
           );
         }
 
-        traceallocations.push({
-          work_order_number: workOrderNumber,
-          material_item_code: materialUsage.item_code,
-          material_item_name: materialUsage.item_name,
-          material_qty_allocated: allocatedQty,
-          consumption_ratio: consumptionRatio,
+        // Build enriched traceability record
+        traceAllocations.push({
+          work_order_number: allocation.work_order_number,
+          material_item_code: allocation.material_item_code,
+          material_item_name: allocation.material_item_name,
+          material_qty_allocated: allocation.material_qty_allocated,
+          consumption_ratio: allocation.consumption_ratio,
           ppkek_number_incoming: resolvedPPKEK?.ppkek_number || null,
           incoming_goods_id: resolvedPPKEK?.incoming_goods_id || null,
           customs_registration_date: resolvedPPKEK?.customs_registration_date || null,
           customs_document_type: resolvedPPKEK?.customs_document_type || null,
           incoming_date: resolvedPPKEK?.incoming_date || null,
         });
+
+        logger_sub.debug('Enriched allocation with PPKEK resolution', {
+          materialItemCode: allocation.material_item_code,
+          hasPPKEK: !!resolvedPPKEK,
+        });
       }
 
-      return traceallocations;
+      logger_sub.debug('Traceability enrichment complete', {
+        allocationCount: traceAllocations.length,
+      });
+
+      return traceAllocations;
     } catch (error) {
       logger_sub.error('Error enriching traceability', { error });
       return null;

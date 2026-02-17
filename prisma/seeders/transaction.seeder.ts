@@ -120,7 +120,9 @@ export async function seedTransactions() {
       item_name: 'Finished Fabric Roll Grade A',
       uom: 'ROLL',
       qty: 50,
-      work_order_numbers: ['WO-1310-001'],
+      work_order_number: 'WO-1310-001',
+      planned_production_qty: 500,
+      identify_product: 'Y',
     },
   });
 

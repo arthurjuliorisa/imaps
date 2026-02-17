@@ -201,7 +201,9 @@ export interface ProductionOutputDetail extends BaseDetail {
   production_output_id: number;
   production_output_company: number;
   production_output_date: Date;
-  work_order_numbers: string[];
+  work_order_number: string;
+  planned_production_qty: number;
+  identify_product: 'Y' | 'N';
   amount?: number | string | null;
   deleted_at?: Date;
 }

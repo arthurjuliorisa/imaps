@@ -65,11 +65,14 @@ const companyCodeSchema = z
   .min(1, 'Company code must be greater than 0');
 
 /**
- * Work order numbers schema
+ * Work order number schema (single string per item)
+ * Per API contract v3.0+: Each item has exactly one work order (singular)
  */
-const workOrderNumbersSchema = z
-  .array(z.string().trim().min(1, 'Work order number cannot be empty').max(50))
-  .min(1, 'At least one work order number is required');
+const workOrderNumberSchema = z
+  .string()
+  .trim()
+  .min(1, 'Work order number cannot be empty')
+  .max(50, 'Work order number must not exceed 50 characters');
 
 // =============================================================================
 // ITEM SCHEMA
@@ -77,48 +80,72 @@ const workOrderNumbersSchema = z
 
 /**
  * Single production output item schema
+ * 
+ * Per API Contract v3.0+:
+ * - Each item must have exactly ONE work order (singular string)
+ * - If multiple work orders produce same item, send separate item entries
+ * - NOT an array format (that was v2.x format, now removed)
  */
-export const productionOutputItemSchema = z.object({
-  item_type: z
-    .string()
-    .min(1, 'Item type is required')
-    .max(10, 'Item type must not exceed 10 characters')
-    .trim(),
-  
-  item_code: z
-    .string()
-    .min(1, 'Item code is required')
-    .max(50, 'Item code must not exceed 50 characters')
-    .trim(),
-  
-  item_name: z
-    .string()
-    .min(1, 'Item name is required')
-    .max(200, 'Item name must not exceed 200 characters')
-    .trim(),
-  
-  uom: z
-    .string()
-    .min(1, 'UOM is required')
-    .max(20, 'UOM must not exceed 20 characters')
-    .trim(),
-  
-  qty: z
-    .number()
-    .positive('Quantity must be greater than 0')
-    .finite('Quantity must be a finite number'),
-  
-  work_order_numbers: workOrderNumbersSchema,
-  
-  amount: z
-    .number()
-    .nonnegative('Amount must be greater than or equal to 0')
-    .finite('Amount must be a finite number')
-    .nullable()
-    .optional(),
-});
+export const productionOutputItemSchema = z
+  .object({
+    item_type: z
+      .string()
+      .min(1, 'Item type is required')
+      .max(10, 'Item type must not exceed 10 characters')
+      .trim(),
+    
+    item_code: z
+      .string()
+      .min(1, 'Item code is required')
+      .max(50, 'Item code must not exceed 50 characters')
+      .trim(),
+    
+    item_name: z
+      .string()
+      .min(1, 'Item name is required')
+      .max(200, 'Item name must not exceed 200 characters')
+      .trim(),
+    
+    uom: z
+      .string()
+      .min(1, 'UOM is required')
+      .max(20, 'UOM must not exceed 20 characters')
+      .trim(),
+    
+    qty: z
+      .number()
+      .positive('Quantity must be greater than 0')
+      .finite('Quantity must be a finite number'),
+    
+    work_order_number: workOrderNumberSchema,
+    
+    planned_production_qty: z
+      .number()
+      .positive('Planned production quantity must be greater than 0')
+      .finite('Planned production quantity must be a finite number'),
+    
+    identify_product: z
+      .enum(['Y', 'N']),
+    
+    amount: z
+      .number()
+      .nonnegative('Amount must be greater than or equal to 0')
+      .finite('Amount must be a finite number')
+      .nullable()
+      .optional(),
+  });
 
-export type ProductionOutputItemInput = z.infer<typeof productionOutputItemSchema>;
+export type ProductionOutputItemInput = {
+  item_type: string;
+  item_code: string;
+  item_name: string;
+  uom: string;
+  qty: number;
+  work_order_number: string; // Single string per item (v3.0+ format)
+  planned_production_qty: number;
+  identify_product: 'Y' | 'N';
+  amount: number | null;
+};
 
 // =============================================================================
 // BATCH REQUEST SCHEMA

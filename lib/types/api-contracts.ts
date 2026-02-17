@@ -123,7 +123,7 @@ export interface ProductionOutputItem {
   item_name: string;
   uom: string;
   qty: number;
-  work_order_numbers: string[];
+  work_order_number: string;
 }
 
 /**
