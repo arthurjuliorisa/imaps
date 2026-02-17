@@ -98,36 +98,45 @@ export async function GET(request: NextRequest) {
       companyCode
     );
 
-    // Group by item code to merge items with same code
+    // Group by item code to merge items with same code (if multiple outgoing items same code)
     const groupedData = traceabilityData.reduce(
       (acc, item) => {
         const existing = acc.find((i) => i.item_code === item.item_code);
         if (existing) {
-          // If item already exists, merge work orders
-          const existingWOs = new Map(existing.work_orders.map((w) => [w.work_order_number, w]));
+          // If item already exists, merge quantities
+          existing.qty += item.qty;
 
-          item.work_orders.forEach((wo) => {
-            if (existingWOs.has(wo.work_order_number)) {
-              // Merge materials
-              const existingMaterials = existingWOs.get(wo.work_order_number)!.materials;
-              const materialSet = new Map(existingMaterials.map((m) => [m.material_item_code, m]));
-              
-              wo.materials.forEach((material) => {
-                // Use material_item_code as unique key for materials
-                if (!materialSet.has(material.material_item_code)) {
-                  materialSet.set(material.material_item_code, material);
-                }
-              });
-              
-              existingWOs.get(wo.work_order_number)!.materials = Array.from(materialSet.values());
-            } else {
+          // For production-based items, merge work orders
+          if (item.source_type === 'production' && existing.source_type === 'production') {
+            const existingWOs = new Map((existing.work_orders || []).map((w) => [w.work_order_number, w]));
+
+            (item.work_orders || []).forEach((wo) => {
+              if (existingWOs.has(wo.work_order_number)) {
+                // Already exists, skip merging (keep original)
+                return;
+              }
               existingWOs.set(wo.work_order_number, wo);
-            }
-          });
+            });
 
-          existing.work_orders = Array.from(existingWOs.values()).sort((a, b) =>
-            a.work_order_number.localeCompare(b.work_order_number)
-          );
+            existing.work_orders = Array.from(existingWOs.values()).sort((a, b) =>
+              a.work_order_number.localeCompare(b.work_order_number)
+            );
+          }
+
+          // For incoming-based items, merge PPKEK array
+          if (item.source_type === 'incoming' && existing.source_type === 'incoming') {
+            const ppkekSet = new Map(
+              (existing.incoming_ppkek_numbers || []).map((p) => [p.ppkek_number, p])
+            );
+
+            (item.incoming_ppkek_numbers || []).forEach((ppkek) => {
+              if (!ppkekSet.has(ppkek.ppkek_number)) {
+                ppkekSet.set(ppkek.ppkek_number, ppkek);
+              }
+            });
+
+            existing.incoming_ppkek_numbers = Array.from(ppkekSet.values());
+          }
         } else {
           acc.push(item);
         }

@@ -38,7 +38,8 @@ export async function GET(request: Request) {
     const { companyCode } = companyValidation;
 
     // Query from vw_laporan_pengeluaran view with date filtering
-    // Filter by doc_date OR reg_date within the date range
+    // This view provides outgoing goods with items and direct PPKEK traceability
+    // For work order allocations, see outgoing_work_order_allocations table
     let query = `
       SELECT
         id,
@@ -58,7 +59,7 @@ export async function GET(request: Request) {
         quantity,
         currency,
         value_amount,
-        production_output_wms_ids,
+        incoming_ppkek_numbers,
         created_at
       FROM vw_laporan_pengeluaran
       WHERE company_code = $1
@@ -109,7 +110,7 @@ export async function GET(request: Request) {
       qty: Number(row.quantity || 0),
       currency: row.currency,
       amount: Number(row.value_amount || 0),
-      productionOutputWmsIds: parseArrayField(row.production_output_wms_ids),
+      incomingPpkekNumbers: parseArrayField(row.incoming_ppkek_numbers),
       createdAt: row.created_at,
     }));
 

@@ -2,55 +2,86 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/utils/logger';
 
 /**
- * NEW Traceability Data Structure - 4-Level Hierarchy
- * Item → Work Order → Material → PPKEK/Incoming Goods
+ * Traceability Data Structure - 4-Level Hierarchy
+ * Implements the complete traceability model from API v3.3.0
  * 
- * Supports 2 scenarios:
- * 1. Production-based: Outgoing Item → Production Output → Work Order → Material Usage → Materials → PPKEK
- * 2. Incoming-based: Outgoing Item → Direct incoming_ppkek_numbers array
+ * Level 1: OutgoingItem (item_code, item_name, qty, source_type)
+ * Level 2A: WorkOrder (production-based) OR Direct PPKEK (incoming-based)
+ * Level 3: Materials (production-based only) with consumption details
+ * Level 4: PPKEK/Incoming Goods reference with customs details
  */
 
-export interface TraceabilityPPKEK {
+// ============================================================================
+// LEVEL 4: PPKEK / INCOMING GOODS DETAILS
+// ============================================================================
+
+export interface TraceabilityPPKEKDetail {
   ppkek_number: string;
-  customs_registration_date: string; // Date in YYYY-MM-DD format
-  customs_document_type: string; // BC23, BC27, etc.
-  incoming_date: string; // Date in YYYY-MM-DD format
+  customs_registration_date: string; // YYYY-MM-DD
+  customs_document_type: string; // BC23, BC27, etc
+  incoming_date: string; // YYYY-MM-DD
+  incoming_evidence_number?: string; // Additional context for incoming-based
 }
 
-export interface TraceabilityMaterial {
-  material_item_code: string; // Material code (ROH/HALB)
-  material_item_name: string; // Material name
-  material_qty_allocated: number; // Calculated qty: qty_per_wo × consumption_ratio
-  consumption_ratio: number; // Ratio: component_demand_qty / planned_production_qty
-  ppkek: TraceabilityPPKEK | null; // Resolved PPKEK to incoming goods
+// ============================================================================
+// LEVEL 3: MATERIALS (Production-Based Only)
+// ============================================================================
+
+export interface TraceabilityMaterialDetail {
+  material_item_code: string;
+  material_item_name: string;
+  consumption_ratio: number; // component_demand_qty / planned_production_qty
+  material_qty_allocated: number; // qty_per_wo × consumption_ratio
+  qty_uom: string; // Material unit of measure
+  ppkek?: TraceabilityPPKEKDetail | null; // Resolved PPKEK if available
 }
 
-export interface TraceabilityWorkOrder {
+// ============================================================================
+// LEVEL 2: WORK ORDERS (Production-Based) OR PPKEK LIST (Incoming-Based)
+// ============================================================================
+
+export interface TraceabilityWorkOrderDetail {
   work_order_number: string;
-  materials: TraceabilityMaterial[]; // Detailed materials with PPKEK
+  qty_per_wo: number; // Qty from this work order
+  materials: TraceabilityMaterialDetail[];
 }
+
+export interface TraceabilityIncomingPPKEK extends TraceabilityPPKEKDetail {
+  // Extends PPKEK detail with optional incoming evidence number
+}
+
+// ============================================================================
+// LEVEL 1: OUTGOING ITEM (Root)
+// ============================================================================
 
 export interface TraceabilityItem {
+  // Level 1: Item details
   item_code: string;
   item_name: string;
-  qty: number; // Total qty from outgoing goods item
-  source_type: 'production' | 'incoming'; // Which source of traceability
-  work_orders: TraceabilityWorkOrder[]; // For production-based detailed traceability
-  incoming_ppkek_numbers: string[]; // For incoming-based (direct PPKEK list)
+  qty: number; // Total outgoing qty
+  item_type: string;
+  uom: string;
+  source_type: 'production' | 'incoming';
+
+  // Level 2: Source-specific data
+  work_orders?: TraceabilityWorkOrderDetail[]; // For production-based
+  incoming_ppkek_numbers?: TraceabilityIncomingPPKEK[]; // For incoming-based (with full details)
 }
 
 /**
  * Traceability Repository
- * Handles database operations for traceability queries with enriched BOM details
+ * Handles fetching and enriching traceability data from multiple sources
  */
 export class TraceabilityRepository {
   /**
-   * Get enriched traceability data for an outgoing goods item
-   * Returns hierarchical 4-level structure: Item → Work Order → Material → PPKEK
+   * Get traceability for a single outgoing item
    * 
-   * Supports 2 sources:
-   * 1. Incoming-based: If incoming_ppkek_numbers is set, use it directly
-   * 2. Production-based: Trace from outgoing_fg_production_traceability (denormalized data)
+   * Data Sources:
+   * 1. outgoing_good_items - base item info
+   * 2. incoming_ppkek_numbers[] field - determines scenario
+   * 3. outgoing_work_order_allocations - work order breakdown (if production-based)
+   * 4. outgoing_fg_production_traceability - enriched material data (if production-based)
+   * 5. incoming_goods - resolve PPKEK details (if incoming-based or for material PPKEK)
    */
   async getTraceabilityByOutgoingItem(
     outgoingItemId: number,
@@ -63,7 +94,9 @@ export class TraceabilityRepository {
     });
 
     try {
-      // Step 1: Get outgoing item with incoming_ppkek_numbers
+      // =====================================================================
+      // STEP 1: Get outgoing item base data
+      // =====================================================================
       const outgoingItem = await prisma.outgoing_good_items.findUnique({
         where: { id: outgoingItemId },
       });
@@ -73,144 +106,176 @@ export class TraceabilityRepository {
         return null;
       }
 
-      // Step 2: Check if incoming_ppkek_numbers is present (incoming-based scenario)
       const incomingPPKEKArray = (outgoingItem as any).incoming_ppkek_numbers || [];
       const hasIncomingPPKEK =
         Array.isArray(incomingPPKEKArray) && incomingPPKEKArray.length > 0;
 
+      // =====================================================================
+      // SCENARIO A: INCOMING-BASED
+      // =====================================================================
       if (hasIncomingPPKEK) {
-        // SCENARIO B: Incoming-based - return PPKEK array directly
         log.info('Using incoming-based traceability', {
           ppkekCount: incomingPPKEKArray.length,
         });
 
+        // Resolve each PPKEK to incoming goods with full details
+        const resolvedPPKEKs: TraceabilityIncomingPPKEK[] = [];
+
+        for (const ppkekNumber of incomingPPKEKArray) {
+          const incomingGood = await prisma.incoming_goods.findFirst({
+            where: {
+              ppkek_number: ppkekNumber,
+              company_code: companyCode,
+            },
+            orderBy: { incoming_date: 'desc' },
+          });
+
+          if (incomingGood) {
+            resolvedPPKEKs.push({
+              ppkek_number: incomingGood.ppkek_number,
+              customs_registration_date: incomingGood.customs_registration_date
+                ? new Date(incomingGood.customs_registration_date).toISOString().split('T')[0]
+                : '',
+              customs_document_type: incomingGood.customs_document_type || '',
+              incoming_date: incomingGood.incoming_date
+                ? new Date(incomingGood.incoming_date).toISOString().split('T')[0]
+                : '',
+              incoming_evidence_number: incomingGood.incoming_evidence_number || undefined,
+            });
+          } else {
+            // PPKEK not found in incoming goods, still include it in response
+            resolvedPPKEKs.push({
+              ppkek_number: ppkekNumber,
+              customs_registration_date: '',
+              customs_document_type: '',
+              incoming_date: '',
+            });
+            log.warn('PPKEK not resolved to incoming goods', { ppkekNumber });
+          }
+        }
+
         return {
           item_code: outgoingItem.item_code,
           item_name: outgoingItem.item_name,
           qty: Number(outgoingItem.qty),
+          item_type: outgoingItem.item_type,
+          uom: outgoingItem.uom,
           source_type: 'incoming',
-          incoming_ppkek_numbers: incomingPPKEKArray,
-          work_orders: [],
+          incoming_ppkek_numbers: resolvedPPKEKs,
         };
       }
 
-      // SCENARIO A: Production-based - trace from outgoing_fg_production_traceability (enriched data)
-      log.info('Using production-based traceability with BOM enrichment');
+      // =====================================================================
+      // SCENARIO B: PRODUCTION-BASED
+      // =====================================================================
+      log.info('Using production-based traceability with work order allocations');
 
-      // Step 3: Get all enriched traceability records for this outgoing item
-      const traceabilityRecords = await prisma.outgoing_fg_production_traceability.findMany({
+      // Get work order allocations for this item
+      const allocations = await prisma.outgoing_work_order_allocations.findMany({
         where: {
           outgoing_good_item_id: outgoingItemId,
-          company_code: companyCode,
         },
-        select: {
-          work_order_number: true,
-          material_item_code: true,
-          material_item_name: true,
-          material_qty_allocated: true,
-          consumption_ratio: true,
-          ppkek_number_incoming: true,
-          customs_registration_date: true,
-          customs_document_type: true,
-          incoming_date: true,
-        },
-        orderBy: [
-          { work_order_number: 'asc' },
-          { material_item_code: 'asc' },
-        ],
+        orderBy: { work_order_number: 'asc' },
       });
 
-      if (traceabilityRecords.length === 0) {
-        log.info('No enriched production traces found for outgoing item');
-        // Return item without work orders
+      if (allocations.length === 0) {
+        log.warn('No work order allocations found for outgoing item');
+        // Return item with empty work orders
         return {
           item_code: outgoingItem.item_code,
           item_name: outgoingItem.item_name,
           qty: Number(outgoingItem.qty),
+          item_type: outgoingItem.item_type,
+          uom: outgoingItem.uom,
           source_type: 'production',
           work_orders: [],
-          incoming_ppkek_numbers: [],
         };
       }
 
-      // Step 4: Group by work order, then by material
-      const workOrdersMap = new Map<
-        string,
-        {
-          work_order_number: string;
-          materials: Map<
-            string,
-            {
-              material_item_code: string;
-              material_item_name: string;
-              material_qty_allocated: number;
-              consumption_ratio: number;
-              ppkek: TraceabilityPPKEK | null;
+      // Build work order details with materials
+      const workOrders: TraceabilityWorkOrderDetail[] = [];
+
+      for (const allocation of allocations) {
+        // Get materials for this work order allocation
+        const traceabilityRecords = await prisma.outgoing_fg_production_traceability.findMany({
+          where: {
+            outgoing_good_item_id: outgoingItemId,
+            work_order_number: allocation.work_order_number,
+            company_code: companyCode,
+          },
+          orderBy: [{ material_item_code: 'asc' }],
+        });
+
+        // Group materials by material_item_code to avoid duplicates
+        const materialMap = new Map<string, typeof traceabilityRecords[0]>();
+        for (const record of traceabilityRecords) {
+          if (record.material_item_code) {
+            if (!materialMap.has(record.material_item_code)) {
+              materialMap.set(record.material_item_code, record);
             }
-          >;
+          }
         }
-      >();
 
-      for (const record of traceabilityRecords) {
-        const woNumber = record.work_order_number || 'UNKNOWN';
+        const materials: TraceabilityMaterialDetail[] = [];
 
-        if (!workOrdersMap.has(woNumber)) {
-          workOrdersMap.set(woNumber, {
-            work_order_number: woNumber,
-            materials: new Map(),
+        for (const record of materialMap.values()) {
+          let ppkekDetail: TraceabilityPPKEKDetail | null = null;
+
+          // Resolve PPKEK if available
+          if (record.ppkek_number_incoming) {
+            ppkekDetail = {
+              ppkek_number: record.ppkek_number_incoming,
+              customs_registration_date: record.customs_registration_date
+                ? new Date(record.customs_registration_date).toISOString().split('T')[0]
+                : '',
+              customs_document_type: record.customs_document_type || '',
+              incoming_date: record.incoming_date
+                ? new Date(record.incoming_date).toISOString().split('T')[0]
+                : '',
+            };
+          }
+
+          // Only process if we have material_item_code
+          if (!record.material_item_code) {
+            continue;
+          }
+
+          // Get material UOM from material usage items
+          const materialUsage = await prisma.material_usage_items.findFirst({
+            where: {
+              item_code: record.material_item_code,
+            },
+            select: { uom: true },
+          });
+
+          materials.push({
+            material_item_code: record.material_item_code,
+            material_item_name: record.material_item_name || '',
+            consumption_ratio: Number(record.consumption_ratio || 0),
+            material_qty_allocated: Number(record.material_qty_allocated || 0),
+            qty_uom: materialUsage?.uom || outgoingItem.uom,
+            ppkek: ppkekDetail,
           });
         }
 
-        // Only add material if we have material_item_code
-        if (record.material_item_code) {
-          const materialKey = record.material_item_code;
-          const woEntry = workOrdersMap.get(woNumber)!;
-
-          if (!woEntry.materials.has(materialKey)) {
-            const ppkek: TraceabilityPPKEK | null = record.ppkek_number_incoming
-              ? {
-                  ppkek_number: record.ppkek_number_incoming,
-                  customs_registration_date: record.customs_registration_date
-                    ? new Date(record.customs_registration_date).toISOString().split('T')[0]
-                    : '',
-                  customs_document_type: record.customs_document_type || '',
-                  incoming_date: record.incoming_date
-                    ? new Date(record.incoming_date).toISOString().split('T')[0]
-                    : '',
-                }
-              : null;
-
-            woEntry.materials.set(materialKey, {
-              material_item_code: record.material_item_code,
-              material_item_name: record.material_item_name || '',
-              material_qty_allocated: Number(record.material_qty_allocated || 0),
-              consumption_ratio: Number(record.consumption_ratio || 0),
-              ppkek,
-            });
-          }
-        }
+        workOrders.push({
+          work_order_number: allocation.work_order_number,
+          qty_per_wo: Number(allocation.qty),
+          materials,
+        });
       }
-
-      // Step 5: Build response structure
-      const workOrders: TraceabilityWorkOrder[] = Array.from(workOrdersMap.values())
-        .map((wo) => ({
-          work_order_number: wo.work_order_number,
-          materials: Array.from(wo.materials.values()),
-        }))
-        .filter((wo) => wo.materials.length > 0) // Only include WO with materials
-        .sort((a, b) => a.work_order_number.localeCompare(b.work_order_number));
 
       const result: TraceabilityItem = {
         item_code: outgoingItem.item_code,
         item_name: outgoingItem.item_name,
         qty: Number(outgoingItem.qty),
+        item_type: outgoingItem.item_type,
+        uom: outgoingItem.uom,
         source_type: 'production',
         work_orders: workOrders,
-        incoming_ppkek_numbers: [],
       };
 
-      log.info('Enriched traceability data retrieved', {
-        sourceType: 'production',
+      log.info('Production traceability retrieved', {
         workOrderCount: workOrders.length,
         materialCount: workOrders.reduce((sum, wo) => sum + wo.materials.length, 0),
       });

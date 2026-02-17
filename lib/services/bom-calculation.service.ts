@@ -150,7 +150,6 @@ export class BOMCalculationService {
           AND mui.deleted_at IS NULL
           AND mu.deleted_at IS NULL
         ORDER BY mu.transaction_date DESC
-        LIMIT 1
       `;
 
       if (!materialUsagesRaw || materialUsagesRaw.length === 0) {

@@ -878,7 +878,7 @@ model outgoing_fg_production_traceability {
   outgoing_good_item outgoing_good_items @relation(fields: [outgoing_good_item_id], references: [id], onDelete: Cascade)
   incoming_good      incoming_goods?     @relation(fields: [incoming_goods_id], references: [id])
 
-  @@unique([outgoing_wms_id, production_wms_id, item_code])
+  @@unique([outgoing_wms_id, production_wms_id, item_code, material_item_code])
   @@index([outgoing_wms_id])
   @@index([production_wms_id])
   @@index([company_code])
