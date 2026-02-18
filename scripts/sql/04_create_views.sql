@@ -59,6 +59,7 @@ RETURNS TABLE (
     company_code INTEGER,
     company_name VARCHAR(200),
     item_code VARCHAR(50),
+    item_code_bahasa VARCHAR(100),
     item_name VARCHAR(200),
     item_type VARCHAR(10),
     unit_quantity VARCHAR(20),
@@ -153,6 +154,7 @@ BEGIN
             ai.company_code,
             c.name as company_name,
             ai.item_code,
+            COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
             ai.item_name,
             ai.item_type,
             COALESCE(ai.uom, 'UNIT')::VARCHAR(20) as unit_quantity,
@@ -183,6 +185,7 @@ BEGIN
             'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
         FROM all_items ai
         JOIN companies c ON ai.company_code = c.code
+        LEFT JOIN item_types it ON ai.item_type = it.item_type_code
         LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code AND ai.uom = rm.uom
         ORDER BY ai.company_code, ai.item_code, ai.uom;
 END;
@@ -216,6 +219,7 @@ RETURNS TABLE (
     company_code INTEGER,
     company_name VARCHAR(200),
     item_code VARCHAR(50),
+    item_code_bahasa VARCHAR(100),
     item_name VARCHAR(200),
     item_type VARCHAR(10),
     unit_quantity VARCHAR(20),
@@ -304,6 +308,7 @@ BEGIN
             ai.company_code,
             c.name as company_name,
             ai.item_code,
+            COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
             ai.item_name,
             ai.item_type,
             COALESCE(ai.uom, 'UNIT')::VARCHAR(20) as unit_quantity,
@@ -334,6 +339,7 @@ BEGIN
             'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
         FROM all_items ai
         JOIN companies c ON ai.company_code = c.code
+        LEFT JOIN item_types it ON ai.item_type = it.item_type_code
         LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code AND ai.uom = rm.uom
         ORDER BY ai.company_code, ai.item_code, ai.uom;
 END;
@@ -364,6 +370,7 @@ SELECT
     -- Item details
     igi.item_type as type_code,
     igi.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     igi.item_name,
     igi.uom as unit,
     igi.qty as quantity,
@@ -379,6 +386,7 @@ JOIN incoming_good_items igi ON ig.company_code = igi.incoming_good_company
     AND ig.id = igi.incoming_good_id
     AND ig.incoming_date = igi.incoming_good_date
 JOIN companies c ON ig.company_code = c.code
+LEFT JOIN item_types it ON igi.item_type = it.item_type_code
 WHERE ig.deleted_at IS NULL
   AND igi.deleted_at IS NULL
 ORDER BY ig.incoming_date DESC, ig.id, igi.id;
@@ -406,6 +414,7 @@ SELECT
     -- Item details
     ogi.item_type as type_code,
     ogi.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     ogi.item_name,
     ogi.uom as unit,
     ogi.qty as quantity,
@@ -422,6 +431,7 @@ JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
     AND og.id = ogi.outgoing_good_id
     AND og.outgoing_date = ogi.outgoing_good_date
 JOIN companies c ON og.company_code = c.code
+LEFT JOIN item_types it ON ogi.item_type = it.item_type_code
 WHERE og.deleted_at IS NULL
   AND ogi.deleted_at IS NULL
 ORDER BY og.outgoing_date DESC, og.id, ogi.id;
@@ -446,6 +456,7 @@ SELECT
     -- Item details
     soi.item_type as type_code,
     soi.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     soi.item_name,
     soi.uom as unit,
     soi.actual_qty_count as qty,
@@ -459,6 +470,7 @@ FROM wms_stock_opnames so
 JOIN wms_stock_opname_items soi ON so.id = soi.wms_stock_opname_id
     AND so.company_code = soi.company_code
 JOIN companies c ON so.company_code = c.code
+LEFT JOIN item_types it ON soi.item_type = it.item_type_code
 ORDER BY so.document_date DESC, so.id, soi.id;
 
 COMMENT ON VIEW vw_laporan_stock_opname IS 'Report #2.5: Stock Opname Report - Real-time view of stock opname transactions with physical count details';
@@ -481,6 +493,7 @@ SELECT
     -- Item details
     adji.item_type as type_code,
     adji.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     adji.item_name,
     adji.adjustment_type,
     adji.uom as unit,
@@ -497,6 +510,7 @@ JOIN adjustment_items adji ON adj.company_code = adji.adjustment_company
     AND adj.id = adji.adjustment_id
     AND adj.transaction_date = adji.adjustment_date
 JOIN companies c ON adj.company_code = c.code
+LEFT JOIN item_types it ON adji.item_type = it.item_type_code
 WHERE adj.deleted_at IS NULL
   AND adji.deleted_at IS NULL
 ORDER BY adj.transaction_date DESC, adj.id, adji.id;
@@ -531,6 +545,7 @@ SELECT
     wb.company_code,
     c.name as company_name,
     wb.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     wb.item_name,
     wb.item_type,
     wb.uom as unit_quantity,
@@ -541,6 +556,7 @@ SELECT
     wb.updated_at
 FROM wip_balances wb
 JOIN companies c ON wb.company_code = c.code
+LEFT JOIN item_types it ON wb.item_type = it.item_type_code
 WHERE wb.deleted_at IS NULL
 ORDER BY wb.company_code, wb.stock_date DESC, wb.item_code;
 
@@ -607,6 +623,7 @@ RETURNS TABLE (
     company_code INTEGER,
     company_name VARCHAR(200),
     item_code VARCHAR(50),
+    item_code_bahasa VARCHAR(100),
     item_name VARCHAR(200),
     item_type VARCHAR(10),
     unit_quantity VARCHAR(20),
@@ -694,6 +711,7 @@ BEGIN
             ai.company_code,
             c.name as company_name,
             ai.item_code,
+            COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
             ai.item_name,
             ai.item_type,
             COALESCE(ai.uom, 'UNIT')::VARCHAR(20) as unit_quantity,
@@ -724,6 +742,7 @@ BEGIN
             'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
         FROM all_items ai
         JOIN companies c ON ai.company_code = c.code
+        LEFT JOIN item_types it ON ai.item_type = it.item_type_code
         LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code AND ai.uom = rm.uom
         ORDER BY ai.company_code, ai.item_code, ai.uom;
 END;
@@ -770,6 +789,7 @@ SELECT
     -- Item details
     poi.item_type as type_code,
     poi.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     poi.item_name,
     poi.uom as unit,
     poi.qty as quantity,
@@ -779,6 +799,7 @@ JOIN production_output_items poi ON po.company_code = poi.production_output_comp
     AND po.id = poi.production_output_id
     AND po.transaction_date = poi.production_output_date
 JOIN companies c ON po.company_code = c.code
+LEFT JOIN item_types it ON poi.item_type = it.item_type_code
 WHERE po.deleted_at IS NULL
   AND poi.deleted_at IS NULL
 
@@ -796,6 +817,7 @@ SELECT
     -- Item details
     sti.item_type as type_code,
     sti.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     sti.item_name,
     sti.uom as unit,
     sti.qty as quantity,
@@ -805,6 +827,7 @@ JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_comp
     AND st.id = sti.scrap_transaction_id
     AND st.transaction_date = sti.scrap_transaction_date
 JOIN companies c ON st.company_code = c.code
+LEFT JOIN item_types it ON sti.item_type = it.item_type_code
 WHERE st.transaction_type = 'IN'
   AND st.deleted_at IS NULL
   AND sti.deleted_at IS NULL
@@ -831,6 +854,7 @@ SELECT
     -- Item details
     mui.item_type as type_code,
     mui.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     mui.item_name,
     mui.uom as unit,
     mui.qty as quantity,
@@ -840,6 +864,7 @@ JOIN material_usage_items mui ON mu.company_code = mui.material_usage_company
     AND mu.id = mui.material_usage_id
     AND mu.transaction_date = mui.material_usage_date
 JOIN companies c ON mu.company_code = c.code
+LEFT JOIN item_types it ON mui.item_type = it.item_type_code
 WHERE mu.deleted_at IS NULL
   AND mui.deleted_at IS NULL
 ORDER BY mu.transaction_date DESC, mu.id, mui.id;
