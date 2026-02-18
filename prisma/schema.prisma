@@ -997,9 +997,9 @@ model wms_stock_opname_items {
   actual_qty_count          Decimal             @db.Decimal(15, 3) // Renamed from physical_qty per API Contract v3.3.0
   
   // Variance & adjustment
-  variance_qty              Decimal             @db.Decimal(15, 3) // actual_qty_count - system_qty
-  adjustment_qty_signed     Decimal             @db.Decimal(15, 3) // Signed: negative=LOSS, positive=GAIN
-  adjustment_type           String?             @db.VarChar(10) // GAIN, LOSS (from created adjustment, nullable before PATCH)
+  variance_qty              Decimal             @db.Decimal(15, 3) // actual_qty_count - system_qty (calculated at POST/PATCH)
+  adjustment_qty_signed     Decimal?            @db.Decimal(15, 3) // Signed qty: populated ONLY when adjustment is confirmed/transmitted (nullable until adjustment creation)
+  adjustment_type           String?             @db.VarChar(10) // GAIN, LOSS (from created adjustment, nullable until adjustment confirmed)
   amount                    Decimal?            @db.Decimal(15, 4) // Added per API Contract v3.3.0 for PATCH Confirmed
   
   uom                       String              @db.VarChar(20)

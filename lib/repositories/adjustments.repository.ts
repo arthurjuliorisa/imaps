@@ -350,6 +350,17 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         // Don't fail the entire transaction if snapshot fails
       }
 
+      // Step 6: Update wms_stock_opname_items with adjustment_qty_signed
+      try {
+        await this.updateStockOpnameItems(data, transactionDate);
+        log.info('Stock opname items updated with adjustment_qty_signed');
+      } catch (stoError) {
+        log.error('Stock opname items update failed', {
+          error: (stoError as any).message,
+        });
+        // Don't fail the entire transaction if STO update fails
+      }
+
       return result;
     } catch (err: any) {
       log.error('Create failed', {
@@ -446,6 +457,155 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         error: (err as any).message,
       });
       return 0;
+    }
+  }
+
+  /**
+   * Update wms_stock_opname_items with adjustment_qty_signed
+   * 
+   * After adjustment items are created, find matching STO items and update them
+   * with the adjustment quantity. Matching is based on:
+   * - company_code
+   * - item_code
+   * - item_name
+   * - uom
+   * - adjustment_type (GAIN/LOSS) should match the variance type in STO
+   * 
+   * OPTIMIZED: Batch update instead of per-row loop for performance
+   * For each item+uom+adjustment_type combination, find the MOST RECENT (by created_at DESC)
+   * unprocessed STO item and update in batch
+   */
+  private async updateStockOpnameItems(
+    data: AdjustmentBatchRequestInput,
+    transactionDate: Date
+  ): Promise<void> {
+    const log = logger.child({
+      scope: 'updateStockOpnameItems',
+      wmsId: data.wms_id,
+      companyCode: data.company_code,
+    });
+
+    if (data.items.length === 0) {
+      return;
+    }
+
+    try {
+      // Step 1: Get all unique combinations of (item_code, uom, adjustment_type)
+      const uniqueCombinations = new Map<string, typeof data.items[0]>();
+      for (const item of data.items) {
+        const key = `${item.item_code}:${item.uom}:${item.adjustment_type}`;
+        if (!uniqueCombinations.has(key)) {
+          uniqueCombinations.set(key, item);
+        }
+      }
+
+      const uniqueItems = Array.from(uniqueCombinations.values());
+
+      // Step 2: Query matching STO items using Prisma OR conditions
+      // Prisma will handle parameterization safely
+      const orConditions = uniqueItems.map((item) => ({
+        AND: [
+          { item_code: item.item_code },
+          { uom: item.uom },
+          { adjustment_type: item.adjustment_type },
+        ],
+      }));
+
+      const allMatchingStoItems = await prisma.wms_stock_opname_items.findMany({
+        where: {
+          company_code: data.company_code,
+          adjustment_qty_signed: null,
+          OR: orConditions,
+        },
+        select: {
+          id: true,
+          item_code: true,
+          uom: true,
+          adjustment_type: true,
+          created_at: true,
+        },
+        orderBy: [
+          { item_code: 'asc' },
+          { uom: 'asc' },
+          { adjustment_type: 'asc' },
+          { created_at: 'desc' },
+        ],
+      });
+
+      if (allMatchingStoItems.length === 0) {
+        log.debug('No matching unassigned STO items found', {
+          adjustmentItemCount: data.items.length,
+        });
+        return;
+      }
+
+      // Step 3: Select ONLY the most recent (latest created_at) for each combination
+      const mostRecentMap = new Map<string, typeof allMatchingStoItems[0]>();
+      for (const stoItem of allMatchingStoItems) {
+        const key = `${stoItem.item_code}:${stoItem.uom}:${stoItem.adjustment_type}`;
+        // Since we ordered by created_at DESC, first match is the most recent
+        if (!mostRecentMap.has(key)) {
+          mostRecentMap.set(key, stoItem);
+        }
+      }
+
+      // Step 4: Build mapping: (item_code, uom, adjustment_type) -> qty from adjustment items
+      const adjQtyMap = new Map<string, number>();
+      for (const item of data.items) {
+        const key = `${item.item_code}:${item.uom}:${item.adjustment_type}`;
+        adjQtyMap.set(key, item.qty);
+      }
+
+      // Step 5: Prepare batch updates
+      const updates: Array<{ id: bigint; qty: Prisma.Decimal }> = [];
+      for (const [key, stoItem] of mostRecentMap) {
+        const qty = adjQtyMap.get(key);
+        if (qty !== undefined) {
+          updates.push({
+            id: stoItem.id,
+            qty: new Prisma.Decimal(qty),
+          });
+        }
+      }
+
+      if (updates.length === 0) {
+        log.debug('No updates to apply after deduplication', {
+          matchingCombinations: mostRecentMap.size,
+          adjustmentCombinations: data.items.length,
+        });
+        return;
+      }
+
+      // Step 6: Batch update using CASE statement in single UPDATE query
+      // Build the CASE statement safe from SQL injection
+      const caseStatements = updates
+        .map((u) => `WHEN ${u.id}::bigint THEN ${u.qty.toString()}::decimal(15,3)`)
+        .join('\n');
+
+      const idList = updates.map((u) => `${u.id}::bigint`).join(',');
+
+      await prisma.$executeRawUnsafe(`
+        UPDATE wms_stock_opname_items
+        SET 
+          adjustment_qty_signed = CASE id
+            ${caseStatements}
+            ELSE adjustment_qty_signed
+          END,
+          updated_at = NOW()
+        WHERE id IN (${idList})
+      `);
+
+      log.info('Batch updated STO items with adjustment_qty_signed', {
+        totalUpdated: updates.length,
+        uniqueCombinations: uniqueCombinations.size,
+        adjustmentItems: data.items.length,
+      });
+    } catch (err) {
+      log.error('Batch update failed', {
+        error: (err as any).message,
+        adjustmentItemCount: data.items.length,
+      });
+      // Don't throw - allow adjustment to complete even if STO update fails
     }
   }
 }

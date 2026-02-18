@@ -143,8 +143,8 @@ export class WmsStockOpnameService {
     const adjustmentDetails: AdjustmentDetail[] = itemsWithVariance.map((item) => ({
       item_code: item.item_code,
       item_type: item.item_type,
-      adjustment_type: Number(item.adjustment_qty_signed) > 0 ? 'GAIN' : 'LOSS',
-      adjustment_qty: Math.abs(Number(item.adjustment_qty_signed)),
+      adjustment_type: Number(item.variance_qty) > 0 ? 'GAIN' : 'LOSS',
+      adjustment_qty: Math.abs(Number(item.variance_qty)),
       uom: item.uom,
       notes: `Stock opname variance: actual=${item.actual_qty_count}, system=${item.system_qty}`,
     }));
@@ -176,7 +176,7 @@ export class WmsStockOpnameService {
       outgoing_qty_on_date: Number(item.outgoing_qty_on_date),
       system_qty: Number(item.system_qty),
       variance_qty: Number(item.variance_qty),
-      adjustment_qty_signed: Number(item.adjustment_qty_signed),
+      adjustment_qty_signed: item.adjustment_qty_signed ? Number(item.adjustment_qty_signed) : null,
       adjustment_type: item.adjustment_type,
       amount: item.amount ? Number(item.amount) : null,
     }));

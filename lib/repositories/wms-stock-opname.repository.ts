@@ -84,7 +84,8 @@ export class WmsStockOpnameRepository {
       ]);
 
       const itemsData = items.map((item) => {
-        const recon = reconciliationData[item.item_code] || {
+        const key = `${item.item_code}:${item.uom}`;
+        const recon = reconciliationData[key] || {
           beginning_qty: 0,
           incoming_qty_on_date: 0,
           outgoing_qty_on_date: 0,
@@ -107,7 +108,7 @@ export class WmsStockOpnameRepository {
           outgoing_qty_on_date: recon.outgoing_qty_on_date,
           system_qty,
           variance_qty,
-          adjustment_qty_signed: variance_qty,
+          adjustment_qty_signed: null,
           adjustment_type,
           amount: null,
         };
@@ -166,7 +167,8 @@ export class WmsStockOpnameRepository {
         );
 
         const newItemsData = items.map((item) => {
-          const r = recon[item.item_code] || {
+          const key = `${item.item_code}:${item.uom}`;
+          const r = recon[key] || {
             beginning_qty: 0,
             incoming_qty_on_date: 0,
             outgoing_qty_on_date: 0,
@@ -188,7 +190,7 @@ export class WmsStockOpnameRepository {
             outgoing_qty_on_date: r.outgoing_qty_on_date,
             system_qty,
             variance_qty,
-            adjustment_qty_signed: variance_qty,
+            adjustment_qty_signed: null,
             adjustment_type,
             amount: item.amount ?? null,
           };
@@ -292,47 +294,128 @@ export class WmsStockOpnameRepository {
     documentDate: Date,
     tx: any,
   ): Promise<Record<string, { beginning_qty: number; incoming_qty_on_date: number; outgoing_qty_on_date: number }>> {
-    const itemCodes = items.map((i) => i.item_code);
+    // =========================================================================
+    // CORRECTED: Fetch ALL reconciliation data from stock_daily_snapshot
+    // WITH FALLBACK TO LATEST PREVIOUS DATE IF EXACT DATE NOT FOUND
+    // =========================================================================
+    // Per business requirement: Reconciliation must be at UOM level
+    // - Query by: company_code, item_code, uom, snapshot_date
+    // - All values must come from the snapshot on that date:
+    //   - opening_balance → beginning_qty
+    //   - incoming_qty → incoming_qty_on_date (only on exact date)
+    //   - outgoing_qty → outgoing_qty_on_date (only on exact date)
+    //
+    // If no snapshot exists on exact date, fallback to latest previous snapshot
+    // for that item+uom combination to get opening_balance (incoming/outgoing = 0)
+    //
+    // This ensures consistency with stock_daily_snapshot calculation method
+    // =========================================================================
 
-    const [beginningData, incomingData, outgoingData] = await Promise.all([
-      tx.beginning_balances.findMany({
-        where: { company_code: companyCode, item_code: { in: itemCodes } },
-        select: { item_code: true, qty: true },
-      }),
-      tx.incoming_good_items.groupBy({
-        by: ['item_code'],
+    // Build composite key: item_code:uom for mapping
+    const itemsMap = new Map(items.map((i) => [`${i.item_code}:${i.uom}`, i]));
+    const itemUomPairs = Array.from(itemsMap.keys());
+
+    // Build WHERE clause conditions for each item+uom pair
+    const itemUomConditions = items.map((i) => ({
+      item_code: i.item_code,
+      uom: i.uom,
+    }));
+
+    // Step 1: Fetch snapshots on exact document date
+    const snapshotDataExactDate = await tx.stock_daily_snapshot.findMany({
+      where: {
+        company_code: companyCode,
+        snapshot_date: documentDate,
+        OR: itemUomConditions,
+      },
+      select: {
+        item_code: true,
+        uom: true,
+        opening_balance: true,
+        incoming_qty: true,
+        outgoing_qty: true,
+      },
+    });
+
+    const foundPairs = new Set(
+      snapshotDataExactDate.map((r: any) => `${r.item_code}:${r.uom}`),
+    );
+    const missingPairs = itemUomPairs.filter((pair) => !foundPairs.has(pair));
+
+    let snapshotDataFallback: any[] = [];
+
+    // Step 2: For items+uom not found on exact date, fetch latest previous snapshot
+    if (missingPairs.length > 0) {
+      const missingConditions = missingPairs.map((pair) => {
+        const [itemCode, uom] = pair.split(':');
+        return { item_code: itemCode, uom };
+      });
+
+      // Query all snapshots before document date, then process in JS
+      const allFallbackSnapshots = await tx.stock_daily_snapshot.findMany({
         where: {
-          incoming_good_company: companyCode,
-          incoming_good_date: { lte: documentDate },
-          deleted_at: null,
-          item_code: { in: itemCodes },
+          company_code: companyCode,
+          snapshot_date: { lt: documentDate },
+          OR: missingConditions,
         },
-        _sum: { qty: true },
-      }),
-      tx.outgoing_good_items.groupBy({
-        by: ['item_code'],
-        where: {
-          outgoing_good_company: companyCode,
-          outgoing_good_date: { lte: documentDate },
-          deleted_at: null,
-          item_code: { in: itemCodes },
+        select: {
+          item_code: true,
+          uom: true,
+          opening_balance: true,
+          snapshot_date: true,
         },
-        _sum: { qty: true },
-      }),
-    ]);
+        orderBy: [{ snapshot_date: 'desc' }],
+      });
+
+      // Get latest snapshot for each item+uom combination
+      const latestByItemUom = new Map<string, typeof allFallbackSnapshots[0]>();
+      for (const snap of allFallbackSnapshots) {
+        const key = `${snap.item_code}:${snap.uom}`;
+        if (!latestByItemUom.has(key)) {
+          latestByItemUom.set(key, snap);
+        }
+      }
+
+      snapshotDataFallback = Array.from(latestByItemUom.values()).map((snap) => ({
+        item_code: snap.item_code,
+        uom: snap.uom,
+        opening_balance: snap.opening_balance,
+        incoming_qty: 0,
+        outgoing_qty: 0,
+      }));
+    }
 
     const result: Record<string, { beginning_qty: number; incoming_qty_on_date: number; outgoing_qty_on_date: number }> = {};
 
-    for (const itemCode of itemCodes) {
-      const beginningRecord = beginningData.find((r: any) => r.item_code === itemCode);
-      const incomingRecord = incomingData.find((r: any) => r.item_code === itemCode);
-      const outgoingRecord = outgoingData.find((r: any) => r.item_code === itemCode);
-
-      result[itemCode] = {
-        beginning_qty: beginningRecord ? Number(beginningRecord.qty) : 0,
-        incoming_qty_on_date: incomingRecord ? Number(incomingRecord._sum.qty || 0) : 0,
-        outgoing_qty_on_date: outgoingRecord ? Number(outgoingRecord._sum.qty || 0) : 0,
+    // Process exact date snapshots
+    for (const record of snapshotDataExactDate) {
+      const key = `${record.item_code}:${record.uom}`;
+      result[key] = {
+        beginning_qty: Number(record.opening_balance || 0),
+        incoming_qty_on_date: Number(record.incoming_qty || 0),
+        outgoing_qty_on_date: Number(record.outgoing_qty || 0),
       };
+    }
+
+    // Process fallback snapshots (incoming/outgoing = 0 for fallback dates)
+    for (const record of snapshotDataFallback) {
+      const key = `${record.item_code}:${record.uom}`;
+      result[key] = {
+        beginning_qty: Number(record.opening_balance || 0),
+        incoming_qty_on_date: 0, // No incoming on non-exact date
+        outgoing_qty_on_date: 0, // No outgoing on non-exact date
+      };
+    }
+
+    // Default to zero for items with no snapshot at all
+    for (const pair of itemUomPairs) {
+      if (!result[pair]) {
+        result[pair] = {
+          beginning_qty: 0,
+          incoming_qty_on_date: 0,
+          outgoing_qty_on_date: 0,
+        };
+      }
     }
 
     return result;
