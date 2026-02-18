@@ -177,6 +177,9 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
         });
       }
 
+      // Consolidations already done in BOM Calculation Service
+      // Each allocation here represents a unique consolidated material
+      // No further consolidation needed
       logger_sub.debug('Traceability enrichment complete', {
         allocationCount: traceAllocations.length,
       });

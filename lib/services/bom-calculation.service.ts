@@ -128,31 +128,18 @@ export class BOMCalculationService {
       // ========================================================================
       // STEP 3: Get Latest Material Usage for Work Order
       // ========================================================================
-      // Query: material_usage_items with latest transmission per work order
-      const materialUsagesRaw = await prisma.$queryRaw<any[]>`
-        SELECT 
-          mui.id,
-          mui.item_code,
-          mui.item_name,
-          mui.component_demand_qty,
-          mui.ppkek_number,
-          mu.work_order_number,
-          mu.transaction_date
-        FROM material_usage_items mui
-        JOIN material_usages mu ON 
-          mui.material_usage_id = mu.id 
-          AND mui.material_usage_company = mu.company_code 
-          AND mui.material_usage_date = mu.transaction_date
+      // Query: First get the latest transmission date
+      const latestDateResult = await prisma.$queryRaw<any[]>`
+        SELECT DISTINCT mu.transaction_date
+        FROM material_usages mu
         WHERE mu.work_order_number = ${workOrderNumber}
           AND mu.company_code = ${companyCode}
-          AND mui.item_type IN ('ROH', 'HALB')
-          AND mui.component_demand_qty IS NOT NULL
-          AND mui.deleted_at IS NULL
           AND mu.deleted_at IS NULL
         ORDER BY mu.transaction_date DESC
+        LIMIT 1
       `;
 
-      if (!materialUsagesRaw || materialUsagesRaw.length === 0) {
+      if (!latestDateResult || latestDateResult.length === 0) {
         calculationLogger.warn('No material usage found for work order', {
           workOrderNumber,
           companyCode,
@@ -166,18 +153,119 @@ export class BOMCalculationService {
         };
       }
 
-      // Get the latest transmission (all rows are from the same transmission due to LIMIT 1)
+      const latestDate = latestDateResult[0].transaction_date;
+
+      // Convert Date to YYYY-MM-DD string to match DATABASE DATE column format
+      // This ensures proper comparison without timezone issues
+      const latestDateStr = new Date(latestDate).toISOString().split('T')[0];
+
+      calculationLogger.debug('Using latest material usage transmission', {
+        latestDate: latestDate.toString(),
+        latestDateStr, // Use this string for SQL query
+      });
+
+      // Now get all materials from this latest transmission date only
+      // Note: May include multiple wms_ids if they share same transaction_date
+      const materialUsagesRaw = await prisma.$queryRaw<any[]>`
+        SELECT 
+          mui.id,
+          mui.item_code,
+          mui.item_name,
+          mui.component_demand_qty,
+          mui.ppkek_number,
+          mu.work_order_number,
+          mu.transaction_date,
+          mu.wms_id
+        FROM material_usage_items mui
+        JOIN material_usages mu ON 
+          mui.material_usage_id = mu.id 
+          AND mui.material_usage_company = mu.company_code 
+          AND mui.material_usage_date = mu.transaction_date
+        WHERE mu.work_order_number = ${workOrderNumber}
+          AND mu.company_code = ${companyCode}
+          AND mu.transaction_date = ${latestDateStr}::date
+          AND mui.item_type IN ('ROH', 'HALB')
+          AND mui.component_demand_qty IS NOT NULL
+          AND mui.deleted_at IS NULL
+          AND mu.deleted_at IS NULL
+        ORDER BY mu.wms_id, mui.item_code
+      `;
+
+      if (!materialUsagesRaw || materialUsagesRaw.length === 0) {
+        calculationLogger.warn('No material usage items found for latest transmission', {
+          workOrderNumber,
+          companyCode,
+          latestDate,
+        });
+        return {
+          work_order_number: workOrderNumber,
+          identify_product: productionOutputItem.identify_product,
+          allocations: [],
+          calculation_status: 'not_found',
+          error_message: `No material usage items found for work order ${workOrderNumber}`,
+        };
+      }
+
+      calculationLogger.debug('Retrieved material usage items from latest transmission', {
+        itemCount: materialUsagesRaw.length,
+        items: materialUsagesRaw.map(m => ({ item_code: m.item_code, wms_id: m.wms_id })),
+      });
+
+      // Get the latest transmission items (all rows are from the same transmission date)
       const latestTransmissionItems = materialUsagesRaw;
 
       // ========================================================================
-      // STEP 4: Calculate Allocations for Each Material
+      // STEP 4: Consolidate Materials with Same Item Code
+      // ========================================================================
+      // If same material appears multiple times in the transmission (from different BOM lines or wms_ids),
+      // consolidate by summing component_demand_qty
+      const consolidatedMaterials = new Map<string, any>();
+
+      for (const material of latestTransmissionItems) {
+        const key = material.item_code;
+        
+        if (consolidatedMaterials.has(key)) {
+          // Material already exists, sum component_demand_qty
+          const existing = consolidatedMaterials.get(key);
+          const currentQty = new Prisma.Decimal(existing.component_demand_qty.toString());
+          const addQty = new Prisma.Decimal(material.component_demand_qty.toString());
+          existing.component_demand_qty = currentQty.plus(addQty);
+          
+          calculationLogger.debug('Consolidated duplicate material from transmission', {
+            materialItemCode: key,
+            addedComponentDemandQty: addQty.toString(),
+            newComponentDemandQty: existing.component_demand_qty.toString(),
+            fromWmsId: material.wms_id,
+          });
+        } else {
+          // First occurrence, add to map
+          consolidatedMaterials.set(key, {
+            item_code: material.item_code,
+            item_name: material.item_name,
+            component_demand_qty: new Prisma.Decimal(material.component_demand_qty.toString()),
+            ppkek_number: material.ppkek_number,
+          });
+          
+          calculationLogger.debug('Added new material to consolidation map', {
+            materialItemCode: key,
+            componentDemandQty: material.component_demand_qty.toString(),
+            fromWmsId: material.wms_id,
+          });
+        }
+      }
+
+      calculationLogger.debug('Material consolidation complete', {
+        originalItemCount: materialUsagesRaw.length,
+        consolidatedItemCount: consolidatedMaterials.size,
+      });
+
+      // ========================================================================
+      // STEP 5: Calculate Allocations for Each Consolidated Material
       // ========================================================================
       const allocations: MaterialAllocation[] = [];
 
-      for (const material of latestTransmissionItems) {
-        const componentDemandQty = new Prisma.Decimal(
-          material.component_demand_qty.toString()
-        );
+      for (const material of consolidatedMaterials.values()) {
+        const componentDemandQty = material.component_demand_qty;
         const plannedProdQty = new Prisma.Decimal(
           productionOutputItem.planned_production_qty.toString()
         );
@@ -189,7 +277,7 @@ export class BOMCalculationService {
           });
         }
 
-        // Calculate consumption ratio = component_demand_qty / planned_production_qty
+        // Calculate consumption ratio = consolidated_component_demand_qty / planned_production_qty
         const consumptionRatio = componentDemandQty.dividedBy(plannedProdQty);
 
         // Calculate allocated qty = qty_fg_exported × consumption_ratio
@@ -207,7 +295,7 @@ export class BOMCalculationService {
 
         calculationLogger.debug('Calculated allocation for material', {
           materialItemCode: material.item_code,
-          componentDemandQty: componentDemandQty.toString(),
+          consolidatedComponentDemandQty: componentDemandQty.toString(),
           plannedProdQty: plannedProdQty.toString(),
           consumptionRatio: consumptionRatio.toString(),
           qtyFGExported: qtyFG.toString(),

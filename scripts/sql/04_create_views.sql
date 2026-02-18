@@ -429,7 +429,81 @@ ORDER BY og.outgoing_date DESC, og.id, ogi.id;
 COMMENT ON VIEW vw_laporan_pengeluaran IS 'Report #2: Goods Issuance Report - Real-time view of outgoing goods transactions';
 
 -- ============================================================================
--- REPORT #3: LPJ BAHAN BAKU DAN BAHAN PENOLONG (Raw Material Mutation Report)
+-- REPORT #2.5: LAPORAN STOCK OPNAME (Stock Opname Report)
+-- ============================================================================
+-- Real-time view of stock opname transactions
+-- Combines header information (wms_stock_opnames) with item details (wms_stock_opname_items)
+
+CREATE OR REPLACE VIEW vw_laporan_stock_opname AS
+SELECT 
+    so.id,
+    so.wms_id,
+    so.company_code,
+    c.name as company_name,
+    so.document_date as doc_date,
+    so.status,
+    
+    -- Item details
+    soi.item_type as type_code,
+    soi.item_code,
+    soi.item_name,
+    soi.uom as unit,
+    soi.actual_qty_count as qty,
+    soi.amount as value_amount,
+    
+    -- Audit fields
+    so.created_at,
+    so.updated_at,
+    so.confirmed_at
+FROM wms_stock_opnames so
+JOIN wms_stock_opname_items soi ON so.id = soi.wms_stock_opname_id
+    AND so.company_code = soi.company_code
+JOIN companies c ON so.company_code = c.code
+ORDER BY so.document_date DESC, so.id, soi.id;
+
+COMMENT ON VIEW vw_laporan_stock_opname IS 'Report #2.5: Stock Opname Report - Real-time view of stock opname transactions with physical count details';
+
+-- ============================================================================
+-- REPORT #2.7: LAPORAN ADJUSTMENT (Adjustment Report)
+-- ============================================================================
+-- Real-time view of adjustment transactions
+-- Combines header information (adjustments) with item details (adjustment_items)
+
+CREATE OR REPLACE VIEW vw_laporan_adjustment AS
+SELECT 
+    adj.id,
+    adj.wms_id,
+    adj.company_code,
+    c.name as company_name,
+    adj.transaction_date,
+    adj.internal_evidence_number as doc_number,
+    
+    -- Item details
+    adji.item_type as type_code,
+    adji.item_code,
+    adji.item_name,
+    adji.adjustment_type,
+    adji.uom as unit,
+    adji.qty as quantity,
+    NULL::NUMERIC(18,4) as value_amount,
+    adji.reason,
+    
+    -- Audit fields
+    adj.created_at,
+    adj.updated_at,
+    adj.deleted_at
+FROM adjustments adj
+JOIN adjustment_items adji ON adj.company_code = adji.adjustment_company
+    AND adj.id = adji.adjustment_id
+    AND adj.transaction_date = adji.adjustment_date
+JOIN companies c ON adj.company_code = c.code
+WHERE adj.deleted_at IS NULL
+  AND adji.deleted_at IS NULL
+ORDER BY adj.transaction_date DESC, adj.id, adji.id;
+
+COMMENT ON VIEW vw_laporan_adjustment IS 'Report #2.7: Adjustment Report - Real-time view of stock adjustment transactions (GAIN/LOSS)';
+
+-- ============================================================================
 -- ============================================================================
 -- Uses function for incoming-based materials (excludes production)
 -- Item types: ROH, HALB (purchased from incoming), HIBE
@@ -674,12 +748,17 @@ SELECT * FROM fn_calculate_lpj_barang_sisa(
 COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - Independent scrap transactions (SCRAP) - YTD';
 
 -- ============================================================================
--- REPORT #8: INTERNAL INCOMING (Production Output Activity)
+-- REPORT #8: INTERNAL INCOMING (Production Output + Scrap Incoming)
 -- ============================================================================
--- Real-time view of internal production activities (goods produced/created)
--- Data source: production_outputs + production_output_items (transaction-based)
+-- Real-time view combining:
+-- 1. Production Output activities (goods produced internally)
+-- 2. Scrap Incoming transactions (IN type)
+-- Data source: production_outputs + scrap_transactions (transaction-based)
+-- Strategy: UNION ALL for optimal performance with early filtering
 
 CREATE OR REPLACE VIEW vw_internal_incoming AS
+
+-- Part 1: Production Output
 SELECT 
     po.id,
     po.company_code,
@@ -702,9 +781,37 @@ JOIN production_output_items poi ON po.company_code = poi.production_output_comp
 JOIN companies c ON po.company_code = c.code
 WHERE po.deleted_at IS NULL
   AND poi.deleted_at IS NULL
-ORDER BY po.transaction_date DESC, po.id, poi.id;
 
-COMMENT ON VIEW vw_internal_incoming IS 'Report #8: Internal Incoming - Real-time view of production output activities (goods produced internally)';
+UNION ALL
+
+-- Part 2: Scrap Incoming
+SELECT 
+    st.id,
+    st.company_code,
+    c.name as company_name,
+    st.document_number::VARCHAR(50) as internal_evidence_number,
+    st.transaction_date,
+    'General Section'::VARCHAR(100) as section,
+    
+    -- Item details
+    sti.item_type as type_code,
+    sti.item_code,
+    sti.item_name,
+    sti.uom as unit,
+    sti.qty as quantity,
+    sti.amount::NUMERIC(19,4) as value_amount
+FROM scrap_transactions st
+JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
+    AND st.id = sti.scrap_transaction_id
+    AND st.transaction_date = sti.scrap_transaction_date
+JOIN companies c ON st.company_code = c.code
+WHERE st.transaction_type = 'IN'
+  AND st.deleted_at IS NULL
+  AND sti.deleted_at IS NULL
+
+ORDER BY transaction_date DESC, company_code, id;
+
+COMMENT ON VIEW vw_internal_incoming IS 'Report #8: Internal Incoming - Real-time view combining production output activities and scrap incoming transactions';
 
 -- ============================================================================
 -- REPORT #9: INTERNAL OUTGOING (Material Usage Activity)
