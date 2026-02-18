@@ -34,6 +34,7 @@ interface InternalTransactionIncomingData {
   companyName: string;
   documentNumber: string;
   date: Date;
+  shipperName: string;
   typeCode: string;
   itemCode: string;
   itemName: string;
@@ -46,29 +47,33 @@ interface InternalTransactionIncomingData {
 const EXCEL_HEADERS = [
   { key: 'no', label: 'No', type: 'number' as const },
   { key: 'companyName', label: 'Company Name', type: 'text' as const },
-  { key: 'documentNumber', label: 'Document Number', type: 'text' as const },
-  { key: 'date', label: 'Date', type: 'date' as const },
+  { key: 'documentType', label: 'Jenis Dokumen Pabean', type: 'text' as const },
+  { key: 'ppkekNumber', label: 'Nomor Daftar', type: 'text' as const },
+  { key: 'registrationDate', label: 'Tanggal Daftar', type: 'date' as const },
+  { key: 'documentNumber', label: 'Nomor Bukti Penerimaan Barang', type: 'text' as const },
+  { key: 'date', label: 'Tanggal Bukti Penerimaan Barang', type: 'date' as const },
+  { key: 'shipperName', label: 'Pengirim Barang', type: 'text' as const },
   { key: 'typeCode', label: 'Item Type', type: 'text' as const },
-  { key: 'itemCode', label: 'Item Code', type: 'text' as const },
-  { key: 'itemName', label: 'Item Name', type: 'text' as const },
-  { key: 'unit', label: 'Unit', type: 'text' as const },
-  { key: 'qty', label: 'Quantity', type: 'number' as const },
-  { key: 'currency', label: 'Currency', type: 'text' as const },
-  { key: 'amount', label: 'Amount', type: 'number' as const },
+  { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
+  { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
+  { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
+  { key: 'qty', label: 'Jumlah Barang', type: 'number' as const },
+  { key: 'currency', label: 'valas', type: 'text' as const },
+  { key: 'amount', label: 'nilai barang', type: 'number' as const },
 ];
 
 const PDF_COLUMNS = [
   { header: 'No', dataKey: 'no' },
   { header: 'Company Name', dataKey: 'companyName' },
-  { header: 'Document Number', dataKey: 'documentNumber' },
-  { header: 'Date', dataKey: 'date' },
-  { header: 'Item Type', dataKey: 'typeCode' },
-  { header: 'Item Code', dataKey: 'itemCode' },
-  { header: 'Item Name', dataKey: 'itemName' },
-  { header: 'Unit', dataKey: 'unit' },
-  { header: 'Quantity', dataKey: 'qty' },
-  { header: 'Currency', dataKey: 'currency' },
-  { header: 'Amount', dataKey: 'amount' },
+  { header: 'Jenis Dokumen Pabean', dataKey: 'documentType' },
+  { header: 'Nomor Bukti Penerimaan Barang', dataKey: 'documentNumber' },
+  { header: 'Tanggal Bukti Penerimaan Barang', dataKey: 'date' },
+  { header: 'Pengirim Barang', dataKey: 'shipperName' },
+  { header: 'Kode Barang', dataKey: 'itemCode' },
+  { header: 'Nama Barang', dataKey: 'itemName' },
+  { header: 'Jumlah Barang', dataKey: 'qty' },
+  { header: 'valas', dataKey: 'currency' },
+  { header: 'nilai barang', dataKey: 'amount' },
 ];
 
 export default function InternalTransactionIncomingPage() {
@@ -164,8 +169,12 @@ export default function InternalTransactionIncomingPage() {
     const exportData = filteredData.map((row, index) => ({
       no: index + 1,
       companyName: row.companyName,
+      documentType: '-',
+      ppkekNumber: '-',
+      registrationDate: row.date,
       documentNumber: row.documentNumber,
       date: row.date,
+      shipperName: row.shipperName || 'Internal',
       typeCode: row.typeCode,
       itemCode: row.itemCode,
       itemName: row.itemName,
@@ -187,12 +196,12 @@ export default function InternalTransactionIncomingPage() {
     const exportData = filteredData.map((row, index) => ({
       no: index + 1,
       companyName: row.companyName,
+      documentType: '-',
       documentNumber: row.documentNumber,
       date: formatDateShort(row.date),
-      typeCode: row.typeCode,
+      shipperName: row.shipperName || 'Internal',
       itemCode: row.itemCode,
       itemName: row.itemName,
-      unit: row.unit,
       qty: formatQty(row.qty),
       currency: row.currency,
       amount: formatAmount(row.amount),
@@ -277,21 +286,25 @@ export default function InternalTransactionIncomingPage() {
               >
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Document Number</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Date</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Jenis Dokumen Pabean</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Nomor Daftar</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Tanggal Daftar</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Nomor Bukti Penerimaan Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Tanggal Bukti Penerimaan Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Pengirim Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Unit</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Quantity</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Currency</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Amount</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>valas</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">nilai barang</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={15} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -309,8 +322,18 @@ export default function InternalTransactionIncomingPage() {
                   >
                     <TableCell>{page * rowsPerPage + index + 1}</TableCell>
                     <TableCell>{row.companyName}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">-</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">-</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">-</Typography>
+                    </TableCell>
                     <TableCell>{row.documentNumber}</TableCell>
                     <TableCell>{formatDate(row.date)}</TableCell>
+                    <TableCell>{row.shipperName || 'Internal'}</TableCell>
                     <TableCell>
                       <Chip label={row.typeCode} size="small" color="secondary" />
                     </TableCell>

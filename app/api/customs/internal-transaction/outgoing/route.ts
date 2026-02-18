@@ -71,6 +71,7 @@ export async function GET(request: Request) {
       companyName: row.company_name,
       documentNumber: row.document_number,
       date: row.transaction_date,
+      recipientName: 'Internal',
       section: row.section,
       typeCode: row.type_code,
       itemCode: row.item_code,

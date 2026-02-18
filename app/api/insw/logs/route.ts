@@ -49,9 +49,15 @@ export async function GET(request: Request) {
       limit,
     });
 
+    // Transform BigInt fields to strings for JSON serialization
+    const serializedLogs = logs.map((log) => ({
+      ...log,
+      id: log.id.toString(),
+    }));
+
     return NextResponse.json({
       success: true,
-      data: logs,
+      data: serializedLogs,
     });
   } catch (error: any) {
     console.error('Error getting INSW logs:', error);
