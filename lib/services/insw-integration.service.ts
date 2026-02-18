@@ -570,10 +570,11 @@ export class INSWIntegrationService {
   }
 
   private groupMaterialUsageByDocument(data: MaterialUsageData[]) {
-    const grouped = new Map<string, MaterialUsageData[]>();
+    const grouped = new Map<number, MaterialUsageData[]>();
 
     data.forEach((item) => {
-      const key = `${item.internal_evidence_number}_${format(item.transaction_date, 'yyyy-MM-dd')}`;
+      // Group by transaction_id to ensure 1 WMS header = 1 INSW dokumenKegiatan
+      const key = item.transaction_id;
       if (!grouped.has(key)) {
         grouped.set(key, []);
       }
@@ -589,10 +590,11 @@ export class INSWIntegrationService {
   }
 
   private groupProductionOutputByDocument(data: ProductionOutputData[]) {
-    const grouped = new Map<string, ProductionOutputData[]>();
+    const grouped = new Map<number, ProductionOutputData[]>();
 
     data.forEach((item) => {
-      const key = `${item.internal_evidence_number}_${format(item.transaction_date, 'yyyy-MM-dd')}`;
+      // Group by transaction_id to ensure 1 WMS header = 1 INSW dokumenKegiatan
+      const key = item.transaction_id;
       if (!grouped.has(key)) {
         grouped.set(key, []);
       }
