@@ -811,6 +811,7 @@ CREATE TABLE adjustments (
     id SERIAL,
     wms_id VARCHAR(100) NOT NULL,
     company_code INTEGER NOT NULL,
+    owner INTEGER NOT NULL,
     wms_doc_type VARCHAR(100),
     internal_evidence_number VARCHAR(50) NOT NULL,
     transaction_date DATE NOT NULL,

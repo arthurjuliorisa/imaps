@@ -75,9 +75,8 @@ export class WmsStockOpnameService {
     const result = await this.repository.update(
       payload.wms_id,
       existing.company_code,
-      payload.status as 'CONFIRMED' | 'CANCELLED',
+      payload.status as 'Confirmed' | 'Cancelled',
       payload.items,
-      payload.notes ?? undefined,
     );
 
     return this.formatResponse(result);
@@ -147,7 +146,7 @@ export class WmsStockOpnameService {
       adjustment_type: Number(item.adjustment_qty_signed) > 0 ? 'GAIN' : 'LOSS',
       adjustment_qty: Math.abs(Number(item.adjustment_qty_signed)),
       uom: item.uom,
-      notes: `Stock opname variance: physical=${item.physical_qty}, system=${item.system_qty}`,
+      notes: `Stock opname variance: actual=${item.actual_qty_count}, system=${item.system_qty}`,
     }));
 
     const context: BatchProcessingContext = {
@@ -166,10 +165,11 @@ export class WmsStockOpnameService {
    */
   private formatResponse(stockOpname: any): any {
     const items = (stockOpname.items || []).map((item: any) => ({
-      id: item.id,
+      id: item.id.toString(), // Convert BigInt to string
       item_code: item.item_code,
+      item_name: item.item_name,
       item_type: item.item_type,
-      physical_qty: Number(item.physical_qty),
+      actual_qty_count: item.actual_qty_count ? Number(item.actual_qty_count) : null,
       uom: item.uom,
       beginning_qty: Number(item.beginning_qty),
       incoming_qty_on_date: Number(item.incoming_qty_on_date),
@@ -178,11 +178,11 @@ export class WmsStockOpnameService {
       variance_qty: Number(item.variance_qty),
       adjustment_qty_signed: Number(item.adjustment_qty_signed),
       adjustment_type: item.adjustment_type,
-      notes: item.notes,
+      amount: item.amount ? Number(item.amount) : null,
     }));
 
     return {
-      id: stockOpname.id,
+      id: stockOpname.id.toString(), // Convert BigInt to string
       wms_id: stockOpname.wms_id,
       company_code: stockOpname.company_code,
       owner: stockOpname.owner,
@@ -190,7 +190,6 @@ export class WmsStockOpnameService {
       status: stockOpname.status,
       items,
       confirmed_at: stockOpname.confirmed_at ? stockOpname.confirmed_at.toISOString() : undefined,
-      cancelled_at: stockOpname.cancelled_at ? stockOpname.cancelled_at.toISOString() : undefined,
       created_at: stockOpname.created_at.toISOString(),
     };
   }

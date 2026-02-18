@@ -9,7 +9,7 @@ import { prisma } from '@/lib/prisma';
 
 /**
  * POST /api/v1/stock-opname
- * Creates a new stock opname record with status "ACTIVE"
+ * Creates a new stock opname record with status "Active"
  */
 export async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID();
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
 
 /**
  * PATCH /api/v1/stock-opname
- * Updates stock opname status to "CONFIRMED" or "CANCELLED"
+ * Updates stock opname status to "Confirmed" or "Cancelled"
  */
 export async function PATCH(request: NextRequest) {
   const requestId = crypto.randomUUID();

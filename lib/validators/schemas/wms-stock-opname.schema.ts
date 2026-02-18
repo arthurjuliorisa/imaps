@@ -10,35 +10,68 @@ import { z } from 'zod';
 // ============================================================================
 
 /**
- * Stock opname item schema (shared between POST and PATCH)
+ * Base item fields common to both POST and PATCH
  */
-const stockOpnameItemSchema = z.object({
+const baseItemFields = {
   item_code: z
     .string()
     .min(1, 'Item code is required')
     .max(50, 'Item code must be max 50 characters')
+    .trim(),
+  item_name: z
+    .string()
+    .min(1, 'Item name is required')
+    .max(200, 'Item name must be max 200 characters')
     .trim(),
   item_type: z
     .string()
     .min(1, 'Item type is required')
     .max(10, 'Item type must be max 10 characters')
     .trim(),
-  physical_qty: z
-    .number()
-    .nonnegative('Physical quantity must be >= 0'),
   uom: z
     .string()
     .min(1, 'UOM is required')
     .max(20, 'UOM must be max 20 characters')
     .trim(),
-  notes: z
-    .string()
-    .max(500, 'Notes must be max 500 characters')
+};
+
+/**
+ * Stock opname item schema for POST - actual_qty_count is OPTIONAL
+ */
+const stockOpnameItemPostSchema = z.object({
+  ...baseItemFields,
+  actual_qty_count: z
+    .number()
+    .nonnegative('Actual quantity count must be >= 0')
     .nullable()
     .optional(),
 });
 
-type StockOpnameItemInput = z.infer<typeof stockOpnameItemSchema>;
+/**
+ * Stock opname item schema for PATCH Confirmed - actual_qty_count is REQUIRED
+ */
+const stockOpnameItemPatchConfirmedSchema = z.object({
+  ...baseItemFields,
+  actual_qty_count: z
+    .number()
+    .nonnegative('Actual quantity count must be >= 0')
+    .refine((val: number) => val !== null && val !== undefined, 'Actual quantity count is required for Confirmed status'),
+  amount: z
+    .number()
+    .nullable()
+    .optional(),
+});
+
+/**
+ * Stock opname item schema for PATCH Cancelled - minimal fields
+ */
+const stockOpnameItemPatchCancelledSchema = z.object({
+  ...baseItemFields,
+});
+
+type StockOpnameItemPost = z.infer<typeof stockOpnameItemPostSchema>;
+type StockOpnameItemPatchConfirmed = z.infer<typeof stockOpnameItemPatchConfirmedSchema>;
+type StockOpnameItemPatchCancelled = z.infer<typeof stockOpnameItemPatchCancelledSchema>;
 
 // ============================================================================
 // POST VALIDATION SCHEMA
@@ -46,7 +79,8 @@ type StockOpnameItemInput = z.infer<typeof stockOpnameItemSchema>;
 
 /**
  * Schema for POST /api/v1/stock-opname
- * Creates new stock opname with status="ACTIVE"
+ * Creates new stock opname with status="Active"
+ * actual_qty_count is optional during initial count
  */
 export const createStockOpnameSchema = z.object({
   wms_id: z
@@ -65,12 +99,20 @@ export const createStockOpnameSchema = z.object({
   document_date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Document date must be YYYY-MM-DD format'),
+  status: z
+    .literal('Active')
+    .optional()
+    .default('Active'),
   items: z
-    .array(stockOpnameItemSchema)
+    .array(stockOpnameItemPostSchema)
     .min(1, 'At least 1 item is required'),
+  timestamp: z
+    .string()
+    .regex(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[+-]\d{2}:\d{2})$/,
+      'Timestamp must be ISO 8601 datetime format (e.g., 2026-02-04T09:00:00Z or 2025-02-06T08:30:00+07:00)',
+    ),
 });
-
-export type CreateStockOpnameInput = z.infer<typeof createStockOpnameSchema>;
 
 // ============================================================================
 // PATCH VALIDATION SCHEMA
@@ -78,27 +120,76 @@ export type CreateStockOpnameInput = z.infer<typeof createStockOpnameSchema>;
 
 /**
  * Schema for PATCH /api/v1/stock-opname
- * Updates stock opname status to "CONFIRMED" or "CANCELLED"
+ * Updates stock opname status to "Confirmed" or "Cancelled"
+ * Items requirement depends on status
  */
-export const updateStockOpnameSchema = z.object({
-  wms_id: z
-    .string()
-    .min(1, 'WMS ID is required')
-    .max(100, 'WMS ID must be max 100 characters')
-    .trim(),
-  status: z
-    .enum(['CONFIRMED', 'CANCELLED'])
-    .refine((val) => val, 'Status must be "CONFIRMED" or "CANCELLED"'),
-  items: z
-    .array(stockOpnameItemSchema)
-    .optional(),
-  notes: z
-    .string()
-    .max(500, 'Notes must be max 500 characters')
-    .nullable()
-    .optional(),
-});
+export const updateStockOpnameSchema = z
+  .object({
+    wms_id: z
+      .string()
+      .min(1, 'WMS ID is required')
+      .max(100, 'WMS ID must be max 100 characters')
+      .trim(),
+    status: z
+      .enum(['Confirmed', 'Cancelled'])
+      .refine((val) => val, 'Status must be "Confirmed" or "Cancelled"'),
+    items: z
+      .array(z.any())
+      .optional(),
+    timestamp: z
+      .string()
+      .regex(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[+-]\d{2}:\d{2})$/,
+        'Timestamp must be ISO 8601 datetime format (e.g., 2026-02-04T09:00:00Z or 2025-02-06T08:30:00+07:00)',
+      ),
+  })
+  .superRefine((data, ctx) => {
+    // Validate items based on status
+    if (data.status === 'Confirmed') {
+      // Items required for Confirmed
+      if (!data.items || data.items.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Items array is required when status is "Confirmed"',
+          path: ['items'],
+        });
+      } else {
+        // Validate each item has actual_qty_count for Confirmed
+        data.items.forEach((item, idx) => {
+          const result = stockOpnameItemPatchConfirmedSchema.safeParse(item);
+          if (!result.success) {
+            result.error.issues.forEach((issue) => {
+              ctx.addIssue({
+                ...issue,
+                path: ['items', idx, ...issue.path],
+              });
+            });
+          }
+        });
+      }
+    } else if (data.status === 'Cancelled') {
+      // Items optional for Cancelled, but if provided validate basic structure
+      if (data.items && data.items.length > 0) {
+        data.items.forEach((item, idx) => {
+          const result = stockOpnameItemPatchCancelledSchema.safeParse(item);
+          if (!result.success) {
+            result.error.issues.forEach((issue) => {
+              ctx.addIssue({
+                ...issue,
+                path: ['items', idx, ...issue.path],
+              });
+            });
+          }
+        });
+      }
+    }
+  });
 
+// ============================================================================
+// EXPORTED TYPES
+// ============================================================================
+
+export type CreateStockOpnameInput = z.infer<typeof createStockOpnameSchema>;
 export type UpdateStockOpnameInput = z.infer<typeof updateStockOpnameSchema>;
 
 // ============================================================================
