@@ -502,6 +502,37 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
   }
 
   /**
+   * Find material usage by WMS ID
+   */
+  async findByWmsId(
+    companyCode: number,
+    wmsId: string,
+    transactionDate: Date
+  ): Promise<{ id: number } | null> {
+    try {
+      const record = await prisma.material_usages.findFirst({
+        where: {
+          company_code: companyCode,
+          wms_id: wmsId,
+          transaction_date: transactionDate,
+          deleted_at: null,
+        },
+        select: {
+          id: true,
+        },
+      });
+      return record;
+    } catch (err) {
+      logger.error('Error finding material usage by wms_id', {
+        companyCode,
+        wmsId,
+        error: (err as any).message,
+      });
+      return null;
+    }
+  }
+
+  /**
    * Check if company exists in database
    */
   async companyExists(companyCode: number): Promise<boolean> {

@@ -8,6 +8,7 @@ import {
   type BatchValidationError,
 } from '@/lib/validators/schemas/material-usage.schema';
 import { MaterialUsageRepository } from '@/lib/repositories/material-usage.repository';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 
 /**
  * Material Usage Service
@@ -165,14 +166,63 @@ export class MaterialUsageService {
         itemsCount: data.items.length,
       });
 
-      // Step 6: Queue for immediate async insert (non-blocking)
+      // Step 6: Queue for immediate async insert (non-blocking) + auto-transmit to INSW
       this.repository
         .batchUpsert(data)
-        .then(() => {
+        .then(async () => {
           log.info('Material usage saved successfully', {
             wmsId: data.wms_id,
             itemsCount: data.items.length,
           });
+
+          // Auto-transmit to INSW
+          try {
+            log.info('Starting auto-transmit to INSW', {
+              wmsId: data.wms_id,
+              companyCode: data.company_code,
+            });
+
+            // Get the saved record ID
+            const savedRecord = await this.repository.findByWmsId(
+              data.company_code,
+              data.wms_id,
+              new Date(data.transaction_date)
+            );
+
+            if (!savedRecord) {
+              log.error('Cannot find saved record for INSW transmission', {
+                wmsId: data.wms_id,
+              });
+              return;
+            }
+
+            const inswService = new INSWTransmissionService(
+              process.env.INSW_USE_TEST_MODE === 'true'
+            );
+
+            const transmissionResult = await inswService.transmitMaterialUsage(
+              data.company_code,
+              [savedRecord.id],
+              [data.wms_id]
+            );
+
+            if (transmissionResult.status === 'success') {
+              log.info('Material usage transmitted to INSW successfully', {
+                wmsId: data.wms_id,
+                transmissionResult,
+              });
+            } else {
+              log.warn('Material usage INSW transmission failed', {
+                wmsId: data.wms_id,
+                transmissionResult,
+              });
+            }
+          } catch (inswError: any) {
+            log.error('Error during INSW auto-transmit', {
+              wmsId: data.wms_id,
+              error: inswError.message,
+            });
+          }
         })
         .catch((err: any) => {
           log.error('Material usage insert failed', {

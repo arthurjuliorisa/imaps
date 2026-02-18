@@ -19,6 +19,8 @@ import {
   LaporanPengeluaranView,
   BeginningBalanceData,
   ScrapTransactionData,
+  MaterialUsageData,
+  ProductionOutputData,
 } from '@/lib/repositories/insw-integration.repository';
 
 export class INSWIntegrationService {
@@ -455,6 +457,154 @@ export class INSWIntegrationService {
         barangSaldo,
       },
     };
+  }
+
+  async convertMaterialUsageToINSW(
+    companyCode: number,
+    ids: number[]
+  ): Promise<INSWTransaksiPayload> {
+    const data = await this.repository.getMaterialUsageByIds(
+      companyCode,
+      ids
+    );
+
+    if (data.length === 0) {
+      return {
+        data: [
+          {
+            kdKegiatan: INSWActivityCode.PENGELUARAN,
+            dokumenKegiatan: [],
+          },
+        ],
+      };
+    }
+
+    const groupedByDoc = this.groupMaterialUsageByDocument(data);
+
+    const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
+      (group) => ({
+        nomorDokKegiatan: group.internal_evidence_number,
+        tanggalKegiatan: this.formatINSWDateOnly(group.transaction_date),
+        namaEntitas: group.company_name,
+        barangTransaksi: group.items.map((item) => ({
+          kdKategoriBarang: this.mapItemTypeToINSWCategory(item.item_type),
+          kdBarang: item.item_code,
+          uraianBarang: item.item_name,
+          jumlah: Number(item.qty),
+          kdSatuan: item.uom,
+          nilai: Number(item.amount || 0),
+          dokumen: [
+            {
+              kodeDokumen: '',
+              nomorDokumen: '',
+              tanggalDokumen: '',
+            },
+          ],
+        })),
+      })
+    );
+
+    return {
+      data: [
+        {
+          kdKegiatan: INSWActivityCode.PENGELUARAN,
+          dokumenKegiatan,
+        },
+      ],
+    };
+  }
+
+  async convertProductionOutputToINSW(
+    companyCode: number,
+    ids: number[]
+  ): Promise<INSWTransaksiPayload> {
+    const data = await this.repository.getProductionOutputByIds(
+      companyCode,
+      ids
+    );
+
+    if (data.length === 0) {
+      return {
+        data: [
+          {
+            kdKegiatan: INSWActivityCode.PEMASUKAN,
+            dokumenKegiatan: [],
+          },
+        ],
+      };
+    }
+
+    const groupedByDoc = this.groupProductionOutputByDocument(data);
+
+    const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
+      (group) => ({
+        nomorDokKegiatan: group.internal_evidence_number,
+        tanggalKegiatan: this.formatINSWDateOnly(group.transaction_date),
+        namaEntitas: group.company_name,
+        barangTransaksi: group.items.map((item) => ({
+          kdKategoriBarang: this.mapItemTypeToINSWCategory(item.item_type),
+          kdBarang: item.item_code,
+          uraianBarang: item.item_name,
+          jumlah: Number(item.qty),
+          kdSatuan: item.uom,
+          nilai: Number(item.amount || 0),
+          dokumen: [
+            {
+              kodeDokumen: '',
+              nomorDokumen: '',
+              tanggalDokumen: '',
+            },
+          ],
+        })),
+      })
+    );
+
+    return {
+      data: [
+        {
+          kdKegiatan: INSWActivityCode.PEMASUKAN,
+          dokumenKegiatan,
+        },
+      ],
+    };
+  }
+
+  private groupMaterialUsageByDocument(data: MaterialUsageData[]) {
+    const grouped = new Map<string, MaterialUsageData[]>();
+
+    data.forEach((item) => {
+      const key = `${item.internal_evidence_number}_${format(item.transaction_date, 'yyyy-MM-dd')}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+      }
+      grouped.get(key)!.push(item);
+    });
+
+    return Array.from(grouped.values()).map((items) => ({
+      internal_evidence_number: items[0].internal_evidence_number,
+      transaction_date: items[0].transaction_date,
+      company_name: items[0].company_name,
+      items,
+    }));
+  }
+
+  private groupProductionOutputByDocument(data: ProductionOutputData[]) {
+    const grouped = new Map<string, ProductionOutputData[]>();
+
+    data.forEach((item) => {
+      const key = `${item.internal_evidence_number}_${format(item.transaction_date, 'yyyy-MM-dd')}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+      }
+      grouped.get(key)!.push(item);
+    });
+
+    return Array.from(grouped.values()).map((items) => ({
+      internal_evidence_number: items[0].internal_evidence_number,
+      transaction_date: items[0].transaction_date,
+      company_name: items[0].company_name,
+      items,
+    }));
   }
 
   private groupScrapTransactionsByDocument(data: ScrapTransactionData[]) {
