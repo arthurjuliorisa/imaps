@@ -200,7 +200,7 @@ export async function POST(request: Request) {
           item_type: 'SCRAP',
           item_code: scrapCode,
           item_name: itemName,
-          production_output_wms_ids: [],
+          incoming_ppkek_numbers: [], // Scrap has no incoming PPKEK reference
           hs_code: null,
           uom: uom,
           qty: new Prisma.Decimal(qty),

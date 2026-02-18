@@ -103,6 +103,13 @@ export const materialUsageItemSchema = z.object({
     .positive('Quantity must be greater than 0')
     .finite('Quantity must be a finite number'),
   
+  component_demand_qty: z
+    .number()
+    .positive('Component demand quantity must be greater than 0')
+    .finite('Component demand quantity must be a finite number')
+    .nullable()
+    .optional(),
+  
   ppkek_number: z
     .string()
     .trim()
@@ -414,6 +421,7 @@ export async function validateMaterialUsageItemTypeConsistency(
       item_type: item.item_type,
       item_code: item.item_code,
       item_name: item.item_name,
+      uom: item.uom, // Added UOM for proper consistency check
     }))
   );
 

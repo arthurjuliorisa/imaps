@@ -216,7 +216,7 @@ export interface ProductionDetailFormData {
   uom: string;
   qty: number;
   quality_grade?: QualityGrade;  // For FERT only
-  work_order_numbers: string[];  // Can link to multiple work orders
+  work_order_number: string;  // Single work order per item (v3.0+ API format)
   reversal_status: 'NORMAL' | 'REVERSED' | 'PARTIAL_REVERSAL';
 }
 

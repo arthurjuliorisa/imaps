@@ -210,7 +210,7 @@ export async function POST(request: Request) {
             item_type: masterItem.item_type,
             item_code: item.itemCode,
             item_name: masterItem.item_name,
-            production_output_wms_ids: [],
+            incoming_ppkek_numbers: [],  // Capital goods have no incoming reference
             hs_code: null,
             uom: masterItem.uom,
             qty: new Prisma.Decimal(item.qty),

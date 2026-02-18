@@ -436,6 +436,7 @@ export async function validateWipBalanceItemTypeConsistency(
         item_type: record.item_type,
         item_code: record.item_code,
         item_name: record.item_name,
+        uom: record.uom, // Added UOM for proper consistency check
       }))
     );
 

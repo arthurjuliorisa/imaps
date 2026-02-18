@@ -259,12 +259,8 @@ export default function ProductionDetailPage() {
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    {detail.work_order_numbers.length > 0 ? (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {detail.work_order_numbers.map((wo, idx) => (
-                          <Chip key={idx} label={wo} size="small" variant="outlined" />
-                        ))}
-                      </Box>
+                    {detail.work_order_number ? (
+                      <Chip label={detail.work_order_number} size="small" variant="outlined" />
                     ) : '-'}
                   </TableCell>
                 </TableRow>

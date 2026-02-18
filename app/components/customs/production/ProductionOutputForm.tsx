@@ -56,7 +56,9 @@ export function ProductionOutputForm() {
             item_type: item.item_type,
             uom: item.uom,
             qty: item.qty,
-            work_order_numbers: item.work_order_numbers,
+            work_order_number: item.work_order_number,
+            planned_production_qty: item.planned_production_qty,
+            identify_product: item.identify_product,
           })),
         }),
       });

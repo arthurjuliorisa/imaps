@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -19,28 +19,48 @@ import {
   Alert,
   alpha,
   useTheme,
+  Tab,
+  Tabs,
 } from '@mui/material';
-import { Close, OpenInNew } from '@mui/icons-material';
+import { Close } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
+
+// ============================================================================
+// INTERFACES - Match lib/repositories/traceability.repository.ts
+// ============================================================================
+
+interface TraceabilityPPKEKDetail {
+  ppkek_number: string;
+  customs_registration_date: string;
+  customs_document_type: string;
+  incoming_date: string;
+  incoming_evidence_number?: string;
+}
+
+interface TraceabilityMaterial {
+  material_item_code: string;
+  material_item_name: string;
+  consumption_ratio: number;
+  material_qty_allocated: number;
+  qty_uom: string;
+  ppkek?: TraceabilityPPKEKDetail | null;
+}
+
+interface TraceabilityWorkOrder {
+  work_order_number: string;
+  qty_per_wo: number;
+  materials: TraceabilityMaterial[];
+}
 
 interface TraceabilityItem {
   item_code: string;
   item_name: string;
   qty: number;
+  item_type: string;
+  uom: string;
   source_type: 'production' | 'incoming';
-  work_orders: TraceabilityWorkOrder[];
-  incoming_ppkek_numbers: string[];
-}
-
-interface TraceabilityWorkOrder {
-  work_order_number: string;
-  materials: TraceabilityMaterial[];
-}
-
-interface TraceabilityMaterial {
-  item_code: string;
-  item_name: string;
-  registration_number: string;
+  work_orders?: TraceabilityWorkOrder[];
+  incoming_ppkek_numbers?: TraceabilityPPKEKDetail[];
 }
 
 interface TraceabilityModalProps {
@@ -51,14 +71,11 @@ interface TraceabilityModalProps {
 }
 
 /**
- * TraceabilityModal Component
- *
- * Displays traceability data for outgoing items with hierarchical row structure:
- * - Item Code & Name columns merge for all rows of same item
- * - Qty column merges for all rows of same item
- * - Work Order Number merges for multiple materials of same WO
- * - Each ROH/HALB material gets its own row
- * - Registration Number shown per material
+ * TraceabilityModal Component - Refactored for proper 4-level hierarchy
+ * 
+ * Displays two scenarios:
+ * 1. Production-based: Item → Work Orders → Materials → PPKEK
+ * 2. Incoming-based: Item → Direct PPKEK array with full details
  */
 export function TraceabilityModal({
   open,
@@ -71,58 +88,16 @@ export function TraceabilityModal({
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TraceabilityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [tabValue, setTabValue] = useState<'production' | 'incoming'>('production');
+  const [companyType, setCompanyType] = useState<string>('');
 
-  const normalizedData = useMemo(() => {
-    const grouped = new Map<string, TraceabilityItem>();
-
-    data.forEach((item) => {
-      const key = `${item.source_type}|${item.item_code}`;
-      const existing = grouped.get(key);
-
-      if (!existing) {
-        grouped.set(key, {
-          ...item,
-          work_orders: item.work_orders ? [...item.work_orders] : [],
-          incoming_ppkek_numbers: item.incoming_ppkek_numbers
-            ? [...item.incoming_ppkek_numbers]
-            : [],
-        });
-        return;
-      }
-
-      existing.qty += item.qty;
-
-      const workOrderMap = new Map<string, TraceabilityWorkOrder>();
-      existing.work_orders.forEach((wo) => {
-        workOrderMap.set(wo.work_order_number, {
-          ...wo,
-          materials: [...wo.materials],
-        });
-      });
-
-      item.work_orders.forEach((wo) => {
-        const current = workOrderMap.get(wo.work_order_number);
-        if (!current) {
-          workOrderMap.set(wo.work_order_number, {
-            ...wo,
-            materials: [...wo.materials],
-          });
-          return;
-        }
-        current.materials = current.materials.concat(wo.materials);
-      });
-
-      existing.work_orders = Array.from(workOrderMap.values());
-
-      if (item.incoming_ppkek_numbers.length > 0) {
-        const ppkekSet = new Set(existing.incoming_ppkek_numbers);
-        item.incoming_ppkek_numbers.forEach((ppkek) => ppkekSet.add(ppkek));
-        existing.incoming_ppkek_numbers = Array.from(ppkekSet);
-      }
-    });
-
-    return Array.from(grouped.values());
-  }, [data]);
+  /**
+   * Determine if Qty Allocated and UOM columns should be shown
+   * Only shown for BZ company type
+   */
+  const renderShouldShowQtyColumns = () => {
+    return companyType === 'BZ';
+  };
 
   /**
    * Fetch traceability data
@@ -153,6 +128,21 @@ export function TraceabilityModal({
         }
 
         setData(result.data.items || []);
+
+        // Fetch company type
+        if (companyCode) {
+          const companyResponse = await fetch(`/api/master/companies?code=${companyCode}`);
+          if (companyResponse.ok) {
+            const companyData = await companyResponse.json();
+            // API returns array of companies, get the first one
+            const company = Array.isArray(companyData.data) ? companyData.data[0] : companyData.data;
+            setCompanyType(company?.company_type || '');
+          }
+        }
+
+        // Set initial tab based on what data we have
+        const hasProduction = (result.data.items || []).some((i: any) => i.source_type === 'production');
+        setTabValue(hasProduction ? 'production' : 'incoming');
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
         setError(errorMsg);
@@ -165,344 +155,224 @@ export function TraceabilityModal({
     fetchTraceability();
   }, [open, outgoingItemIds, companyCode, toast]);
 
-  /**
-   * Compute row span for each item
-   * Counts total rows including deduplicated materials with multiple PPKEK
-   */
-  const getItemRowSpans = (
-    items: TraceabilityItem[]
-  ): Map<string, { startRow: number; rowSpan: number }> => {
-    const spans = new Map<string, { startRow: number; rowSpan: number }>();
-    let currentRow = 0;
+  // ============================================================================
+  // RENDER: PRODUCTION-BASED TABLE
+  // ============================================================================
 
-    items.forEach((item) => {
-      // Calculate total rows = sum of materials (dedup) × PPKEK rows
-      let totalRows = 0;
-      
-      item.work_orders.forEach((wo) => {
-        // Deduplicate materials
-        const materialMap = new Map<string, string[]>();
-        
-        wo.materials.forEach((material) => {
-          if (!materialMap.has(material.item_code)) {
-            materialMap.set(material.item_code, []);
-          }
-          if (material.registration_number) {
-            const ppkekList = materialMap.get(material.item_code)!;
-            if (!ppkekList.includes(material.registration_number)) {
-              ppkekList.push(material.registration_number);
-            }
-          }
-        });
+  const productionItems = data.filter((item) => item.source_type === 'production');
 
-        // Count total rows for this WO = sum of PPKEK rows per material
-        const deduplicatedMaterials = Array.from(materialMap.values());
-        const woRows = deduplicatedMaterials.reduce(
-          (sum, ppkekList) => sum + Math.max(1, ppkekList.length),
-          0
-        );
-        
-        totalRows += Math.max(1, woRows);
-      });
-      
-      const rowCount = Math.max(1, totalRows);
-      spans.set(item.item_code, { startRow: currentRow, rowSpan: rowCount });
-      currentRow += rowCount;
-    });
+  const renderProductionTable = () => {
+    if (productionItems.length === 0) {
+      return <Alert severity="info">No production-based traceability data found.</Alert>;
+    }
 
-    return spans;
-  };
+    return (
+      <TableContainer sx={{ maxHeight: '600px' }}>
+        <Table stickyHeader size="small">
+          <TableHead>
+            <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.12) }}>
+              <TableCell sx={{ fontWeight: 700, minWidth: 150 }}>Item Code</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 200 }}>Item Name</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 80, textAlign: 'right' }}>Qty</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 80, textAlign: 'right' }}>UOM</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 120 }}>Work Order</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>WO Qty</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 150 }}>Material Code</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 200 }}>Material Name</TableCell>
+              {renderShouldShowQtyColumns() && (
+                <>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Qty Allocated</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 80, textAlign: 'right' }}>UOM</TableCell>
+                </>
+              )}
+              <TableCell sx={{ fontWeight: 700, minWidth: 120 }}>Reg Number</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 100 }}>Doc Type</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 100 }}>Reg Date</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {productionItems.map((item) => {
+              const workOrders = item.work_orders || [];
+              
+              if (workOrders.length === 0) {
+                return (
+                  <TableRow key={`${item.item_code}-no-wo`}>
+                    <TableCell>{item.item_code}</TableCell>
+                    <TableCell>{item.item_name}</TableCell>
+                    <TableCell align="right">{Number(item.qty).toLocaleString()}</TableCell>
+                    <TableCell>{item.uom}</TableCell>
+                    <TableCell colSpan={11} sx={{ color: 'text.secondary' }}>
+                      No work order allocations
+                    </TableCell>
+                  </TableRow>
+                );
+              }
 
-  /**
-   * Render table rows with proper row spans and deduplicated materials
-   * For production-based items only (incoming-based handled separately)
-   */
-  const renderTableRows = () => {
-    // Filter only production-based items
-    const productionItems = normalizedData.filter(
-      (item) => item.source_type === 'production'
+              return workOrders.map((wo, woIdx) => {
+                const materials = wo.materials || [];
+
+                if (materials.length === 0) {
+                  return (
+                    <TableRow key={`${item.item_code}-${wo.work_order_number}-no-mat`}>
+                      <TableCell>{woIdx === 0 ? item.item_code : ''}</TableCell>
+                      <TableCell>{woIdx === 0 ? item.item_name : ''}</TableCell>
+                      <TableCell align="right">{woIdx === 0 ? Number(item.qty).toLocaleString() : ''}</TableCell>
+                      <TableCell>{woIdx === 0 ? item.uom : ''}</TableCell>
+                      <TableCell>{wo.work_order_number}</TableCell>
+                      <TableCell align="right">{Number(wo.qty_per_wo).toLocaleString()}</TableCell>
+                      <TableCell colSpan={8} sx={{ color: 'text.secondary' }}>
+                        No materials
+                      </TableCell>
+                    </TableRow>
+                  );
+                }
+
+                return materials.map((material, matIdx) => (
+                  <TableRow key={`${item.item_code}-${wo.work_order_number}-${material.material_item_code}-${matIdx}`}>
+                    {woIdx === 0 && matIdx === 0 && (
+                      <>
+                        <TableCell rowSpan={materials.length}>{item.item_code}</TableCell>
+                        <TableCell rowSpan={materials.length}>{item.item_name}</TableCell>
+                        <TableCell align="right" rowSpan={materials.length}>
+                          {Number(item.qty).toLocaleString()}
+                        </TableCell>
+                        <TableCell rowSpan={materials.length}>{item.uom}</TableCell>
+                      </>
+                    )}
+                    {matIdx === 0 && (
+                      <>
+                        <TableCell rowSpan={materials.length}>{wo.work_order_number}</TableCell>
+                        <TableCell align="right" rowSpan={materials.length}>
+                          {Number(wo.qty_per_wo).toLocaleString()}
+                        </TableCell>
+                      </>
+                    )}
+                    <TableCell>{material.material_item_code}</TableCell>
+                    <TableCell>{material.material_item_name}</TableCell>
+                    {renderShouldShowQtyColumns() && (
+                      <>
+                        <TableCell align="right">{Number(material.material_qty_allocated).toLocaleString()}</TableCell>
+                        <TableCell>{material.qty_uom}</TableCell>
+                      </>
+                    )}
+                    <TableCell>{material.ppkek?.ppkek_number || '-'}</TableCell>
+                    <TableCell>{material.ppkek?.customs_document_type || '-'}</TableCell>
+                    <TableCell>{material.ppkek?.customs_registration_date || '-'}</TableCell>
+                  </TableRow>
+                ));
+              });
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
     );
-    
-    const itemRowSpans = getItemRowSpans(productionItems);
-    const rows: React.ReactNode[] = [];
-    let globalRowIndex = 0;
-
-    productionItems.forEach((item) => {
-      const { startRow, rowSpan } = itemRowSpans.get(item.item_code)!;
-      const itemStartRowIndex = globalRowIndex;
-
-      if (item.work_orders.length === 0) {
-        // No work orders - show single row with dashes
-        rows.push(
-          <TableRow key={`${item.item_code}-no-wo-${Math.random()}`} hover>
-            <TableCell
-              rowSpan={rowSpan}
-              sx={{
-                fontWeight: 600,
-                backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                borderRight: `2px solid ${theme.palette.divider}`,
-              }}
-            >
-              <Box>
-                <Typography variant="body2" fontWeight={600}>
-                  {item.item_code}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {item.item_name}
-                </Typography>
-              </Box>
-            </TableCell>
-
-            <TableCell
-              rowSpan={rowSpan}
-              align="right"
-              sx={{
-                fontWeight: 600,
-                backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                borderRight: `2px solid ${theme.palette.divider}`,
-              }}
-            >
-              {item.qty.toLocaleString()}
-            </TableCell>
-
-            <TableCell sx={{ color: 'text.secondary' }}>-</TableCell>
-            <TableCell sx={{ color: 'text.secondary' }}>-</TableCell>
-            <TableCell sx={{ color: 'text.secondary' }}>-</TableCell>
-          </TableRow>
-        );
-
-        globalRowIndex++;
-        return;
-      }
-
-      // Process each work order with deduplicated materials
-      item.work_orders.forEach((wo) => {
-        // Deduplicate materials: group by item_code, collect all PPKEK for each
-        const materialMap = new Map<
-          string,
-          { item_code: string; item_name: string; ppkek_numbers: string[] }
-        >();
-
-        wo.materials.forEach((material) => {
-          const key = material.item_code;
-          if (!materialMap.has(key)) {
-            materialMap.set(key, {
-              item_code: material.item_code,
-              item_name: material.item_name,
-              ppkek_numbers: [],
-            });
-          }
-          // Add PPKEK if not already present
-          const ppkekList = materialMap.get(key)!.ppkek_numbers;
-          if (material.registration_number && !ppkekList.includes(material.registration_number)) {
-            ppkekList.push(material.registration_number);
-          }
-        });
-
-        const deduplicatedMaterials = Array.from(materialMap.values());
-
-        // If no materials, show one empty row
-        if (deduplicatedMaterials.length === 0) {
-          const isFirstRow = globalRowIndex === itemStartRowIndex;
-
-          rows.push(
-            <TableRow key={`${item.item_code}-${wo.work_order_number}-empty-${globalRowIndex}`} hover>
-              {isFirstRow && (
-                <TableCell
-                  rowSpan={rowSpan}
-                  sx={{
-                    fontWeight: 600,
-                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                    borderRight: `2px solid ${theme.palette.divider}`,
-                    verticalAlign: 'top',
-                  }}
-                >
-                  <Box>
-                    <Typography variant="body2" fontWeight={600}>
-                      {item.item_code}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {item.item_name}
-                    </Typography>
-                  </Box>
-                </TableCell>
-              )}
-
-              {isFirstRow && (
-                <TableCell
-                  rowSpan={rowSpan}
-                  align="right"
-                  sx={{
-                    fontWeight: 600,
-                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                    borderRight: `2px solid ${theme.palette.divider}`,
-                    verticalAlign: 'top',
-                  }}
-                >
-                  {item.qty.toLocaleString()}
-                </TableCell>
-              )}
-
-              <TableCell sx={{ fontWeight: 500 }}>{wo.work_order_number}</TableCell>
-              <TableCell sx={{ color: 'text.secondary' }}>-</TableCell>
-              <TableCell sx={{ color: 'text.secondary' }}>-</TableCell>
-            </TableRow>
-          );
-
-          globalRowIndex++;
-          return;
-        }
-
-        // Render each deduplicated material with its PPKEK list
-        deduplicatedMaterials.forEach((material, matIdx) => {
-          const isFirstMaterialRow = matIdx === 0;
-          const isFirstRow = globalRowIndex === itemStartRowIndex;
-          const totalPPKEKRows = material.ppkek_numbers.length || 1;
-
-          // First row of this material (with material info)
-          rows.push(
-            <TableRow key={`item-${item.item_code}-wo-${wo.work_order_number}-mat-${material.item_code}-0`} hover>
-              {isFirstRow && (
-                <TableCell
-                  rowSpan={rowSpan}
-                  sx={{
-                    fontWeight: 600,
-                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                    borderRight: `2px solid ${theme.palette.divider}`,
-                    verticalAlign: 'top',
-                  }}
-                >
-                  <Box>
-                    <Typography variant="body2" fontWeight={600}>
-                      {item.item_code}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {item.item_name}
-                    </Typography>
-                  </Box>
-                </TableCell>
-              )}
-
-              {isFirstRow && (
-                <TableCell
-                  rowSpan={rowSpan}
-                  align="right"
-                  sx={{
-                    fontWeight: 600,
-                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                    borderRight: `2px solid ${theme.palette.divider}`,
-                    verticalAlign: 'top',
-                  }}
-                >
-                  {item.qty.toLocaleString()}
-                </TableCell>
-              )}
-
-              {isFirstMaterialRow && (
-                <TableCell
-                  rowSpan={deduplicatedMaterials.reduce((sum, m) => sum + Math.max(1, m.ppkek_numbers.length), 0)}
-                  sx={{
-                    fontWeight: 500,
-                    verticalAlign: 'top',
-                  }}
-                >
-                  {wo.work_order_number}
-                </TableCell>
-              )}
-
-              <TableCell>
-                <Box>
-                  <Typography variant="body2" fontWeight={600}>
-                    {material.item_code}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {material.item_name}
-                  </Typography>
-                </Box>
-              </TableCell>
-
-              <TableCell>
-                {material.ppkek_numbers.length > 0 ? (
-                  <Typography variant="body2">{material.ppkek_numbers[0]}</Typography>
-                ) : (
-                  <Typography variant="caption" color="text.secondary">
-                    -
-                  </Typography>
-                )}
-              </TableCell>
-            </TableRow>
-          );
-
-          globalRowIndex++;
-
-          // Additional rows for remaining PPKEK
-          for (let ppkekIdx = 1; ppkekIdx < material.ppkek_numbers.length; ppkekIdx++) {
-            rows.push(
-              <TableRow key={`item-${item.item_code}-wo-${wo.work_order_number}-mat-${material.item_code}-ppkek-${ppkekIdx}`} hover>
-                <TableCell />
-                <TableCell />
-                <TableCell>
-                  <Typography variant="body2">{material.ppkek_numbers[ppkekIdx]}</Typography>
-                </TableCell>
-              </TableRow>
-            );
-
-            globalRowIndex++;
-          }
-        });
-      });
-    });
-
-    return rows;
   };
+
+  // ============================================================================
+  // RENDER: INCOMING-BASED TABLE
+  // ============================================================================
+
+  const incomingItems = data.filter((item) => item.source_type === 'incoming');
+
+  const renderIncomingTable = () => {
+    if (incomingItems.length === 0) {
+      return <Alert severity="info">No incoming-based traceability data found.</Alert>;
+    }
+
+    return (
+      <TableContainer sx={{ maxHeight: '600px' }}>
+        <Table stickyHeader size="small">
+          <TableHead>
+            <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.12) }}>
+              <TableCell sx={{ fontWeight: 700, minWidth: 150 }}>Item Code</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 200 }}>Item Name</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 80, textAlign: 'right' }}>Qty</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 80, textAlign: 'right' }}>UOM</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 120 }}>PPKEK Number</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 100 }}>Doc Type</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 100 }}>Reg Date</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 100 }}>Inc Date</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 150 }}>Evidence Number</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {incomingItems.map((item) => {
+              const ppkeks = item.incoming_ppkek_numbers || [];
+
+              if (ppkeks.length === 0) {
+                return (
+                  <TableRow key={`${item.item_code}-no-ppkek`}>
+                    <TableCell>{item.item_code}</TableCell>
+                    <TableCell>{item.item_name}</TableCell>
+                    <TableCell align="right">{Number(item.qty).toLocaleString()}</TableCell>
+                    <TableCell>{item.uom}</TableCell>
+                    <TableCell colSpan={5} sx={{ color: 'text.secondary' }}>
+                      No PPKEK references
+                    </TableCell>
+                  </TableRow>
+                );
+              }
+
+              return ppkeks.map((ppkek, idx) => (
+                <TableRow key={`${item.item_code}-${ppkek.ppkek_number}-${idx}`}>
+                  {idx === 0 && (
+                    <>
+                      <TableCell rowSpan={ppkeks.length}>{item.item_code}</TableCell>
+                      <TableCell rowSpan={ppkeks.length}>{item.item_name}</TableCell>
+                      <TableCell align="right" rowSpan={ppkeks.length}>
+                        {Number(item.qty).toLocaleString()}
+                      </TableCell>
+                      <TableCell rowSpan={ppkeks.length}>{item.uom}</TableCell>
+                    </>
+                  )}
+                  <TableCell>{ppkek.ppkek_number}</TableCell>
+                  <TableCell>{ppkek.customs_document_type}</TableCell>
+                  <TableCell>{ppkek.customs_registration_date}</TableCell>
+                  <TableCell>{ppkek.incoming_date}</TableCell>
+                  <TableCell>{ppkek.incoming_evidence_number || '-'}</TableCell>
+                </TableRow>
+              ));
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    );
+  };
+
+  // ============================================================================
+  // RENDER: DIALOG
+  // ============================================================================
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      maxWidth="lg"
+      maxWidth="xl"
       fullWidth
       PaperProps={{
         sx: {
-          borderRadius: 2,
+          maxHeight: '90vh',
         },
       }}
     >
-      <DialogTitle
-        sx={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          fontWeight: 600,
-          fontSize: '1.25rem',
-          pb: 2,
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <OpenInNew fontSize="small" color="primary" />
-          Item Traceability
-        </Box>
-        <Button
-          onClick={onClose}
-          size="small"
-          variant="text"
-          sx={{ minWidth: 'auto', p: 0.5 }}
-        >
-          <Close fontSize="small" />
-        </Button>
+      <DialogTitle>
+        Traceability View
+        <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+          Chain of Custody for Outgoing Goods
+        </Typography>
       </DialogTitle>
 
-      <DialogContent sx={{ pt: 0, pb: 2 }}>
-        {loading && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
-          </Box>
-        )}
-
+      <DialogContent>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
           </Alert>
+        )}
+
+        {loading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress />
+          </Box>
         )}
 
         {!loading && data.length === 0 && !error && (
@@ -510,233 +380,26 @@ export function TraceabilityModal({
         )}
 
         {!loading && data.length > 0 && (
-          <Box>
-            {/* Check if any item has incoming-based traceability */}
-            {normalizedData.some((item) => item.source_type === 'incoming') && (
-              <Alert severity="info" sx={{ mb: 2 }}>
-                Showing direct PPKEK registration numbers from incoming data
-              </Alert>
+          <>
+            {productionItems.length > 0 && incomingItems.length > 0 && (
+              <Tabs
+                value={tabValue}
+                onChange={(_, newValue) => setTabValue(newValue)}
+                sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+              >
+                <Tab label={`Production-Based (${productionItems.length})`} value="production" />
+                <Tab label={`Incoming-Based (${incomingItems.length})`} value="incoming" />
+              </Tabs>
             )}
 
-            {/* Render table based on data source type */}
-            {normalizedData.some((item) => item.source_type === 'production') && (
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-                  Production-based Traceability
-                </Typography>
-                <TableContainer sx={{ maxHeight: '500px' }}>
-                  <Table stickyHeader size="small">
-                    <TableHead>
-                      <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.12) }}>
-                        <TableCell
-                          sx={{
-                            fontWeight: 700,
-                            backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                            minWidth: 200,
-                            position: 'sticky',
-                            top: 0,
-                            zIndex: 10,
-                          }}
-                        >
-                          Item Code - Item Name
-                        </TableCell>
-                        <TableCell
-                          sx={{
-                            fontWeight: 700,
-                            backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                            minWidth: 80,
-                            position: 'sticky',
-                            top: 0,
-                            zIndex: 10,
-                          }}
-                          align="right"
-                        >
-                          Qty
-                        </TableCell>
-                        <TableCell
-                          sx={{
-                            fontWeight: 700,
-                            backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                            minWidth: 150,
-                            position: 'sticky',
-                            top: 0,
-                            zIndex: 10,
-                          }}
-                        >
-                          Work Order Number
-                        </TableCell>
-                        <TableCell
-                          sx={{
-                            fontWeight: 700,
-                            backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                            minWidth: 200,
-                            position: 'sticky',
-                            top: 0,
-                            zIndex: 10,
-                          }}
-                        >
-                          ROH/HALB Detail
-                        </TableCell>
-                        <TableCell
-                          sx={{
-                            fontWeight: 700,
-                            backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                            minWidth: 200,
-                            position: 'sticky',
-                            top: 0,
-                            zIndex: 10,
-                          }}
-                        >
-                          Registration Number
-                        </TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {renderTableRows()}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </Box>
-            )}
-
-            {/* Incoming-based Traceability Table */}
-            {normalizedData.filter((item) => item.source_type === 'incoming').length > 0 && (
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-                  Incoming-based Traceability
-                </Typography>
-                <TableContainer sx={{ maxHeight: '500px' }}>
-                  <Table stickyHeader size="small">
-                    <TableHead>
-                      <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.12) }}>
-                        <TableCell
-                          sx={{
-                            fontWeight: 700,
-                            backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                            minWidth: 200,
-                            position: 'sticky',
-                            top: 0,
-                            zIndex: 10,
-                          }}
-                        >
-                          Item Code - Item Name
-                        </TableCell>
-                        <TableCell
-                          sx={{
-                            fontWeight: 700,
-                            backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                            minWidth: 80,
-                            position: 'sticky',
-                            top: 0,
-                            zIndex: 10,
-                          }}
-                          align="right"
-                        >
-                          Qty
-                        </TableCell>
-                        <TableCell
-                          sx={{
-                            fontWeight: 700,
-                            backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                            minWidth: 250,
-                            position: 'sticky',
-                            top: 0,
-                            zIndex: 10,
-                          }}
-                        >
-                          Registration Number (PPKEK)
-                        </TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {normalizedData
-                        .filter((item) => item.source_type === 'incoming')
-                        .map((item) => (
-                          item.incoming_ppkek_numbers.length > 0 ? (
-                            item.incoming_ppkek_numbers.map((ppkek, idx) => (
-                              <TableRow key={`incoming-${item.item_code}-ppkek-${idx}`} hover>
-                                {idx === 0 && (
-                                  <>
-                                    <TableCell
-                                      rowSpan={item.incoming_ppkek_numbers.length}
-                                      sx={{
-                                        fontWeight: 600,
-                                        backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                                        borderRight: `2px solid ${theme.palette.divider}`,
-                                        verticalAlign: 'top',
-                                      }}
-                                    >
-                                      <Box>
-                                        <Typography variant="body2" fontWeight={600}>
-                                          {item.item_code}
-                                        </Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                          {item.item_name}
-                                        </Typography>
-                                      </Box>
-                                    </TableCell>
-                                    <TableCell
-                                      rowSpan={item.incoming_ppkek_numbers.length}
-                                      align="right"
-                                      sx={{
-                                        fontWeight: 600,
-                                        backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                                        borderRight: `2px solid ${theme.palette.divider}`,
-                                        verticalAlign: 'top',
-                                      }}
-                                    >
-                                      {item.qty.toLocaleString()}
-                                    </TableCell>
-                                  </>
-                                )}
-                                <TableCell>
-                                  <Typography variant="body2">{ppkek}</Typography>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          ) : (
-                            <TableRow key={`incoming-${item.item_code}-empty`} hover>
-                              <TableCell
-                                sx={{
-                                  fontWeight: 600,
-                                  backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                                  borderRight: `2px solid ${theme.palette.divider}`,
-                                }}
-                              >
-                                <Box>
-                                  <Typography variant="body2" fontWeight={600}>
-                                    {item.item_code}
-                                  </Typography>
-                                  <Typography variant="caption" color="text.secondary">
-                                    {item.item_name}
-                                  </Typography>
-                                </Box>
-                              </TableCell>
-                              <TableCell
-                                align="right"
-                                sx={{
-                                  fontWeight: 600,
-                                  backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                                  borderRight: `2px solid ${theme.palette.divider}`,
-                                }}
-                              >
-                                {item.qty.toLocaleString()}
-                              </TableCell>
-                              <TableCell sx={{ color: 'text.secondary' }}>-</TableCell>
-                            </TableRow>
-                          )
-                        ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </Box>
-            )}
-          </Box>
+            {tabValue === 'production' && renderProductionTable()}
+            {tabValue === 'incoming' && renderIncomingTable()}
+          </>
         )}
       </DialogContent>
 
-      <DialogActions sx={{ pt: 0, pb: 2, pr: 3 }}>
-        <Button onClick={onClose} variant="outlined" color="primary">
+      <DialogActions>
+        <Button onClick={onClose} variant="outlined">
           Close
         </Button>
       </DialogActions>

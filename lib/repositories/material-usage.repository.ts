@@ -233,6 +233,7 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
             item_name: item.item_name,
             uom: item.uom,
             qty: new Prisma.Decimal(item.qty),
+            component_demand_qty: item.component_demand_qty ? new Prisma.Decimal(item.component_demand_qty) : null,
             ppkek_number: item.ppkek_number || null,
             amount: item.amount ? new Prisma.Decimal(item.amount) : null,
           }));
@@ -281,6 +282,7 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
             item_name: item.item_name,
             uom: item.uom,
             qty: new Prisma.Decimal(item.qty),
+            component_demand_qty: item.component_demand_qty ? new Prisma.Decimal(item.component_demand_qty) : null,
             ppkek_number: item.ppkek_number || null,
           }));
 

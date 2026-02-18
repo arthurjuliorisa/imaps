@@ -12,36 +12,42 @@ import { WmsStockOpnameStatus } from '@prisma/client';
 /**
  * Individual item in stock opname
  * Sent in both POST and PATCH requests
+ * Per API Contract v3.3.0 Section 5.7
  */
 export interface WmsStockOpnameItemPayload {
   item_code: string;
+  item_name: string; // REQUIRED - as per contract
   item_type: string;
-  physical_qty: number;
   uom: string;
-  notes?: string | null;
+  actual_qty_count?: number | null; // Optional for POST, required for PATCH Confirmed
+  amount?: number | null; // Optional - only in PATCH Confirmed
 }
 
 /**
  * POST /api/v1/stock-opname request payload
- * Initiates a new stock opname with status="ACTIVE"
+ * Initiates a new stock opname with status="Active"
+ * Per API Contract v3.3.0 Section 5.7.1
  */
 export interface CreateStockOpnameRequest {
   wms_id: string; // External WMS identifier (unique per company)
   company_code: number; // Company identifier (integer)
   owner?: number | null; // Consignment owner code (optional)
   document_date: string; // ISO date format (YYYY-MM-DD)
+  status?: 'Active'; // Always "Active" for POST (optional in request, defaults to Active)
   items: WmsStockOpnameItemPayload[];
+  timestamp: string; // ISO 8601 datetime (REQUIRED per contract) - e.g., "2026-02-04T09:00:00Z"
 }
 
 /**
  * PATCH /api/v1/stock-opname request payload
- * Finalizes stock opname (transition to "CONFIRMED" or "CANCELLED")
+ * Finalizes stock opname (transition to "Confirmed" or "Cancelled")
+ * Per API Contract v3.3.0 Section 5.7.2
  */
 export interface UpdateStockOpnameRequest {
-  wms_id: string; // External WMS identifier
-  status: 'CONFIRMED' | 'CANCELLED';
-  items?: WmsStockOpnameItemPayload[]; // Optional: can update items before confirming
-  notes?: string;
+  wms_id: string; // External WMS identifier - must match existing
+  status: 'Confirmed' | 'Cancelled'; // As per contract: capitalized
+  items?: WmsStockOpnameItemPayload[]; // Required for Confirmed, optional for Cancelled
+  timestamp: string; // ISO 8601 datetime (REQUIRED per contract) - e.g., "2026-02-04T16:30:00Z"
 }
 
 // ============================================================================
@@ -54,9 +60,10 @@ export interface UpdateStockOpnameRequest {
 export interface WmsStockOpnameItemResponse {
   id: bigint;
   item_code: string;
+  item_name: string; // Added per contract
   item_type: string;
-  physical_qty: number;
   uom: string;
+  actual_qty_count: number | null; // Renamed from physical_qty per contract
   beginning_qty: number;
   incoming_qty_on_date: number;
   outgoing_qty_on_date: number;
@@ -64,7 +71,7 @@ export interface WmsStockOpnameItemResponse {
   variance_qty: number;
   adjustment_qty_signed: number; // Signed: negative=LOSS, positive=GAIN
   adjustment_type: string | null; // GAIN or LOSS
-  notes: string | null;
+  amount?: number | null; // Added per contract for PATCH Confirmed responses
 }
 
 /**
@@ -78,7 +85,7 @@ export interface CreateStockOpnameResponse {
     company_code: number;
     owner: number | null;
     document_date: string;
-    status: string; // ACTIVE, CONFIRMED, CANCELLED
+    status: string; // "Active", "Confirmed", "Cancelled" (capitalized per contract)
     items: WmsStockOpnameItemResponse[];
     created_at: string;
   };
@@ -96,10 +103,9 @@ export interface UpdateStockOpnameResponse {
     company_code: number;
     owner: number | null;
     document_date: string;
-    status: string; // ACTIVE, CONFIRMED, CANCELLED
+    status: string; // "Active", "Confirmed", "Cancelled" (capitalized per contract)
     items: WmsStockOpnameItemResponse[];
     confirmed_at?: string;
-    cancelled_at?: string;
   };
   message: string;
 }

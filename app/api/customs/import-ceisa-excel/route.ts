@@ -766,13 +766,12 @@ async function importCapitalGoodsTransactions(
         item_type: itemType,
         item_code: item.itemCode,
         item_name: item.itemName,
-        production_output_wms_ids: [],
+        incoming_ppkek_numbers: item.incomingPpkekNumbers || [],
         hs_code: null,
         uom: item.unit,
         qty: new Prisma.Decimal(item.quantity),
         currency: data.currency as any,
         amount: new Prisma.Decimal(item.valueAmount),
-        incoming_ppkek_numbers: item.incomingPpkekNumbers || [],
       }));
 
       // Create all outgoing_good_items at once

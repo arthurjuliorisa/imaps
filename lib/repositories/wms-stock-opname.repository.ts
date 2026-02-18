@@ -53,14 +53,14 @@ export class WmsStockOpnameRepository {
           documentDate: existing.document_date,
           items: existing.items.map((item: any) => ({
             item_code: item.item_code,
+            item_name: item.item_name,
             item_type: item.item_type,
-            physical_qty: Number(item.physical_qty),
+            actual_qty_count: Number(item.actual_qty_count),
             uom: item.uom,
-            notes: item.notes,
           })),
         });
 
-        if (existingChecksum === dataChecksum && existing.status === 'ACTIVE') {
+        if (existingChecksum === dataChecksum && existing.status === 'Active') {
           return existing;
         }
         throw new Error(
@@ -74,7 +74,7 @@ export class WmsStockOpnameRepository {
           company_code: companyCode,
           owner: owner || null,
           document_date: documentDate,
-          status: 'ACTIVE',
+          status: 'Active',
         },
       });
 
@@ -91,15 +91,16 @@ export class WmsStockOpnameRepository {
         };
 
         const system_qty = recon.beginning_qty + recon.incoming_qty_on_date - recon.outgoing_qty_on_date;
-        const variance_qty = item.physical_qty - system_qty;
+        const variance_qty = (item.actual_qty_count ?? 0) - system_qty;
         const adjustment_type = variance_qty > 0 ? 'GAIN' : variance_qty < 0 ? 'LOSS' : null;
 
         return {
           wms_stock_opname_id: stockOpname.id,
           company_code: companyCode,
           item_code: item.item_code,
+          item_name: item.item_name,
           item_type: item.item_type,
-          physical_qty: item.physical_qty,
+          actual_qty_count: item.actual_qty_count ?? 0,
           uom: item.uom,
           beginning_qty: recon.beginning_qty,
           incoming_qty_on_date: recon.incoming_qty_on_date,
@@ -108,7 +109,7 @@ export class WmsStockOpnameRepository {
           variance_qty,
           adjustment_qty_signed: variance_qty,
           adjustment_type,
-          notes: item.notes || null,
+          amount: null,
         };
       });
 
@@ -130,9 +131,8 @@ export class WmsStockOpnameRepository {
   async update(
     wmsId: string,
     companyCode: number,
-    newStatus: 'CONFIRMED' | 'CANCELLED',
+    newStatus: 'Confirmed' | 'Cancelled',
     items?: WmsStockOpnameItemPayload[],
-    notes?: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.wms_stock_opnames.findUnique({
@@ -172,15 +172,16 @@ export class WmsStockOpnameRepository {
             outgoing_qty_on_date: 0,
           };
           const system_qty = r.beginning_qty + r.incoming_qty_on_date - r.outgoing_qty_on_date;
-          const variance_qty = item.physical_qty - system_qty;
+          const variance_qty = (item.actual_qty_count ?? 0) - system_qty;
           const adjustment_type = variance_qty > 0 ? 'GAIN' : variance_qty < 0 ? 'LOSS' : null;
 
           return {
             wms_stock_opname_id: current.id,
             company_code: companyCode,
             item_code: item.item_code,
+            item_name: item.item_name,
             item_type: item.item_type,
-            physical_qty: item.physical_qty,
+            actual_qty_count: item.actual_qty_count ?? 0,
             uom: item.uom,
             beginning_qty: r.beginning_qty,
             incoming_qty_on_date: r.incoming_qty_on_date,
@@ -189,7 +190,7 @@ export class WmsStockOpnameRepository {
             variance_qty,
             adjustment_qty_signed: variance_qty,
             adjustment_type,
-            notes: item.notes || null,
+            amount: item.amount ?? null,
           };
         });
 
@@ -199,13 +200,8 @@ export class WmsStockOpnameRepository {
       }
 
       const updateData: any = { status: newStatus };
-      if (newStatus === 'CONFIRMED') {
+      if (newStatus === 'Confirmed') {
         updateData.confirmed_at = new Date();
-      } else if (newStatus === 'CANCELLED') {
-        updateData.cancelled_at = new Date();
-      }
-      if (notes) {
-        updateData.notes = notes;
       }
 
       return await tx.wms_stock_opnames.update({
@@ -301,31 +297,27 @@ export class WmsStockOpnameRepository {
     const [beginningData, incomingData, outgoingData] = await Promise.all([
       tx.beginning_balances.findMany({
         where: { company_code: companyCode, item_code: { in: itemCodes } },
-        select: { item_code: true, balance_qty: true },
+        select: { item_code: true, qty: true },
       }),
       tx.incoming_good_items.groupBy({
         by: ['item_code'],
         where: {
-          incoming_goods: {
-            company_code: companyCode,
-            incoming_date: { lte: documentDate },
-            deleted_at: null,
-          },
+          incoming_good_company: companyCode,
+          incoming_good_date: { lte: documentDate },
+          deleted_at: null,
           item_code: { in: itemCodes },
         },
-        _sum: { received_qty: true },
+        _sum: { qty: true },
       }),
       tx.outgoing_good_items.groupBy({
         by: ['item_code'],
         where: {
-          outgoing_goods: {
-            company_code: companyCode,
-            outgoing_date: { lte: documentDate },
-            deleted_at: null,
-          },
+          outgoing_good_company: companyCode,
+          outgoing_good_date: { lte: documentDate },
+          deleted_at: null,
           item_code: { in: itemCodes },
         },
-        _sum: { released_qty: true },
+        _sum: { qty: true },
       }),
     ]);
 
@@ -337,9 +329,9 @@ export class WmsStockOpnameRepository {
       const outgoingRecord = outgoingData.find((r: any) => r.item_code === itemCode);
 
       result[itemCode] = {
-        beginning_qty: beginningRecord ? Number(beginningRecord.balance_qty) : 0,
-        incoming_qty_on_date: incomingRecord ? Number(incomingRecord._sum.received_qty || 0) : 0,
-        outgoing_qty_on_date: outgoingRecord ? Number(outgoingRecord._sum.released_qty || 0) : 0,
+        beginning_qty: beginningRecord ? Number(beginningRecord.qty) : 0,
+        incoming_qty_on_date: incomingRecord ? Number(incomingRecord._sum.qty || 0) : 0,
+        outgoing_qty_on_date: outgoingRecord ? Number(outgoingRecord._sum.qty || 0) : 0,
       };
     }
 
@@ -355,11 +347,11 @@ export class WmsStockOpnameRepository {
     return new Map(types.map((t: any) => [t.item_type_code, t.item_type_code]));
   }
 
-  private validateStatusTransition(currentStatus: string, newStatus: 'CONFIRMED' | 'CANCELLED'): void {
+  private validateStatusTransition(currentStatus: string, newStatus: 'Confirmed' | 'Cancelled'): void {
     const validTransitions: Record<string, string[]> = {
-      ACTIVE: ['CONFIRMED', 'CANCELLED'],
-      CONFIRMED: [],
-      CANCELLED: [],
+      Active: ['Confirmed', 'Cancelled'],
+      Confirmed: [],
+      Cancelled: [],
     };
 
     if (!validTransitions[currentStatus].includes(newStatus)) {

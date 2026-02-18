@@ -3,7 +3,6 @@ import { prisma } from '@/lib/prisma';
 import {
   validateOutgoingGoodRequest,
   validateOutgoingGoodsDates,
-  validateProductionTraceability,
   validateItemTypes,
   validateOutgoingGoodsItemTypeConsistency,
   type OutgoingGoodRequestInput,
@@ -130,14 +129,14 @@ export class OutgoingGoodsService {
       const revisionInfo = await this.detectRevision(data);
       requestLogger.info('Revision detection', { isRevision: revisionInfo.isRevision, wmsId: data.wms_id });
 
-      // 7. Business validations - verify production_output_wms_ids exist
-      const productionValidationErrors = await this.validateProductionOutputs(data);
-      if (productionValidationErrors.length > 0) {
+      // 7. Business validations - verify work_order_allocations exist
+      const allocationValidationErrors = await this.validateWorkOrderAllocations(data);
+      if (allocationValidationErrors.length > 0) {
         requestLogger.warn(
-          'Production output validation failed',
-          { errors: productionValidationErrors }
+          'Work order allocation validation failed',
+          { errors: allocationValidationErrors }
         );
-        return { success: false, errors: productionValidationErrors };
+        return { success: false, errors: allocationValidationErrors };
       }
 
       // 8. Check stock and collect warnings (pass revision info)
@@ -217,56 +216,108 @@ export class OutgoingGoodsService {
       previousItems,
     };
   }
-
   /**
-   * Validate that production_output_wms_ids exist in database
+   * Validate that work_order_allocations reference valid work orders or PPKEK numbers
+   * 
+   * API Contract v3.3.0 § 5.5:
+   * - FERT items: work_order_allocations REQUIRED
+   * - Non-FERT items: work_order_allocations OPTIONAL (can be from beginning_balance or purchase)
+   * 
+   * Traceability Model:
+   * 1. FERT (Production): Validate work_order references valid production records
+   * 2. HALB/ROH/HIBE (Purchased): Validate ppkek_number if provided (can be beginning_balance if not)
+   * 3. Beginning balance items: Allowed without allocation (historical inventory)
    */
-  private async validateProductionOutputs(data: OutgoingGoodRequestInput): Promise<ErrorDetail[]> {
+  private async validateWorkOrderAllocations(data: OutgoingGoodRequestInput): Promise<ErrorDetail[]> {
     const errors: ErrorDetail[] = [];
 
-    // Collect all production_output_wms_ids to validate
-    const allProductionWmsIds = new Set<string>();
-    data.items.forEach((item) => {
-      if (item.production_output_wms_ids) {
-        item.production_output_wms_ids.forEach((wmsId) => allProductionWmsIds.add(wmsId));
-      }
-    });
+    // Validate each item's work_order_allocations
+    for (let itemIndex = 0; itemIndex < data.items.length; itemIndex++) {
+      const item = data.items[itemIndex];
 
-    if (allProductionWmsIds.size === 0) {
-      return errors; // No production WMS IDs to validate
-    }
-
-    // Query database for existing production outputs
-    const existingProductions = await prisma.production_outputs.findMany({
-      where: {
-        wms_id: {
-          in: Array.from(allProductionWmsIds),
-        },
-      },
-      select: {
-        wms_id: true,
-      },
-    });
-
-    const existingWmsIds = new Set(existingProductions.map((p) => p.wms_id));
-
-    // Check each item's production_output_wms_ids
-    data.items.forEach((item, itemIndex) => {
-      if (item.production_output_wms_ids) {
-        const missingWmsIds = item.production_output_wms_ids.filter((wmsId) => !existingWmsIds.has(wmsId));
-
-        if (missingWmsIds.length > 0) {
+      if (!item.work_order_allocations || item.work_order_allocations.length === 0) {
+        // FERT items REQUIRE allocations (strict validation)
+        if (item.item_type.toUpperCase() === 'FERT') {
           errors.push({
             location: 'item',
-            field: 'production_output_wms_ids',
-            code: 'INVALID_VALUE',
-            message: `Production output WMS IDs not found: ${missingWmsIds.join(', ')}`,
+            field: 'work_order_allocations',
+            code: 'REQUIRED',
+            message: 'Work order allocations are required for FERT items',
             item_index: itemIndex,
             item_code: item.item_code,
           });
+        } else {
+          // Non-FERT items: allocations optional
+          // Log for audit trail (e.g., beginning_balance or purchased items)
+          logger.info('Item outgoing without allocation (assumed beginning_balance or purchased)', {
+            wms_id: data.wms_id,
+            item_code: item.item_code,
+            item_type: item.item_type,
+            qty: item.qty,
+          });
+        }
+        continue;
+      }
+
+      // If allocations provided: validate them strictly
+      for (let allocIndex = 0; allocIndex < item.work_order_allocations.length; allocIndex++) {
+        const allocation = item.work_order_allocations[allocIndex];
+
+        if (allocation.work_order_number) {
+          // Validate work order exists (for FERT and HALB from production)
+          const workOrder = await prisma.work_order_fg_production.findFirst({
+            where: {
+              work_order_number: allocation.work_order_number,
+              item_code: item.item_code,
+              company_code: data.company_code,
+            },
+          });
+
+          if (!workOrder) {
+            errors.push({
+              location: 'item',
+              field: 'work_order_allocations',
+              code: 'NOT_FOUND',
+              message: `Work order not found: ${allocation.work_order_number}`,
+              item_index: itemIndex,
+              item_code: item.item_code,
+            });
+          }
+        } else if (allocation.ppkek_number) {
+          // Validate PPKEK exists in incoming_goods
+          const incoming = await prisma.incoming_goods.findFirst({
+            where: {
+              ppkek_number: allocation.ppkek_number,
+              company_code: data.company_code,
+            },
+          });
+
+          if (!incoming) {
+            // PPKEK not found in incoming_goods
+            // Could be from beginning_balance (historical PPKEK)
+            // Log warning but only error if it's FERT (which requires strict validation)
+            if (item.item_type.toUpperCase() === 'FERT') {
+              errors.push({
+                location: 'item',
+                field: 'work_order_allocations',
+                code: 'NOT_FOUND',
+                message: `PPKEK not found: ${allocation.ppkek_number}`,
+                item_index: itemIndex,
+                item_code: item.item_code,
+              });
+            } else {
+              // Non-FERT: just log warning (could be beginning_balance)
+              logger.warn('PPKEK not found in incoming_goods (may be from beginning_balance)', {
+                wms_id: data.wms_id,
+                item_code: item.item_code,
+                ppkek_number: allocation.ppkek_number,
+                note: 'Historical PPKEK from previous period - proceeding with caution',
+              });
+            }
+          }
         }
       }
-    });
+    }
 
     return errors;
   }

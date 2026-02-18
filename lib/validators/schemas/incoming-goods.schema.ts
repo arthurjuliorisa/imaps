@@ -485,6 +485,7 @@ export async function validateIncomingGoodsItemTypeConsistency(
       item_type: item.item_type,
       item_code: item.item_code,
       item_name: item.item_name,
+      uom: item.uom, // Added UOM for proper consistency check
     }))
   );
 
