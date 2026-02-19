@@ -1,74 +1,8 @@
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 import { validateCompanyCode } from '@/lib/company-validation';
-
-// MOCK DATA - Replace with actual database queries when ready
-const MOCK_ADJUSTMENT_HEADERS = [
-  {
-    id: 'ADJ-001',
-    documentNumber: 'ADJ-001',
-    date: new Date('2026-02-02'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'RELEASED',
-    description: 'Adjustment Hasil Opname Januari',
-  },
-  {
-    id: 'ADJ-002',
-    documentNumber: 'ADJ-002',
-    date: new Date('2026-02-06'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'PROCESS',
-    description: 'Adjustment Barang Rusak',
-  },
-  {
-    id: 'ADJ-003',
-    documentNumber: 'ADJ-003',
-    date: new Date('2026-02-09'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'RELEASED',
-    description: 'Adjustment Gudang A',
-  },
-  {
-    id: 'ADJ-004',
-    documentNumber: 'ADJ-004',
-    date: new Date('2026-02-10'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'PROCESS',
-    description: 'Adjustment Stock Expired',
-  },
-  {
-    id: 'ADJ-005',
-    documentNumber: 'ADJ-005',
-    date: new Date('2026-02-11'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'RELEASED',
-    description: 'Adjustment Penyesuaian Sistem',
-  },
-  {
-    id: 'ADJ-006',
-    documentNumber: 'ADJ-006',
-    date: new Date('2026-01-29'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'RELEASED',
-    description: 'Adjustment Akhir Bulan',
-  },
-  {
-    id: 'ADJ-007',
-    documentNumber: 'ADJ-007',
-    date: new Date('2026-01-26'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'PROCESS',
-    description: 'Adjustment Kehilangan Barang',
-  },
-];
 
 export async function GET(request: Request) {
   try {
@@ -79,26 +13,55 @@ export async function GET(request: Request) {
 
     const { session } = authCheck as { authenticated: true; session: any };
 
-    // Validate company code with detailed error messages
     const companyValidation = validateCompanyCode(session);
     if (!companyValidation.success) {
       return companyValidation.response;
     }
     const { companyCode } = companyValidation;
 
-    // MOCK DATA FILTERING - Filter by company code
-    const filteredData = MOCK_ADJUSTMENT_HEADERS.filter(
-      (item) => item.companyCode === companyCode
+    const result = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT
+        id, wms_id, company_code, company_name,
+        doc_date, status,
+        type_code, item_code, item_code_bahasa, item_name, unit,
+        beginning_qty, incoming_qty_on_date, outgoing_qty_on_date,
+        system_qty, actual_qty_count, variance_qty,
+        adjustment_qty_signed, final_adjusted_qty,
+        value_amount, reason
+      FROM vw_laporan_adjustment
+      WHERE company_code = $1
+      ORDER BY doc_date DESC, id`,
+      companyCode
     );
 
-    // Sort by date descending
-    filteredData.sort((a, b) => b.date.getTime() - a.date.getTime());
+    const transformedData = result.map((row: any, index: number) => ({
+      id: `${row.id}-${row.item_code}-${index}`,
+      companyCode: row.company_code,
+      companyName: row.company_name,
+      docDate: row.doc_date,
+      status: row.status,
+      typeCode: row.type_code,
+      itemCodeBahasa: row.item_code_bahasa || '',
+      itemCode: row.item_code,
+      itemName: row.item_name,
+      unit: row.unit,
+      beginningQty: Number(row.beginning_qty || 0),
+      incomingQty: Number(row.incoming_qty_on_date || 0),
+      outgoingQty: Number(row.outgoing_qty_on_date || 0),
+      systemQty: Number(row.system_qty || 0),
+      actualQty: Number(row.actual_qty_count || 0),
+      varianceQty: Number(row.variance_qty || 0),
+      adjustmentQty: Number(row.adjustment_qty_signed || 0),
+      finalQty: Number(row.final_adjusted_qty || 0),
+      valueAmount: Number(row.value_amount || 0),
+      reason: row.reason || '',
+    }));
 
-    return NextResponse.json(serializeBigInt(filteredData));
+    return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {
-    console.error('[API Error] Failed to fetch adjustment documents:', error);
+    console.error('[API Error] Failed to fetch adjustment data:', error);
     return NextResponse.json(
-      { message: 'Error fetching adjustment documents' },
+      { message: 'Error fetching adjustment data' },
       { status: 500 }
     );
   }

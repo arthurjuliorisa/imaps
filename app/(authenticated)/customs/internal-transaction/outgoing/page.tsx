@@ -36,6 +36,7 @@ interface InternalTransactionOutgoingData {
   date: Date;
   recipientName: string;
   typeCode: string;
+  itemCodeBahasa: string;
   itemCode: string;
   itemName: string;
   unit: string;
@@ -174,7 +175,7 @@ export default function InternalTransactionOutgoingPage() {
       registrationDate: row.date,
       documentNumber: row.documentNumber,
       date: row.date,
-      recipientName: row.recipientName || 'Internal',
+      recipientName: row.recipientName || '-',
       typeCode: row.typeCode,
       itemCode: row.itemCode,
       itemName: row.itemName,
@@ -199,7 +200,7 @@ export default function InternalTransactionOutgoingPage() {
       documentType: '-',
       documentNumber: row.documentNumber,
       date: formatDateShort(row.date),
-      recipientName: row.recipientName || 'Internal',
+      recipientName: row.recipientName || '-',
       itemCode: row.itemCode,
       itemName: row.itemName,
       qty: formatQty(row.qty),
@@ -333,9 +334,16 @@ export default function InternalTransactionOutgoingPage() {
                     </TableCell>
                     <TableCell>{row.documentNumber}</TableCell>
                     <TableCell>{formatDate(row.date)}</TableCell>
-                    <TableCell>{row.recipientName || 'Internal'}</TableCell>
+                    <TableCell>{row.recipientName || '-'}</TableCell>
                     <TableCell>
-                      <Chip label={row.typeCode} size="small" color="secondary" />
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                        <Chip label={row.typeCode} size="small" color="secondary" />
+                        {row.itemCodeBahasa && (
+                          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+                            {row.itemCodeBahasa}
+                          </Typography>
+                        )}
+                      </Box>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>

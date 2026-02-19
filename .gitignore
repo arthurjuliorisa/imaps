@@ -62,5 +62,8 @@ playwright.config.ts
 # backup files
 *.backup
 
+# test payloads
+/test-payloads
+
 # documentation
 /project-documentation
