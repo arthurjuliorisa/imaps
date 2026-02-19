@@ -1002,6 +1002,10 @@ model wms_stock_opname_items {
   adjustment_type           String?             @db.VarChar(10) // GAIN, LOSS (from created adjustment, nullable until adjustment confirmed)
   amount                    Decimal?            @db.Decimal(15, 4) // Added per API Contract v3.3.0 for PATCH Confirmed
   
+  // Final state after adjustments
+  final_adjusted_qty        Decimal?            @db.Decimal(15, 3) // system_qty (STO) or system_qty + adjustment_qty_signed (after adjustment)
+  reason                    String?             @db.Text // Reason for adjustment (from adjustment_items.reason)
+  
   uom                       String              @db.VarChar(20)
   created_at                DateTime            @default(now()) @db.Timestamptz(6)
   updated_at                DateTime            @updatedAt @db.Timestamptz(6)

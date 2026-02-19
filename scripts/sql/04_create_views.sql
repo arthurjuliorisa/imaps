@@ -478,44 +478,57 @@ COMMENT ON VIEW vw_laporan_stock_opname IS 'Report #2.5: Stock Opname Report - R
 -- ============================================================================
 -- REPORT #2.7: LAPORAN ADJUSTMENT (Adjustment Report)
 -- ============================================================================
--- Real-time view of adjustment transactions
--- Combines header information (adjustments) with item details (adjustment_items)
+-- Report of adjustment transactions based on Stock Opname items
+-- Combines stock opname header and items with final adjustment data
+-- Sources: wms_stock_opnames + wms_stock_opname_items
 
 CREATE OR REPLACE VIEW vw_laporan_adjustment AS
 SELECT 
-    adj.id,
-    adj.wms_id,
-    adj.company_code,
+    so.id,
+    so.wms_id,
+    so.company_code,
     c.name as company_name,
-    adj.transaction_date,
-    adj.internal_evidence_number as doc_number,
+    so.document_date as doc_date,
+    so.status,
     
     -- Item details
-    adji.item_type as type_code,
-    adji.item_code,
+    soi.item_type as type_code,
+    soi.item_code,
     COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
-    adji.item_name,
-    adji.adjustment_type,
-    adji.uom as unit,
-    adji.qty as quantity,
-    NULL::NUMERIC(18,4) as value_amount,
-    adji.reason,
+    soi.item_name,
+    soi.uom as unit,
+    
+    -- Reconciliation data
+    soi.beginning_qty,
+    soi.incoming_qty_on_date,
+    soi.outgoing_qty_on_date,
+    soi.system_qty,
+    
+    -- Physical count & variance
+    soi.actual_qty_count,
+    soi.variance_qty,
+    
+    -- Adjustment data (populated when adjustment transmitted)
+    soi.adjustment_qty_signed,
+    soi.final_adjusted_qty,
+    
+    -- Amount & reason
+    soi.amount as value_amount,
+    soi.reason,
     
     -- Audit fields
-    adj.created_at,
-    adj.updated_at,
-    adj.deleted_at
-FROM adjustments adj
-JOIN adjustment_items adji ON adj.company_code = adji.adjustment_company
-    AND adj.id = adji.adjustment_id
-    AND adj.transaction_date = adji.adjustment_date
-JOIN companies c ON adj.company_code = c.code
-LEFT JOIN item_types it ON adji.item_type = it.item_type_code
-WHERE adj.deleted_at IS NULL
-  AND adji.deleted_at IS NULL
-ORDER BY adj.transaction_date DESC, adj.id, adji.id;
+    so.created_at,
+    so.updated_at,
+    so.confirmed_at
+FROM wms_stock_opnames so
+JOIN wms_stock_opname_items soi ON so.id = soi.wms_stock_opname_id
+    AND so.company_code = soi.company_code
+JOIN companies c ON so.company_code = c.code
+LEFT JOIN item_types it ON soi.item_type = it.item_type_code
+WHERE soi.adjustment_qty_signed IS NOT NULL
+ORDER BY so.document_date DESC, so.id, soi.id;
 
-COMMENT ON VIEW vw_laporan_adjustment IS 'Report #2.7: Adjustment Report - Real-time view of stock adjustment transactions (GAIN/LOSS)';
+COMMENT ON VIEW vw_laporan_adjustment IS 'Report #2.7: Adjustment Report - View of stock opname items with adjustment data (final_adjusted_qty and reason populated after adjustment transmission)';
 
 -- ============================================================================
 -- ============================================================================
