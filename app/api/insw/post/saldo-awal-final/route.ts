@@ -3,7 +3,7 @@ import { INSWTransmissionService } from '@/lib/services/insw-transmission.servic
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode, validateSEZCompany } from '@/lib/company-validation';
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
     const authCheck = await checkAuth();
     if (!authCheck.authenticated) {
@@ -23,39 +23,20 @@ export async function POST(request: Request) {
       return sezValidation.response;
     }
 
-    const body = await request.json();
-    const { ids } = body;
-
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'ids is required and must be a non-empty array',
-        },
-        { status: 400 }
-      );
-    }
-
     const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
     const service = new INSWTransmissionService(useTestMode);
 
-    const result = await service.transmitIncomingGoods(companyCode, ids);
+    const result = await service.lockSaldoAwal(companyCode);
 
     return NextResponse.json({
       success: result.status === 'success',
       message: result.message,
-      total: result.total,
-      success_count: result.success_count,
-      failed_count: result.failed_count,
-      results: result.results,
+      insw_response: result.insw_response,
     });
   } catch (error: any) {
-    console.error('Error posting Pemasukan to INSW:', error);
+    console.error('Error locking Saldo Awal at INSW:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
-      },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }

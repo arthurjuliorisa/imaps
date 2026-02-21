@@ -1,5 +1,6 @@
 import { logger } from '@/lib/utils/logger';
 import { prisma } from '@/lib/prisma';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import {
   validateOutgoingGoodRequest,
   validateOutgoingGoodsDates,
@@ -142,11 +143,25 @@ export class OutgoingGoodsService {
       // 8. Check stock and collect warnings (pass revision info)
       const stockCheckResult = await this.checkStockAndCollectWarnings(data, revisionInfo);
 
-      // 9. Queue async database insert
+      // 9. Queue async database insert + INSW auto-transmit
       const repository = new OutgoingGoodsRepository();
-      repository.insertOutgoingGoodsAsync(data).catch((error) => {
-        requestLogger.error('Failed to insert outgoing goods', { error, wmsId: data.wms_id });
-      });
+      repository.insertOutgoingGoodsAsync(data)
+        .then(async () => {
+          try {
+            const inswService = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+            const result = await inswService.transmitOutgoingGoodsByWmsIds(data.company_code, [data.wms_id]);
+            if (result.status !== 'success') {
+              requestLogger.warn('Outgoing goods INSW transmission failed', { wmsId: data.wms_id });
+            } else {
+              requestLogger.info('Outgoing goods transmitted to INSW', { wmsId: data.wms_id });
+            }
+          } catch (inswErr: any) {
+            requestLogger.error('INSW auto-transmit error for outgoing goods', { wmsId: data.wms_id, error: inswErr.message });
+          }
+        })
+        .catch((error) => {
+          requestLogger.error('Failed to insert outgoing goods', { error, wmsId: data.wms_id });
+        });
 
       // 10. Return success response immediately (without waiting for DB insert)
       const response: SuccessResponse = {

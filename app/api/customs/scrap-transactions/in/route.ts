@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { logActivity } from '@/lib/log-activity';
-import { INSWIntegrationService } from '@/lib/services/insw-integration.service';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -256,56 +256,11 @@ export async function POST(request: Request) {
       },
     });
 
-    // Transmit to INSW (async, non-blocking)
-    (async () => {
-      try {
-        const inswService = new INSWIntegrationService(
-          process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-          process.env.INSW_UNIQUE_KEY_TEST || '',
-          process.env.INSW_USE_TEST_MODE === 'true'
-        );
-
-        const payload = await inswService.convertScrapInToINSW(
-          companyCode,
-          [result.transactionId]
-        );
-
-        const inswResponse = await inswService.postPemasukan(payload);
-
-        console.log('[INSW] Scrap IN transmitted successfully:', {
-          transactionId: result.transactionId,
-          documentNumber: result.documentNumber,
-          inswResponse,
-        });
-
-        await logActivity({
-          action: 'INSW_TRANSMIT_SCRAP_IN',
-          description: `INSW transmit for scrap IN: ${result.documentNumber}`,
-          status: 'success',
-          metadata: {
-            transactionId: result.transactionId.toString(),
-            documentNumber: result.documentNumber,
-            inswResponse,
-          },
-        });
-      } catch (inswError) {
-        console.error('[INSW] Failed to transmit scrap IN:', {
-          transactionId: result.transactionId,
-          error: inswError instanceof Error ? inswError.message : String(inswError),
-        });
-
-        await logActivity({
-          action: 'INSW_TRANSMIT_SCRAP_IN',
-          description: `INSW transmit failed for scrap IN: ${result.documentNumber}`,
-          status: 'error',
-          metadata: {
-            transactionId: result.transactionId.toString(),
-            documentNumber: result.documentNumber,
-            error: inswError instanceof Error ? inswError.message : String(inswError),
-          },
-        });
-      }
-    })().catch(err => console.error('[INSW] Background INSW transmit task failed:', err));
+    // Transmit to INSW via INSWTransmissionService (async, non-blocking, with tracking log)
+    const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+    inswTransmission.transmitScrapIn(companyCode, [result.transactionId])
+      .then(r => console.log('[INSW] Scrap IN transmitted', { status: r.status, transactionId: result.transactionId }))
+      .catch(err => console.error('[INSW] Scrap IN INSW error', { err }));
 
     return NextResponse.json(
       {

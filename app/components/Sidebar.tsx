@@ -36,6 +36,7 @@ import {
   PlaylistAdd as PlaylistAddIcon,
   Inventory as InventoryIcon,
   CompareArrows as CompareArrowsIcon,
+  ToggleOn as ToggleOnIcon,
 } from '@mui/icons-material';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -88,6 +89,7 @@ const getIconComponent = (iconName: string | null): React.ReactNode => {
     PlaylistAdd: <PlaylistAddIcon />,
     Inventory: <InventoryIcon />,
     CompareArrows: <CompareArrowsIcon />,
+    ToggleOn: <ToggleOnIcon />,
   };
 
   return iconMap[iconName] || <DescriptionIcon />;

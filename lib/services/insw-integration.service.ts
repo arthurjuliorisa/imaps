@@ -53,6 +53,53 @@ export class INSWIntegrationService {
     return ITEM_TYPE_TO_INSW_CATEGORY[itemType] || '1';
   }
 
+  private mapUomToINSW(uom: string): string {
+    const mapping: Record<string, string> = {
+      // Piece / unit
+      'PCS': 'PCE',
+      'PC': 'PCE',
+      'UNIT': 'PCE',
+      'EA': 'PCE',
+      // Pack / packaging
+      'PACK': 'PK',
+      'PKG': 'PK',
+      'PAK': 'PA',
+      // Weight
+      'KG': 'KGM',
+      'KILOGRAM': 'KGM',
+      'GR': 'GRM',
+      'GRAM': 'GRM',
+      'MG': 'MGM',
+      'TON': 'TNE',
+      'MT': 'TNE',
+      // Volume
+      'LT': 'LTR',
+      'LITER': 'LTR',
+      'LITRE': 'LTR',
+      // Length / area / volume
+      'M': 'MTR',
+      'METER': 'MTR',
+      'METRE': 'MTR',
+      'M2': 'MTK',
+      'M3': 'MTQ',
+      // Packaging types
+      'BOX': 'BX',
+      'CTN': 'CTN',
+      'CARTON': 'CTN',
+      'ROLL': 'RO',
+      'ROL': 'RO',
+      'SET': 'SET',
+      'BTL': 'BO',
+      'BOTTLE': 'BO',
+      'BOTOL': 'BO',
+      'BAG': 'BAG',
+      'DRUM': 'DRM',
+      'JAR': 'JR',
+      'BOLT': 'BT',
+    };
+    return mapping[uom.toUpperCase()] || uom;
+  }
+
   private mapCustomsDocTypeToINSWDocCode(
     customsDocType: string
   ): string | null {
@@ -443,9 +490,9 @@ export class INSWIntegrationService {
       kd_barang: item.item_code,
       uraian_barang: item.item_name,
       jumlah: Number(item.qty),
-      satuan: item.uom,
+      satuan: this.mapUomToINSW(item.uom),
       nilai: 0,
-      tanggal_declare: this.formatINSWDate(item.balance_date),
+      tanggal_declare: this.formatINSWDateOnly(item.balance_date),
     }));
 
     const docNumber = `${companyCode}/SAL/${format(effectiveDate, 'yyyy')}`;
@@ -453,7 +500,7 @@ export class INSWIntegrationService {
     return {
       data: {
         no_kegiatan: docNumber,
-        tgl_kegiatan: this.formatINSWDate(effectiveDate),
+        tgl_kegiatan: this.formatINSWDateOnly(effectiveDate),
         barangSaldo,
       },
     };

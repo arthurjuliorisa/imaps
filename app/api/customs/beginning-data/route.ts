@@ -111,11 +111,16 @@ export async function GET(request: Request) {
       ],
     });
 
+    // Fetch status separately via raw SQL (Prisma client may not have status field yet)
+    const statusRows = await prisma.$queryRawUnsafe<Array<{ id: number; status: string }>>(
+      `SELECT id, status::text FROM beginning_balances WHERE company_code = $1 AND deleted_at IS NULL`,
+      companyCode
+    );
+    const statusMap = new Map(statusRows.map((r) => [Number(r.id), r.status]));
+
     // Transform data to match frontend expectations
     const transformedData = await Promise.all(beginningBalances.map(async (balance) => {
       // Check if this beginning balance has any incoming or outgoing transactions
-      // Transactions are identified by items in incoming_good_items and outgoing_good_items
-      // for the same item code and on or after the balance date
       const [incomingCount, outgoingCount] = await Promise.all([
         prisma.incoming_good_items.count({
           where: {
@@ -151,11 +156,22 @@ export async function GET(request: Request) {
         itemId: balance.item_code,
         uomId: balance.uom,
         itemType: balance.item_type,
+        status: statusMap.get(balance.id) || 'OPEN',
         hasTransactions,
       };
     }));
 
-    return NextResponse.json(transformedData);
+    // Determine overallStatus: LOCKED > TRANSMITTED_TO_INSW > OPEN
+    const statusPriority: Record<string, number> = { OPEN: 0, TRANSMITTED_TO_INSW: 1, LOCKED: 2 };
+    let overallStatus = 'OPEN';
+    for (const item of transformedData) {
+      const p = statusPriority[item.status] ?? 0;
+      if (p > (statusPriority[overallStatus] ?? 0)) {
+        overallStatus = item.status;
+      }
+    }
+
+    return NextResponse.json({ data: transformedData, overallStatus });
   } catch (error) {
     console.error('[API Error] Failed to fetch beginning data:', error);
     console.error('[API Error] Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));

@@ -3,6 +3,7 @@ import { validateIncomingGoodRequest, validateIncomingGoodsDates, validateItemTy
 import type { IncomingGoodRequestInput } from '../validators/schemas/incoming-goods.schema';
 import type { ErrorDetail, SuccessResponse } from '../types/api-response';
 import { logger } from '../utils/logger';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 
 export class IncomingGoodsService {
   private repository: IncomingGoodsRepository;
@@ -112,7 +113,22 @@ export class IncomingGoodsService {
         }
       );
 
-      // 8. Return success response
+      // 8. Auto-transmit to INSW (fire-and-forget, non-blocking)
+      (async () => {
+        try {
+          const inswService = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+          const transmissionResult = await inswService.transmitIncomingGoods(data.company_code, [result.id]);
+          if (transmissionResult.status === 'success') {
+            requestLogger.info('Incoming goods transmitted to INSW', { wmsId: data.wms_id });
+          } else {
+            requestLogger.warn('Incoming goods INSW transmission failed', { wmsId: data.wms_id });
+          }
+        } catch (err: any) {
+          requestLogger.error('INSW auto-transmit error', { wmsId: data.wms_id, error: err.message });
+        }
+      })();
+
+      // 9. Return success response immediately
       return {
         success: true,
         data: {
