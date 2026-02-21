@@ -21,7 +21,7 @@ import {
   DialogActions,
   Button,
 } from '@mui/material';
-import { Refresh, Visibility } from '@mui/icons-material';
+import { Refresh, Visibility, ContentCopy, Check } from '@mui/icons-material';
 import {
   AreaChart,
   Area,
@@ -139,6 +139,7 @@ export default function INSWLogsPage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedLog, setSelectedLog] = useState<INSWLog | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
@@ -294,6 +295,15 @@ export default function INSWLogsPage() {
   const handleCloseDetailDialog = () => {
     setDetailDialogOpen(false);
     setSelectedLog(null);
+    setCopiedKey(null);
+  };
+
+  const handleCopy = (key: string, value: any) => {
+    const text = JSON.stringify(value, null, 2);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2000);
+    });
   };
 
   const totalSuccess = chartData.reduce((sum, d) => sum + d.success, 0);
@@ -571,9 +581,20 @@ export default function INSWLogsPage() {
                 )}
 
                 <Box>
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Request Payload
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      Request Payload
+                    </Typography>
+                    <Tooltip title={copiedKey === 'payload' ? 'Tersalin!' : 'Salin'}>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleCopy('payload', selectedLog.insw_request_payload)}
+                        sx={{ color: copiedKey === 'payload' ? 'success.main' : 'text.secondary' }}
+                      >
+                        {copiedKey === 'payload' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                   <Box
                     sx={{
                       bgcolor: 'grey.100',
@@ -591,9 +612,20 @@ export default function INSWLogsPage() {
 
                 {selectedLog.insw_response && (
                   <Box>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      INSW Response
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Typography variant="subtitle2" color="text.secondary">
+                        INSW Response
+                      </Typography>
+                      <Tooltip title={copiedKey === 'response' ? 'Tersalin!' : 'Salin'}>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleCopy('response', selectedLog.insw_response)}
+                          sx={{ color: copiedKey === 'response' ? 'success.main' : 'text.secondary' }}
+                        >
+                          {copiedKey === 'response' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
                     <Box
                       sx={{
                         bgcolor: 'grey.100',
