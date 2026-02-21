@@ -1088,3 +1088,19 @@ model insw_uom_reference {
   @@index([is_active])
   @@map("insw_uom_reference")
 }
+
+// ============================================================================
+// INSW INTEGRATION SETTINGS
+// ============================================================================
+// Toggle individual INSW endpoint transmissions on/off
+// ============================================================================
+
+model insw_integration_settings {
+  id            Int      @id @default(autoincrement())
+  endpoint_key  String   @unique @db.VarChar(50)
+  endpoint_name String   @db.VarChar(100)
+  description   String?  @db.Text
+  is_enabled    Boolean  @default(true)
+  updated_at    DateTime @updatedAt
+  updated_by    String?  @db.VarChar(100)
+}

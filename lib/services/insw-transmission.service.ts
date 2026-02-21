@@ -21,6 +21,20 @@ export class INSWTransmissionService {
   }
 
   /**
+   * Check if a specific INSW endpoint is enabled in settings
+   */
+  private async isEndpointEnabled(key: string): Promise<boolean> {
+    try {
+      const rows = await prisma.$queryRaw<Array<{ is_enabled: boolean }>>`
+        SELECT is_enabled FROM insw_integration_settings WHERE endpoint_key = ${key} LIMIT 1
+      `;
+      return rows.length > 0 ? rows[0].is_enabled : true;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
    * Transmit incoming goods to INSW
    */
   async transmitIncomingGoods(
@@ -28,6 +42,18 @@ export class INSWTransmissionService {
     ids: number[]
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting incoming goods transmission', { companyCode, ids });
+
+    if (!(await this.isEndpointEnabled('PEMASUKAN'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: ids.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: ids.length,
+        results: [],
+      };
+    }
 
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
@@ -185,6 +211,18 @@ export class INSWTransmissionService {
       ids,
     });
 
+    if (!(await this.isEndpointEnabled('PENGELUARAN'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: ids.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: ids.length,
+        results: [],
+      };
+    }
+
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
@@ -334,6 +372,18 @@ export class INSWTransmissionService {
       wmsIds,
     });
 
+    if (!(await this.isEndpointEnabled('PENGELUARAN'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: wmsIds.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: wmsIds.length,
+        results: [],
+      };
+    }
+
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
@@ -481,6 +531,18 @@ export class INSWTransmissionService {
     wmsIds: string[]
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting material usage transmission', { companyCode, ids });
+
+    if (!(await this.isEndpointEnabled('MATERIAL_USAGE'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: ids.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: ids.length,
+        results: [],
+      };
+    }
 
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
@@ -644,6 +706,18 @@ export class INSWTransmissionService {
       companyCode,
       ids,
     });
+
+    if (!(await this.isEndpointEnabled('PRODUCTION_OUTPUT'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: ids.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: ids.length,
+        results: [],
+      };
+    }
 
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
@@ -841,6 +915,18 @@ export class INSWTransmissionService {
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting scrap IN transmission', { companyCode, transactionIds });
 
+    if (!(await this.isEndpointEnabled('SCRAP_IN'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: transactionIds.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: transactionIds.length,
+        results: [],
+      };
+    }
+
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
@@ -902,6 +988,18 @@ export class INSWTransmissionService {
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting scrap OUT transmission', { companyCode, transactionIds });
 
+    if (!(await this.isEndpointEnabled('SCRAP_OUT'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: transactionIds.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: transactionIds.length,
+        results: [],
+      };
+    }
+
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
@@ -955,6 +1053,18 @@ export class INSWTransmissionService {
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting capital goods OUT transmission', { companyCode, wmsIds });
 
+    if (!(await this.isEndpointEnabled('CAPITAL_GOODS_OUT'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: wmsIds.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: wmsIds.length,
+        results: [],
+      };
+    }
+
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
@@ -1006,6 +1116,10 @@ export class INSWTransmissionService {
     companyCode: number
   ): Promise<{ status: string; message: string; insw_response?: any }> {
     this.log.info('Starting saldo awal transmission', { companyCode });
+
+    if (!(await this.isEndpointEnabled('SALDO_AWAL'))) {
+      return { status: 'success', message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini' };
+    }
 
     try {
       const payload = await this.inswService.convertSaldoAwalToINSW(companyCode);
@@ -1073,6 +1187,10 @@ export class INSWTransmissionService {
     companyCode: number
   ): Promise<{ status: string; message: string; insw_response?: any }> {
     this.log.info('Starting saldo awal lock (registrasi final)', { companyCode });
+
+    if (!(await this.isEndpointEnabled('SALDO_AWAL_FINAL'))) {
+      return { status: 'success', message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini' };
+    }
 
     try {
       const inswResponse = await this.inswService.registrasiFinal();

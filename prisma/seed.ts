@@ -7,6 +7,7 @@ import { seedMenus } from './seeders/menu.seeder';
 import { seedUserAccessMenus } from './seeders/user-access.seeder';
 import { seedTransactions } from './seeders/transaction.seeder';
 import { seedINSWUOM } from './seeders/insw-uom.seeder';
+import { seedINSWSettings } from './seeders/insw-settings.seeder';
 
 // NOTE: If you see TypeScript errors below, run `npx prisma generate` first
 // This regenerates Prisma Client with updated schema types
@@ -143,6 +144,7 @@ async function main() {
   if (shouldRun('menu')) await seedMenus();
   if (shouldRun('useraccess')) await seedUserAccessMenus();
   if (shouldRun('inswuom')) await seedINSWUOM();
+  if (shouldRun('inswsettings')) await seedINSWSettings();
   if (shouldRun('transaction')) await seedTransactions();
 
   console.log('🎉 Database seeding completed!');
@@ -154,6 +156,7 @@ async function main() {
   if (shouldRun('menu')) console.log('   - 6 parent menus with children');
   if (shouldRun('useraccess')) console.log('   - User access permissions');
   if (shouldRun('inswuom')) console.log('   - 1821 INSW UOM reference data');
+  if (shouldRun('inswsettings')) console.log('   - 9 INSW integration settings');
   if (shouldRun('transaction')) console.log('   - 4 transactions (company 1310 only)');
 }
 
