@@ -567,7 +567,7 @@ export default function BeginningDataPage() {
       <ConfirmDialog
         open={transmitModalOpen}
         title="Kirim Saldo Awal ke INSW?"
-        message={`Tindakan ini akan mengirimkan semua data saldo awal ke INSW. ${data.length} record akan dikirim.`}
+        message="Tindakan ini akan mengirimkan semua data saldo awal ke INSW."
         confirmText={transmitLoading ? 'Mengirim...' : 'Mulai Transmit'}
         cancelText="Batal"
         onConfirm={handleTransmitToINSW}

@@ -1012,11 +1012,17 @@ export class INSWTransmissionService {
 
       const inswResponse = await this.inswService.postSaldoAwal(payload);
 
-      if (inswResponse.status) {
-        await prisma.beginning_balances.updateMany({
-          where: { company_code: companyCode, status: 'OPEN', deleted_at: null },
-          data: { status: 'TRANSMITTED_TO_INSW' },
-        });
+      // code "02" = data already finalized at INSW (submitted and locked previously)
+      const alreadyFinalized = !inswResponse.status && inswResponse.code === '02';
+
+      if (inswResponse.status || alreadyFinalized) {
+        const newStatus = alreadyFinalized ? 'LOCKED' : 'TRANSMITTED_TO_INSW';
+
+        await prisma.$executeRawUnsafe(
+          `UPDATE beginning_balances SET status = $1::beginning_balance_status WHERE company_code = $2 AND deleted_at IS NULL`,
+          newStatus,
+          companyCode
+        );
 
         await this.logTransmission({
           transaction_type: 'saldo_awal',
@@ -1027,7 +1033,11 @@ export class INSWTransmissionService {
           insw_response: inswResponse,
         });
 
-        return { status: 'success', message: 'Saldo awal transmitted to INSW successfully', insw_response: inswResponse };
+        const message = alreadyFinalized
+          ? 'Saldo awal sudah terdaftar final di INSW (tidak dapat diubah kembali)'
+          : 'Saldo awal berhasil dikirim ke INSW';
+
+        return { status: 'success', message, insw_response: inswResponse };
       } else {
         await this.logTransmission({
           transaction_type: 'saldo_awal',
@@ -1068,10 +1078,10 @@ export class INSWTransmissionService {
       const inswResponse = await this.inswService.registrasiFinal();
 
       if (inswResponse.status) {
-        await prisma.beginning_balances.updateMany({
-          where: { company_code: companyCode, deleted_at: null },
-          data: { status: 'LOCKED' },
-        });
+        await prisma.$executeRawUnsafe(
+          `UPDATE beginning_balances SET status = 'LOCKED'::beginning_balance_status WHERE company_code = $1 AND deleted_at IS NULL`,
+          companyCode
+        );
 
         await this.logTransmission({
           transaction_type: 'saldo_awal_final',

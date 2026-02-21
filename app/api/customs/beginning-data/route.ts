@@ -111,6 +111,13 @@ export async function GET(request: Request) {
       ],
     });
 
+    // Fetch status separately via raw SQL (Prisma client may not have status field yet)
+    const statusRows = await prisma.$queryRawUnsafe<Array<{ id: number; status: string }>>(
+      `SELECT id, status::text FROM beginning_balances WHERE company_code = $1 AND deleted_at IS NULL`,
+      companyCode
+    );
+    const statusMap = new Map(statusRows.map((r) => [Number(r.id), r.status]));
+
     // Transform data to match frontend expectations
     const transformedData = await Promise.all(beginningBalances.map(async (balance) => {
       // Check if this beginning balance has any incoming or outgoing transactions
@@ -149,7 +156,7 @@ export async function GET(request: Request) {
         itemId: balance.item_code,
         uomId: balance.uom,
         itemType: balance.item_type,
-        status: (balance as any).status || 'OPEN',
+        status: statusMap.get(balance.id) || 'OPEN',
         hasTransactions,
       };
     }));
