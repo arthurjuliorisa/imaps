@@ -22,6 +22,16 @@ import {
   Button,
 } from '@mui/material';
 import { Refresh, Visibility } from '@mui/icons-material';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import dayjs from 'dayjs';
@@ -42,9 +52,86 @@ interface INSWLog {
   created_at: string;
 }
 
+interface ChartDataPoint {
+  date: string;
+  success: number;
+  failed: number;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number; color: string }>;
+  label?: string;
+  isDark: boolean;
+}
+
+function CustomChartTooltip({ active, payload, label, isDark }: CustomTooltipProps) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  return (
+    <Box
+      sx={{
+        backgroundColor: isDark ? '#1e1e2e' : '#ffffff',
+        border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+        borderRadius: '8px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+        p: 1.5,
+        minWidth: 160,
+      }}
+    >
+      <Typography
+        variant="caption"
+        sx={{
+          color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)',
+          display: 'block',
+          mb: 0.75,
+          fontWeight: 600,
+          letterSpacing: '0.05em',
+          textTransform: 'uppercase',
+          fontSize: '0.68rem',
+        }}
+      >
+        {label}
+      </Typography>
+      {payload.map((entry) => (
+        <Box
+          key={entry.name}
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}
+        >
+          <Box
+            sx={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: entry.color,
+              flexShrink: 0,
+            }}
+          />
+          <Typography
+            variant="body2"
+            sx={{
+              color: isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.75)',
+              fontSize: '0.8rem',
+            }}
+          >
+            <span style={{ opacity: 0.7 }}>
+              {entry.name === 'success' ? 'Sukses' : 'Gagal'}:{' '}
+            </span>
+            <strong>{entry.value}</strong>
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 export default function INSWLogsPage() {
   const theme = useTheme();
   const toast = useToast();
+  const isDark = theme.palette.mode === 'dark';
+
   const [logs, setLogs] = useState<INSWLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +139,9 @@ export default function INSWLogsPage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedLog, setSelectedLog] = useState<INSWLog | null>(null);
+
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [chartLoading, setChartLoading] = useState(true);
 
   const columns: Column[] = [
     {
@@ -139,6 +229,10 @@ export default function INSWLogsPage() {
     fetchLogs();
   }, [transactionTypeFilter, statusFilter]);
 
+  useEffect(() => {
+    fetchChartData();
+  }, []);
+
   const fetchLogs = async () => {
     setLoading(true);
     try {
@@ -167,8 +261,28 @@ export default function INSWLogsPage() {
     }
   };
 
+  const fetchChartData = async () => {
+    setChartLoading(true);
+    try {
+      const response = await fetch('/api/insw/logs/chart-stats');
+      const result = await response.json();
+
+      if (result.success && Array.isArray(result.data)) {
+        setChartData(result.data);
+      } else {
+        setChartData([]);
+      }
+    } catch (err) {
+      console.error('Error fetching chart data:', err);
+      setChartData([]);
+    } finally {
+      setChartLoading(false);
+    }
+  };
+
   const handleRefresh = () => {
     fetchLogs();
+    fetchChartData();
     toast.success('INSW logs refreshed');
   };
 
@@ -181,6 +295,17 @@ export default function INSWLogsPage() {
     setDetailDialogOpen(false);
     setSelectedLog(null);
   };
+
+  const totalSuccess = chartData.reduce((sum, d) => sum + d.success, 0);
+  const totalFailed = chartData.reduce((sum, d) => sum + d.failed, 0);
+
+  const formattedChartData = chartData.map((d) => ({
+    ...d,
+    date: dayjs(d.date).format('DD/MM'),
+  }));
+
+  const gridStroke = alpha(theme.palette.text.primary, 0.08);
+  const tickColor = theme.palette.text.secondary;
 
   return (
     <Box>
@@ -217,6 +342,130 @@ export default function INSWLogsPage() {
         </Alert>
       )}
 
+      {/* Chart Card */}
+      <Card sx={{ boxShadow: 3, borderRadius: 2, mb: 3 }}>
+        <CardContent sx={{ pb: 1 }}>
+          {/* Card Header Row */}
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              flexWrap: 'wrap',
+              gap: 2,
+              mb: 2.5,
+            }}
+          >
+            <Box>
+              <Typography variant="subtitle1" fontWeight="bold" sx={{ lineHeight: 1.3 }}>
+                Statistik 7 Hari Terakhir
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Distribusi log INSW berdasarkan status per hari
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              <Chip
+                size="small"
+                label={`Total Sukses: ${totalSuccess}`}
+                sx={{
+                  backgroundColor: alpha('#4caf50', 0.12),
+                  color: '#4caf50',
+                  fontWeight: 600,
+                  fontSize: '0.75rem',
+                }}
+              />
+              <Chip
+                size="small"
+                label={`Total Gagal: ${totalFailed}`}
+                sx={{
+                  backgroundColor: alpha('#f44336', 0.12),
+                  color: '#f44336',
+                  fontWeight: 600,
+                  fontSize: '0.75rem',
+                }}
+              />
+            </Stack>
+          </Box>
+
+          {/* Area Chart */}
+          <Box sx={{ opacity: chartLoading ? 0.4 : 1, transition: 'opacity 0.3s' }}>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart
+                data={formattedChartData}
+                margin={{ top: 8, right: 16, left: -10, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="gradientSuccess" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="rgba(76,175,80,0.6)" stopOpacity={1} />
+                    <stop offset="95%" stopColor="rgba(76,175,80,0.0)" stopOpacity={1} />
+                  </linearGradient>
+                  <linearGradient id="gradientFailed" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="rgba(244,67,54,0.5)" stopOpacity={1} />
+                    <stop offset="95%" stopColor="rgba(244,67,54,0.0)" stopOpacity={1} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="4 4"
+                  stroke={gridStroke}
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: tickColor, fontSize: 12 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={{ fill: tickColor, fontSize: 12 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <RechartsTooltip
+                  content={
+                    <CustomChartTooltip isDark={isDark} />
+                  }
+                  cursor={{
+                    stroke: alpha(theme.palette.text.primary, 0.1),
+                    strokeWidth: 1,
+                  }}
+                />
+                <Legend
+                  verticalAlign="bottom"
+                  height={32}
+                  formatter={(value: string) =>
+                    value === 'success' ? 'Success' : 'Failed'
+                  }
+                  wrapperStyle={{ fontSize: '0.8rem', paddingTop: '8px' }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="success"
+                  stroke="#4caf50"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#gradientSuccess)"
+                  dot={false}
+                  activeDot={{ r: 5, strokeWidth: 0, fill: '#4caf50' }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="failed"
+                  stroke="#f44336"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#gradientFailed)"
+                  dot={false}
+                  activeDot={{ r: 5, strokeWidth: 0, fill: '#f44336' }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </Box>
+        </CardContent>
+      </Card>
+
+      {/* Filter Card */}
       <Card sx={{ mb: 3, boxShadow: 1 }}>
         <CardContent>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
