@@ -36,7 +36,7 @@ export async function seedUsers() {
     },
     {
       username: 'user_1370',
-      email: 'user1370@polygroup.co.id',
+      email: 'user@pmi.co.id',
       password: await bcrypt.hash('user123', 10),
       full_name: 'PT. Polygroup Manufaktur Indonesia',
       role: 'USER',
