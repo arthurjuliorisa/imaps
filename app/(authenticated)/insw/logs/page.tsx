@@ -522,10 +522,8 @@ export default function INSWLogsPage() {
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle>
-          <Typography variant="h6" fontWeight="bold">
-            Transmission Details
-          </Typography>
+        <DialogTitle sx={{ fontWeight: 'bold' }}>
+          Transmission Details
         </DialogTitle>
         <DialogContent dividers>
           {selectedLog && (

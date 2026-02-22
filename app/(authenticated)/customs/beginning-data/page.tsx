@@ -518,6 +518,7 @@ export default function BeginningDataPage() {
       <BeginningStockTable
         data={data}
         loading={loading}
+        isLocked={overallStatus === 'LOCKED'}
         onEdit={handleEdit}
         onDelete={handleDeleteClick}
         onSearch={setSearchTerm}

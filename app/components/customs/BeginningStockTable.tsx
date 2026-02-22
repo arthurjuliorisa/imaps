@@ -60,6 +60,7 @@ export interface BeginningStockData {
 interface BeginningStockTableProps {
   data: BeginningStockData[];
   loading?: boolean;
+  isLocked?: boolean;
   onEdit: (item: BeginningStockData) => void;
   onDelete: (item: BeginningStockData) => void;
   onSearch?: (searchTerm: string) => void;
@@ -69,6 +70,7 @@ interface BeginningStockTableProps {
 export function BeginningStockTable({
   data,
   loading = false,
+  isLocked = false,
   onEdit,
   onDelete,
   onSearch,
@@ -321,19 +323,21 @@ export function BeginningStockTable({
                         <ViewIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title={row.hasTransactions ? "This balance already have transaction(s) and cannot be edited" : "Edit"}>
-                      <span>
-                        <IconButton
-                          size="small"
-                          onClick={() => onEdit(row)}
-                          color="primary"
-                          sx={{ mr: 0.5 }}
-                          disabled={row.hasTransactions}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
+                    {!isLocked && (
+                      <Tooltip title={row.hasTransactions ? "This balance already have transaction(s) and cannot be edited" : "Edit"}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => onEdit(row)}
+                            color="primary"
+                            sx={{ mr: 0.5 }}
+                            disabled={row.hasTransactions}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
                     <Tooltip title="Delete" sx={{ display: 'none' }}>
                       <IconButton
                         size="small"
