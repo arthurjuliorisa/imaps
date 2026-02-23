@@ -126,6 +126,10 @@ export default function INSWUOMMappingPage() {
     fetchData();
   }, [searchQuery]);
 
+  useEffect(() => {
+    fetchInswUomOptions();
+  }, []);
+
   const fetchInswUomOptions = async () => {
     setLoadingInswUom(true);
     try {
@@ -181,7 +185,6 @@ export default function INSWUOMMappingPage() {
       description: '',
       is_active: true,
     });
-    fetchInswUomOptions();
     setDialogOpen(true);
   };
 
@@ -194,7 +197,6 @@ export default function INSWUOMMappingPage() {
       description: mapping.description ?? '',
       is_active: mapping.is_active,
     });
-    fetchInswUomOptions();
     setDialogOpen(true);
   };
 
@@ -358,12 +360,26 @@ export default function INSWUOMMappingPage() {
               helperText={editMode ? 'WMS UOM cannot be changed' : ''}
             />
             <Autocomplete
+              freeSolo
               options={inswUomOptions}
-              getOptionLabel={(option) => `${option.kode} - ${option.uraian}`}
-              value={inswUomOptions.find((o) => o.kode === formData.insw_uom) ?? null}
-              onChange={(_, newValue) =>
-                setFormData({ ...formData, insw_uom: newValue?.kode ?? '' })
+              getOptionLabel={(option) =>
+                typeof option === 'string' ? option : `${option.kode} - ${option.uraian}`
               }
+              value={inswUomOptions.find((o) => o.kode === formData.insw_uom) ?? formData.insw_uom}
+              onChange={(_, newValue) => {
+                if (typeof newValue === 'string') {
+                  setFormData({ ...formData, insw_uom: newValue.toUpperCase() });
+                } else if (newValue && typeof newValue === 'object') {
+                  setFormData({ ...formData, insw_uom: (newValue as INSWUOMReference).kode });
+                } else {
+                  setFormData({ ...formData, insw_uom: '' });
+                }
+              }}
+              onInputChange={(_, newInputValue, reason) => {
+                if (reason === 'input') {
+                  setFormData({ ...formData, insw_uom: newInputValue.toUpperCase() });
+                }
+              }}
               loading={loadingInswUom}
               renderInput={(params) => (
                 <TextField
@@ -381,7 +397,10 @@ export default function INSWUOMMappingPage() {
                   }}
                 />
               )}
-              isOptionEqualToValue={(option, value) => option.kode === value.kode}
+              isOptionEqualToValue={(option, value) => {
+                if (typeof value === 'string') return (option as INSWUOMReference).kode === value;
+                return (option as INSWUOMReference).kode === (value as INSWUOMReference).kode;
+              }}
               fullWidth
             />
             <TextField
