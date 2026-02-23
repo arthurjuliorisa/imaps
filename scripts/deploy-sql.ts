@@ -23,6 +23,7 @@ const SQL_FILES = [
   '04_create_views.sql',
   '05_item_level_snapshot_functions.sql',
   '05_permissions.sql',
+  '06_schema_migrations.sql',
 ];
 
 function log(message: string) {
