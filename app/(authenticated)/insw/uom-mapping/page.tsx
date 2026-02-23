@@ -21,6 +21,8 @@ import {
   Button,
   FormControlLabel,
   Switch,
+  Autocomplete,
+  CircularProgress,
 } from '@mui/material';
 import { Refresh, Add, Edit, Delete } from '@mui/icons-material';
 import { DataTable, Column } from '@/app/components/DataTable';
@@ -34,6 +36,11 @@ interface INSWUOMMapping {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+interface INSWUOMReference {
+  kode: string;
+  uraian: string;
 }
 
 export default function INSWUOMMappingPage() {
@@ -53,6 +60,8 @@ export default function INSWUOMMappingPage() {
     description: '',
     is_active: true,
   });
+  const [inswUomOptions, setInswUomOptions] = useState<INSWUOMReference[]>([]);
+  const [loadingInswUom, setLoadingInswUom] = useState(false);
 
   const columns: Column[] = [
     {
@@ -117,6 +126,21 @@ export default function INSWUOMMappingPage() {
     fetchData();
   }, [searchQuery]);
 
+  const fetchInswUomOptions = async () => {
+    setLoadingInswUom(true);
+    try {
+      const response = await fetch('/api/insw/uom?is_active=true&limit=2000');
+      const result = await response.json();
+      if (result.success) {
+        setInswUomOptions(result.data);
+      }
+    } catch (err) {
+      console.error('Error fetching INSW UOM reference:', err);
+    } finally {
+      setLoadingInswUom(false);
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -157,6 +181,7 @@ export default function INSWUOMMappingPage() {
       description: '',
       is_active: true,
     });
+    fetchInswUomOptions();
     setDialogOpen(true);
   };
 
@@ -169,6 +194,7 @@ export default function INSWUOMMappingPage() {
       description: mapping.description ?? '',
       is_active: mapping.is_active,
     });
+    fetchInswUomOptions();
     setDialogOpen(true);
   };
 
@@ -331,14 +357,32 @@ export default function INSWUOMMappingPage() {
               disabled={editMode}
               helperText={editMode ? 'WMS UOM cannot be changed' : ''}
             />
-            <TextField
-              label="INSW UOM"
-              value={formData.insw_uom}
-              onChange={(e) =>
-                setFormData({ ...formData, insw_uom: e.target.value.toUpperCase() })
+            <Autocomplete
+              options={inswUomOptions}
+              getOptionLabel={(option) => `${option.kode} - ${option.uraian}`}
+              value={inswUomOptions.find((o) => o.kode === formData.insw_uom) ?? null}
+              onChange={(_, newValue) =>
+                setFormData({ ...formData, insw_uom: newValue?.kode ?? '' })
               }
+              loading={loadingInswUom}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="INSW UOM"
+                  required
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {loadingInswUom && <CircularProgress size={18} />}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option.kode === value.kode}
               fullWidth
-              required
             />
             <TextField
               label="Deskripsi"
