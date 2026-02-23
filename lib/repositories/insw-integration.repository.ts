@@ -337,7 +337,7 @@ export class INSWIntegrationRepository {
         mui.item_name,
         mui.uom,
         mui.qty,
-        COALESCE(mui.currency, 'IDR') as currency,
+        'IDR' as currency,
         COALESCE(mui.amount, 0) as amount
       FROM material_usages mu
       INNER JOIN material_usage_items mui
@@ -383,7 +383,7 @@ export class INSWIntegrationRepository {
         poi.item_name,
         poi.uom,
         poi.qty,
-        COALESCE(poi.currency, 'IDR') as currency,
+        'IDR' as currency,
         COALESCE(poi.amount, 0) as amount
       FROM production_outputs po
       INNER JOIN production_output_items poi
