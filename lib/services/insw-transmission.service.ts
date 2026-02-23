@@ -21,6 +21,20 @@ export class INSWTransmissionService {
   }
 
   /**
+   * Check if a specific INSW endpoint is enabled in settings
+   */
+  private async isEndpointEnabled(key: string): Promise<boolean> {
+    try {
+      const rows = await prisma.$queryRaw<Array<{ is_enabled: boolean }>>`
+        SELECT is_enabled FROM insw_integration_settings WHERE endpoint_key = ${key} LIMIT 1
+      `;
+      return rows.length > 0 ? rows[0].is_enabled : true;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
    * Transmit incoming goods to INSW
    */
   async transmitIncomingGoods(
@@ -28,6 +42,18 @@ export class INSWTransmissionService {
     ids: number[]
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting incoming goods transmission', { companyCode, ids });
+
+    if (!(await this.isEndpointEnabled('PEMASUKAN'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: ids.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: ids.length,
+        results: [],
+      };
+    }
 
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
@@ -185,6 +211,18 @@ export class INSWTransmissionService {
       ids,
     });
 
+    if (!(await this.isEndpointEnabled('PENGELUARAN'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: ids.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: ids.length,
+        results: [],
+      };
+    }
+
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
@@ -334,6 +372,18 @@ export class INSWTransmissionService {
       wmsIds,
     });
 
+    if (!(await this.isEndpointEnabled('PENGELUARAN'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: wmsIds.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: wmsIds.length,
+        results: [],
+      };
+    }
+
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
@@ -481,6 +531,18 @@ export class INSWTransmissionService {
     wmsIds: string[]
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting material usage transmission', { companyCode, ids });
+
+    if (!(await this.isEndpointEnabled('MATERIAL_USAGE'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: ids.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: ids.length,
+        results: [],
+      };
+    }
 
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
@@ -644,6 +706,18 @@ export class INSWTransmissionService {
       companyCode,
       ids,
     });
+
+    if (!(await this.isEndpointEnabled('PRODUCTION_OUTPUT'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: ids.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: ids.length,
+        results: [],
+      };
+    }
 
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
@@ -829,6 +903,328 @@ export class INSWTransmissionService {
       });
     } catch (error) {
       this.log.error('Failed to log transmission', { error });
+    }
+  }
+
+  /**
+   * Transmit scrap IN to INSW (via INSWIntegrationService, with tracking log)
+   */
+  async transmitScrapIn(
+    companyCode: number,
+    transactionIds: number[]
+  ): Promise<INSWTransmitResponse> {
+    this.log.info('Starting scrap IN transmission', { companyCode, transactionIds });
+
+    if (!(await this.isEndpointEnabled('SCRAP_IN'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: transactionIds.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: transactionIds.length,
+        results: [],
+      };
+    }
+
+    const results: INSWTransmitResult[] = [];
+    let successCount = 0;
+    let failedCount = 0;
+
+    try {
+      const payload = await this.inswService.convertScrapInToINSW(companyCode, transactionIds);
+
+      const validation = INSWHelper.validateINSWPayload(payload);
+      if (!validation.valid) {
+        for (const id of transactionIds) {
+          await this.logTransmission({
+            transaction_type: 'scrap_in',
+            transaction_id: id,
+            company_code: companyCode,
+            insw_status: INSWTransmissionStatus.FAILED,
+            insw_activity_code: '30',
+            insw_request_payload: payload,
+            insw_error: validation.errors.join('; '),
+          });
+          results.push({ id, wms_id: `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: validation.errors.join('; ') });
+          failedCount++;
+        }
+        return { status: 'failed', message: 'Validation failed', total: transactionIds.length, success_count: 0, failed_count: failedCount, skipped_count: 0, results };
+      }
+
+      const inswResponse = await this.inswService.postPemasukan(payload);
+
+      if (inswResponse.status) {
+        for (const id of transactionIds) {
+          await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.SUCCESS, insw_activity_code: '30', insw_request_payload: payload, insw_response: inswResponse });
+          results.push({ id, wms_id: `SCRAP-IN-${id}`, status: 'success', insw_status: INSWTransmissionStatus.SUCCESS, insw_response: inswResponse });
+          successCount++;
+        }
+      } else {
+        for (const id of transactionIds) {
+          await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '30', insw_request_payload: payload, insw_response: inswResponse, insw_error: inswResponse.message });
+          results.push({ id, wms_id: `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: inswResponse.message });
+          failedCount++;
+        }
+      }
+
+      return { status: successCount > 0 ? 'success' : 'failed', message: successCount > 0 ? 'Scrap IN transmitted to INSW' : 'Failed to transmit scrap IN', total: transactionIds.length, success_count: successCount, failed_count: failedCount, skipped_count: 0, results };
+    } catch (error: any) {
+      this.log.error('Error transmitting scrap IN', { error: error.message });
+      for (const id of transactionIds) {
+        await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '30', insw_error: error.message });
+        results.push({ id, wms_id: `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
+      }
+      return { status: 'failed', message: error.message, total: transactionIds.length, success_count: 0, failed_count: transactionIds.length, skipped_count: 0, results };
+    }
+  }
+
+  /**
+   * Transmit scrap OUT to INSW (via INSWIntegrationService, with tracking log)
+   */
+  async transmitScrapOut(
+    companyCode: number,
+    transactionIds: number[]
+  ): Promise<INSWTransmitResponse> {
+    this.log.info('Starting scrap OUT transmission', { companyCode, transactionIds });
+
+    if (!(await this.isEndpointEnabled('SCRAP_OUT'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: transactionIds.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: transactionIds.length,
+        results: [],
+      };
+    }
+
+    const results: INSWTransmitResult[] = [];
+    let successCount = 0;
+    let failedCount = 0;
+
+    try {
+      const payload = await this.inswService.convertScrapOutToINSW(companyCode, transactionIds);
+
+      const validation = INSWHelper.validateINSWPayload(payload);
+      if (!validation.valid) {
+        for (const id of transactionIds) {
+          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_error: validation.errors.join('; ') });
+          results.push({ id, wms_id: `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: validation.errors.join('; ') });
+          failedCount++;
+        }
+        return { status: 'failed', message: 'Validation failed', total: transactionIds.length, success_count: 0, failed_count: failedCount, skipped_count: 0, results };
+      }
+
+      const inswResponse = await this.inswService.postPengeluaran(payload);
+
+      if (inswResponse.status) {
+        for (const id of transactionIds) {
+          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.SUCCESS, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse });
+          results.push({ id, wms_id: `SCRAP-OUT-${id}`, status: 'success', insw_status: INSWTransmissionStatus.SUCCESS, insw_response: inswResponse });
+          successCount++;
+        }
+      } else {
+        for (const id of transactionIds) {
+          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse, insw_error: inswResponse.message });
+          results.push({ id, wms_id: `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: inswResponse.message });
+          failedCount++;
+        }
+      }
+
+      return { status: successCount > 0 ? 'success' : 'failed', message: successCount > 0 ? 'Scrap OUT transmitted to INSW' : 'Failed to transmit scrap OUT', total: transactionIds.length, success_count: successCount, failed_count: failedCount, skipped_count: 0, results };
+    } catch (error: any) {
+      this.log.error('Error transmitting scrap OUT', { error: error.message });
+      for (const id of transactionIds) {
+        await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_error: error.message });
+        results.push({ id, wms_id: `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
+      }
+      return { status: 'failed', message: error.message, total: transactionIds.length, success_count: 0, failed_count: transactionIds.length, skipped_count: 0, results };
+    }
+  }
+
+  /**
+   * Transmit capital goods OUT to INSW (via INSWIntegrationService, with tracking log)
+   */
+  async transmitCapitalGoodsOut(
+    companyCode: number,
+    wmsIds: string[]
+  ): Promise<INSWTransmitResponse> {
+    this.log.info('Starting capital goods OUT transmission', { companyCode, wmsIds });
+
+    if (!(await this.isEndpointEnabled('CAPITAL_GOODS_OUT'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: wmsIds.length,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: wmsIds.length,
+        results: [],
+      };
+    }
+
+    const results: INSWTransmitResult[] = [];
+    let successCount = 0;
+    let failedCount = 0;
+
+    try {
+      const payload = await this.inswService.convertCapitalGoodsOutToINSWByWmsIds(companyCode, wmsIds);
+
+      const validation = INSWHelper.validateINSWPayload(payload);
+      if (!validation.valid) {
+        for (const wmsId of wmsIds) {
+          await this.logTransmission({ transaction_type: 'capital_goods_out', wms_id: wmsId, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_error: validation.errors.join('; ') });
+          results.push({ id: 0, wms_id: wmsId, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: validation.errors.join('; ') });
+          failedCount++;
+        }
+        return { status: 'failed', message: 'Validation failed', total: wmsIds.length, success_count: 0, failed_count: failedCount, skipped_count: 0, results };
+      }
+
+      const inswResponse = await this.inswService.postPengeluaran(payload);
+
+      if (inswResponse.status) {
+        for (const wmsId of wmsIds) {
+          await this.logTransmission({ transaction_type: 'capital_goods_out', wms_id: wmsId, company_code: companyCode, insw_status: INSWTransmissionStatus.SUCCESS, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse });
+          results.push({ id: 0, wms_id: wmsId, status: 'success', insw_status: INSWTransmissionStatus.SUCCESS, insw_response: inswResponse });
+          successCount++;
+        }
+      } else {
+        for (const wmsId of wmsIds) {
+          await this.logTransmission({ transaction_type: 'capital_goods_out', wms_id: wmsId, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse, insw_error: inswResponse.message });
+          results.push({ id: 0, wms_id: wmsId, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: inswResponse.message });
+          failedCount++;
+        }
+      }
+
+      return { status: successCount > 0 ? 'success' : 'failed', message: successCount > 0 ? 'Capital goods OUT transmitted to INSW' : 'Failed to transmit capital goods OUT', total: wmsIds.length, success_count: successCount, failed_count: failedCount, skipped_count: 0, results };
+    } catch (error: any) {
+      this.log.error('Error transmitting capital goods OUT', { error: error.message });
+      for (const wmsId of wmsIds) {
+        await this.logTransmission({ transaction_type: 'capital_goods_out', wms_id: wmsId, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_error: error.message });
+        results.push({ id: 0, wms_id: wmsId, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
+      }
+      return { status: 'failed', message: error.message, total: wmsIds.length, success_count: 0, failed_count: wmsIds.length, skipped_count: 0, results };
+    }
+  }
+
+  /**
+   * Transmit saldo awal (beginning balance) to INSW and update status
+   */
+  async transmitSaldoAwal(
+    companyCode: number
+  ): Promise<{ status: string; message: string; insw_response?: any }> {
+    this.log.info('Starting saldo awal transmission', { companyCode });
+
+    if (!(await this.isEndpointEnabled('SALDO_AWAL'))) {
+      return { status: 'success', message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini' };
+    }
+
+    try {
+      const payload = await this.inswService.convertSaldoAwalToINSW(companyCode);
+
+      const inswResponse = await this.inswService.postSaldoAwal(payload);
+
+      if (inswResponse.status) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE beginning_balances SET status = $1::beginning_balance_status WHERE company_code = $2 AND deleted_at IS NULL`,
+          'TRANSMITTED_TO_INSW',
+          companyCode
+        );
+
+        await this.logTransmission({
+          transaction_type: 'saldo_awal',
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.SUCCESS,
+          insw_activity_code: '30',
+          insw_request_payload: payload,
+          insw_response: inswResponse,
+        });
+
+        return { status: 'success', message: 'Saldo awal berhasil dikirim ke INSW', insw_response: inswResponse };
+      } else {
+        await this.logTransmission({
+          transaction_type: 'saldo_awal',
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.FAILED,
+          insw_activity_code: '30',
+          insw_request_payload: payload,
+          insw_response: inswResponse,
+          insw_error: inswResponse.message,
+        });
+
+        return { status: 'failed', message: inswResponse.message || 'Failed to transmit saldo awal', insw_response: inswResponse };
+      }
+    } catch (error: any) {
+      this.log.error('Error transmitting saldo awal', { error: error.message });
+
+      await this.logTransmission({
+        transaction_type: 'saldo_awal',
+        company_code: companyCode,
+        insw_status: INSWTransmissionStatus.FAILED,
+        insw_activity_code: '30',
+        insw_error: error.message,
+      });
+
+      return { status: 'failed', message: error.message };
+    }
+  }
+
+  /**
+   * Lock saldo awal (registrasi final) and update status to LOCKED
+   */
+  async lockSaldoAwal(
+    companyCode: number
+  ): Promise<{ status: string; message: string; insw_response?: any }> {
+    this.log.info('Starting saldo awal lock (registrasi final)', { companyCode });
+
+    if (!(await this.isEndpointEnabled('SALDO_AWAL_FINAL'))) {
+      return { status: 'success', message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini' };
+    }
+
+    try {
+      const inswResponse = await this.inswService.registrasiFinal();
+
+      if (inswResponse.status) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE beginning_balances SET status = 'LOCKED'::beginning_balance_status WHERE company_code = $1 AND deleted_at IS NULL`,
+          companyCode
+        );
+
+        await this.logTransmission({
+          transaction_type: 'saldo_awal_final',
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.SUCCESS,
+          insw_activity_code: '30',
+          insw_response: inswResponse,
+        });
+
+        return { status: 'success', message: 'Saldo awal locked (registrasi final) successfully', insw_response: inswResponse };
+      } else {
+        await this.logTransmission({
+          transaction_type: 'saldo_awal_final',
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.FAILED,
+          insw_activity_code: '30',
+          insw_response: inswResponse,
+          insw_error: inswResponse.message,
+        });
+
+        return { status: 'failed', message: inswResponse.message || 'Failed to lock saldo awal', insw_response: inswResponse };
+      }
+    } catch (error: any) {
+      this.log.error('Error locking saldo awal', { error: error.message });
+
+      await this.logTransmission({
+        transaction_type: 'saldo_awal_final',
+        company_code: companyCode,
+        insw_status: INSWTransmissionStatus.FAILED,
+        insw_activity_code: '30',
+        insw_error: error.message,
+      });
+
+      return { status: 'failed', message: error.message };
     }
   }
 

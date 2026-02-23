@@ -8,28 +8,31 @@ export async function seedCompanies() {
   const companies = await Promise.all([
     prisma.companies.upsert({
       where: { code: 1370 },
-      update: {},
+      update: { company_type: 'SEZ' },
       create: {
         code: 1370,
         name: 'PT. Polygroup Manufaktur Indonesia',
+        company_type: 'SEZ',
         status: 'ACTIVE',
       },
     }),
     prisma.companies.upsert({
       where: { code: 1310 },
-      update: {},
+      update: { company_type: 'BZ' },
       create: {
         code: 1310,
         name: 'PT. Harmoni Cahaya Indonesia',
+        company_type: 'BZ',
         status: 'ACTIVE',
       },
     }),
     prisma.companies.upsert({
       where: { code: 1380 },
-      update: {},
+      update: { company_type: 'BZ' },
       create: {
         code: 1380,
         name: 'PT. Sino Berkat Indonesia',
+        company_type: 'BZ',
         status: 'ACTIVE',
       },
     }),

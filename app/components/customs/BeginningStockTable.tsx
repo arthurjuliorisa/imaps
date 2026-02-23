@@ -53,11 +53,14 @@ export interface BeginningStockData {
   uomId?: string;
   // Check if this balance has any transactions
   hasTransactions?: boolean;
+  // INSW transmission status
+  status?: 'OPEN' | 'TRANSMITTED_TO_INSW' | 'LOCKED';
 }
 
 interface BeginningStockTableProps {
   data: BeginningStockData[];
   loading?: boolean;
+  isLocked?: boolean;
   onEdit: (item: BeginningStockData) => void;
   onDelete: (item: BeginningStockData) => void;
   onSearch?: (searchTerm: string) => void;
@@ -67,6 +70,7 @@ interface BeginningStockTableProps {
 export function BeginningStockTable({
   data,
   loading = false,
+  isLocked = false,
   onEdit,
   onDelete,
   onSearch,
@@ -215,6 +219,9 @@ export function BeginningStockTable({
               <TableCell sx={{ fontWeight: 600 }}>Beginning Date</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Remarks</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="center">
+                Status
+              </TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="center">
                 Action
               </TableCell>
             </TableRow>
@@ -222,7 +229,7 @@ export function BeginningStockTable({
           <TableBody>
             {paginatedData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} align="center" sx={{ py: 8 }}>
+                <TableCell colSpan={10} align="center" sx={{ py: 8 }}>
                   <Typography variant="body1" color="text.secondary">
                     No beginning stock data found
                   </Typography>
@@ -295,6 +302,17 @@ export function BeginningStockTable({
                     </Typography>
                   </TableCell>
                   <TableCell align="center">
+                    {row.status === 'LOCKED' && (
+                      <Chip label="LOCKED" color="success" size="small" />
+                    )}
+                    {row.status === 'TRANSMITTED_TO_INSW' && (
+                      <Chip label="TRANSMITTED" color="info" size="small" />
+                    )}
+                    {(!row.status || row.status === 'OPEN') && (
+                      <Chip label="OPEN" color="default" size="small" />
+                    )}
+                  </TableCell>
+                  <TableCell align="center">
                     <Tooltip title="View PPKEK Numbers">
                       <IconButton
                         size="small"
@@ -305,19 +323,21 @@ export function BeginningStockTable({
                         <ViewIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title={row.hasTransactions ? "This balance already have transaction(s) and cannot be edited" : "Edit"}>
-                      <span>
-                        <IconButton
-                          size="small"
-                          onClick={() => onEdit(row)}
-                          color="primary"
-                          sx={{ mr: 0.5 }}
-                          disabled={row.hasTransactions}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
+                    {!isLocked && (
+                      <Tooltip title={row.hasTransactions ? "This balance already have transaction(s) and cannot be edited" : "Edit"}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => onEdit(row)}
+                            color="primary"
+                            sx={{ mr: 0.5 }}
+                            disabled={row.hasTransactions}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
                     <Tooltip title="Delete" sx={{ display: 'none' }}>
                       <IconButton
                         size="small"

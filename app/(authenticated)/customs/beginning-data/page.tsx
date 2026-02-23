@@ -1,8 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Stack, Button, Autocomplete, TextField } from '@mui/material';
-import { Add as AddIcon, UploadFile as UploadFileIcon } from '@mui/icons-material';
+import { Box, Button, Autocomplete, TextField, Chip, Typography } from '@mui/material';
+import {
+  Add as AddIcon,
+  UploadFile as UploadFileIcon,
+  Send as SendIcon,
+  Lock as LockIcon,
+} from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import {
   BeginningStockTable,
@@ -33,6 +38,12 @@ export default function BeginningDataPage() {
   const [formMode, setFormMode] = useState<'add' | 'edit'>('add');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState<string | null>(null);
+
+  // INSW transmission status
+  const [overallStatus, setOverallStatus] = useState<'OPEN' | 'TRANSMITTED_TO_INSW' | 'LOCKED'>('OPEN');
+  const [transmitModalOpen, setTransmitModalOpen] = useState(false);
+  const [lockDialogOpen, setLockDialogOpen] = useState(false);
+  const [transmitLoading, setTransmitLoading] = useState(false);
 
   // Item Type Management
   const [selectedItemType, setSelectedItemType] = useState<string>('ALL');
@@ -94,8 +105,16 @@ export default function BeginningDataPage() {
       }
       const result = await response.json();
 
+      // Handle new API response format: { data: [...], overallStatus }
+      const rawData = Array.isArray(result) ? result : (result.data || []);
+
+      // Update overallStatus if provided
+      if (result.overallStatus) {
+        setOverallStatus(result.overallStatus);
+      }
+
       // Transform API response to match BeginningStockData interface
-      const transformed = Array.isArray(result) ? result.map((item: any) => ({
+      const transformed = rawData.map((item: any) => ({
         id: item.id,
         itemCode: item.item.code,
         itemName: item.item.name,
@@ -106,10 +125,11 @@ export default function BeginningDataPage() {
         remarks: item.remarks,
         ppkek_numbers: item.ppkek_numbers || [],
         hasTransactions: item.hasTransactions || false,
+        status: item.status || 'OPEN',
         // Keep item and uom IDs for edit functionality
         itemId: item.itemId,
         uomId: item.uomId,
-      })) : [];
+      }));
 
       setData(transformed);
     } catch (error) {
@@ -170,7 +190,7 @@ export default function BeginningDataPage() {
         throw new Error('Failed to delete data');
       }
 
-      toast.success('Beginning stock data deleted successfully!\n✓ Snapshot recalculation queued for processing');
+      toast.success('Beginning stock data deleted successfully!\n Snapshot recalculation queued for processing');
       await fetchData();
       setDeleteDialogOpen(false);
       setSelectedItem(null);
@@ -211,13 +231,8 @@ export default function BeginningDataPage() {
         throw new Error(errorData.message || `Failed to ${formMode} data`);
       }
 
-      let successMessage = `Beginning stock data ${formMode === 'add' ? 'added' : 'updated'} successfully!`;
-      if (formMode === 'edit') {
-        successMessage += '\n✓ Snapshot recalculation queued for processing';
-      } else {
-        successMessage += '\n✓ Snapshot recalculation queued for processing';
-      }
-      
+      const successMessage = `Beginning stock data ${formMode === 'add' ? 'added' : 'updated'} successfully!\n Snapshot recalculation queued for processing`;
+
       toast.success(successMessage);
       await fetchData();
       setFormOpen(false);
@@ -278,7 +293,7 @@ export default function BeginningDataPage() {
       // Enhanced success message with queue info
       let successMessage = result.message || `Successfully imported ${records.length} beginning stock record(s)!`;
       if (result.success) {
-        successMessage += '\n✓ Snapshot recalculation queued for processing';
+        successMessage += '\n Snapshot recalculation queued for processing';
       }
 
       toast.success(successMessage);
@@ -291,6 +306,41 @@ export default function BeginningDataPage() {
         toast.error(error.message || 'Failed to import records. Please try again.');
       }
       throw error;
+    }
+  };
+
+  // Handle transmit to INSW
+  const handleTransmitToINSW = async () => {
+    setTransmitLoading(true);
+    try {
+      const response = await fetch('/api/insw/post/saldo-awal', { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || result.message || 'Transmission failed');
+      }
+      toast.success('Saldo Awal berhasil dikirim ke INSW');
+      setTransmitModalOpen(false);
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error.message || 'Gagal mengirim Saldo Awal ke INSW');
+    } finally {
+      setTransmitLoading(false);
+    }
+  };
+
+  // Handle lock saldo awal
+  const handleLockSaldoAwal = async () => {
+    try {
+      const response = await fetch('/api/insw/post/saldo-awal-final', { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || result.message || 'Lock failed');
+      }
+      toast.success('Saldo Awal berhasil dikunci di INSW');
+      setLockDialogOpen(false);
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error.message || 'Gagal mengunci Saldo Awal di INSW');
     }
   };
 
@@ -323,49 +373,92 @@ export default function BeginningDataPage() {
     return itemType ? `Beginning Data - ${itemType.name}` : 'Beginning Data';
   };
 
+  // Render the overallStatus chip
+  const renderOverallStatusChip = () => {
+    if (overallStatus === 'LOCKED') {
+      return <Chip label="LOCKED" color="success" />;
+    }
+    if (overallStatus === 'TRANSMITTED_TO_INSW') {
+      return <Chip label="TRANSMITTED TO INSW" color="info" />;
+    }
+    return <Chip label="OPEN" color="default" />;
+  };
+
   return (
     <ReportLayout
       title={getPageTitle()}
       subtitle="Manage beginning balance data for stock mutations"
       actions={
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, flexWrap: 'wrap' }}>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={handleAddClick}
-            sx={{
-              textTransform: 'none',
-              borderRadius: 2,
-              bgcolor: 'success.main',
-              '&:hover': {
-                bgcolor: 'success.dark',
-              },
-            }}
-          >
-            Add Manually
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<UploadFileIcon />}
-            onClick={() => setImportOpen(true)}
-            sx={{
-              textTransform: 'none',
-              borderRadius: 2,
-              bgcolor: 'info.main',
-              '&:hover': {
-                bgcolor: 'info.dark',
-              },
-            }}
-          >
-            Import from Excel
-          </Button>
+          {overallStatus === 'OPEN' && (
+            <Button
+              variant="outlined"
+              color="primary"
+              startIcon={<SendIcon />}
+              onClick={() => setTransmitModalOpen(true)}
+              sx={{
+                textTransform: 'none',
+                borderRadius: 2,
+              }}
+            >
+              Kirim ke INSW
+            </Button>
+          )}
+          {overallStatus === 'TRANSMITTED_TO_INSW' && (
+            <Button
+              variant="outlined"
+              color="warning"
+              startIcon={<LockIcon />}
+              onClick={() => setLockDialogOpen(true)}
+              sx={{
+                textTransform: 'none',
+                borderRadius: 2,
+              }}
+            >
+              Lock Saldo Awal
+            </Button>
+          )}
+          {overallStatus !== 'LOCKED' && (
+            <>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleAddClick}
+                sx={{
+                  textTransform: 'none',
+                  borderRadius: 2,
+                  bgcolor: 'success.main',
+                  '&:hover': {
+                    bgcolor: 'success.dark',
+                  },
+                }}
+              >
+                Add Manually
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<UploadFileIcon />}
+                onClick={() => setImportOpen(true)}
+                sx={{
+                  textTransform: 'none',
+                  borderRadius: 2,
+                  bgcolor: 'info.main',
+                  '&:hover': {
+                    bgcolor: 'info.dark',
+                  },
+                }}
+              >
+                Import from Excel
+              </Button>
+            </>
+          )}
         </Box>
       }
     >
       {/* Item Type Dropdown */}
       <Box
         sx={{
-          mb: 3,
+          mb: 2,
           p: 2.5,
           borderRadius: 2,
           border: '1px solid',
@@ -406,9 +499,26 @@ export default function BeginningDataPage() {
         />
       </Box>
 
+      {/* Overall Status Indicator */}
+      <Box
+        sx={{
+          mb: 3,
+          px: 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.5,
+        }}
+      >
+        <Typography variant="body2" color="text.secondary" fontWeight={500}>
+          Status Saldo Awal:
+        </Typography>
+        {renderOverallStatusChip()}
+      </Box>
+
       <BeginningStockTable
         data={data}
         loading={loading}
+        isLocked={overallStatus === 'LOCKED'}
         onEdit={handleEdit}
         onDelete={handleDeleteClick}
         onSearch={setSearchTerm}
@@ -452,6 +562,30 @@ export default function BeginningDataPage() {
           setSelectedItem(null);
         }}
         severity="error"
+      />
+
+      {/* Transmit to INSW Confirmation Dialog */}
+      <ConfirmDialog
+        open={transmitModalOpen}
+        title="Kirim Saldo Awal ke INSW?"
+        message="Tindakan ini akan mengirimkan semua data saldo awal ke INSW."
+        confirmText={transmitLoading ? 'Mengirim...' : 'Mulai Transmit'}
+        cancelText="Batal"
+        onConfirm={handleTransmitToINSW}
+        onCancel={() => setTransmitModalOpen(false)}
+        severity="info"
+      />
+
+      {/* Lock Saldo Awal Confirmation Dialog */}
+      <ConfirmDialog
+        open={lockDialogOpen}
+        title="Lock Saldo Awal?"
+        message="Tindakan ini tidak dapat dibatalkan. Saldo Awal akan dikunci di INSW (Registrasi Final). Setelah dikunci, data tidak dapat diubah lagi."
+        confirmText="Lock Saldo Awal"
+        cancelText="Batal"
+        onConfirm={handleLockSaldoAwal}
+        onCancel={() => setLockDialogOpen(false)}
+        severity="warning"
       />
     </ReportLayout>
   );

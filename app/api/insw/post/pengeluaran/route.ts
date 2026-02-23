@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { checkAuth } from '@/lib/api-auth';
-import { validateCompanyCode } from '@/lib/company-validation';
+import { validateCompanyCode, validateSEZCompany } from '@/lib/company-validation';
 
 export async function POST(request: Request) {
   try {
@@ -17,6 +17,12 @@ export async function POST(request: Request) {
     }
 
     const { companyCode } = companyValidation;
+
+    const sezValidation = await validateSEZCompany(companyCode);
+    if (!sezValidation.success) {
+      return sezValidation.response;
+    }
+
     const body = await request.json();
     const { ids, wmsIds } = body;
 
