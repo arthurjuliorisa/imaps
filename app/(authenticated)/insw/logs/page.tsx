@@ -146,6 +146,8 @@ export default function INSWLogsPage() {
   const [chartLoading, setChartLoading] = useState(true);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resendingDialog, setResendingDialog] = useState(false);
+  const [confirmResendOpen, setConfirmResendOpen] = useState(false);
+  const [pendingResendId, setPendingResendId] = useState<string | null>(null);
 
   const columns: Column[] = [
     {
@@ -232,7 +234,10 @@ export default function INSWLogsPage() {
                 <IconButton
                   size="small"
                   color="warning"
-                  onClick={() => handleResend(String((row as INSWLog).id))}
+                  onClick={() => {
+                    setPendingResendId(String((row as INSWLog).id));
+                    setConfirmResendOpen(true);
+                  }}
                   disabled={resendingId === String((row as INSWLog).id)}
                 >
                   {resendingId === String((row as INSWLog).id)
@@ -704,11 +709,9 @@ export default function INSWLogsPage() {
           <Box>
             {selectedLog?.insw_status === 'FAILED' && (
               <Button
-                onClick={async () => {
-                  setResendingDialog(true);
-                  await handleResend(String(selectedLog.id));
-                  setResendingDialog(false);
-                  setDetailDialogOpen(false);
+                onClick={() => {
+                  setPendingResendId(String(selectedLog.id));
+                  setConfirmResendOpen(true);
                 }}
                 color="warning"
                 variant="contained"
@@ -721,6 +724,38 @@ export default function INSWLogsPage() {
           </Box>
           <Button onClick={handleCloseDetailDialog} variant="contained">
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={confirmResendOpen} onClose={() => setConfirmResendOpen(false)}>
+        <DialogTitle>Konfirmasi Kirim Ulang</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Apakah Anda yakin ingin mengirim ulang data ini ke INSW?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setConfirmResendOpen(false); setPendingResendId(null); }}>
+            Batal
+          </Button>
+          <Button
+            onClick={async () => {
+              setConfirmResendOpen(false);
+              if (!pendingResendId) return;
+              const isFromDialog = selectedLog && String(selectedLog.id) === pendingResendId;
+              if (isFromDialog) setResendingDialog(true);
+              await handleResend(pendingResendId);
+              if (isFromDialog) {
+                setResendingDialog(false);
+                setDetailDialogOpen(false);
+              }
+              setPendingResendId(null);
+            }}
+            color="warning"
+            variant="contained"
+          >
+            Kirim Ulang
           </Button>
         </DialogActions>
       </Dialog>
