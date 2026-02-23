@@ -712,7 +712,7 @@ model scrap_transactions {
   remarks                   String?                   @db.VarChar(1000)
   ppkek_number              String?                   @db.VarChar(50) // Customs registration number (for OUT transactions)
   customs_registration_date DateTime?                 @db.Date // Customs registration date (for OUT transactions)
-  customs_document_type     String?                   @db.VarChar(10) // BC25, BC27, BC41 (for OUT transactions)
+  customs_document_type     CustomsDocumentType?      // BC25, BC27, BC41, BC261, BC262, PPKEK variants (for OUT transactions)
   timestamp                 DateTime                  @default(now()) @db.Timestamptz(6)
   created_at                DateTime                  @default(now()) @db.Timestamptz(6)
   updated_at                DateTime                  @updatedAt @db.Timestamptz(6)
@@ -882,7 +882,7 @@ model outgoing_fg_production_traceability {
   ppkek_number_incoming    String?   @db.VarChar(50)     // PPKEK from incoming goods
   incoming_goods_id        Int?      // FK to incoming_goods
   customs_registration_date DateTime? @db.Date           // From incoming_goods
-  customs_document_type    String?   @db.VarChar(20)    // From incoming_goods (BC23, BC27, etc)
+  customs_document_type    CustomsDocumentType?       // From incoming_goods (BC23, BC27, etc)
   incoming_date            DateTime? @db.Date           // From incoming_goods (for reference)
 
   outgoing_good_item outgoing_good_items @relation(fields: [outgoing_good_item_id], references: [id], onDelete: Cascade)
@@ -1011,6 +1011,10 @@ model wms_stock_opname_items {
   adjustment_qty_signed     Decimal?            @db.Decimal(15, 3) // Signed qty: populated ONLY when adjustment is confirmed/transmitted (nullable until adjustment creation)
   adjustment_type           String?             @db.VarChar(10) // GAIN, LOSS (from created adjustment, nullable until adjustment confirmed)
   amount                    Decimal?            @db.Decimal(15, 4) // Added per API Contract v3.3.0 for PATCH Confirmed
+  
+  // Final state after adjustments
+  final_adjusted_qty        Decimal?            @db.Decimal(15, 3) // system_qty (STO) or system_qty + adjustment_qty_signed (after adjustment)
+  reason                    String?             @db.Text // Reason for adjustment (from adjustment_items.reason)
   
   uom                       String              @db.VarChar(20)
   created_at                DateTime            @default(now()) @db.Timestamptz(6)

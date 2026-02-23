@@ -471,6 +471,10 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
    * - uom
    * - adjustment_type (GAIN/LOSS) should match the variance type in STO
    * 
+   * IDEMPOTENCY HANDLING:
+   * - First transmit: STO items have adjustment_qty_signed = NULL → UPDATE new data
+   * - Resubmit (same wms_id + date): STO items already updated → RESET first, then UPDATE new data
+   * 
    * OPTIMIZED: Batch update instead of per-row loop for performance
    * For each item+uom+adjustment_type combination, find the MOST RECENT (by created_at DESC)
    * unprocessed STO item and update in batch
@@ -502,7 +506,9 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       const uniqueItems = Array.from(uniqueCombinations.values());
 
       // Step 2: Query matching STO items using Prisma OR conditions
-      // Prisma will handle parameterization safely
+      // Include system_qty for final_adjusted_qty calculation
+      // For idempotency (resubmit): also get STO items that are ALREADY updated (adjustment_qty_signed NOT NULL)
+      // This allows reset + re-update on resubmit
       const orConditions = uniqueItems.map((item) => ({
         AND: [
           { item_code: item.item_code },
@@ -514,7 +520,6 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       const allMatchingStoItems = await prisma.wms_stock_opname_items.findMany({
         where: {
           company_code: data.company_code,
-          adjustment_qty_signed: null,
           OR: orConditions,
         },
         select: {
@@ -522,6 +527,8 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
           item_code: true,
           uom: true,
           adjustment_type: true,
+          system_qty: true,
+          adjustment_qty_signed: true,
           created_at: true,
         },
         orderBy: [
@@ -533,13 +540,14 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       });
 
       if (allMatchingStoItems.length === 0) {
-        log.debug('No matching unassigned STO items found', {
+        log.debug('No matching STO items found', {
           adjustmentItemCount: data.items.length,
         });
         return;
       }
 
       // Step 3: Select ONLY the most recent (latest created_at) for each combination
+      // Prioritize items with NULL adjustment_qty_signed (first transmit) but also accept already-updated ones (resubmit)
       const mostRecentMap = new Map<string, typeof allMatchingStoItems[0]>();
       for (const stoItem of allMatchingStoItems) {
         const key = `${stoItem.item_code}:${stoItem.uom}:${stoItem.adjustment_type}`;
@@ -549,21 +557,42 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         }
       }
 
-      // Step 4: Build mapping: (item_code, uom, adjustment_type) -> qty from adjustment items
-      const adjQtyMap = new Map<string, number>();
+      // Step 4: Build mapping: (item_code, uom, adjustment_type) -> {qty, reason}
+      const adjDataMap = new Map<string, { qty: number; reason: string | null }>();
       for (const item of data.items) {
         const key = `${item.item_code}:${item.uom}:${item.adjustment_type}`;
-        adjQtyMap.set(key, item.qty);
+        adjDataMap.set(key, {
+          qty: item.qty,
+          reason: item.reason || null,
+        });
       }
 
-      // Step 5: Prepare batch updates
-      const updates: Array<{ id: bigint; qty: Prisma.Decimal }> = [];
+      // Step 5: Prepare batch updates with final_adjusted_qty calculation
+      // Respect adjustment_type sign: LOSS = negative, GAIN = positive
+      // adjustment_qty_signed = signed qty based on type
+      // final_adjusted_qty = system_qty + adjustment_qty_signed
+      const updates: Array<{
+        id: bigint;
+        qty: Prisma.Decimal;
+        finalAdjustedQty: Prisma.Decimal;
+        reason: string | null;
+      }> = [];
+
       for (const [key, stoItem] of mostRecentMap) {
-        const qty = adjQtyMap.get(key);
-        if (qty !== undefined) {
+        const adjData = adjDataMap.get(key);
+        if (adjData !== undefined) {
+          // Apply sign based on adjustment_type: LOSS = -1, GAIN = +1
+          const multiplier = stoItem.adjustment_type === 'LOSS' ? -1 : 1;
+          const signedQty = new Prisma.Decimal(adjData.qty * multiplier);
+
+          // Calculate final_adjusted_qty = system_qty + adjustment_qty_signed
+          const finalQty = stoItem.system_qty.plus(signedQty);
+
           updates.push({
             id: stoItem.id,
-            qty: new Prisma.Decimal(qty),
+            qty: signedQty,
+            finalAdjustedQty: finalQty,
+            reason: adjData.reason,
           });
         }
       }
@@ -576,10 +605,21 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         return;
       }
 
-      // Step 6: Batch update using CASE statement in single UPDATE query
-      // Build the CASE statement safe from SQL injection
-      const caseStatements = updates
+      // Step 6: Batch update using CASE statements in single UPDATE query
+      // Update 3 fields: adjustment_qty_signed, final_adjusted_qty, reason
+      const qtyStatements = updates
         .map((u) => `WHEN ${u.id}::bigint THEN ${u.qty.toString()}::decimal(15,3)`)
+        .join('\n');
+
+      const finalQtyStatements = updates
+        .map((u) => `WHEN ${u.id}::bigint THEN ${u.finalAdjustedQty.toString()}::decimal(15,3)`)
+        .join('\n');
+
+      const reasonStatements = updates
+        .map((u) => {
+          const reasonSql = u.reason ? `'${u.reason.replace(/'/g, "''")}'` : 'NULL';
+          return `WHEN ${u.id}::bigint THEN ${reasonSql}`;
+        })
         .join('\n');
 
       const idList = updates.map((u) => `${u.id}::bigint`).join(',');
@@ -588,14 +628,22 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         UPDATE wms_stock_opname_items
         SET 
           adjustment_qty_signed = CASE id
-            ${caseStatements}
+            ${qtyStatements}
             ELSE adjustment_qty_signed
+          END,
+          final_adjusted_qty = CASE id
+            ${finalQtyStatements}
+            ELSE final_adjusted_qty
+          END,
+          reason = CASE id
+            ${reasonStatements}
+            ELSE reason
           END,
           updated_at = NOW()
         WHERE id IN (${idList})
       `);
 
-      log.info('Batch updated STO items with adjustment_qty_signed', {
+      log.info('Batch updated STO items with adjustment data', {
         totalUpdated: updates.length,
         uniqueCombinations: uniqueCombinations.size,
         adjustmentItems: data.items.length,

@@ -111,6 +111,8 @@ export class WmsStockOpnameRepository {
           adjustment_qty_signed: null,
           adjustment_type,
           amount: null,
+          final_adjusted_qty: system_qty,
+          reason: null,
         };
       });
 
@@ -193,6 +195,8 @@ export class WmsStockOpnameRepository {
             adjustment_qty_signed: null,
             adjustment_type,
             amount: item.amount ?? null,
+            final_adjusted_qty: system_qty,
+            reason: null,
           };
         });
 

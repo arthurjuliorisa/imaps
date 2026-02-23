@@ -34,12 +34,13 @@ export async function seedTransactions() {
   console.log('  ✓ Deleted existing transactions for company 1310');
 
   // 1. INCOMING GOODS
+  // Using BC23 (Import Declaration) - valid for incoming goods
   const incomingGood = await prisma.incoming_goods.create({
     data: {
       wms_id: 'INC-1310-20251214-001',
       company_code: 1310,
       owner: 1310,
-      customs_document_type: 'BC23',
+      customs_document_type: 'BC23', // CustomsDocumentType enum
       ppkek_number: 'PPKEK-1310-2025-0001',
       customs_registration_date: new Date('2025-12-10'),
       incoming_evidence_number: 'SJ-1310-IN-001',
@@ -129,12 +130,13 @@ export async function seedTransactions() {
   console.log(`✅ Created production output: ${productionOutput.wms_id}`);
 
   // 4. OUTGOING GOODS
+  // Using BC30 (Export Declaration) - valid for outgoing goods
   const outgoingGood = await prisma.outgoing_goods.create({
     data: {
       wms_id: 'OUT-1310-20251214-001',
       company_code: 1310,
       owner: 1310,
-      customs_document_type: 'BC30',
+      customs_document_type: 'BC30', // CustomsDocumentType enum
       ppkek_number: 'PPKEK-1310-2025-0002',
       customs_registration_date: new Date('2025-12-12'),
       outgoing_evidence_number: 'SJ-OUT-001',

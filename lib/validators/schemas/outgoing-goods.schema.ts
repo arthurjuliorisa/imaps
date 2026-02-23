@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { Currency } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
+import { OUTGOING_CUSTOMS_TYPES } from '@/lib/validators/constants/customs-document-types';
 
 // =============================================================================
 // CONSTANTS
@@ -29,11 +30,11 @@ import { validateItemTypeConsistency } from '@/lib/validators/item-type-consiste
 
 const VALID_COMPANY_CODES = [1370, 1310, 1380] as const;
 
-// CustomsDocumentType enum values for outgoing goods
-const OUTGOING_CUSTOMS_TYPES = ['BC30', 'BC25', 'BC27', 'BC41', 'BC261'] as const;
-
 // Currency enum values
 const VALID_CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'] as const;
+
+// NOTE: OUTGOING_CUSTOMS_TYPES imported from customs-document-types.ts
+// This ensures single source of truth across validators
 
 // =============================================================================
 // INTERFACES

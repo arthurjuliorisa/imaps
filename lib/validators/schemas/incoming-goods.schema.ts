@@ -26,6 +26,7 @@ import { Currency } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { checkDuplicateItems } from '@/lib/validators/duplicate-item.validator';
 import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
+import { INCOMING_CUSTOMS_TYPES } from '@/lib/validators/constants/customs-document-types';
 
 // =============================================================================
 // CONSTANTS
@@ -33,11 +34,11 @@ import { validateItemTypeConsistency } from '@/lib/validators/item-type-consiste
 
 const VALID_COMPANY_CODES = [1370, 1310, 1380] as const;
 
-// CustomsDocumentType enum values for incoming goods
-const INCOMING_CUSTOMS_TYPES = ['BC23', 'BC27', 'BC40'] as const;
-
 // Currency enum values - MANUALLY DEFINED for build-time safety
 const VALID_CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'] as const;
+
+// NOTE: INCOMING_CUSTOMS_TYPES imported from customs-document-types.ts
+// This ensures single source of truth across validators
 
 // =============================================================================
 // REUSABLE SCHEMAS

@@ -1,74 +1,8 @@
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 import { validateCompanyCode } from '@/lib/company-validation';
-
-// MOCK DATA - Replace with actual database queries when ready
-const MOCK_OPNAME_HEADERS = [
-  {
-    id: 'OPN-001',
-    documentNumber: 'OPN-001',
-    date: new Date('2026-02-01'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'RELEASED',
-    description: 'Stock Opname Periode Januari 2026',
-  },
-  {
-    id: 'OPN-002',
-    documentNumber: 'OPN-002',
-    date: new Date('2026-02-05'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'PROCESS',
-    description: 'Stock Opname Gudang A',
-  },
-  {
-    id: 'OPN-003',
-    documentNumber: 'OPN-003',
-    date: new Date('2026-02-08'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'RELEASED',
-    description: 'Stock Opname Gudang B',
-  },
-  {
-    id: 'OPN-004',
-    documentNumber: 'OPN-004',
-    date: new Date('2026-02-10'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'PROCESS',
-    description: 'Stock Opname Mingguan',
-  },
-  {
-    id: 'OPN-005',
-    documentNumber: 'OPN-005',
-    date: new Date('2026-02-11'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'RELEASED',
-    description: 'Stock Opname Komprehensif',
-  },
-  {
-    id: 'OPN-006',
-    documentNumber: 'OPN-006',
-    date: new Date('2026-01-28'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'RELEASED',
-    description: 'Stock Opname Akhir Januari',
-  },
-  {
-    id: 'OPN-007',
-    documentNumber: 'OPN-007',
-    date: new Date('2026-01-25'),
-    companyCode: 1,
-    companyName: 'PT. Example Company',
-    status: 'PROCESS',
-    description: 'Stock Opname Bahan Baku',
-  },
-];
 
 export async function GET(request: Request) {
   try {
@@ -79,26 +13,44 @@ export async function GET(request: Request) {
 
     const { session } = authCheck as { authenticated: true; session: any };
 
-    // Validate company code with detailed error messages
     const companyValidation = validateCompanyCode(session);
     if (!companyValidation.success) {
       return companyValidation.response;
     }
     const { companyCode } = companyValidation;
 
-    // MOCK DATA FILTERING - Filter by company code
-    const filteredData = MOCK_OPNAME_HEADERS.filter(
-      (item) => item.companyCode === companyCode
+    const result = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT
+        id, wms_id, company_code, company_name,
+        doc_date, status,
+        type_code, item_code, item_code_bahasa, item_name,
+        unit, qty, value_amount
+      FROM vw_laporan_stock_opname
+      WHERE company_code = $1
+      ORDER BY doc_date DESC, id`,
+      companyCode
     );
 
-    // Sort by date descending
-    filteredData.sort((a, b) => b.date.getTime() - a.date.getTime());
+    const transformedData = result.map((row: any, index: number) => ({
+      id: `${row.id}-${row.item_code}-${index}`,
+      companyCode: row.company_code,
+      companyName: row.company_name,
+      docDate: row.doc_date,
+      status: row.status,
+      typeCode: row.type_code,
+      itemCodeBahasa: row.item_code_bahasa || '',
+      itemCode: row.item_code,
+      itemName: row.item_name,
+      unit: row.unit,
+      qty: Number(row.qty || 0),
+      valueAmount: Number(row.value_amount || 0),
+    }));
 
-    return NextResponse.json(serializeBigInt(filteredData));
+    return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {
-    console.error('[API Error] Failed to fetch stock opname documents:', error);
+    console.error('[API Error] Failed to fetch stock opname data:', error);
     return NextResponse.json(
-      { message: 'Error fetching stock opname documents' },
+      { message: 'Error fetching stock opname data' },
       { status: 500 }
     );
   }
