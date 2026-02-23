@@ -40,6 +40,7 @@ interface IncomingReportData {
   date: Date;
   shipperName: string;
   typeCode: string;
+  itemCodeBahasa: string;
   itemCode: string;
   itemName: string;
   unit: string;
@@ -59,6 +60,7 @@ const EXCEL_HEADERS = [
   { key: 'date', label: 'Tanggal Bukti Penerimaan Barang', type: 'date' as const },
   { key: 'shipperName', label: 'Pengirim Barang', type: 'text' as const },
   { key: 'typeCode', label: 'Item Type', type: 'text' as const },
+  { key: 'itemCodeBahasa', label: 'Nama Item Type', type: 'text' as const },
   { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
   { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
   { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
@@ -184,6 +186,7 @@ export default function IncomingGoodsReportPage() {
       date: row.date,
       shipperName: row.shipperName,
       typeCode: row.typeCode,
+      itemCodeBahasa: row.itemCodeBahasa,
       itemCode: row.itemCode,
       itemName: row.itemName,
       unit: row.unit,
@@ -350,7 +353,14 @@ export default function IncomingGoodsReportPage() {
                     <TableCell>{formatDate(row.date)}</TableCell>
                     <TableCell>{row.shipperName}</TableCell>
                     <TableCell>
-                      <Chip label={row.typeCode} size="small" color="secondary" />
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.5 }}>
+                        <Chip label={row.typeCode} size="small" color="secondary" />
+                        {row.itemCodeBahasa && (
+                          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+                            {row.itemCodeBahasa}
+                          </Typography>
+                        )}
+                      </Box>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>
