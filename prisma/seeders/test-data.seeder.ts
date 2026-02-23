@@ -98,7 +98,7 @@ export async function seedTestData() {
   });
   console.log(`  ✅ Created ${beginningBalances.length} beginning balances`);
 
-  // 2. INCOMING GOODS (BC23 - Pemasukan)
+  // 2. INCOMING GOODS (BC23 - Import Declaration)
   console.log('  📥 Creating incoming goods...');
 
   const incoming1 = await prisma.incoming_goods.create({
@@ -106,7 +106,7 @@ export async function seedTestData() {
       wms_id: 'INC-1310-20261215-001',
       company_code: COMPANY_CODE,
       owner: COMPANY_CODE,
-      customs_document_type: 'BC23',
+      customs_document_type: 'BC23', // CustomsDocumentType enum: Import Declaration
       ppkek_number: 'PPKEK-1310-2026-001',
       customs_registration_date: new Date('2026-12-14'),
       incoming_evidence_number: 'SJ-IN-20261215-001',
@@ -295,7 +295,7 @@ export async function seedTestData() {
 
   console.log('  ✅ Created WIP balance');
 
-  // 6. OUTGOING GOODS (Pengeluaran)
+  // 6. OUTGOING GOODS (Export Declaration - BC30)
   console.log('  📤 Creating outgoing goods...');
 
   const outgoing = await prisma.outgoing_goods.create({
@@ -303,7 +303,7 @@ export async function seedTestData() {
       wms_id: 'OUT-1310-20261215-001',
       company_code: COMPANY_CODE,
       owner: COMPANY_CODE,
-      customs_document_type: 'BC30',
+      customs_document_type: 'BC30', // CustomsDocumentType enum: Export Declaration
       ppkek_number: 'PPKEK-1310-2026-003',
       customs_registration_date: new Date('2026-12-14'),
       outgoing_evidence_number: 'SJ-OUT-20261215-001',

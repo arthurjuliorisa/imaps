@@ -164,7 +164,7 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
           },
           update: {
             owner: data.owner,
-            customs_document_type: data.customs_document_type as any,
+            customs_document_type: data.customs_document_type,
             ppkek_number: data.ppkek_number,
             customs_registration_date: customsRegDate,
             incoming_evidence_number: data.incoming_evidence_number,
@@ -179,7 +179,7 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
             wms_id: data.wms_id,
             company_code: data.company_code,
             owner: data.owner,
-            customs_document_type: data.customs_document_type as any,
+            customs_document_type: data.customs_document_type,
             ppkek_number: data.ppkek_number,
             customs_registration_date: customsRegDate,
             incoming_evidence_number: data.incoming_evidence_number,
