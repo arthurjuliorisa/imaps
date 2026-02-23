@@ -101,6 +101,7 @@ const menuStructure: MenuInput[] = [
       { menu_name: 'INSW Logs', menu_path: '/insw/logs', menu_icon: 'History', menu_order: 1 },
       { menu_name: 'INSW UOM', menu_path: '/insw/uom', menu_icon: 'Category', menu_order: 2 },
       { menu_name: 'Pengaturan Integrasi', menu_path: '/insw/integration-settings', menu_icon: 'ToggleOn', menu_order: 3 },
+      { menu_name: 'UOM Mapping', menu_path: '/insw/uom-mapping', menu_icon: 'SwapHoriz', menu_order: 4 },
     ],
   },
   {

@@ -168,3 +168,21 @@ VALUES
   ('SALDO_AWAL',        'Saldo Awal',                   'Transmisi saldo awal ke INSW', true, NOW()),
   ('SALDO_AWAL_FINAL',  'Registrasi Final Saldo Awal',  'Lock dan finalisasi saldo awal ke INSW', true, NOW())
 ON CONFLICT (endpoint_key) DO NOTHING;
+
+-- ============================================================================
+-- MIGRATION 004: Create insw_uom_mapping table
+-- ============================================================================
+-- Reason: DB-based UOM mapping for WMS -> INSW code conversion.
+-- Prisma db push cannot create this due to partitioned table conflicts.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS insw_uom_mapping (
+  id          SERIAL PRIMARY KEY,
+  wms_uom     VARCHAR(50) NOT NULL UNIQUE,
+  insw_uom    VARCHAR(10) NOT NULL,
+  description VARCHAR(255),
+  is_active   BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_insw_uom_mapping_wms_uom ON insw_uom_mapping(wms_uom);

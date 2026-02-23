@@ -1104,3 +1104,16 @@ model insw_integration_settings {
   updated_at    DateTime @updatedAt
   updated_by    String?  @db.VarChar(100)
 }
+
+model insw_uom_mapping {
+  id          Int      @id @default(autoincrement())
+  wms_uom     String   @unique @db.VarChar(50)
+  insw_uom    String   @db.VarChar(10)
+  description String?  @db.VarChar(255)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([wms_uom])
+  @@map("insw_uom_mapping")
+}

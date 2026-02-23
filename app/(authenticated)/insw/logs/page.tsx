@@ -20,8 +20,9 @@ import {
   DialogContent,
   DialogActions,
   Button,
+  CircularProgress,
 } from '@mui/material';
-import { Refresh, Visibility, ContentCopy, Check } from '@mui/icons-material';
+import { Refresh, Visibility, ContentCopy, Check, Replay as ReplayIcon } from '@mui/icons-material';
 import {
   AreaChart,
   Area,
@@ -143,6 +144,8 @@ export default function INSWLogsPage() {
 
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resendingDialog, setResendingDialog] = useState(false);
 
   const columns: Column[] = [
     {
@@ -211,17 +214,36 @@ export default function INSWLogsPage() {
     {
       id: 'actions',
       label: 'Actions',
-      minWidth: 100,
+      minWidth: 140,
       format: (value: any, row: any) => (
-        <Tooltip title="View Details">
-          <IconButton
-            size="small"
-            color="primary"
-            onClick={() => handleViewDetails(row as INSWLog)}
-          >
-            <Visibility fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <Stack direction="row" spacing={0.5}>
+          <Tooltip title="View Details">
+            <IconButton
+              size="small"
+              color="primary"
+              onClick={() => handleViewDetails(row as INSWLog)}
+            >
+              <Visibility fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          {(row as INSWLog).insw_status === 'FAILED' && (
+            <Tooltip title="Kirim Ulang">
+              <span>
+                <IconButton
+                  size="small"
+                  color="warning"
+                  onClick={() => handleResend(String((row as INSWLog).id))}
+                  disabled={resendingId === String((row as INSWLog).id)}
+                >
+                  {resendingId === String((row as INSWLog).id)
+                    ? <CircularProgress size={16} />
+                    : <ReplayIcon fontSize="small" />
+                  }
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
+        </Stack>
       ),
     },
   ];
@@ -304,6 +326,21 @@ export default function INSWLogsPage() {
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(null), 2000);
     });
+  };
+
+  const handleResend = async (logId: string) => {
+    setResendingId(logId);
+    try {
+      const res = await fetch(`/api/insw/logs/${logId}/resend`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Gagal mengirim ulang data');
+      toast.success('Data berhasil dikirim ulang ke INSW');
+      fetchLogs();
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal mengirim ulang data');
+    } finally {
+      setResendingId(null);
+    }
   };
 
   const totalSuccess = chartData.reduce((sum, d) => sum + d.success, 0);
@@ -663,7 +700,25 @@ export default function INSWLogsPage() {
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ justifyContent: 'space-between' }}>
+          <Box>
+            {selectedLog?.insw_status === 'FAILED' && (
+              <Button
+                onClick={async () => {
+                  setResendingDialog(true);
+                  await handleResend(String(selectedLog.id));
+                  setResendingDialog(false);
+                  setDetailDialogOpen(false);
+                }}
+                color="warning"
+                variant="contained"
+                disabled={resendingDialog}
+                startIcon={resendingDialog ? <CircularProgress size={16} /> : <ReplayIcon />}
+              >
+                Kirim Ulang
+              </Button>
+            )}
+          </Box>
           <Button onClick={handleCloseDetailDialog} variant="contained">
             Close
           </Button>

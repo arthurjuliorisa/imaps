@@ -1,4 +1,5 @@
 import { format } from 'date-fns';
+import { prisma } from '@/lib/prisma';
 import {
   INSWApiHeaders,
   INSWTransaksiPayload,
@@ -53,51 +54,9 @@ export class INSWIntegrationService {
     return ITEM_TYPE_TO_INSW_CATEGORY[itemType] || '1';
   }
 
-  private mapUomToINSW(uom: string): string {
-    const mapping: Record<string, string> = {
-      // Piece / unit
-      'PCS': 'PCE',
-      'PC': 'PCE',
-      'UNIT': 'PCE',
-      'EA': 'PCE',
-      // Pack / packaging
-      'PACK': 'PK',
-      'PKG': 'PK',
-      'PAK': 'PA',
-      // Weight
-      'KG': 'KGM',
-      'KILOGRAM': 'KGM',
-      'GR': 'GRM',
-      'GRAM': 'GRM',
-      'MG': 'MGM',
-      'TON': 'TNE',
-      'MT': 'TNE',
-      // Volume
-      'LT': 'LTR',
-      'LITER': 'LTR',
-      'LITRE': 'LTR',
-      // Length / area / volume
-      'M': 'MTR',
-      'METER': 'MTR',
-      'METRE': 'MTR',
-      'M2': 'MTK',
-      'M3': 'MTQ',
-      // Packaging types
-      'BOX': 'BX',
-      'CTN': 'CTN',
-      'CARTON': 'CTN',
-      'ROLL': 'RO',
-      'ROL': 'RO',
-      'SET': 'SET',
-      'BTL': 'BO',
-      'BOTTLE': 'BO',
-      'BOTOL': 'BO',
-      'BAG': 'BAG',
-      'DRUM': 'DRM',
-      'JAR': 'JR',
-      'BOLT': 'BT',
-    };
-    return mapping[uom.toUpperCase()] || uom;
+  private async loadUomMappings(): Promise<Map<string, string>> {
+    const mappings = await prisma.insw_uom_mapping.findMany({ where: { is_active: true } });
+    return new Map(mappings.map((m) => [m.wms_uom.toUpperCase(), m.insw_uom]));
   }
 
   private mapCustomsDocTypeToINSWDocCode(
@@ -140,6 +99,9 @@ export class INSWIntegrationService {
       };
     }
 
+    const uomMap = await this.loadUomMappings();
+    const missingUoms = new Set<string>();
+
     const groupedByDoc = this.groupPemasukanByDocument(data);
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
@@ -152,7 +114,12 @@ export class INSWIntegrationService {
           kdBarang: item.item_code,
           uraianBarang: item.item_name,
           jumlah: Number(item.quantity),
-          kdSatuan: item.unit,
+          kdSatuan: (() => {
+            const key = (item.unit || '').toUpperCase();
+            const mapped = uomMap.get(key) ?? null;
+            if (!mapped) missingUoms.add(key);
+            return mapped || key;
+          })(),
           nilai: Number(item.value_amount || 0),
           dokumen: [
             {
@@ -169,6 +136,13 @@ export class INSWIntegrationService {
         })),
       })
     );
+
+    if (missingUoms.size > 0) {
+      throw new Error(
+        `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
+        `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
+      );
+    }
 
     return {
       data: [
@@ -200,6 +174,9 @@ export class INSWIntegrationService {
       };
     }
 
+    const uomMap = await this.loadUomMappings();
+    const missingUoms = new Set<string>();
+
     const groupedByDoc = this.groupPengeluaranByDocument(data);
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
@@ -212,7 +189,12 @@ export class INSWIntegrationService {
           kdBarang: item.item_code,
           uraianBarang: item.item_name,
           jumlah: Number(item.quantity),
-          kdSatuan: item.unit,
+          kdSatuan: (() => {
+            const key = (item.unit || '').toUpperCase();
+            const mapped = uomMap.get(key) ?? null;
+            if (!mapped) missingUoms.add(key);
+            return mapped || key;
+          })(),
           nilai: Number(item.value_amount || 0),
           dokumen: [
             {
@@ -229,6 +211,13 @@ export class INSWIntegrationService {
         })),
       })
     );
+
+    if (missingUoms.size > 0) {
+      throw new Error(
+        `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
+        `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
+      );
+    }
 
     return {
       data: [
@@ -260,6 +249,9 @@ export class INSWIntegrationService {
       };
     }
 
+    const uomMap = await this.loadUomMappings();
+    const missingUoms = new Set<string>();
+
     const groupedByDoc = this.groupPengeluaranByDocument(data);
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
@@ -272,7 +264,12 @@ export class INSWIntegrationService {
           kdBarang: item.item_code,
           uraianBarang: item.item_name,
           jumlah: Number(item.quantity),
-          kdSatuan: item.unit,
+          kdSatuan: (() => {
+            const key = (item.unit || '').toUpperCase();
+            const mapped = uomMap.get(key) ?? null;
+            if (!mapped) missingUoms.add(key);
+            return mapped || key;
+          })(),
           nilai: Number(item.value_amount || 0),
           dokumen: [
             {
@@ -289,6 +286,13 @@ export class INSWIntegrationService {
         })),
       })
     );
+
+    if (missingUoms.size > 0) {
+      throw new Error(
+        `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
+        `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
+      );
+    }
 
     return {
       data: [
@@ -320,6 +324,9 @@ export class INSWIntegrationService {
       };
     }
 
+    const uomMap = await this.loadUomMappings();
+    const missingUoms = new Set<string>();
+
     const groupedByDoc = this.groupScrapTransactionsByDocument(data);
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
@@ -332,7 +339,12 @@ export class INSWIntegrationService {
           kdBarang: item.item_code,
           uraianBarang: item.item_name,
           jumlah: Number(item.qty),
-          kdSatuan: item.uom,
+          kdSatuan: (() => {
+            const key = (item.uom || '').toUpperCase();
+            const mapped = uomMap.get(key) ?? null;
+            if (!mapped) missingUoms.add(key);
+            return mapped || key;
+          })(),
           nilai: Number(item.amount || 0),
           dokumen: [
             {
@@ -344,6 +356,13 @@ export class INSWIntegrationService {
         })),
       })
     );
+
+    if (missingUoms.size > 0) {
+      throw new Error(
+        `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
+        `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
+      );
+    }
 
     return {
       data: [
@@ -375,6 +394,9 @@ export class INSWIntegrationService {
       };
     }
 
+    const uomMap = await this.loadUomMappings();
+    const missingUoms = new Set<string>();
+
     const groupedByDoc = this.groupScrapTransactionsByDocument(data);
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
@@ -387,7 +409,12 @@ export class INSWIntegrationService {
           kdBarang: item.item_code,
           uraianBarang: item.item_name,
           jumlah: Number(item.qty),
-          kdSatuan: item.uom,
+          kdSatuan: (() => {
+            const key = (item.uom || '').toUpperCase();
+            const mapped = uomMap.get(key) ?? null;
+            if (!mapped) missingUoms.add(key);
+            return mapped || key;
+          })(),
           nilai: Number(item.amount || 0),
           dokumen: [
             {
@@ -404,6 +431,13 @@ export class INSWIntegrationService {
         })),
       })
     );
+
+    if (missingUoms.size > 0) {
+      throw new Error(
+        `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
+        `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
+      );
+    }
 
     return {
       data: [
@@ -435,6 +469,9 @@ export class INSWIntegrationService {
       };
     }
 
+    const uomMap = await this.loadUomMappings();
+    const missingUoms = new Set<string>();
+
     const groupedByDoc = this.groupPengeluaranByDocument(data);
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
@@ -447,7 +484,12 @@ export class INSWIntegrationService {
           kdBarang: item.item_code,
           uraianBarang: item.item_name,
           jumlah: Number(item.quantity),
-          kdSatuan: item.unit,
+          kdSatuan: (() => {
+            const key = (item.unit || '').toUpperCase();
+            const mapped = uomMap.get(key) ?? null;
+            if (!mapped) missingUoms.add(key);
+            return mapped || key;
+          })(),
           nilai: Number(item.value_amount || 0),
           dokumen: [
             {
@@ -464,6 +506,13 @@ export class INSWIntegrationService {
         })),
       })
     );
+
+    if (missingUoms.size > 0) {
+      throw new Error(
+        `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
+        `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
+      );
+    }
 
     return {
       data: [
@@ -484,13 +533,15 @@ export class INSWIntegrationService {
       balanceDate
     );
 
+    const uomMap = await this.loadUomMappings();
+
     const effectiveDate = balanceDate || new Date();
     const barangSaldo: INSWBarangSaldo[] = data.map((item) => ({
       kd_kategori_barang: this.mapItemTypeToINSWCategory(item.item_type),
       kd_barang: item.item_code,
       uraian_barang: item.item_name,
       jumlah: Number(item.qty),
-      satuan: this.mapUomToINSW(item.uom),
+      satuan: uomMap.get(item.uom.toUpperCase()) || item.uom,
       nilai: 0,
       tanggal_declare: this.formatINSWDateOnly(item.balance_date),
     }));
@@ -526,6 +577,9 @@ export class INSWIntegrationService {
       };
     }
 
+    const uomMap = await this.loadUomMappings();
+    const missingUoms = new Set<string>();
+
     const groupedByDoc = this.groupMaterialUsageByDocument(data);
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
@@ -538,7 +592,12 @@ export class INSWIntegrationService {
           kdBarang: item.item_code,
           uraianBarang: item.item_name,
           jumlah: Number(item.qty),
-          kdSatuan: item.uom,
+          kdSatuan: (() => {
+            const key = (item.uom || '').toUpperCase();
+            const mapped = uomMap.get(key) ?? null;
+            if (!mapped) missingUoms.add(key);
+            return mapped || key;
+          })(),
           nilai: Number(item.amount || 0),
           dokumen: [
             {
@@ -550,6 +609,13 @@ export class INSWIntegrationService {
         })),
       })
     );
+
+    if (missingUoms.size > 0) {
+      throw new Error(
+        `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
+        `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
+      );
+    }
 
     return {
       data: [
@@ -581,6 +647,9 @@ export class INSWIntegrationService {
       };
     }
 
+    const uomMap = await this.loadUomMappings();
+    const missingUoms = new Set<string>();
+
     const groupedByDoc = this.groupProductionOutputByDocument(data);
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
@@ -593,7 +662,12 @@ export class INSWIntegrationService {
           kdBarang: item.item_code,
           uraianBarang: item.item_name,
           jumlah: Number(item.qty),
-          kdSatuan: item.uom,
+          kdSatuan: (() => {
+            const key = (item.uom || '').toUpperCase();
+            const mapped = uomMap.get(key) ?? null;
+            if (!mapped) missingUoms.add(key);
+            return mapped || key;
+          })(),
           nilai: Number(item.amount || 0),
           dokumen: [
             {
@@ -605,6 +679,13 @@ export class INSWIntegrationService {
         })),
       })
     );
+
+    if (missingUoms.size > 0) {
+      throw new Error(
+        `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
+        `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
+      );
+    }
 
     return {
       data: [
