@@ -16,7 +16,6 @@ export interface LaporanPemasukanView {
   item_name: string;
   unit: string;
   quantity: Prisma.Decimal;
-  currency: string | null;
   value_amount: Prisma.Decimal | null;
 }
 
@@ -36,7 +35,6 @@ export interface LaporanPengeluaranView {
   item_name: string;
   unit: string;
   quantity: Prisma.Decimal;
-  currency: string | null;
   value_amount: Prisma.Decimal | null;
 }
 
@@ -69,7 +67,6 @@ export interface ScrapTransactionData {
   item_name: string;
   uom: string;
   qty: Prisma.Decimal;
-  currency: string;
   amount: Prisma.Decimal;
 }
 
@@ -85,7 +82,6 @@ export interface MaterialUsageData {
   item_name: string;
   uom: string;
   qty: Prisma.Decimal;
-  currency: string;
   amount: Prisma.Decimal;
 }
 
@@ -101,7 +97,6 @@ export interface ProductionOutputData {
   item_name: string;
   uom: string;
   qty: Prisma.Decimal;
-  currency: string;
   amount: Prisma.Decimal;
 }
 
@@ -130,7 +125,6 @@ export class INSWIntegrationRepository {
         item_name,
         unit,
         quantity,
-        currency,
         value_amount
       FROM vw_laporan_pemasukan
       WHERE company_code = $1
@@ -172,7 +166,6 @@ export class INSWIntegrationRepository {
         item_name,
         unit,
         quantity,
-        currency,
         value_amount
       FROM vw_laporan_pengeluaran
       WHERE company_code = $1
@@ -214,7 +207,6 @@ export class INSWIntegrationRepository {
         item_name,
         unit,
         quantity,
-        currency,
         value_amount
       FROM vw_laporan_pengeluaran
       WHERE company_code = $1
@@ -291,7 +283,6 @@ export class INSWIntegrationRepository {
         sti.item_name,
         sti.uom,
         sti.qty,
-        sti.currency,
         sti.amount
       FROM scrap_transactions st
       INNER JOIN scrap_transaction_items sti
@@ -337,7 +328,6 @@ export class INSWIntegrationRepository {
         mui.item_name,
         mui.uom,
         mui.qty,
-        'IDR' as currency,
         COALESCE(mui.amount, 0) as amount
       FROM material_usages mu
       INNER JOIN material_usage_items mui
@@ -383,7 +373,6 @@ export class INSWIntegrationRepository {
         poi.item_name,
         poi.uom,
         poi.qty,
-        'IDR' as currency,
         COALESCE(poi.amount, 0) as amount
       FROM production_outputs po
       INNER JOIN production_output_items poi
