@@ -3,47 +3,56 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 const uomMappings = [
-  // Piece / unit
-  { wms_uom: 'PCS',     insw_uom: 'PCE', description: 'Piece' },
-  { wms_uom: 'PC',      insw_uom: 'PCE', description: 'Piece (short)' },
-  { wms_uom: 'UNIT',    insw_uom: 'PCE', description: 'Unit' },
-  { wms_uom: 'EA',      insw_uom: 'PCE', description: 'Each' },
-  // Pack / packaging
-  { wms_uom: 'PACK',    insw_uom: 'PK',  description: 'Pack' },
-  { wms_uom: 'PKG',     insw_uom: 'PK',  description: 'Package' },
-  { wms_uom: 'PAK',     insw_uom: 'PA',  description: 'Pak' },
-  // Weight
-  { wms_uom: 'KG',      insw_uom: 'KGM', description: 'Kilogram' },
-  { wms_uom: 'KILOGRAM',insw_uom: 'KGM', description: 'Kilogram (full)' },
-  { wms_uom: 'GR',      insw_uom: 'GRM', description: 'Gram' },
-  { wms_uom: 'GRAM',    insw_uom: 'GRM', description: 'Gram (full)' },
-  { wms_uom: 'MG',      insw_uom: 'MGM', description: 'Milligram' },
-  { wms_uom: 'TON',     insw_uom: 'TNE', description: 'Tonne' },
-  { wms_uom: 'MT',      insw_uom: 'TNE', description: 'Metric Tonne' },
-  // Volume
-  { wms_uom: 'LT',      insw_uom: 'LTR', description: 'Litre' },
-  { wms_uom: 'LITER',   insw_uom: 'LTR', description: 'Liter (US spelling)' },
-  { wms_uom: 'LITRE',   insw_uom: 'LTR', description: 'Litre (UK spelling)' },
+  // Packaging
+  { wms_uom: 'BAG',  insw_uom: 'BG',  description: 'Bag' },
+  { wms_uom: 'BT',   insw_uom: 'BO',  description: 'Bottle' },
+  { wms_uom: 'CAR',  insw_uom: 'CT',  description: 'Carton' },
+  { wms_uom: 'CRT',  insw_uom: 'CR',  description: 'Crate' },
+  { wms_uom: 'CV',   insw_uom: 'CS',  description: 'Case' },
+  { wms_uom: 'DR',   insw_uom: 'DR',  description: 'Drum' },
+  { wms_uom: 'DZ',   insw_uom: 'DZN', description: 'Dozen' },
+  { wms_uom: 'GRO',  insw_uom: 'GRO', description: 'Gross' },
+  { wms_uom: 'PAA',  insw_uom: 'PR',  description: 'Pair' },
+  { wms_uom: 'PAC',  insw_uom: 'PK',  description: 'Pack' },
+  // Count / unit
+  { wms_uom: 'EA',   insw_uom: 'EA',  description: 'Each' },
+  { wms_uom: 'PC',   insw_uom: 'PCE', description: 'Piece' },
   // Length / area / volume
-  { wms_uom: 'M',       insw_uom: 'MTR', description: 'Metre' },
-  { wms_uom: 'METER',   insw_uom: 'MTR', description: 'Meter' },
-  { wms_uom: 'METRE',   insw_uom: 'MTR', description: 'Metre (UK spelling)' },
-  { wms_uom: 'M2',      insw_uom: 'MTK', description: 'Square Metre' },
-  { wms_uom: 'M3',      insw_uom: 'MTQ', description: 'Cubic Metre' },
-  // Packaging types
-  { wms_uom: 'BOX',     insw_uom: 'BX',  description: 'Box' },
-  { wms_uom: 'CTN',     insw_uom: 'CTN', description: 'Carton' },
-  { wms_uom: 'CARTON',  insw_uom: 'CTN', description: 'Carton (full)' },
-  { wms_uom: 'ROLL',    insw_uom: 'RO',  description: 'Roll' },
-  { wms_uom: 'ROL',     insw_uom: 'RO',  description: 'Rol' },
-  { wms_uom: 'SET',     insw_uom: 'SET', description: 'Set' },
-  { wms_uom: 'BTL',     insw_uom: 'BO',  description: 'Bottle' },
-  { wms_uom: 'BOTTLE',  insw_uom: 'BO',  description: 'Bottle (full)' },
-  { wms_uom: 'BOTOL',   insw_uom: 'BO',  description: 'Botol (Indonesian)' },
-  { wms_uom: 'BAG',     insw_uom: 'BAG', description: 'Bag' },
-  { wms_uom: 'DRUM',    insw_uom: 'DRM', description: 'Drum' },
-  { wms_uom: 'JAR',     insw_uom: 'JR',  description: 'Jar' },
-  { wms_uom: 'BOLT',    insw_uom: 'BT',  description: 'Bolt' },
+  { wms_uom: 'FT2',  insw_uom: 'FTK', description: 'Square foot' },
+  { wms_uom: 'FT3',  insw_uom: 'FTQ', description: 'Cubic foot' },
+  { wms_uom: 'IN2',  insw_uom: 'INK', description: 'Square inch' },
+  { wms_uom: 'IN3',  insw_uom: 'INQ', description: 'Cubic inch' },
+  { wms_uom: 'MI2',  insw_uom: 'MIK', description: 'Square mile' },
+  { wms_uom: 'YD2',  insw_uom: 'YDK', description: 'Square Yard' },
+  { wms_uom: 'YD3',  insw_uom: 'YDQ', description: 'Cubic yard' },
+  { wms_uom: 'HA',   insw_uom: 'HAR', description: 'Hectare' },
+  // Mass / weight
+  { wms_uom: 'G',    insw_uom: 'GRM', description: 'Gram' },
+  { wms_uom: 'KG',   insw_uom: 'KGM', description: 'Kilogram' },
+  { wms_uom: 'KT',   insw_uom: 'KTN', description: 'Kilotonne' },
+  { wms_uom: 'MG',   insw_uom: 'MGM', description: 'Milligram' },
+  // Time
+  { wms_uom: 'H',    insw_uom: 'HUR', description: 'Hour' },
+  { wms_uom: 'MIN',  insw_uom: 'MIN', description: 'Minute' },
+  { wms_uom: 'MIS',  insw_uom: 'B98', description: 'Microsecond' },
+  { wms_uom: 'MSE',  insw_uom: 'C26', description: 'Millisecond' },
+  { wms_uom: 'NS',   insw_uom: 'C47', description: 'Nanosecond' },
+  { wms_uom: 'PS',   insw_uom: 'H70', description: 'Picosecond' },
+  // Pressure / force
+  { wms_uom: 'KPA',  insw_uom: 'KPA', description: 'Kilopascal' },
+  { wms_uom: 'MN',   insw_uom: 'B73', description: 'Meganewton' },
+  { wms_uom: 'NI',   insw_uom: 'B47', description: 'Kilonewton' },
+  { wms_uom: 'PAS',  insw_uom: 'C65', description: 'Pascal second' },
+  // Energy
+  { wms_uom: 'GJ',   insw_uom: 'GV',  description: 'Gigajoule' },
+  { wms_uom: 'MEJ',  insw_uom: '3B',  description: 'Megajoule' },
+  // Electrical
+  { wms_uom: 'GOH',  insw_uom: 'A87', description: 'Gigaohm' },
+  { wms_uom: 'MHV',  insw_uom: 'B78', description: 'Megavolt' },
+  { wms_uom: 'RF',   insw_uom: 'C10', description: 'Millifarad' },
+  { wms_uom: 'R-U',  insw_uom: 'C41', description: 'Nanofarad' },
+  { wms_uom: '\u03bcA', insw_uom: 'B84', description: 'Microampere' },
+  { wms_uom: '\u03bcF', insw_uom: '4O',  description: 'Microfarad' },
 ];
 
 export async function seedINSWUomMapping() {
