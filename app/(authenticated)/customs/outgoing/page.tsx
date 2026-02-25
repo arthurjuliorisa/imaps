@@ -60,8 +60,8 @@ const EXCEL_HEADERS = [
   { key: 'registrationDate', label: 'Tanggal Daftar', type: 'date' as const },
   { key: 'documentNumber', label: 'Nomor Bukti Pengeluaran Barang', type: 'text' as const },
   { key: 'date', label: 'Tanggal Bukti Pengeluaran Barang', type: 'date' as const },
-  { key: 'recipientName', label: 'Penerima barang', type: 'text' as const },
-  { key: 'typeCode', label: 'Item Type', type: 'text' as const },
+  { key: 'recipientName', label: 'Nama Penerima Barang', type: 'text' as const },
+  { key: 'typeCode', label: 'Kategori Barang', type: 'text' as const },
   { key: 'itemCodeBahasa', label: 'Nama Item Type', type: 'text' as const },
   { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
   { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
@@ -77,7 +77,7 @@ const PDF_COLUMNS = [
   { header: 'Jenis Dokumen Pabean', dataKey: 'documentType' },
   { header: 'Nomor Bukti Pengeluaran Barang', dataKey: 'documentNumber' },
   { header: 'Tanggal Bukti Pengeluaran Barang', dataKey: 'date' },
-  { header: 'Penerima barang', dataKey: 'recipientName' },
+  { header: 'Nama Penerima Barang', dataKey: 'recipientName' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
   { header: 'Jumlah Barang', dataKey: 'qty' },
@@ -257,13 +257,13 @@ export default function OutgoingGoodsReportPage() {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3, mb: 3, px: 3, gap: 2 }}>
         <TextField
           select
-          label="Item Type"
+          label="Kategori Barang"
           value={itemTypeFilter}
           onChange={(e) => setItemTypeFilter(e.target.value)}
           size="small"
           sx={{ minWidth: 200 }}
         >
-          <MenuItem value="">All Item Types</MenuItem>
+          <MenuItem value="">Semua Kategori</MenuItem>
           {uniqueItemTypes.map((type) => (
             <MenuItem key={type} value={type}>
               {type}
@@ -305,8 +305,8 @@ export default function OutgoingGoodsReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Tanggal Daftar</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nomor Bukti Pengeluaran Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Tanggal Bukti Pengeluaran Barang</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Penerima barang</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Nama Penerima Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Kategori Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
