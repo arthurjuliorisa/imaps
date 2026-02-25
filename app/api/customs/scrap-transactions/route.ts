@@ -139,7 +139,7 @@ export async function GET(request: Request) {
           st.company_code,
           c.name as company_name,
           'IN' as transaction_type,
-          COALESCE(st.customs_document_type, '') as doc_type,
+          st.customs_document_type::text as doc_type,
           COALESCE(st.ppkek_number, '') as ppkek_number,
           COALESCE(st.customs_registration_date, st.transaction_date) as reg_date,
           st.document_number as doc_number,
@@ -156,7 +156,7 @@ export async function GET(request: Request) {
           st.remarks,
           st.created_at,
           st.transaction_date as sort_date,
-          COALESCE(st.customs_document_type, '') as customs_doc_type,
+          st.customs_document_type::text as customs_doc_type,
           st.document_number as transaction_number,
           CAST(ARRAY[]::text[] AS text[]) as incoming_ppkek_numbers
         FROM scrap_transactions st
