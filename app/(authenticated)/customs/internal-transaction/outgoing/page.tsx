@@ -41,7 +41,6 @@ interface InternalTransactionOutgoingData {
   itemName: string;
   unit: string;
   qty: number;
-  currency: string;
   amount: number;
 }
 
@@ -59,7 +58,6 @@ const EXCEL_HEADERS = [
   { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
   { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
   { key: 'qty', label: 'Jumlah Barang', type: 'number' as const },
-  { key: 'currency', label: 'valas', type: 'text' as const },
   { key: 'amount', label: 'nilai barang', type: 'number' as const },
 ];
 
@@ -73,7 +71,6 @@ const PDF_COLUMNS = [
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
   { header: 'Jumlah Barang', dataKey: 'qty' },
-  { header: 'valas', dataKey: 'currency' },
   { header: 'nilai barang', dataKey: 'amount' },
 ];
 
@@ -143,8 +140,7 @@ export default function InternalTransactionOutgoingPage() {
           row.typeCode?.toLowerCase().includes(query) ||
           row.itemCode?.toLowerCase().includes(query) ||
           row.itemName?.toLowerCase().includes(query) ||
-          row.unit?.toLowerCase().includes(query) ||
-          row.currency?.toLowerCase().includes(query)
+          row.unit?.toLowerCase().includes(query)
         );
       });
     }
@@ -181,7 +177,6 @@ export default function InternalTransactionOutgoingPage() {
       itemName: row.itemName,
       unit: row.unit,
       qty: row.qty,
-      currency: row.currency,
       amount: row.amount,
     }));
 
@@ -204,7 +199,6 @@ export default function InternalTransactionOutgoingPage() {
       itemCode: row.itemCode,
       itemName: row.itemName,
       qty: formatQty(row.qty),
-      currency: row.currency,
       amount: formatAmount(row.amount),
     }));
 
@@ -298,14 +292,13 @@ export default function InternalTransactionOutgoingPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Barang</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>valas</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">nilai barang</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={15} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={14} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -358,9 +351,6 @@ export default function InternalTransactionOutgoingPage() {
                       <Typography variant="body2" fontWeight={600}>
                         {formatQty(row.qty)}
                       </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip label={row.currency} size="small" variant="outlined" />
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>
