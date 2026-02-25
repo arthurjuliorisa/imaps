@@ -24,7 +24,7 @@ import { Search as SearchIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
-import { formatQty, formatAmount } from '@/lib/utils/format';
+import { formatQty } from '@/lib/utils/format';
 
 interface StockOpnameData {
   id: string;
@@ -38,29 +38,31 @@ interface StockOpnameData {
   unit: string;
   qty: number;
   valueAmount: number;
+  reason: string;
 }
 
 const EXCEL_HEADERS = [
   { key: 'no', label: 'No', type: 'number' as const },
   { key: 'companyName', label: 'Company Name', type: 'text' as const },
-  { key: 'docDate', label: 'Tanggal Dokumen', type: 'date' as const },
+  { key: 'docDate', label: 'Tanggal Pelaksanaan', type: 'date' as const },
   { key: 'status', label: 'Status', type: 'text' as const },
-  { key: 'typeCode', label: 'Item Type', type: 'text' as const },
+  { key: 'typeCode', label: 'Kategori Barang', type: 'text' as const },
   { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
   { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
   { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
-  { key: 'qty', label: 'Jumlah', type: 'number' as const },
-  { key: 'valueAmount', label: 'Nilai Barang', type: 'number' as const },
+  { key: 'qty', label: 'Jumlah Barang', type: 'number' as const },
+  { key: 'reason', label: 'Keterangan', type: 'text' as const },
 ];
 
 const PDF_COLUMNS = [
   { header: 'No', dataKey: 'no' },
   { header: 'Company Name', dataKey: 'companyName' },
-  { header: 'Tanggal Dokumen', dataKey: 'docDate' },
+  { header: 'Tanggal Pelaksanaan', dataKey: 'docDate' },
   { header: 'Status', dataKey: 'status' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
-  { header: 'Jumlah', dataKey: 'qty' },
+  { header: 'Jumlah Barang', dataKey: 'qty' },
+  { header: 'Keterangan', dataKey: 'reason' },
 ];
 
 export default function StockOpnameReportPage() {
@@ -153,7 +155,7 @@ export default function StockOpnameReportPage() {
       itemName: row.itemName,
       unit: row.unit,
       qty: row.qty,
-      valueAmount: row.valueAmount,
+      reason: row.reason || '-',
     }));
 
     exportToExcelWithHeaders(
@@ -173,6 +175,7 @@ export default function StockOpnameReportPage() {
       itemCode: row.itemCode,
       itemName: row.itemName,
       qty: formatQty(row.qty),
+      reason: row.reason || '-',
     }));
 
     exportToPDF(
@@ -249,14 +252,14 @@ export default function StockOpnameReportPage() {
               >
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Tanggal Dokumen</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Tanggal Pelaksanaan</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Kategori Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Nilai Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Keterangan</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -318,9 +321,9 @@ export default function StockOpnameReportPage() {
                         {formatQty(row.qty)}
                       </Typography>
                     </TableCell>
-                    <TableCell align="right">
-                      <Typography variant="body2" fontWeight={600}>
-                        {formatAmount(row.valueAmount)}
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {row.reason || '-'}
                       </Typography>
                     </TableCell>
                   </TableRow>

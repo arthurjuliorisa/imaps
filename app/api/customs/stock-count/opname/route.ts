@@ -24,7 +24,7 @@ export async function GET(request: Request) {
         id, wms_id, company_code, company_name,
         doc_date, status,
         type_code, item_code, item_code_bahasa, item_name,
-        unit, qty, value_amount
+        unit, qty, value_amount, reason
       FROM vw_laporan_stock_opname
       WHERE company_code = $1
       ORDER BY doc_date DESC, id`,
@@ -44,6 +44,7 @@ export async function GET(request: Request) {
       unit: row.unit,
       qty: Number(row.qty || 0),
       valueAmount: Number(row.value_amount || 0),
+      reason: row.reason || '',
     }));
 
     return NextResponse.json(serializeBigInt(transformedData));

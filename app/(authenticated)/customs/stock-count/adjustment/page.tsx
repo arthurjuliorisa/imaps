@@ -50,35 +50,35 @@ interface AdjustmentData {
 const EXCEL_HEADERS = [
   { key: 'no', label: 'No', type: 'number' as const },
   { key: 'companyName', label: 'Company Name', type: 'text' as const },
-  { key: 'docDate', label: 'Tanggal', type: 'date' as const },
+  { key: 'docDate', label: 'Tanggal Pelaksanaan', type: 'date' as const },
   { key: 'status', label: 'Status', type: 'text' as const },
-  { key: 'typeCode', label: 'Item Type', type: 'text' as const },
+  { key: 'typeCode', label: 'Kategori Barang', type: 'text' as const },
   { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
   { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
   { key: 'unit', label: 'Satuan', type: 'text' as const },
-  { key: 'beginningQty', label: 'Stok Awal', type: 'number' as const },
-  { key: 'incomingQty', label: 'Qty Masuk', type: 'number' as const },
-  { key: 'outgoingQty', label: 'Qty Keluar', type: 'number' as const },
+  { key: 'beginningQty', label: 'Saldo Awal', type: 'number' as const },
+  { key: 'incomingQty', label: 'Jumlah Pemasukan Barang', type: 'number' as const },
+  { key: 'outgoingQty', label: 'Jumlah Pengeluaran Barang', type: 'number' as const },
   { key: 'systemQty', label: 'Stok Sistem', type: 'number' as const },
-  { key: 'actualQty', label: 'Stok Fisik', type: 'number' as const },
-  { key: 'varianceQty', label: 'Selisih', type: 'number' as const },
-  { key: 'adjustmentQty', label: 'Penyesuaian', type: 'number' as const },
-  { key: 'finalQty', label: 'Stok Akhir', type: 'number' as const },
+  { key: 'actualQty', label: 'Hasil Pencacahan', type: 'number' as const },
+  { key: 'varianceQty', label: 'Jumlah selisih', type: 'number' as const },
+  { key: 'adjustmentQty', label: 'Penyesuaian (adjustment)', type: 'number' as const },
+  { key: 'finalQty', label: 'Saldo Akhir', type: 'number' as const },
   { key: 'reason', label: 'Keterangan', type: 'text' as const },
 ];
 
 const PDF_COLUMNS = [
   { header: 'No', dataKey: 'no' },
   { header: 'Company Name', dataKey: 'companyName' },
-  { header: 'Tanggal', dataKey: 'docDate' },
+  { header: 'Tanggal Pelaksanaan', dataKey: 'docDate' },
   { header: 'Status', dataKey: 'status' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
   { header: 'Stok Sistem', dataKey: 'systemQty' },
-  { header: 'Stok Fisik', dataKey: 'actualQty' },
-  { header: 'Selisih', dataKey: 'varianceQty' },
-  { header: 'Penyesuaian', dataKey: 'adjustmentQty' },
-  { header: 'Stok Akhir', dataKey: 'finalQty' },
+  { header: 'Hasil Pencacahan', dataKey: 'actualQty' },
+  { header: 'Jumlah selisih', dataKey: 'varianceQty' },
+  { header: 'Penyesuaian (adjustment)', dataKey: 'adjustmentQty' },
+  { header: 'Saldo Akhir', dataKey: 'finalQty' },
 ];
 
 export default function AdjustmentReportPage() {
@@ -281,20 +281,20 @@ export default function AdjustmentReportPage() {
               <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Tanggal</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Tanggal Pelaksanaan</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Kategori Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Satuan</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Stok Awal</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Qty Masuk</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Qty Keluar</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Saldo Awal</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Pemasukan Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Pengeluaran Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Stok Sistem</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Stok Fisik</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Selisih</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Penyesuaian</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Stok Akhir</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Hasil Pencacahan</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah selisih</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Penyesuaian (adjustment)</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Saldo Akhir</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Keterangan</TableCell>
               </TableRow>
             </TableHead>
