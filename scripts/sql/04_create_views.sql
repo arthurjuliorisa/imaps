@@ -461,8 +461,7 @@ SELECT
     soi.uom as unit,
     soi.actual_qty_count as qty,
     soi.amount as value_amount,
-    soi.reason,
-
+    
     -- Audit fields
     so.created_at,
     so.updated_at,
