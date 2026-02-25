@@ -6,6 +6,7 @@ import { createStockOpnameSchema, updateStockOpnameSchema } from '@/lib/validato
 import { logger } from '@/lib/utils/logger';
 import { logActivity } from '@/lib/log-activity';
 import { prisma } from '@/lib/prisma';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 
 /**
  * POST /api/v1/stock-opname
@@ -226,6 +227,19 @@ export async function PATCH(request: NextRequest) {
     // 5. Process via service
     const service = createWmsStockOpnameService(prisma);
     const result = await service.processUpdate(validationResult.data, 'system-wms');
+
+    if (result.status === 'Confirmed') {
+      const inswTransmission = new INSWTransmissionService();
+      inswTransmission.transmitStockOpname(
+        Number(result.company_code),
+        Number(result.id),
+        result.wms_id
+      ).then((res) => {
+        log.info('INSW stock opname transmitted', { wmsId: result.wms_id, status: res.status });
+      }).catch((err: any) => {
+        log.error('INSW stock opname transmission error', { wmsId: result.wms_id, error: err.message });
+      });
+    }
 
     // 6. Success response
     log.info('Stock opname updated successfully', { wmsId: result.wms_id, newStatus: result.status });

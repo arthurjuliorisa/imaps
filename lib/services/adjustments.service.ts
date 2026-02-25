@@ -9,6 +9,7 @@ import {
 import { AdjustmentsRepository } from '@/lib/repositories/adjustments.repository';
 import { transformZodErrors } from '@/lib/utils/error-transformer';
 import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/api-response';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 
 /**
  * Adjustments Service
@@ -153,6 +154,16 @@ export class AdjustmentsService {
           log.info('Adjustment saved successfully', {
             wmsId: data.wms_id,
             adjustmentId: result.header.id,
+          });
+          const inswTransmission = new INSWTransmissionService();
+          inswTransmission.transmitAdjustment(
+            data.company_code,
+            result.header.id,
+            data.wms_id
+          ).then((res) => {
+            log.info('INSW adjustment transmitted', { wmsId: data.wms_id, status: res.status });
+          }).catch((err: any) => {
+            log.error('INSW adjustment transmission error', { wmsId: data.wms_id, error: err.message });
           });
         })
         .catch((err: any) => {

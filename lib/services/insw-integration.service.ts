@@ -346,13 +346,7 @@ export class INSWIntegrationService {
             return mapped || key;
           })(),
           nilai: Number(item.amount || 0),
-          dokumen: [
-            {
-              kodeDokumen: '0407020',
-              nomorDokumen: group.document_number,
-              tanggalDokumen: this.formatINSWDateOnly(group.transaction_date),
-            },
-          ],
+          dokumen: [],
         })),
       })
     );
@@ -599,13 +593,7 @@ export class INSWIntegrationService {
             return mapped || key;
           })(),
           nilai: Number(item.amount || 0),
-          dokumen: [
-            {
-              kodeDokumen: '',
-              nomorDokumen: '',
-              tanggalDokumen: '',
-            },
-          ],
+          dokumen: [],
         })),
       })
     );
@@ -669,13 +657,7 @@ export class INSWIntegrationService {
             return mapped || key;
           })(),
           nilai: Number(item.amount || 0),
-          dokumen: [
-            {
-              kodeDokumen: '',
-              nomorDokumen: '',
-              tanggalDokumen: '',
-            },
-          ],
+          dokumen: [],
         })),
       })
     );
@@ -692,6 +674,121 @@ export class INSWIntegrationService {
         {
           kdKegiatan: INSWActivityCode.PEMASUKAN,
           dokumenKegiatan,
+        },
+      ],
+    };
+  }
+
+  async convertStockOpnameToINSW(
+    companyCode: number,
+    stockOpnameId: number
+  ): Promise<INSWTransaksiPayload> {
+    const opname = await prisma.wms_stock_opnames.findFirst({
+      where: { id: BigInt(stockOpnameId), company_code: companyCode },
+      include: { items: true },
+    });
+
+    if (!opname || opname.items.length === 0) {
+      return {
+        data: [{ kdKegiatan: INSWActivityCode.STOCK_OPNAME, dokumenKegiatan: [] }],
+      };
+    }
+
+    const uomMap = await this.loadUomMappings();
+    const missingUoms = new Set<string>();
+
+    const barangTransaksi: INSWBarangTransaksi[] = opname.items.map((item) => {
+      const uomKey = (item.uom || '').toUpperCase();
+      const kdSatuan = uomMap.get(uomKey) ?? null;
+      if (!kdSatuan) missingUoms.add(uomKey);
+      return {
+        kdKategoriBarang: this.mapItemTypeToINSWCategory(item.item_type),
+        kdBarang: item.item_code,
+        uraianBarang: item.item_name,
+        jumlah: Number(item.actual_qty_count),
+        kdSatuan: kdSatuan || uomKey,
+        nilai: Number(item.amount || 0),
+        dokumen: [],
+      };
+    });
+
+    if (missingUoms.size > 0) {
+      throw new Error(
+        `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
+        `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
+      );
+    }
+
+    return {
+      data: [
+        {
+          kdKegiatan: INSWActivityCode.STOCK_OPNAME,
+          dokumenKegiatan: [
+            {
+              nomorDokKegiatan: opname.wms_id,
+              tanggalKegiatan: this.formatINSWDateOnly(opname.document_date),
+              namaEntitas: String(opname.company_code),
+              barangTransaksi,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  async convertAdjustmentToINSW(
+    companyCode: number,
+    adjustmentId: number
+  ): Promise<INSWTransaksiPayload> {
+    const adjustment = await prisma.adjustments.findFirst({
+      where: { id: adjustmentId, company_code: companyCode, deleted_at: null },
+      include: { items: { where: { deleted_at: null } } },
+    });
+
+    if (!adjustment || adjustment.items.length === 0) {
+      return {
+        data: [{ kdKegiatan: INSWActivityCode.ADJUSTMENT, dokumenKegiatan: [] }],
+      };
+    }
+
+    const uomMap = await this.loadUomMappings();
+    const missingUoms = new Set<string>();
+
+    const barangTransaksi: INSWBarangTransaksi[] = adjustment.items.map((item) => {
+      const uomKey = (item.uom || '').toUpperCase();
+      const kdSatuan = uomMap.get(uomKey) ?? null;
+      if (!kdSatuan) missingUoms.add(uomKey);
+      const signedQty = item.adjustment_type === 'LOSS' ? -Number(item.qty) : Number(item.qty);
+      return {
+        kdKategoriBarang: this.mapItemTypeToINSWCategory(item.item_type),
+        kdBarang: item.item_code,
+        uraianBarang: item.item_name,
+        jumlah: signedQty,
+        kdSatuan: kdSatuan || uomKey,
+        nilai: 0,
+        dokumen: [],
+      };
+    });
+
+    if (missingUoms.size > 0) {
+      throw new Error(
+        `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
+        `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
+      );
+    }
+
+    return {
+      data: [
+        {
+          kdKegiatan: INSWActivityCode.ADJUSTMENT,
+          dokumenKegiatan: [
+            {
+              nomorDokKegiatan: adjustment.internal_evidence_number,
+              tanggalKegiatan: this.formatINSWDateOnly(adjustment.transaction_date),
+              namaEntitas: String(adjustment.company_code),
+              barangTransaksi,
+            },
+          ],
         },
       ],
     };

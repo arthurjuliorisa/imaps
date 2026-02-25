@@ -48,6 +48,16 @@ const INSW_SETTINGS = [
     endpoint_name: 'Registrasi Final Saldo Awal',
     description: 'Registrasi final saldo awal ke INSW (lock/finalize). Trigger manual.',
   },
+  {
+    endpoint_key: 'STOCK_OPNAME',
+    endpoint_name: 'Stock Opname',
+    description: 'Transmisi data stock opname ke INSW. Auto-trigger saat status STO diubah menjadi Confirmed.',
+  },
+  {
+    endpoint_key: 'ADJUSTMENT',
+    endpoint_name: 'Penyesuaian Stok',
+    description: 'Transmisi data penyesuaian stok (adjustment) ke INSW. Auto-trigger saat adjustment dikonfirmasi.',
+  },
 ];
 
 export async function seedINSWSettings() {

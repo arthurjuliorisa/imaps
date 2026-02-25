@@ -58,6 +58,14 @@ export class INSWTransmissionService {
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
+    let incomingDocMap = new Map<number, string>();
+
+    try {
+      const incomingDocs = await prisma.$queryRaw<Array<{ id: number; doc_number: string }>>`
+        SELECT id, doc_number FROM vw_laporan_pemasukan WHERE company_code = ${companyCode} AND id = ANY(${ids}::int[])
+      `;
+      incomingDocMap = new Map(incomingDocs.map(r => [Number(r.id), r.doc_number]));
+    } catch { /* fallback to empty map */ }
 
     try {
       // Convert to INSW format
@@ -76,6 +84,7 @@ export class INSWTransmissionService {
           await this.logTransmission({
             transaction_type: 'incoming',
             transaction_id: id,
+            wms_id: incomingDocMap.get(id),
             company_code: companyCode,
             insw_status: INSWTransmissionStatus.FAILED,
             insw_activity_code: '30',
@@ -85,7 +94,7 @@ export class INSWTransmissionService {
 
           results.push({
             id,
-            wms_id: `ID-${id}`,
+            wms_id: incomingDocMap.get(id) || `ID-${id}`,
             status: 'failed',
             insw_status: INSWTransmissionStatus.FAILED,
             error: validation.errors.join('; '),
@@ -113,6 +122,7 @@ export class INSWTransmissionService {
           await this.logTransmission({
             transaction_type: 'incoming',
             transaction_id: id,
+            wms_id: incomingDocMap.get(id),
             company_code: companyCode,
             insw_status: INSWTransmissionStatus.SUCCESS,
             insw_activity_code: '30',
@@ -122,7 +132,7 @@ export class INSWTransmissionService {
 
           results.push({
             id,
-            wms_id: `ID-${id}`,
+            wms_id: incomingDocMap.get(id) || `ID-${id}`,
             status: 'success',
             insw_status: INSWTransmissionStatus.SUCCESS,
             insw_response: inswResponse,
@@ -134,6 +144,7 @@ export class INSWTransmissionService {
           await this.logTransmission({
             transaction_type: 'incoming',
             transaction_id: id,
+            wms_id: incomingDocMap.get(id),
             company_code: companyCode,
             insw_status: INSWTransmissionStatus.FAILED,
             insw_activity_code: '30',
@@ -144,7 +155,7 @@ export class INSWTransmissionService {
 
           results.push({
             id,
-            wms_id: `ID-${id}`,
+            wms_id: incomingDocMap.get(id) || `ID-${id}`,
             status: 'failed',
             insw_status: INSWTransmissionStatus.FAILED,
             error: inswResponse.message,
@@ -172,6 +183,7 @@ export class INSWTransmissionService {
         await this.logTransmission({
           transaction_type: 'incoming',
           transaction_id: id,
+          wms_id: incomingDocMap.get(id),
           company_code: companyCode,
           insw_status: INSWTransmissionStatus.FAILED,
           insw_activity_code: '30',
@@ -180,7 +192,7 @@ export class INSWTransmissionService {
 
         results.push({
           id,
-          wms_id: `ID-${id}`,
+          wms_id: incomingDocMap.get(id) || `ID-${id}`,
           status: 'failed',
           insw_status: INSWTransmissionStatus.FAILED,
           error: error.message,
@@ -869,6 +881,92 @@ export class INSWTransmissionService {
     }
   }
 
+  async transmitAdjustment(
+    companyCode: number,
+    adjustmentId: number,
+    wmsId: string
+  ): Promise<INSWTransmitResponse> {
+    this.log.info('Starting adjustment transmission', { companyCode, adjustmentId, wmsId });
+
+    if (!(await this.isEndpointEnabled('ADJUSTMENT'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: 1,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: 1,
+        results: [],
+      };
+    }
+
+    const results: INSWTransmitResult[] = [];
+
+    try {
+      const payload = await this.inswService.convertAdjustmentToINSW(companyCode, adjustmentId);
+
+      const validation = INSWHelper.validateINSWPayload(payload);
+      if (!validation.valid) {
+        await this.logTransmission({
+          transaction_type: 'adjustment',
+          transaction_id: adjustmentId,
+          wms_id: wmsId,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.FAILED,
+          insw_activity_code: '33',
+          insw_request_payload: payload,
+          insw_error: validation.errors.join('; '),
+        });
+        results.push({ id: adjustmentId, wms_id: wmsId, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: validation.errors.join('; ') });
+        return { status: 'failed', message: 'Validation failed', total: 1, success_count: 0, failed_count: 1, skipped_count: 0, results };
+      }
+
+      const inswResponse = await this.inswService.postAdjustment(payload);
+
+      if (inswResponse.status) {
+        await this.logTransmission({
+          transaction_type: 'adjustment',
+          transaction_id: adjustmentId,
+          wms_id: wmsId,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.SUCCESS,
+          insw_activity_code: '33',
+          insw_request_payload: payload,
+          insw_response: inswResponse,
+        });
+        results.push({ id: adjustmentId, wms_id: wmsId, status: 'success', insw_status: INSWTransmissionStatus.SUCCESS, insw_response: inswResponse });
+        return { status: 'success', message: 'Adjustment transmitted to INSW', total: 1, success_count: 1, failed_count: 0, skipped_count: 0, results };
+      } else {
+        await this.logTransmission({
+          transaction_type: 'adjustment',
+          transaction_id: adjustmentId,
+          wms_id: wmsId,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.FAILED,
+          insw_activity_code: '33',
+          insw_request_payload: payload,
+          insw_response: inswResponse,
+          insw_error: inswResponse.message,
+        });
+        results.push({ id: adjustmentId, wms_id: wmsId, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: inswResponse.message });
+        return { status: 'failed', message: inswResponse.message || 'Failed to transmit adjustment', total: 1, success_count: 0, failed_count: 1, skipped_count: 0, results };
+      }
+    } catch (error: any) {
+      this.log.error('Error transmitting adjustment', { error: error.message });
+      await this.logTransmission({
+        transaction_type: 'adjustment',
+        transaction_id: adjustmentId,
+        wms_id: wmsId,
+        company_code: companyCode,
+        insw_status: INSWTransmissionStatus.FAILED,
+        insw_activity_code: '33',
+        insw_error: error.message,
+      });
+      results.push({ id: adjustmentId, wms_id: wmsId, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
+      return { status: 'failed', message: error.message, total: 1, success_count: 0, failed_count: 1, skipped_count: 0, results };
+    }
+  }
+
   /**
    * Log transmission attempt to insw_tracking_log table
    */
@@ -930,6 +1028,14 @@ export class INSWTransmissionService {
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
+    let scrapInDocMap = new Map<number, string>();
+
+    try {
+      const scrapDocs = await prisma.$queryRaw<Array<{ id: number; document_number: string }>>`
+        SELECT id, document_number FROM scrap_transactions WHERE id = ANY(${transactionIds}::int[]) AND deleted_at IS NULL
+      `;
+      scrapInDocMap = new Map(scrapDocs.map(r => [Number(r.id), r.document_number]));
+    } catch { /* fallback to empty map */ }
 
     try {
       const payload = await this.inswService.convertScrapInToINSW(companyCode, transactionIds);
@@ -940,13 +1046,14 @@ export class INSWTransmissionService {
           await this.logTransmission({
             transaction_type: 'scrap_in',
             transaction_id: id,
+            wms_id: scrapInDocMap.get(id),
             company_code: companyCode,
             insw_status: INSWTransmissionStatus.FAILED,
             insw_activity_code: '30',
             insw_request_payload: payload,
             insw_error: validation.errors.join('; '),
           });
-          results.push({ id, wms_id: `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: validation.errors.join('; ') });
+          results.push({ id, wms_id: scrapInDocMap.get(id) || `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: validation.errors.join('; ') });
           failedCount++;
         }
         return { status: 'failed', message: 'Validation failed', total: transactionIds.length, success_count: 0, failed_count: failedCount, skipped_count: 0, results };
@@ -956,14 +1063,14 @@ export class INSWTransmissionService {
 
       if (inswResponse.status) {
         for (const id of transactionIds) {
-          await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.SUCCESS, insw_activity_code: '30', insw_request_payload: payload, insw_response: inswResponse });
-          results.push({ id, wms_id: `SCRAP-IN-${id}`, status: 'success', insw_status: INSWTransmissionStatus.SUCCESS, insw_response: inswResponse });
+          await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, wms_id: scrapInDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.SUCCESS, insw_activity_code: '30', insw_request_payload: payload, insw_response: inswResponse });
+          results.push({ id, wms_id: scrapInDocMap.get(id) || `SCRAP-IN-${id}`, status: 'success', insw_status: INSWTransmissionStatus.SUCCESS, insw_response: inswResponse });
           successCount++;
         }
       } else {
         for (const id of transactionIds) {
-          await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '30', insw_request_payload: payload, insw_response: inswResponse, insw_error: inswResponse.message });
-          results.push({ id, wms_id: `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: inswResponse.message });
+          await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, wms_id: scrapInDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '30', insw_request_payload: payload, insw_response: inswResponse, insw_error: inswResponse.message });
+          results.push({ id, wms_id: scrapInDocMap.get(id) || `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: inswResponse.message });
           failedCount++;
         }
       }
@@ -972,8 +1079,8 @@ export class INSWTransmissionService {
     } catch (error: any) {
       this.log.error('Error transmitting scrap IN', { error: error.message });
       for (const id of transactionIds) {
-        await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '30', insw_error: error.message });
-        results.push({ id, wms_id: `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
+        await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, wms_id: scrapInDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '30', insw_error: error.message });
+        results.push({ id, wms_id: scrapInDocMap.get(id) || `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
       }
       return { status: 'failed', message: error.message, total: transactionIds.length, success_count: 0, failed_count: transactionIds.length, skipped_count: 0, results };
     }
@@ -1003,6 +1110,14 @@ export class INSWTransmissionService {
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
+    let scrapOutDocMap = new Map<number, string>();
+
+    try {
+      const scrapDocs = await prisma.$queryRaw<Array<{ id: number; document_number: string }>>`
+        SELECT id, document_number FROM scrap_transactions WHERE id = ANY(${transactionIds}::int[]) AND deleted_at IS NULL
+      `;
+      scrapOutDocMap = new Map(scrapDocs.map(r => [Number(r.id), r.document_number]));
+    } catch { /* fallback to empty map */ }
 
     try {
       const payload = await this.inswService.convertScrapOutToINSW(companyCode, transactionIds);
@@ -1010,8 +1125,8 @@ export class INSWTransmissionService {
       const validation = INSWHelper.validateINSWPayload(payload);
       if (!validation.valid) {
         for (const id of transactionIds) {
-          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_error: validation.errors.join('; ') });
-          results.push({ id, wms_id: `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: validation.errors.join('; ') });
+          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_error: validation.errors.join('; ') });
+          results.push({ id, wms_id: scrapOutDocMap.get(id) || `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: validation.errors.join('; ') });
           failedCount++;
         }
         return { status: 'failed', message: 'Validation failed', total: transactionIds.length, success_count: 0, failed_count: failedCount, skipped_count: 0, results };
@@ -1021,14 +1136,14 @@ export class INSWTransmissionService {
 
       if (inswResponse.status) {
         for (const id of transactionIds) {
-          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.SUCCESS, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse });
-          results.push({ id, wms_id: `SCRAP-OUT-${id}`, status: 'success', insw_status: INSWTransmissionStatus.SUCCESS, insw_response: inswResponse });
+          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.SUCCESS, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse });
+          results.push({ id, wms_id: scrapOutDocMap.get(id) || `SCRAP-OUT-${id}`, status: 'success', insw_status: INSWTransmissionStatus.SUCCESS, insw_response: inswResponse });
           successCount++;
         }
       } else {
         for (const id of transactionIds) {
-          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse, insw_error: inswResponse.message });
-          results.push({ id, wms_id: `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: inswResponse.message });
+          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse, insw_error: inswResponse.message });
+          results.push({ id, wms_id: scrapOutDocMap.get(id) || `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: inswResponse.message });
           failedCount++;
         }
       }
@@ -1037,8 +1152,8 @@ export class INSWTransmissionService {
     } catch (error: any) {
       this.log.error('Error transmitting scrap OUT', { error: error.message });
       for (const id of transactionIds) {
-        await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_error: error.message });
-        results.push({ id, wms_id: `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
+        await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_error: error.message });
+        results.push({ id, wms_id: scrapOutDocMap.get(id) || `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
       }
       return { status: 'failed', message: error.message, total: transactionIds.length, success_count: 0, failed_count: transactionIds.length, skipped_count: 0, results };
     }
@@ -1106,6 +1221,92 @@ export class INSWTransmissionService {
         results.push({ id: 0, wms_id: wmsId, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
       }
       return { status: 'failed', message: error.message, total: wmsIds.length, success_count: 0, failed_count: wmsIds.length, skipped_count: 0, results };
+    }
+  }
+
+  async transmitStockOpname(
+    companyCode: number,
+    stockOpnameId: number,
+    wmsId: string
+  ): Promise<INSWTransmitResponse> {
+    this.log.info('Starting stock opname transmission', { companyCode, stockOpnameId, wmsId });
+
+    if (!(await this.isEndpointEnabled('STOCK_OPNAME'))) {
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: 1,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: 1,
+        results: [],
+      };
+    }
+
+    const results: INSWTransmitResult[] = [];
+
+    try {
+      const payload = await this.inswService.convertStockOpnameToINSW(companyCode, stockOpnameId);
+
+      const validation = INSWHelper.validateINSWPayload(payload);
+      if (!validation.valid) {
+        await this.logTransmission({
+          transaction_type: 'stock_opname',
+          transaction_id: stockOpnameId,
+          wms_id: wmsId,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.FAILED,
+          insw_activity_code: '32',
+          insw_request_payload: payload,
+          insw_error: validation.errors.join('; '),
+        });
+        results.push({ id: stockOpnameId, wms_id: wmsId, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: validation.errors.join('; ') });
+        return { status: 'failed', message: 'Validation failed', total: 1, success_count: 0, failed_count: 1, skipped_count: 0, results };
+      }
+
+      const inswResponse = await this.inswService.postStockOpname(payload);
+
+      if (inswResponse.status) {
+        await this.logTransmission({
+          transaction_type: 'stock_opname',
+          transaction_id: stockOpnameId,
+          wms_id: wmsId,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.SUCCESS,
+          insw_activity_code: '32',
+          insw_request_payload: payload,
+          insw_response: inswResponse,
+        });
+        results.push({ id: stockOpnameId, wms_id: wmsId, status: 'success', insw_status: INSWTransmissionStatus.SUCCESS, insw_response: inswResponse });
+        return { status: 'success', message: 'Stock opname transmitted to INSW', total: 1, success_count: 1, failed_count: 0, skipped_count: 0, results };
+      } else {
+        await this.logTransmission({
+          transaction_type: 'stock_opname',
+          transaction_id: stockOpnameId,
+          wms_id: wmsId,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.FAILED,
+          insw_activity_code: '32',
+          insw_request_payload: payload,
+          insw_response: inswResponse,
+          insw_error: inswResponse.message,
+        });
+        results.push({ id: stockOpnameId, wms_id: wmsId, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: inswResponse.message });
+        return { status: 'failed', message: inswResponse.message || 'Failed to transmit stock opname', total: 1, success_count: 0, failed_count: 1, skipped_count: 0, results };
+      }
+    } catch (error: any) {
+      this.log.error('Error transmitting stock opname', { error: error.message });
+      await this.logTransmission({
+        transaction_type: 'stock_opname',
+        transaction_id: stockOpnameId,
+        wms_id: wmsId,
+        company_code: companyCode,
+        insw_status: INSWTransmissionStatus.FAILED,
+        insw_activity_code: '32',
+        insw_error: error.message,
+      });
+      results.push({ id: stockOpnameId, wms_id: wmsId, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
+      return { status: 'failed', message: error.message, total: 1, success_count: 0, failed_count: 1, skipped_count: 0, results };
     }
   }
 

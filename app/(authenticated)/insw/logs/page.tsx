@@ -558,6 +558,10 @@ export default function INSWLogsPage() {
         searchable={false}
       />
 
+      <Typography variant="caption" color="text.secondary" sx={{ px: 2, pb: 1, display: 'block' }}>
+        * Trans ID adalah ID transaksi dari sistem WMS (material_usages, production_outputs, scrap_transactions, dll), bukan ID log INSW. Digunakan untuk menelusuri kembali data transaksi asal.
+      </Typography>
+
       <Dialog
         open={detailDialogOpen}
         onClose={handleCloseDetailDialog}
