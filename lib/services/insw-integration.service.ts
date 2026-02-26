@@ -742,7 +742,11 @@ export class INSWIntegrationService {
   ): Promise<INSWTransaksiPayload> {
     const adjustment = await prisma.adjustments.findFirst({
       where: { id: adjustmentId, company_code: companyCode, deleted_at: null },
-      include: { items: { where: { deleted_at: null } } },
+      include: {
+        items: {
+          where: { deleted_at: null },
+        },
+      },
     });
 
     if (!adjustment || adjustment.items.length === 0) {
@@ -764,7 +768,6 @@ export class INSWIntegrationService {
         kdBarang: item.item_code,
         uraianBarang: item.item_name,
         jumlah: signedQty,
-        keterangan: item.reason || '',
         kdSatuan: kdSatuan || uomKey,
         nilai: 0,
         dokumen: [],
@@ -778,7 +781,13 @@ export class INSWIntegrationService {
       );
     }
 
-    return {
+    // Aggregate unique reasons from items for dokumenKegiatan level keterangan
+    const uniqueReasons = Array.from(
+      new Set(adjustment.items.map((item) => item.reason).filter((r) => r))
+    );
+    const keteranganDokumen = uniqueReasons.length > 0 ? uniqueReasons.join('; ') : '';
+
+    const payload = {
       data: [
         {
           kdKegiatan: INSWActivityCode.ADJUSTMENT,
@@ -787,12 +796,15 @@ export class INSWIntegrationService {
               nomorDokKegiatan: adjustment.internal_evidence_number,
               tanggalKegiatan: this.formatINSWDateOnly(adjustment.transaction_date),
               namaEntitas: String(adjustment.company_code),
+              keterangan: keteranganDokumen,
               barangTransaksi,
             },
           ],
         },
       ],
     };
+
+    return payload;
   }
 
   private groupMaterialUsageByDocument(data: MaterialUsageData[]) {

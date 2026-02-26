@@ -32,7 +32,6 @@ export interface INSWBarangTransaksi {
   kdBarang: string;
   uraianBarang: string;
   jumlah: number;
-  keterangan?: string;
   kdSatuan: string;
   nilai: number;
   dokumen: INSWDocumentItem[];
