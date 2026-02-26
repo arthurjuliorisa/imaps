@@ -764,6 +764,7 @@ export class INSWIntegrationService {
         kdBarang: item.item_code,
         uraianBarang: item.item_name,
         jumlah: signedQty,
+        keterangan: item.reason || '',
         kdSatuan: kdSatuan || uomKey,
         nilai: 0,
         dokumen: [],
