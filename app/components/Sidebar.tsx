@@ -190,6 +190,7 @@ const menuSections: MenuSection[] = [
       { title: 'User Management', icon: <PeopleIcon />, path: '/settings/users' },
       { title: 'Access Menu', icon: <SettingsIcon />, path: '/settings/access-menu' },
       { title: 'Log Activity', icon: <HistoryIcon />, path: '/settings/log-activity' },
+      { title: 'Database Cleanup', icon: <RecyclingIcon />, path: '/settings/database-cleanup' },
     ],
   },
 ];
@@ -207,6 +208,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [dynamicMenuSections, setDynamicMenuSections] = useState<MenuSection[]>([]);
   const [isLoadingMenus, setIsLoadingMenus] = useState(true);
+  const [allMenuSections, setAllMenuSections] = useState<MenuSection[]>([]);
 
   // Fetch user's accessible menus
   useEffect(() => {
@@ -225,7 +227,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
         const parentMenus = menus.filter((m) => m.parentId === null);
         const childMenus = menus.filter((m) => m.parentId !== null);
 
-        // Build menu sections
+        // Build menu sections from API
         const sections: MenuSection[] = parentMenus.map((parent) => {
           // Get children of this parent
           const children = childMenus.filter((child) => child.parentId === parent.id);
@@ -257,10 +259,14 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
         });
 
         setDynamicMenuSections(sections);
+
+        // Merge static menuSections with dynamic sections
+        const merged: MenuSection[] = [...sections, ...menuSections];
+        setAllMenuSections(merged);
       } catch (error) {
         console.error('Error fetching user menus:', error);
-        // Fallback to empty menus on error
-        setDynamicMenuSections([]);
+        // Fallback to static menus only
+        setAllMenuSections(menuSections);
       } finally {
         setIsLoadingMenus(false);
       }
@@ -446,8 +452,8 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
                 Loading menus...
               </Typography>
             </Box>
-          ) : dynamicMenuSections.length > 0 ? (
-            dynamicMenuSections.map((section, sectionIndex) => (
+          ) : allMenuSections.length > 0 ? (
+            allMenuSections.map((section, sectionIndex) => (
               <React.Fragment key={`section-${sectionIndex}`}>
                 {section.title && renderSectionDivider(section.title)}
                 {section.items.map((item) => renderMenuItem(item))}
