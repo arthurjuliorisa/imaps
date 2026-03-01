@@ -52,6 +52,34 @@ export async function seedUsers() {
       company_code: 1380,
       is_active: false,
     },
+    // Customs users per company
+    {
+      username: 'customs_1310',
+      email: 'customs@harmoni.co.id',
+      password: await bcrypt.hash('customs123', 10),
+      full_name: 'Customs Officer - Harmoni (Company 1310)',
+      role: 'CUSTOMS',
+      company_code: 1310,
+      is_active: true,
+    },
+    {
+      username: 'customs_1370',
+      email: 'customs@pmi.co.id',
+      password: await bcrypt.hash('customs123', 10),
+      full_name: 'Customs Officer - PMI (Company 1370)',
+      role: 'CUSTOMS',
+      company_code: 1370,
+      is_active: true,
+    },
+    {
+      username: 'customs_1380',
+      email: 'customs@sbi.co.id',
+      password: await bcrypt.hash('customs123', 10),
+      full_name: 'Customs Officer - SBI (Company 1380)',
+      role: 'CUSTOMS',
+      company_code: 1380,
+      is_active: true,
+    },
   ];
 
   const createdUsers = [];

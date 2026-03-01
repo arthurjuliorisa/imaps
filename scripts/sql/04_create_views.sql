@@ -460,6 +460,7 @@ SELECT
     soi.item_name,
     soi.uom as unit,
     soi.actual_qty_count as qty,
+    soi.system_qty,
     soi.amount as value_amount,
     
     -- Audit fields

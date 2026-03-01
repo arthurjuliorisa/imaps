@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
 import { useToast } from '@/app/components/ToastProvider';
 import {
   Box,
@@ -25,6 +26,7 @@ import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
 import { formatQty } from '@/lib/utils/format';
+import { canViewSystemQty } from '@/lib/utils/user-role.util';
 
 interface StockOpnameData {
   id: string;
@@ -37,11 +39,12 @@ interface StockOpnameData {
   itemName: string;
   unit: string;
   qty: number;
+  systemQty?: number; // Only visible for INTERNAL users
   valueAmount: number;
   reason: string;
 }
 
-const EXCEL_HEADERS = [
+const getExcelHeaders = (canShowSystemQty: boolean) => [
   { key: 'no', label: 'No', type: 'number' as const },
   { key: 'companyName', label: 'Company Name', type: 'text' as const },
   { key: 'docDate', label: 'Tanggal Pelaksanaan', type: 'date' as const },
@@ -51,10 +54,11 @@ const EXCEL_HEADERS = [
   { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
   { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
   { key: 'qty', label: 'Jumlah Barang', type: 'number' as const },
+  ...(canShowSystemQty ? [{ key: 'systemQty', label: 'System Qty', type: 'number' as const }] : []),
   { key: 'reason', label: 'Keterangan', type: 'text' as const },
 ];
 
-const PDF_COLUMNS = [
+const getPdfColumns = (canShowSystemQty: boolean) => [
   { header: 'No', dataKey: 'no' },
   { header: 'Company Name', dataKey: 'companyName' },
   { header: 'Tanggal Pelaksanaan', dataKey: 'docDate' },
@@ -62,12 +66,17 @@ const PDF_COLUMNS = [
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
   { header: 'Jumlah Barang', dataKey: 'qty' },
+  ...(canShowSystemQty ? [{ header: 'System Qty', dataKey: 'systemQty' }] : []),
   { header: 'Keterangan', dataKey: 'reason' },
 ];
 
 export default function StockOpnameReportPage() {
   const theme = useTheme();
   const toast = useToast();
+  const { data: session } = useSession();
+
+  const userRole = session?.user?.role;
+  const canShowSystemQty = canViewSystemQty(userRole);
 
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -145,42 +154,60 @@ export default function StockOpnameReportPage() {
   };
 
   const handleExportExcel = () => {
-    const exportData = filteredData.map((row, index) => ({
-      no: index + 1,
-      companyName: row.companyName,
-      docDate: row.docDate,
-      status: row.status,
-      typeCode: row.typeCode,
-      itemCode: row.itemCode,
-      itemName: row.itemName,
-      unit: row.unit,
-      qty: row.qty,
-      reason: row.reason || '-',
-    }));
+    const exportData = filteredData.map((row, index) => {
+      const baseExport: any = {
+        no: index + 1,
+        companyName: row.companyName,
+        docDate: row.docDate,
+        status: row.status,
+        typeCode: row.typeCode,
+        itemCode: row.itemCode,
+        itemName: row.itemName,
+        unit: row.unit,
+        qty: row.qty,
+      };
+
+      if (canShowSystemQty && row.systemQty !== undefined) {
+        baseExport.systemQty = row.systemQty;
+      }
+
+      baseExport.reason = row.reason || '-';
+
+      return baseExport;
+    });
 
     exportToExcelWithHeaders(
       exportData,
-      EXCEL_HEADERS,
+      getExcelHeaders(canShowSystemQty),
       'Laporan_Stock_Opname',
       'Laporan Stock Opname'
     );
   };
 
   const handleExportPDF = () => {
-    const exportData = filteredData.map((row, index) => ({
-      no: index + 1,
-      companyName: row.companyName,
-      docDate: formatDateShort(row.docDate),
-      status: row.status,
-      itemCode: row.itemCode,
-      itemName: row.itemName,
-      qty: formatQty(row.qty),
-      reason: row.reason || '-',
-    }));
+    const exportData = filteredData.map((row, index) => {
+      const baseExport: any = {
+        no: index + 1,
+        companyName: row.companyName,
+        docDate: formatDateShort(row.docDate),
+        status: row.status,
+        itemCode: row.itemCode,
+        itemName: row.itemName,
+        qty: formatQty(row.qty),
+      };
+
+      if (canShowSystemQty && row.systemQty !== undefined) {
+        baseExport.systemQty = formatQty(row.systemQty);
+      }
+
+      baseExport.reason = row.reason || '-';
+
+      return baseExport;
+    });
 
     exportToPDF(
       exportData,
-      PDF_COLUMNS,
+      getPdfColumns(canShowSystemQty),
       'Laporan_Stock_Opname',
       'Laporan Stock Opname'
     );
@@ -259,13 +286,16 @@ export default function StockOpnameReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Barang</TableCell>
+                {canShowSystemQty && (
+                  <TableCell sx={{ fontWeight: 600 }} align="right">System Qty</TableCell>
+                )}
                 <TableCell sx={{ fontWeight: 600 }}>Keterangan</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={canShowSystemQty ? 11 : 10} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found
                     </Typography>
@@ -321,6 +351,13 @@ export default function StockOpnameReportPage() {
                         {formatQty(row.qty)}
                       </Typography>
                     </TableCell>
+                    {canShowSystemQty && (
+                      <TableCell align="right">
+                        <Typography variant="body2">
+                          {row.systemQty !== undefined ? formatQty(row.systemQty) : '-'}
+                        </Typography>
+                      </TableCell>
+                    )}
                     <TableCell>
                       <Typography variant="body2" color="text.secondary">
                         {row.reason || '-'}
