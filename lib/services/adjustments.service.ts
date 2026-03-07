@@ -120,7 +120,24 @@ export class AdjustmentsService {
         wmsId: data.wms_id,
       });
 
-      // Step 5: Company validation
+      // Step 5: Validate stockcount_order_number references (NEW for v3.4.0)
+      const stockCountErrors = await this.validateStockCountOrderNumbers(data);
+      if (stockCountErrors.length > 0) {
+        log.warn('Stock count order validation failed', {
+          errorCount: stockCountErrors.length,
+        });
+
+        return {
+          success: false,
+          errors: stockCountErrors as ErrorDetail[],
+        };
+      }
+
+      log.info('Stock count order numbers validated', {
+        wmsId: data.wms_id,
+      });
+
+      // Step 6: Company validation
       const companyExists = await this.validateCompany(data.company_code);
 
       if (!companyExists) {
@@ -147,7 +164,7 @@ export class AdjustmentsService {
         companyCode: data.company_code,
       });
 
-      // Step 6: Queue for immediate async insert (non-blocking)
+      // Step 7: Queue for immediate async insert (non-blocking)
       this.repository
         .create(data)
         .then((result) => {
@@ -206,6 +223,76 @@ export class AdjustmentsService {
   }
 
   /**
+   * Validate stockcount_order_number references valid Stock Opname
+   * If stockcount_order_number provided, must reference Stock Opname with status "Confirmed"
+   */
+  private async validateStockCountOrderNumbers(
+    data: AdjustmentBatchRequestInput
+  ): Promise<ErrorDetail[]> {
+    const errors: ErrorDetail[] = [];
+    
+    // Collect unique stockcount_order_numbers
+    const orderNumbers = new Set<string>();
+    data.items.forEach((item) => {
+      if (item.stockcount_order_number) {
+        orderNumbers.add(item.stockcount_order_number);
+      }
+    });
+
+    if (orderNumbers.size === 0) {
+      // No stockcount_order_numbers to validate
+      return [];
+    }
+
+    // Fetch Stock Opnames
+    const stockOpnames = await this.repository.getStockOpnamesByWmsIds(
+      Array.from(orderNumbers),
+      data.company_code
+    );
+
+    const validOpnames = new Map(
+      stockOpnames
+        .filter((so) => so.status === 'Confirmed')
+        .map((so) => [so.wms_id, true])
+    );
+
+    // Check each item's stockcount_order_number
+    data.items.forEach((item, index) => {
+      if (!item.stockcount_order_number) {
+        return; // Skip if not provided
+      }
+
+      const stoWmsId = item.stockcount_order_number;
+      const foundStockOpname = stockOpnames.find((so) => so.wms_id === stoWmsId);
+
+      if (!foundStockOpname) {
+        errors.push({
+          location: 'item',
+          item_index: index,
+          item_code: item.item_code,
+          field: 'stockcount_order_number',
+          code: 'STOCKCOUNT_ORDER_NOT_FOUND',
+          message: `Stock Opname with wms_id '${stoWmsId}' not found`,
+        });
+        return;
+      }
+
+      if (foundStockOpname.status !== 'Confirmed') {
+        errors.push({
+          location: 'item',
+          item_index: index,
+          item_code: item.item_code,
+          field: 'stockcount_order_number',
+          code: 'STOCKCOUNT_ORDER_NOT_CONFIRMED',
+          message: `Stock Opname '${stoWmsId}' has status '${foundStockOpname.status}', must be 'Confirmed'`,
+        });
+      }
+    });
+
+    return errors;
+  }
+
+  /**
    * Validate company exists
    */
   private async validateCompany(companyCode: number): Promise<boolean> {
@@ -228,5 +315,143 @@ export class AdjustmentsService {
    */
   private generateRequestId(): string {
     return `adj-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Calculate reconciliation data for adjustments (Phase 4: Reconciliation Calculation)
+   * 
+   * For each adjustment item, fetch stock snapshot and calculate:
+   * - beginning_qty: Opening balance on adjustment date (from snapshot)
+   * - incoming_qty_on_date: Incoming goods on adjustment date
+   * - outgoing_qty_on_date: Outgoing goods on adjustment date
+   * - system_qty: Expected system quantity (beginning + incoming - outgoing)
+   * - adjusted_qty: Final quantity after adjustment (system_qty + variance_qty)
+   * 
+   * @param companyCode Company code
+   * @param items Array of adjustment items with qty (variance)
+   * @param adjustmentDate Date of adjustment transaction
+   * @returns Array of items with reconciliation fields populated
+   */
+  async calculateReconciliationData(
+    companyCode: number,
+    items: Array<{
+      item_code: string;
+      item_type: string;
+      item_name: string;
+      uom: string;
+      qty: number; // variance amount (can be +/-)
+      adjustment_type: string;
+    }>,
+    adjustmentDate: Date
+  ): Promise<Array<{
+    item_code: string;
+    beginning_qty: number;
+    incoming_qty_on_date: number;
+    outgoing_qty_on_date: number;
+    system_qty: number;
+    adjusted_qty: number;
+  }>> {
+    const log = logger.child({
+      scope: 'calculateReconciliationData',
+      companyCode,
+      adjustmentDate: adjustmentDate.toISOString().split('T')[0],
+      itemCount: items.length,
+    });
+
+    const results: Array<{
+      item_code: string;
+      beginning_qty: number;
+      incoming_qty_on_date: number;
+      outgoing_qty_on_date: number;
+      system_qty: number;
+      adjusted_qty: number;
+    }> = [];
+
+    for (const item of items) {
+      try {
+        // Step 1: Fetch stock snapshot for exact adjustment date
+        let snapshot = await this.repository.getStockSnapshot(
+          companyCode,
+          item.item_code,
+          adjustmentDate
+        );
+
+        // Step 2: If no exact date, fallback to latest before adjustment date
+        if (!snapshot) {
+          snapshot = await this.repository.getLatestStockSnapshotBefore(
+            companyCode,
+            item.item_code,
+            adjustmentDate
+          );
+
+          if (!snapshot) {
+            log.warn('No stock snapshot found for item', {
+              item_code: item.item_code,
+              adjustmentDate: adjustmentDate.toISOString().split('T')[0],
+            });
+
+            // Use zeros if no snapshot exists
+            snapshot = {
+              opening_balance: 0,
+              incoming_qty: 0,
+              outgoing_qty: 0,
+            };
+          }
+        }
+
+        // Step 3: Calculate reconciliation fields
+        const beginning_qty = snapshot.opening_balance || 0;
+        const incoming_qty_on_date = snapshot.incoming_qty || 0;
+        const outgoing_qty_on_date = snapshot.outgoing_qty || 0;
+
+        // system_qty = beginning + incoming - outgoing
+        const system_qty = beginning_qty + incoming_qty_on_date - outgoing_qty_on_date;
+
+        // adjusted_qty = system_qty + variance (respect sign of adjustment_type)
+        const multiplier = item.adjustment_type === 'LOSS' ? -1 : 1;
+        const signedVariance = item.qty * multiplier;
+        const adjusted_qty = system_qty + signedVariance;
+
+        results.push({
+          item_code: item.item_code,
+          beginning_qty,
+          incoming_qty_on_date,
+          outgoing_qty_on_date,
+          system_qty,
+          adjusted_qty,
+        });
+
+        log.debug('Reconciliation calculated for item', {
+          item_code: item.item_code,
+          beginning_qty,
+          incoming_qty_on_date,
+          outgoing_qty_on_date,
+          system_qty,
+          adjusted_qty,
+        });
+      } catch (err) {
+        log.error('Failed to calculate reconciliation for item', {
+          item_code: item.item_code,
+          error: (err as any).message,
+        });
+
+        // Return zeros if calculation fails
+        results.push({
+          item_code: item.item_code,
+          beginning_qty: 0,
+          incoming_qty_on_date: 0,
+          outgoing_qty_on_date: 0,
+          system_qty: 0,
+          adjusted_qty: item.qty,
+        });
+      }
+    }
+
+    log.info('Reconciliation calculation completed', {
+      successCount: results.length,
+      itemCount: items.length,
+    });
+
+    return results;
   }
 }

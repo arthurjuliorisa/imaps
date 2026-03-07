@@ -63,9 +63,26 @@ export class WmsStockOpnameRepository {
         if (existingChecksum === dataChecksum && existing.status === 'Active') {
           return existing;
         }
-        throw new Error(
-          `Stock opname with WMS ID ${wmsId} already exists for company ${companyCode}`,
-        );
+        
+        // NEW for v3.4.0: Handle reactivation for Cancelled status
+        if (existing.status === 'Cancelled') {
+          // Delete old items (hard delete)
+          await tx.wms_stock_opname_items.deleteMany({
+            where: { wms_stock_opname_id: existing.id },
+          });
+
+          // Delete old header (hard delete)
+          await tx.wms_stock_opnames.delete({
+            where: { id: existing.id },
+          });
+
+          // Continue to create new with same wms_id (fall through)
+        } else {
+          // For Active or Confirmed status, throw error
+          throw new Error(
+            `Stock opname with WMS ID ${wmsId} already exists with status ${existing.status}`,
+          );
+        }
       }
 
       const stockOpname = await tx.wms_stock_opnames.create({

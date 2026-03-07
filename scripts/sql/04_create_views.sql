@@ -477,59 +477,145 @@ ORDER BY so.document_date DESC, so.id, soi.id;
 COMMENT ON VIEW vw_laporan_stock_opname IS 'Report #2.5: Stock Opname Report - Real-time view of stock opname transactions with physical count details';
 
 -- ============================================================================
--- REPORT #2.7: LAPORAN ADJUSTMENT (Adjustment Report)
+-- REPORT #2.7: LAPORAN ADJUSTMENT (Adjustment Report - Unified for Type 1 & 2)
 -- ============================================================================
--- Report of adjustment transactions based on Stock Opname items
--- Combines stock opname header and items with final adjustment data
--- Sources: wms_stock_opnames + wms_stock_opname_items
+-- Unified report combining both adjustment types in single view
+-- 
+-- Type 1 (STO-Related):
+--   Source: wms_stock_opnames + wms_stock_opname_items
+--   Relationship: stockcount_order_number in adjustment_items references STO wms_id
+--   Tracking: adjustment_id FK links STO items to adjustment
+--   
+-- Type 2 (Standalone):
+--   Source: adjustments + adjustment_items
+--   Relationship: None (stockcount_order_number = NULL)
+--   Reconciliation: Calculated and stored in adjustment_items at creation time
+--   
+-- Display:
+--   - adjustment_flow field distinguishes type ('STO_RELATED' | 'STANDALONE')
+--   - internal_evidence_number available for both types
+--   - Separate rows for same date if both types exist (as per requirement)
 
 CREATE OR REPLACE VIEW vw_laporan_adjustment AS
+
+-- ============================================================================
+-- Part 1: STO-Related Adjustments (Type 1)
+-- ============================================================================
+-- Source: wms_stock_opnames + wms_stock_opname_items
+-- Items linked via adjustment_id FK (populated when adjustment transmitted)
 SELECT 
-    so.id,
-    so.wms_id,
-    so.company_code,
+    CONCAT('STO_', waso.id) as id,
+    waso.wms_id as sto_wms_id,
+    adj.wms_id as adjustment_wms_id,
+    adj.internal_evidence_number,
+    waso.company_code,
     c.name as company_name,
-    so.document_date as doc_date,
-    so.status,
+    waso.document_date as doc_date,
+    waso.status,
     
-    -- Item details
-    soi.item_type as type_code,
-    soi.item_code,
+    -- Item details (stored directly in wms_stock_opname_items)
+    wasoi.item_type as type_code,
+    wasoi.item_code,
     COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
-    soi.item_name,
-    soi.uom as unit,
+    wasoi.item_name,
+    wasoi.uom as unit,
     
-    -- Reconciliation data
-    soi.beginning_qty,
-    soi.incoming_qty_on_date,
-    soi.outgoing_qty_on_date,
-    soi.system_qty,
+    -- Reconciliation (from wms_stock_opname_items - locked at POST)
+    wasoi.beginning_qty,
+    wasoi.incoming_qty_on_date,
+    wasoi.outgoing_qty_on_date,
+    wasoi.system_qty,
     
     -- Physical count & variance
-    soi.actual_qty_count,
-    soi.variance_qty,
+    wasoi.actual_qty_count,
+    wasoi.variance_qty,
     
-    -- Adjustment data (populated when adjustment transmitted)
-    soi.adjustment_qty_signed,
-    soi.final_adjusted_qty,
+    -- Adjustment & final state
+    wasoi.adjustment_qty_signed,
+    wasoi.final_adjusted_qty,
     
     -- Amount & reason
-    soi.amount as value_amount,
-    soi.reason,
+    wasoi.amount as value_amount,
+    wasoi.reason,
+    
+    -- Flow indicator
+    'STO_RELATED' as adjustment_flow,
     
     -- Audit fields
-    so.created_at,
-    so.updated_at,
-    so.confirmed_at
-FROM wms_stock_opnames so
-JOIN wms_stock_opname_items soi ON so.id = soi.wms_stock_opname_id
-    AND so.company_code = soi.company_code
-JOIN companies c ON so.company_code = c.code
-LEFT JOIN item_types it ON soi.item_type = it.item_type_code
-WHERE soi.adjustment_qty_signed IS NOT NULL
-ORDER BY so.document_date DESC, so.id, soi.id;
+    waso.created_at,
+    waso.updated_at,
+    waso.confirmed_at
+    
+FROM wms_stock_opnames waso
+JOIN wms_stock_opname_items wasoi ON wasoi.wms_stock_opname_id = waso.id
+    AND wasoi.company_code = waso.company_code
+LEFT JOIN adjustments adj ON adj.id = wasoi.adjustment_id
+JOIN companies c ON waso.company_code = c.code
+LEFT JOIN item_types it ON wasoi.item_type = it.item_type_code
+WHERE wasoi.adjustment_qty_signed IS NOT NULL
+  AND wasoi.adjustment_id IS NOT NULL
 
-COMMENT ON VIEW vw_laporan_adjustment IS 'Report #2.7: Adjustment Report - View of stock opname items with adjustment data (final_adjusted_qty and reason populated after adjustment transmission)';
+UNION ALL
+
+-- ============================================================================
+-- Part 2: Standalone Adjustments (Type 2)
+-- ============================================================================
+-- Source: adjustments + adjustment_items
+-- Items with NO stock opname relationship (stockcount_order_number = NULL)
+SELECT 
+    CONCAT('ADJ_', ajust.id) as id,
+    NULL::VARCHAR(100) as sto_wms_id,
+    ajust.wms_id as adjustment_wms_id,
+    ajust.internal_evidence_number,
+    ajust.company_code,
+    c.name as company_name,
+    ajust.transaction_date as doc_date,
+    NULL as status,
+    
+    -- Item details (stored directly in adjustment_items)
+    ajust_items.item_type as type_code,
+    ajust_items.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    ajust_items.item_name,
+    ajust_items.uom as unit,
+    
+    -- Reconciliation (from adjustment_items - calculated at creation time)
+    ajust_items.beginning_qty,
+    ajust_items.incoming_qty_on_date,
+    ajust_items.outgoing_qty_on_date,
+    ajust_items.system_qty,
+    
+    -- Physical count & variance
+    (ajust_items.system_qty + ajust_items.qty) as actual_qty_count,
+    ajust_items.qty as variance_qty,
+    
+    -- Adjustment & final state
+    ajust_items.qty as adjustment_qty_signed,
+    ajust_items.adjusted_qty,
+    
+    -- Amount & reason
+    ajust_items.amount as value_amount,
+    ajust_items.reason,
+    
+    -- Flow indicator
+    'STANDALONE' as adjustment_flow,
+    
+    -- Audit fields
+    ajust.created_at,
+    ajust.updated_at,
+    NULL::TIMESTAMP as confirmed_at
+    
+FROM adjustments ajust
+JOIN adjustment_items ajust_items ON ajust_items.adjustment_id = ajust.id
+    AND ajust_items.adjustment_company = ajust.company_code
+    AND ajust_items.adjustment_date = ajust.transaction_date
+JOIN companies c ON ajust.company_code = c.code
+LEFT JOIN item_types it ON ajust_items.item_type = it.item_type_code
+WHERE ajust_items.stockcount_order_number IS NULL
+
+ORDER BY company_code, doc_date DESC, id;
+
+COMMENT ON VIEW vw_laporan_adjustment IS 'Report #2.7: Adjustment Report - Unified view combining both adjustment types (Type 1: STO-related via adjustment_id FK, Type 2: Standalone with calculated reconciliation). Separate rows for same date if both types exist. Columns: sto_wms_id (Type 1 only), adjustment_wms_id, internal_evidence_number, adjustment_flow (STO_RELATED|STANDALONE), all reconciliation data';
 
 -- ============================================================================
 -- ============================================================================

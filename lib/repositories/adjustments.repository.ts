@@ -72,6 +72,17 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         });
       }
 
+      // Calculate reconciliation data BEFORE transaction (Phase 5)
+      const reconciliationDataMap = await this.calculateReconciliationDataMap(
+        data.company_code,
+        data.items,
+        transactionDate
+      );
+
+      log.info('Reconciliation data calculated before transaction', {
+        itemCount: reconciliationDataMap.size,
+      });
+
       // =========================================================================
       // STEP 2, 3: Transaction - Delete old if date changed, then Upsert new
       // =========================================================================
@@ -198,6 +209,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
 
             if (existingItem) {
               // Item exists, update it
+              const reconciliation = reconciliationDataMap.get(item.item_code);
               await tx.adjustment_items.update({
                 where: { id: existingItem.id },
                 data: {
@@ -205,12 +217,21 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
                   uom: item.uom,
                   qty: new Prisma.Decimal(item.qty),
                   reason: item.reason || null,
+                  stockcount_order_number: item.stockcount_order_number || null, // NEW for v3.4.0
+                  amount: item.amount ? new Prisma.Decimal(item.amount) : null, // NEW for v3.4.0
+                  // Phase 5: Add reconciliation fields
+                  beginning_qty: reconciliation?.beginning_qty || null,
+                  incoming_qty_on_date: reconciliation?.incoming_qty_on_date || null,
+                  outgoing_qty_on_date: reconciliation?.outgoing_qty_on_date || null,
+                  system_qty: reconciliation?.system_qty || null,
+                  adjusted_qty: reconciliation?.adjusted_qty || null,
                   updated_at: new Date(),
                   deleted_at: null,
                 },
               });
             } else {
               // New item, insert it
+              const reconciliation = reconciliationDataMap.get(item.item_code);
               await tx.adjustment_items.create({
                 data: {
                   adjustment_id: header.id,
@@ -223,6 +244,14 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
                   uom: item.uom,
                   qty: new Prisma.Decimal(item.qty),
                   reason: item.reason || null,
+                  stockcount_order_number: item.stockcount_order_number || null, // NEW for v3.4.0
+                  amount: item.amount ? new Prisma.Decimal(item.amount) : null, // NEW for v3.4.0
+                  // Phase 5: Add reconciliation fields
+                  beginning_qty: reconciliation?.beginning_qty || null,
+                  incoming_qty_on_date: reconciliation?.incoming_qty_on_date || null,
+                  outgoing_qty_on_date: reconciliation?.outgoing_qty_on_date || null,
+                  system_qty: reconciliation?.system_qty || null,
+                  adjusted_qty: reconciliation?.adjusted_qty || null,
                 },
               });
             }
@@ -234,18 +263,29 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
           });
         } else {
           // Date changed: insert all new items
-          const itemsData = data.items.map((item) => ({
-            adjustment_id: header.id,
-            adjustment_company: data.company_code,
-            adjustment_date: transactionDate,
-            adjustment_type: item.adjustment_type,
-            item_type: item.item_type,
-            item_code: item.item_code,
-            item_name: item.item_name,
-            uom: item.uom,
-            qty: new Prisma.Decimal(item.qty),
-            reason: item.reason || null,
-          }));
+          const itemsData = data.items.map((item) => {
+            const reconciliation = reconciliationDataMap.get(item.item_code);
+            return {
+              adjustment_id: header.id,
+              adjustment_company: data.company_code,
+              adjustment_date: transactionDate,
+              adjustment_type: item.adjustment_type,
+              item_type: item.item_type,
+              item_code: item.item_code,
+              item_name: item.item_name,
+              uom: item.uom,
+              qty: new Prisma.Decimal(item.qty),
+              reason: item.reason || null,
+              stockcount_order_number: item.stockcount_order_number || null, // NEW for v3.4.0
+              amount: item.amount ? new Prisma.Decimal(item.amount) : null, // NEW for v3.4.0
+              // Phase 5: Add reconciliation fields
+              beginning_qty: reconciliation?.beginning_qty || null,
+              incoming_qty_on_date: reconciliation?.incoming_qty_on_date || null,
+              outgoing_qty_on_date: reconciliation?.outgoing_qty_on_date || null,
+              system_qty: reconciliation?.system_qty || null,
+              adjusted_qty: reconciliation?.adjusted_qty || null,
+            };
+          });
 
           await tx.adjustment_items.createMany({
             data: itemsData,
@@ -352,8 +392,9 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
 
       // Step 6: Update wms_stock_opname_items with adjustment_qty_signed
       try {
-        await this.updateStockOpnameItems(data, transactionDate);
-        log.info('Stock opname items updated with adjustment_qty_signed');
+        // Pass adjustment_id from header to link Type 1 adjustments
+        await this.updateStockOpnameItems(data, transactionDate, result.header.id);
+        log.info('Stock opname items updated with adjustment_qty_signed and adjustment_id');
       } catch (stoError) {
         log.error('Stock opname items update failed', {
           error: (stoError as any).message,
@@ -471,6 +512,10 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
    * - uom
    * - adjustment_type (GAIN/LOSS) should match the variance type in STO
    * 
+   * PHASE 5: NEW FEATURE
+   * - Link adjustment_id FK for Type 1 adjustments (those with stockcount_order_number)
+   * - Enables audit trail from STO items → adjustments
+   * 
    * IDEMPOTENCY HANDLING:
    * - First transmit: STO items have adjustment_qty_signed = NULL → UPDATE new data
    * - Resubmit (same wms_id + date): STO items already updated → RESET first, then UPDATE new data
@@ -481,12 +526,14 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
    */
   private async updateStockOpnameItems(
     data: AdjustmentBatchRequestInput,
-    transactionDate: Date
+    transactionDate: Date,
+    adjustmentId: number  // NEW: adjustment header ID for FK linkage
   ): Promise<void> {
     const log = logger.child({
       scope: 'updateStockOpnameItems',
       wmsId: data.wms_id,
       companyCode: data.company_code,
+      adjustmentId: adjustmentId,  // NEW: log adjustment ID
     });
 
     if (data.items.length === 0) {
@@ -557,13 +604,14 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         }
       }
 
-      // Step 4: Build mapping: (item_code, uom, adjustment_type) -> {qty, reason}
-      const adjDataMap = new Map<string, { qty: number; reason: string | null }>();
+      // Step 4: Build mapping: (item_code, uom, adjustment_type) -> {qty, reason, stockcount_order_number}
+      const adjDataMap = new Map<string, { qty: number; reason: string | null; stockcount_order_number: string | null }>();
       for (const item of data.items) {
         const key = `${item.item_code}:${item.uom}:${item.adjustment_type}`;
         adjDataMap.set(key, {
           qty: item.qty,
           reason: item.reason || null,
+          stockcount_order_number: item.stockcount_order_number || null,  // Need to check if Type 1
         });
       }
 
@@ -571,11 +619,13 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       // Respect adjustment_type sign: LOSS = negative, GAIN = positive
       // adjustment_qty_signed = signed qty based on type
       // final_adjusted_qty = system_qty + adjustment_qty_signed
+      // Phase 5: Also include adjustment_id if this is a Type 1 adjustment (has stockcount_order_number)
       const updates: Array<{
         id: bigint;
         qty: Prisma.Decimal;
         finalAdjustedQty: Prisma.Decimal;
         reason: string | null;
+        isType1: boolean;  // NEW: Track if Type 1 (for adjustment_id linking)
       }> = [];
 
       for (const [key, stoItem] of mostRecentMap) {
@@ -588,11 +638,15 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
           // Calculate final_adjusted_qty = system_qty + adjustment_qty_signed
           const finalQty = stoItem.system_qty.plus(signedQty);
 
+          // Type 1 = has stockcount_order_number (linking back to STO)
+          const isType1 = !!adjData.stockcount_order_number;
+
           updates.push({
             id: stoItem.id,
             qty: signedQty,
             finalAdjustedQty: finalQty,
             reason: adjData.reason,
+            isType1: isType1,  // NEW
           });
         }
       }
@@ -606,7 +660,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       }
 
       // Step 6: Batch update using CASE statements in single UPDATE query
-      // Update 3 fields: adjustment_qty_signed, final_adjusted_qty, reason
+      // Update 4 fields: adjustment_qty_signed, final_adjusted_qty, reason, adjustment_id (NEW for FK linkage)
       const qtyStatements = updates
         .map((u) => `WHEN ${u.id}::bigint THEN ${u.qty.toString()}::decimal(15,3)`)
         .join('\n');
@@ -622,7 +676,22 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         })
         .join('\n');
 
+      // NEW: adjustment_id SET only for Type 1 adjustments
+      const adjustmentIdStatements = updates
+        .filter(u => u.isType1)  // Only Type 1
+        .map((u) => `WHEN ${u.id}::bigint THEN ${adjustmentId}::int`)
+        .join('\n');
+
       const idList = updates.map((u) => `${u.id}::bigint`).join(',');
+
+      // NEW: Include adjustment_id in UPDATE if any Type 1 items exist
+      const hasType1 = updates.some(u => u.isType1);
+      const adjustmentIdUpdateClause = hasType1
+        ? `adjustment_id = CASE id
+            ${adjustmentIdStatements}
+            ELSE adjustment_id
+          END,`
+        : '';
 
       await prisma.$executeRawUnsafe(`
         UPDATE wms_stock_opname_items
@@ -639,6 +708,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
             ${reasonStatements}
             ELSE reason
           END,
+          ${adjustmentIdUpdateClause}
           updated_at = NOW()
         WHERE id IN (${idList})
       `);
@@ -647,6 +717,8 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         totalUpdated: updates.length,
         uniqueCombinations: uniqueCombinations.size,
         adjustmentItems: data.items.length,
+        type1Count: updates.filter(u => u.isType1).length,  // NEW: log Type 1 count
+        adjustmentIdLinked: hasType1,  // NEW: log if FK was linked
       });
     } catch (err) {
       log.error('Batch update failed', {
@@ -655,5 +727,269 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       });
       // Don't throw - allow adjustment to complete even if STO update fails
     }
+  }
+
+  /**
+   * Get Stock Opname records by wms_ids (NEW for v3.4.0)
+   * Used to validate stockcount_order_number references
+   */
+  async getStockOpnamesByWmsIds(
+    wmsIds: string[],
+    companyCode: number
+  ): Promise<Array<{ wms_id: string; status: string }>> {
+    return prisma.wms_stock_opnames.findMany({
+      where: {
+        company_code: companyCode,
+        wms_id: { in: wmsIds },
+      },
+      select: {
+        wms_id: true,
+        status: true,
+      },
+    });
+  }
+
+  /**
+   * Get stock snapshot data for specific date (Phase 3: Stock Data Fetcher)
+   * 
+   * Retrieves reconciliation data from stock_daily_snapshot table:
+   * - opening_balance (beginning_qty on adjustment date)
+   * - incoming_qty (incoming goods on adjustment date)
+   * - outgoing_qty (outgoing goods on adjustment date)
+   * 
+   * @param companyCode Company code
+   * @param itemCode Item code to lookup
+   * @param snapshotDate Date to fetch snapshot for
+   * @returns {Promise<StockSnapshot|null>} Snapshot data or null if no record exists
+   */
+  async getStockSnapshot(
+    companyCode: number,
+    itemCode: string,
+    snapshotDate: Date
+  ): Promise<{
+    opening_balance: number;
+    incoming_qty: number;
+    outgoing_qty: number;
+  } | null> {
+    try {
+      const snapshot = await prisma.stock_daily_snapshot.findFirst({
+        where: {
+          company_code: companyCode,
+          item_code: itemCode,
+          snapshot_date: snapshotDate,
+        },
+        select: {
+          opening_balance: true,
+          incoming_qty: true,
+          outgoing_qty: true,
+        },
+      });
+
+      return snapshot || null;
+    } catch (err) {
+      logger.error('Error fetching stock snapshot', {
+        companyCode,
+        itemCode,
+        snapshotDate: snapshotDate.toISOString().split('T')[0],
+        error: (err as any).message,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Get latest stock snapshot before specific date (Phase 3: Stock Data Fetcher)
+   * 
+   * Fallback method to find stock data when exact date doesn't exist.
+   * Queries for the closest snapshot_date BEFORE the provided date.
+   * 
+   * Useful for:
+   * - Adjustments made without prior snapshot calculation
+   * - Retrieving most recent known stock state before adjustment date
+   * 
+   * @param companyCode Company code
+   * @param itemCode Item code to lookup
+   * @param beforeDate Find snapshot with snapshot_date < this date
+   * @returns {Promise<StockSnapshot|null>} Snapshot data or null if no record exists
+   */
+  async getLatestStockSnapshotBefore(
+    companyCode: number,
+    itemCode: string,
+    beforeDate: Date
+  ): Promise<{
+    snapshot_date: Date;
+    opening_balance: number;
+    incoming_qty: number;
+    outgoing_qty: number;
+  } | null> {
+    try {
+      const snapshot = await prisma.stock_daily_snapshot.findFirst({
+        where: {
+          company_code: companyCode,
+          item_code: itemCode,
+          snapshot_date: {
+            lt: beforeDate,
+          },
+        },
+        select: {
+          snapshot_date: true,
+          opening_balance: true,
+          incoming_qty: true,
+          outgoing_qty: true,
+        },
+        orderBy: {
+          snapshot_date: 'desc',
+        },
+      });
+
+      return snapshot || null;
+    } catch (err) {
+      logger.error('Error fetching latest stock snapshot before date', {
+        companyCode,
+        itemCode,
+        beforeDate: beforeDate.toISOString().split('T')[0],
+        error: (err as any).message,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Calculate reconciliation data for adjustment items (Phase 5: Helper)
+   * 
+   * For each adjustment item, fetch stock snapshot and calculate:
+   * - beginning_qty: Opening balance on adjustment date
+   * - incoming_qty_on_date: Incoming goods on adjustment date  
+   * - outgoing_qty_on_date: Outgoing goods on adjustment date
+   * - system_qty: Expected system quantity (beginning + incoming - outgoing)
+   * - adjusted_qty: Final quantity after adjustment (system_qty + variance_qty)
+   * 
+   * This helper method is called during adjustment creation to populate
+   * reconciliation fields in adjustment_items table.
+   * 
+   * @param companyCode Company code
+   * @param items Array of adjustment items with qty variance
+   * @param adjustmentDate Adjustment transaction date
+   * @returns Map of item_code -> reconciliation data
+   */
+  private async calculateReconciliationDataMap(
+    companyCode: number,
+    items: Array<{
+      item_code: string;
+      item_type: string;
+      item_name: string;
+      uom: string;
+      qty: number;
+      adjustment_type: string;
+    }>,
+    adjustmentDate: Date
+  ): Promise<Map<string, {
+    beginning_qty: Prisma.Decimal;
+    incoming_qty_on_date: Prisma.Decimal;
+    outgoing_qty_on_date: Prisma.Decimal;
+    system_qty: Prisma.Decimal;
+    adjusted_qty: Prisma.Decimal;
+  }>> {
+    const log = logger.child({
+      scope: 'calculateReconciliationDataMap',
+      companyCode,
+      itemCount: items.length,
+    });
+
+    const reconciliationMap = new Map<string, {
+      beginning_qty: Prisma.Decimal;
+      incoming_qty_on_date: Prisma.Decimal;
+      outgoing_qty_on_date: Prisma.Decimal;
+      system_qty: Prisma.Decimal;
+      adjusted_qty: Prisma.Decimal;
+    }>();
+
+    for (const item of items) {
+      try {
+        // Step 1: Fetch stock snapshot for exact adjustment date
+        let snapshot = await this.getStockSnapshot(
+          companyCode,
+          item.item_code,
+          adjustmentDate
+        );
+
+        // Step 2: If no exact date, fallback to latest before adjustment date
+        if (!snapshot) {
+          const snapshotBefore = await this.getLatestStockSnapshotBefore(
+            companyCode,
+            item.item_code,
+            adjustmentDate
+          );
+          if (snapshotBefore) {
+            snapshot = snapshotBefore;
+          }
+        }
+
+        if (!snapshot) {
+          log.warn('No stock snapshot found for item', {
+            item_code: item.item_code,
+            adjustmentDate: adjustmentDate.toISOString().split('T')[0],
+          });
+
+          // Use zeros if no snapshot exists
+          snapshot = {
+            opening_balance: 0,
+            incoming_qty: 0,
+            outgoing_qty: 0,
+          };
+        }
+
+        // Step 3: Calculate reconciliation fields
+        const beginning_qty = new Prisma.Decimal(snapshot.opening_balance || 0);
+        const incoming_qty_on_date = new Prisma.Decimal(snapshot.incoming_qty || 0);
+        const outgoing_qty_on_date = new Prisma.Decimal(snapshot.outgoing_qty || 0);
+
+        // system_qty = beginning + incoming - outgoing
+        const system_qty = beginning_qty.plus(incoming_qty_on_date).minus(outgoing_qty_on_date);
+
+        // adjusted_qty = system_qty + variance (respect sign of adjustment_type)
+        const multiplier = item.adjustment_type === 'LOSS' ? -1 : 1;
+        const signedVariance = new Prisma.Decimal(item.qty * multiplier);
+        const adjusted_qty = system_qty.plus(signedVariance);
+
+        reconciliationMap.set(item.item_code, {
+          beginning_qty,
+          incoming_qty_on_date,
+          outgoing_qty_on_date,
+          system_qty,
+          adjusted_qty,
+        });
+
+        log.debug('Reconciliation calculated for item', {
+          item_code: item.item_code,
+          beginning_qty: beginning_qty.toString(),
+          incoming_qty_on_date: incoming_qty_on_date.toString(),
+          outgoing_qty_on_date: outgoing_qty_on_date.toString(),
+          system_qty: system_qty.toString(),
+          adjusted_qty: adjusted_qty.toString(),
+        });
+      } catch (err) {
+        log.error('Failed to calculate reconciliation for item', {
+          item_code: item.item_code,
+          error: (err as any).message,
+        });
+
+        // Use zeros if calculation fails
+        reconciliationMap.set(item.item_code, {
+          beginning_qty: new Prisma.Decimal(0),
+          incoming_qty_on_date: new Prisma.Decimal(0),
+          outgoing_qty_on_date: new Prisma.Decimal(0),
+          system_qty: new Prisma.Decimal(0),
+          adjusted_qty: new Prisma.Decimal(item.qty),
+        });
+      }
+    }
+
+    log.info('Reconciliation calculation completed', {
+      successCount: reconciliationMap.size,
+      itemCount: items.length,
+    });
+
+    return reconciliationMap;
   }
 }

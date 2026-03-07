@@ -114,6 +114,28 @@ export const adjustmentItemSchema = z.object({
     .max(500, 'Reason must not exceed 500 characters')
     .nullable()
     .optional(),
+  
+  // NEW for v3.4.0: Reference to Stock Opname wms_id
+  stockcount_order_number: z
+    .string()
+    .max(100, 'Stock count order number must not exceed 100 characters')
+    .trim()
+    .nullable()
+    .optional(),
+  
+  // NEW for v3.4.0: Currency amount with 4 decimal places
+  amount: z
+    .number()
+    .nonnegative('Amount must be >= 0')
+    .multipleOf(0.0001, 'Amount must have max 4 decimal places')
+    .nullable()
+    .optional(),
+  
+  // Reserved for future use (v3.4.0)
+  blank3: z
+    .any()
+    .nullable()
+    .optional(),
 });
 
 export type AdjustmentItemInput = z.infer<typeof adjustmentItemSchema>;
