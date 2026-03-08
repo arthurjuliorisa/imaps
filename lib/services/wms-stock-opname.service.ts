@@ -45,12 +45,24 @@ export class WmsStockOpnameService {
       requestUser,
     );
 
-    // Generate adjustments asynchronously (fire-and-forget pattern)
-    this.generateAdjustmentsAsync(result.id, result.company_code, documentDate, result.wms_id, result.items).catch(
-      (err) => {
-        console.error('[WmsStockOpnameService] Error generating adjustments:', err);
-      },
-    );
+    // =========================================================================
+    // DISABLED: Auto-generation of adjustments from stock opname variance
+    // =========================================================================
+    // Reason: Adjustments MUST be explicitly submitted by user via POST /api/v1/adjustments
+    // REQUIREMENT: Only 1 adjustment record per wms_id that user transmits
+    // Auto-generation would create duplicate adjustment records
+    //
+    // User workflow:
+    // 1. POST /api/v1/wms-stock-opname (creates STO record)
+    // 2. Review variance in wms_stock_opname_items
+    // 3. POST /api/v1/adjustments (user explicitly submits adjustment with stockcount_order_number)
+    //
+    // Disabled code (kept for reference):
+    // this.generateAdjustmentsAsync(result.id, result.company_code, documentDate, result.wms_id, result.items).catch(
+    //   (err) => {
+    //     console.error('[WmsStockOpnameService] Error generating adjustments:', err);
+    //   },
+    // );
 
     return this.formatResponse(result);
   }

@@ -110,7 +110,6 @@ export class WmsStockOpnameRepository {
 
         const system_qty = recon.beginning_qty + recon.incoming_qty_on_date - recon.outgoing_qty_on_date;
         const variance_qty = (item.actual_qty_count ?? 0) - system_qty;
-        const adjustment_type = variance_qty > 0 ? 'GAIN' : variance_qty < 0 ? 'LOSS' : null;
 
         return {
           wms_stock_opname_id: stockOpname.id,
@@ -126,7 +125,7 @@ export class WmsStockOpnameRepository {
           system_qty,
           variance_qty,
           adjustment_qty_signed: null,
-          adjustment_type,
+          adjustment_type: null,  // ✅ CRITICAL: Must remain NULL until adjustment is transmitted by user
           amount: null,
           final_adjusted_qty: system_qty,
           reason: null,
@@ -194,10 +193,11 @@ export class WmsStockOpnameRepository {
           };
           const system_qty = r.beginning_qty + r.incoming_qty_on_date - r.outgoing_qty_on_date;
           const variance_qty = (item.actual_qty_count ?? 0) - system_qty;
-          const adjustment_type = variance_qty > 0 ? 'GAIN' : variance_qty < 0 ? 'LOSS' : null;
 
           return {
             wms_stock_opname_id: current.id,
+            // ✅ CRITICAL: adjustment_type must remain NULL until user transmits adjustment
+            adjustment_type: null,
             company_code: companyCode,
             item_code: item.item_code,
             item_name: item.item_name,
@@ -210,7 +210,6 @@ export class WmsStockOpnameRepository {
             system_qty,
             variance_qty,
             adjustment_qty_signed: null,
-            adjustment_type,
             amount: item.amount ?? null,
             final_adjusted_qty: system_qty,
             reason: null,
@@ -282,7 +281,7 @@ export class WmsStockOpnameRepository {
         adjustment_type: detail.adjustment_type,
         uom: detail.uom,
         qty: detail.adjustment_qty,
-        notes: detail.notes || null,
+        reason: detail.notes || null,
       }));
 
       await tx.adjustment_items.createMany({

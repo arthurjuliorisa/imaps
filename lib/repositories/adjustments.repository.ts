@@ -84,21 +84,27 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       });
 
       // =========================================================================
-      // DETECT TYPE 1 vs TYPE 2 BEFORE TRANSACTION
+      // SEGREGATE ITEMS: TYPE 1 vs TYPE 2 BEFORE TRANSACTION
       // =========================================================================
-      // Type 1 = has stockcount_order_number (STO-related)
-      // Type 2 = NO stockcount_order_number (Standalone)
-      const isType1Adjustment = data.items.some(item => !!item.stockcount_order_number);
+      // Type 1 = has stockcount_order_number (STO-related, update wms_stock_opname_items)
+      // Type 2 = NO stockcount_order_number (Standalone, NO update to wms_stock_opname_items)
+      // MIXED payloads are ALLOWED - each item is handled independently
+      const type1Items = data.items.filter(item => !!item.stockcount_order_number);
+      const type2Items = data.items.filter(item => !item.stockcount_order_number);
+      const hasType1 = type1Items.length > 0;
+      const hasType2 = type2Items.length > 0;
       
-      // Automatic wms_doc_type mapping based on adjustment type
-      const automappedDocType = isType1Adjustment 
+      // Automatic wms_doc_type mapping based on what's present
+      const automappedDocType = hasType1 && !hasType2
         ? 'Stock Opname Adjustment' 
-        : 'Standalone Adjustment';
+        : hasType2 && !hasType1
+        ? 'Standalone Adjustment'
+        : 'Mixed Adjustment';  // NEW: For mixed payloads
 
-      log.info('Adjustment type detected and doc type auto-mapped', {
-        type: isType1Adjustment ? 'TYPE_1' : 'TYPE_2',
+      log.debug('Adjustment items segregated by type', {
+        type1Count: type1Items.length,
+        type2Count: type2Items.length,
         automappedDocType: automappedDocType,
-        providedDocType: data.wms_doc_type || 'none',
       });
 
       // =========================================================================
@@ -411,31 +417,42 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       // =========================================================================
       // STEP 6: Update wms_stock_opname_items (TYPE 1 ONLY)
       // =========================================================================
-      // CRITICAL: Only Type 1 adjustments (those with stockcount_order_number)
-      // should update wms_stock_opname_items. Type 2 (standalone) must remain separate.
-      // NOTE: isType1Adjustment already detected above before transaction
+      // CRITICAL: Only Type 1 items (those with stockcount_order_number)
+      // should update wms_stock_opname_items. Type 2 (standalone) items remain separate.
+      // SUPPORTS MIXED: If payload has both, segregated items are processed independently
       
       try {
-        if (isType1Adjustment) {
+        if (hasType1) {
+          // DEFENSIVE: Verify type1Items before passing to updateStockOpnameItems
+          const allType1ItemsHaveReference = type1Items.every(item => !!item.stockcount_order_number);
+          if (!allType1ItemsHaveReference) {
+            log.error('Critical bug: type1Items contains items without stockcount_order_number', {
+              type1ItemCount: type1Items.length,
+            });
+            throw new Error('Type 1 item segregation failed - critical bug');
+          }
+
+          // Create data object with only Type 1 items for update
+          const type1AdjustmentData = { ...data, items: type1Items };
+          
           // Pass adjustment_id from header to link Type 1 adjustments
-          await this.updateStockOpnameItems(data, transactionDate, result.header.id);
-          log.info('Stock opname items updated with adjustment_qty_signed and adjustment_id', {
-            type: 'TYPE_1',
+          await this.updateStockOpnameItems(type1AdjustmentData, transactionDate, result.header.id);
+          
+          log.info('Stock opname items updated (Type 1 only)', {
+            type1Count: type1Items.length,
             adjustmentId: result.header.id,
-            docType: automappedDocType,
           });
-        } else {
-          // Type 2: Standalone adjustment - do NOT touch wms_stock_opname_items
-          log.info('Skipping wms_stock_opname_items update for standalone adjustment', {
-            type: 'TYPE_2',
-            reason: 'No stockcount_order_number provided',
-            docType: automappedDocType,
+        }
+        if (hasType2) {
+          // Type 2: Standalone adjustment items - do NOT touch wms_stock_opname_items
+          log.debug('Type 2 items will NOT update wms_stock_opname_items', {
+            type2Count: type2Items.length,
           });
         }
       } catch (stoError) {
         log.error('Stock opname items update failed', {
           error: (stoError as any).message,
-          type: isType1Adjustment ? 'TYPE_1' : 'TYPE_2',
+          updatedType: 'TYPE_1',
         });
         // Don't fail the entire transaction if STO update fails
       }
@@ -588,21 +605,32 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
     // =========================================================================
     // SAFEGUARD: TYPE 1 ONLY - Verify all items have stockcount_order_number
     // =========================================================================
-    const allHaveStockCountOrder = data.items.every(item => !!item.stockcount_order_number);
-    if (!allHaveStockCountOrder) {
-      log.warn('SAFEGUARD: Not all items have stockcount_order_number, aborting STO update', {
-        itemCount: data.items.length,
-        itemsWithStockCountOrder: data.items.filter(i => i.stockcount_order_number).length,
-        message: 'Type 2 (Standalone) adjustments must NOT update wms_stock_opname_items',
+    // CRITICAL: This method MUST ONLY process items with stockcount_order_number
+    // TYPE 2 items (standalone, no stockcount_order_number) MUST NEVER reach this code
+    // If they do, abort immediately to prevent corrupting wms_stock_opname_items
+    
+    const itemsWithoutStockCount = data.items.filter(item => !item.stockcount_order_number);
+    
+    if (itemsWithoutStockCount.length > 0) {
+      log.error('TYPE 2 items detected in updateStockOpnameItems - aborting', {
+        type2Count: itemsWithoutStockCount.length,
       });
       return;
     }
 
+    if (data.items.length === 0) {
+      return;
+    }
+
     try {
-      // Step 1: Get all unique combinations of (item_code, uom, adjustment_type)
+      // Step 1: Get all unique combinations of (item_code, uom) ONLY
+      // NOTE: Do NOT include adjustment_type in matching key because:
+      // - When STO is first created, adjustment_type = NULL in wms_stock_opname_items
+      // - When adjustment is transmitted, adjustment_type is populated
+      // - So we match by item_code + uom only, then update adjustment_type field
       const uniqueCombinations = new Map<string, typeof data.items[0]>();
       for (const item of data.items) {
-        const key = `${item.item_code}:${item.uom}:${item.adjustment_type}`;
+        const key = `${item.item_code}:${item.uom}`;  // NO adjustment_type in key!
         if (!uniqueCombinations.has(key)) {
           uniqueCombinations.set(key, item);
         }
@@ -611,6 +639,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       const uniqueItems = Array.from(uniqueCombinations.values());
 
       // Step 2: Query matching STO items using Prisma OR conditions
+      // Match ONLY by item_code and uom (NOT by adjustment_type, which is NULL until this adjustment)
       // Include system_qty for final_adjusted_qty calculation
       // For idempotency (resubmit): also get STO items that are ALREADY updated (adjustment_qty_signed NOT NULL)
       // This allows reset + re-update on resubmit
@@ -618,7 +647,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         AND: [
           { item_code: item.item_code },
           { uom: item.uom },
-          { adjustment_type: item.adjustment_type },
+          // REMOVED: { adjustment_type: item.adjustment_type } - This was causing NO MATCH!
         ],
       }));
 
@@ -645,52 +674,62 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       });
 
       if (allMatchingStoItems.length === 0) {
-        log.debug('No matching STO items found', {
+        log.debug('No matching STO items found for adjustment', {
           adjustmentItemCount: data.items.length,
+          companyCode: data.company_code,
         });
         return;
       }
 
       // Step 3: Select ONLY the most recent (latest created_at) for each combination
+      // Key is now ONLY (item_code, uom) - NO adjustment_type
       // Prioritize items with NULL adjustment_qty_signed (first transmit) but also accept already-updated ones (resubmit)
       const mostRecentMap = new Map<string, typeof allMatchingStoItems[0]>();
       for (const stoItem of allMatchingStoItems) {
-        const key = `${stoItem.item_code}:${stoItem.uom}:${stoItem.adjustment_type}`;
+        const key = `${stoItem.item_code}:${stoItem.uom}`;  // NO adjustment_type in key!
         // Since we ordered by created_at DESC, first match is the most recent
         if (!mostRecentMap.has(key)) {
           mostRecentMap.set(key, stoItem);
         }
       }
 
-      // Step 4: Build mapping: (item_code, uom, adjustment_type) -> {qty, reason, stockcount_order_number}
-      const adjDataMap = new Map<string, { qty: number; reason: string | null; stockcount_order_number: string | null }>();
+
+
+      // Step 4: Build mapping: (item_code, uom) -> {qty, reason, stockcount_order_number, adjustment_type}
+      const adjDataMap = new Map<string, { qty: number; reason: string | null; stockcount_order_number: string | null; adjustment_type: string }>();
       for (const item of data.items) {
-        const key = `${item.item_code}:${item.uom}:${item.adjustment_type}`;
+        const key = `${item.item_code}:${item.uom}`;  // NO adjustment_type in key!
         adjDataMap.set(key, {
           qty: item.qty,
           reason: item.reason || null,
           stockcount_order_number: item.stockcount_order_number || null,  // Need to check if Type 1
+          adjustment_type: item.adjustment_type,  // NEW: Track adjustment type (GAIN/LOSS)
         });
       }
+
+
 
       // Step 5: Prepare batch updates with final_adjusted_qty calculation
       // Respect adjustment_type sign: LOSS = negative, GAIN = positive
       // adjustment_qty_signed = signed qty based on type
       // final_adjusted_qty = system_qty + adjustment_qty_signed
       // Phase 5: Also include adjustment_id if this is a Type 1 adjustment (has stockcount_order_number)
+      // Phase 6: Also update adjustment_type field (GAIN/LOSS)
       const updates: Array<{
         id: bigint;
         qty: Prisma.Decimal;
         finalAdjustedQty: Prisma.Decimal;
         reason: string | null;
+        adjustmentType: string;  // NEW: Track adjustment type
         isType1: boolean;  // NEW: Track if Type 1 (for adjustment_id linking)
       }> = [];
 
       for (const [key, stoItem] of mostRecentMap) {
         const adjData = adjDataMap.get(key);
         if (adjData !== undefined) {
-          // Apply sign based on adjustment_type: LOSS = -1, GAIN = +1
-          const multiplier = stoItem.adjustment_type === 'LOSS' ? -1 : 1;
+          // Apply sign based on adjustment_type from PAYLOAD (stoItem.adjustment_type may be NULL)
+          // LOSS = -1, GAIN = +1
+          const multiplier = adjData.adjustment_type === 'LOSS' ? -1 : 1;
           const signedQty = new Prisma.Decimal(adjData.qty * multiplier);
 
           // Calculate final_adjusted_qty = system_qty + adjustment_qty_signed
@@ -704,6 +743,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
             qty: signedQty,
             finalAdjustedQty: finalQty,
             reason: adjData.reason,
+            adjustmentType: adjData.adjustment_type,  // NEW: From adjustment payload
             isType1: isType1,  // NEW
           });
         }
@@ -717,8 +757,10 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         return;
       }
 
+
+
       // Step 6: Batch update using CASE statements in single UPDATE query
-      // Update 4 fields: adjustment_qty_signed, final_adjusted_qty, reason, adjustment_id (NEW for FK linkage)
+      // Update 5 fields: adjustment_qty_signed, final_adjusted_qty, reason, adjustment_type, adjustment_id (NEW for FK linkage)
       const qtyStatements = updates
         .map((u) => `WHEN ${u.id}::bigint THEN ${u.qty.toString()}::decimal(15,3)`)
         .join('\n');
@@ -732,6 +774,11 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
           const reasonSql = u.reason ? `'${u.reason.replace(/'/g, "''")}'` : 'NULL';
           return `WHEN ${u.id}::bigint THEN ${reasonSql}`;
         })
+        .join('\n');
+
+      // NEW: adjustment_type SET for all items (GAIN/LOSS from adjustment payload)
+      const adjustmentTypeStatements = updates
+        .map((u) => `WHEN ${u.id}::bigint THEN '${u.adjustmentType}'`)
         .join('\n');
 
       // NEW: adjustment_id SET only for Type 1 adjustments
@@ -766,17 +813,18 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
             ${reasonStatements}
             ELSE reason
           END,
+          adjustment_type = CASE id
+            ${adjustmentTypeStatements}
+            ELSE adjustment_type
+          END,
           ${adjustmentIdUpdateClause}
           updated_at = NOW()
         WHERE id IN (${idList})
       `);
 
-      log.info('Batch updated STO items with adjustment data', {
-        totalUpdated: updates.length,
-        uniqueCombinations: uniqueCombinations.size,
-        adjustmentItems: data.items.length,
-        type1Count: updates.filter(u => u.isType1).length,  // NEW: log Type 1 count
-        adjustmentIdLinked: hasType1,  // NEW: log if FK was linked
+      log.info('STO items updated with adjustment data', {
+        updatedCount: updates.length,
+        adjustmentIdLinked: hasType1,
       });
     } catch (err) {
       log.error('Batch update failed', {

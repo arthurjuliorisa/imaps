@@ -112,7 +112,8 @@ const menuStructure: MenuInput[] = [
     children: [
       { menu_name: 'User Management', menu_path: '/settings/users', menu_icon: 'People', menu_order: 1 },
       { menu_name: 'Access Menu', menu_path: '/settings/access-menu', menu_icon: 'Settings', menu_order: 2 },
-      { menu_name: 'Log Activity', menu_path: '/settings/log-activity', menu_icon: 'History', menu_order: 3 },
+      { menu_name: 'Clean up Data', menu_path: '/settings/database-cleanup', menu_icon: 'DeleteSweep', menu_order: 3 },
+      { menu_name: 'Log Activity', menu_path: '/settings/log-activity', menu_icon: 'History', menu_order: 4 },
     ],
   },
 ];
