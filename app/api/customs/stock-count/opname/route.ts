@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
     const result = await prisma.$queryRawUnsafe<any[]>(
       `SELECT
-        id, wms_id, company_code, company_name,
+        id, sto_wms_id, company_code, company_name,
         doc_date, status,
         type_code, item_code, item_code_bahasa, item_name,
         unit, qty, system_qty, value_amount
@@ -43,6 +43,7 @@ export async function GET(request: Request) {
         companyName: row.company_name,
         docDate: row.doc_date,
         status: row.status,
+        stoWmsId: row.sto_wms_id || '',
         typeCode: row.type_code,
         itemCodeBahasa: row.item_code_bahasa || '',
         itemCode: row.item_code,

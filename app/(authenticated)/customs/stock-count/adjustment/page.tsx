@@ -31,6 +31,9 @@ interface AdjustmentData {
   companyName: string;
   docDate: Date;
   status: string;
+  stoWmsId: string;
+  adjustmentWmsId: string;
+  internalEvidenceNumber: string;
   typeCode: string;
   itemCodeBahasa: string;
   itemCode: string;
@@ -52,6 +55,9 @@ const EXCEL_HEADERS = [
   { key: 'companyName', label: 'Company Name', type: 'text' as const },
   { key: 'docDate', label: 'Tanggal Pelaksanaan', type: 'date' as const },
   { key: 'status', label: 'Status', type: 'text' as const },
+  { key: 'stoWmsId', label: 'STO WMS ID', type: 'text' as const },
+  { key: 'adjustmentWmsId', label: 'Adjustment WMS ID', type: 'text' as const },
+  { key: 'internalEvidenceNumber', label: 'No. Bukti Internal', type: 'text' as const },
   { key: 'typeCode', label: 'Kategori Barang', type: 'text' as const },
   { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
   { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
@@ -72,6 +78,8 @@ const PDF_COLUMNS = [
   { header: 'Company Name', dataKey: 'companyName' },
   { header: 'Tanggal Pelaksanaan', dataKey: 'docDate' },
   { header: 'Status', dataKey: 'status' },
+  { header: 'STO WMS ID', dataKey: 'stoWmsId' },
+  { header: 'No. Bukti Internal', dataKey: 'internalEvidenceNumber' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
   { header: 'Stok Sistem', dataKey: 'systemQty' },
@@ -167,6 +175,9 @@ export default function AdjustmentReportPage() {
       companyName: row.companyName,
       docDate: row.docDate,
       status: row.status,
+      stoWmsId: row.stoWmsId,
+      adjustmentWmsId: row.adjustmentWmsId,
+      internalEvidenceNumber: row.internalEvidenceNumber,
       typeCode: row.typeCode,
       itemCode: row.itemCode,
       itemName: row.itemName,
@@ -196,6 +207,8 @@ export default function AdjustmentReportPage() {
       companyName: row.companyName,
       docDate: formatDateShort(row.docDate),
       status: row.status,
+      stoWmsId: row.stoWmsId,
+      internalEvidenceNumber: row.internalEvidenceNumber,
       itemCode: row.itemCode,
       itemName: row.itemName,
       systemQty: formatQty(row.systemQty),
@@ -283,6 +296,9 @@ export default function AdjustmentReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Tanggal Pelaksanaan</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>STO WMS ID</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Adjustment WMS ID</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>No. Bukti Internal</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Kategori Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
@@ -301,7 +317,7 @@ export default function AdjustmentReportPage() {
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={17} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={20} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found
                     </Typography>
@@ -332,6 +348,21 @@ export default function AdjustmentReportPage() {
                             : 'default'
                         }
                       />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {row.stoWmsId || '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {row.adjustmentWmsId || '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={600}>
+                        {row.internalEvidenceNumber || '-'}
+                      </Typography>
                     </TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>

@@ -441,13 +441,12 @@ COMMENT ON VIEW vw_laporan_pengeluaran IS 'Report #2: Goods Issuance Report - Re
 -- ============================================================================
 -- REPORT #2.5: LAPORAN STOCK OPNAME (Stock Opname Report)
 -- ============================================================================
--- Real-time view of stock opname transactions
--- Combines header information (wms_stock_opnames) with item details (wms_stock_opname_items)
+
 
 CREATE OR REPLACE VIEW vw_laporan_stock_opname AS
 SELECT 
     so.id,
-    so.wms_id,
+    so.wms_id as sto_wms_id,
     so.company_code,
     c.name as company_name,
     so.document_date as doc_date,

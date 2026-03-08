@@ -785,7 +785,15 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         },
       });
 
-      return snapshot || null;
+      if (!snapshot) {
+        return null;
+      }
+
+      return {
+        opening_balance: Number(snapshot.opening_balance),
+        incoming_qty: Number(snapshot.incoming_qty),
+        outgoing_qty: Number(snapshot.outgoing_qty),
+      };
     } catch (err) {
       logger.error('Error fetching stock snapshot', {
         companyCode,
@@ -842,7 +850,16 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         },
       });
 
-      return snapshot || null;
+      if (!snapshot) {
+        return null;
+      }
+
+      return {
+        snapshot_date: snapshot.snapshot_date,
+        opening_balance: Number(snapshot.opening_balance),
+        incoming_qty: Number(snapshot.incoming_qty),
+        outgoing_qty: Number(snapshot.outgoing_qty),
+      };
     } catch (err) {
       logger.error('Error fetching latest stock snapshot before date', {
         companyCode,

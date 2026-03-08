@@ -33,6 +33,7 @@ interface StockOpnameData {
   companyName: string;
   docDate: Date;
   status: string;
+  stoWmsId: string;
   typeCode: string;
   itemCodeBahasa: string;
   itemCode: string;
@@ -49,6 +50,7 @@ const getExcelHeaders = (canShowSystemQty: boolean) => [
   { key: 'companyName', label: 'Company Name', type: 'text' as const },
   { key: 'docDate', label: 'Tanggal Pelaksanaan', type: 'date' as const },
   { key: 'status', label: 'Status', type: 'text' as const },
+  { key: 'stoWmsId', label: 'STO WMS ID', type: 'text' as const },
   { key: 'typeCode', label: 'Kategori Barang', type: 'text' as const },
   { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
   { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
@@ -63,6 +65,7 @@ const getPdfColumns = (canShowSystemQty: boolean) => [
   { header: 'Company Name', dataKey: 'companyName' },
   { header: 'Tanggal Pelaksanaan', dataKey: 'docDate' },
   { header: 'Status', dataKey: 'status' },
+  { header: 'STO WMS ID', dataKey: 'stoWmsId' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
   { header: 'Jumlah Barang', dataKey: 'qty' },
@@ -160,6 +163,7 @@ export default function StockOpnameReportPage() {
         companyName: row.companyName,
         docDate: row.docDate,
         status: row.status,
+        stoWmsId: row.stoWmsId,
         typeCode: row.typeCode,
         itemCode: row.itemCode,
         itemName: row.itemName,
@@ -191,6 +195,7 @@ export default function StockOpnameReportPage() {
         companyName: row.companyName,
         docDate: formatDateShort(row.docDate),
         status: row.status,
+        stoWmsId: row.stoWmsId,
         itemCode: row.itemCode,
         itemName: row.itemName,
         qty: formatQty(row.qty),
@@ -281,6 +286,7 @@ export default function StockOpnameReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Tanggal Pelaksanaan</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>STO WMS ID</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Kategori Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
@@ -295,7 +301,7 @@ export default function StockOpnameReportPage() {
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={canShowSystemQty ? 11 : 10} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={canShowSystemQty ? 12 : 11} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found
                     </Typography>
@@ -326,6 +332,11 @@ export default function StockOpnameReportPage() {
                             : 'default'
                         }
                       />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {row.stoWmsId || '-'}
+                      </Typography>
                     </TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>

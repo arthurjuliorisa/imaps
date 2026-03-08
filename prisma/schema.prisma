@@ -641,7 +641,7 @@ model outgoing_work_order_allocations {
 }
 
 model adjustments {
-  id                       Int       @default(autoincrement())
+  id                       Int       @id @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
   owner                    Int
@@ -655,6 +655,7 @@ model adjustments {
 
   company companies          @relation(fields: [company_code], references: [code])
   items   adjustment_items[]
+  wms_stock_opname_items wms_stock_opname_items[]
 
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
