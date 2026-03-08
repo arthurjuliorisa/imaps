@@ -30,7 +30,6 @@ interface AdjustmentData {
   id: string;
   companyName: string;
   docDate: Date;
-  status: string;
   stoWmsId: string;
   adjustmentWmsId: string;
   internalEvidenceNumber: string;
@@ -54,7 +53,6 @@ const EXCEL_HEADERS = [
   { key: 'no', label: 'No', type: 'number' as const },
   { key: 'companyName', label: 'Company Name', type: 'text' as const },
   { key: 'docDate', label: 'Tanggal Pelaksanaan', type: 'date' as const },
-  { key: 'status', label: 'Status', type: 'text' as const },
   { key: 'stoWmsId', label: 'STO WMS ID', type: 'text' as const },
   { key: 'adjustmentWmsId', label: 'Adjustment WMS ID', type: 'text' as const },
   { key: 'internalEvidenceNumber', label: 'No. Bukti Internal', type: 'text' as const },
@@ -77,7 +75,6 @@ const PDF_COLUMNS = [
   { header: 'No', dataKey: 'no' },
   { header: 'Company Name', dataKey: 'companyName' },
   { header: 'Tanggal Pelaksanaan', dataKey: 'docDate' },
-  { header: 'Status', dataKey: 'status' },
   { header: 'STO WMS ID', dataKey: 'stoWmsId' },
   { header: 'No. Bukti Internal', dataKey: 'internalEvidenceNumber' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
@@ -174,7 +171,6 @@ export default function AdjustmentReportPage() {
       no: index + 1,
       companyName: row.companyName,
       docDate: row.docDate,
-      status: row.status,
       stoWmsId: row.stoWmsId,
       adjustmentWmsId: row.adjustmentWmsId,
       internalEvidenceNumber: row.internalEvidenceNumber,
@@ -206,7 +202,6 @@ export default function AdjustmentReportPage() {
       no: index + 1,
       companyName: row.companyName,
       docDate: formatDateShort(row.docDate),
-      status: row.status,
       stoWmsId: row.stoWmsId,
       internalEvidenceNumber: row.internalEvidenceNumber,
       itemCode: row.itemCode,
@@ -295,7 +290,6 @@ export default function AdjustmentReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Tanggal Pelaksanaan</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>STO WMS ID</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Adjustment WMS ID</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>No. Bukti Internal</TableCell>
@@ -336,19 +330,6 @@ export default function AdjustmentReportPage() {
                     <TableCell>{page * rowsPerPage + index + 1}</TableCell>
                     <TableCell>{row.companyName}</TableCell>
                     <TableCell>{formatDate(row.docDate)}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={row.status}
-                        size="small"
-                        color={
-                          row.status === 'RELEASED'
-                            ? 'success'
-                            : row.status === 'PROCESS'
-                            ? 'warning'
-                            : 'default'
-                        }
-                      />
-                    </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary">
                         {row.stoWmsId || '-'}

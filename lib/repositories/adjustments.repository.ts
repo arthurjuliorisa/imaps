@@ -84,6 +84,24 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       });
 
       // =========================================================================
+      // DETECT TYPE 1 vs TYPE 2 BEFORE TRANSACTION
+      // =========================================================================
+      // Type 1 = has stockcount_order_number (STO-related)
+      // Type 2 = NO stockcount_order_number (Standalone)
+      const isType1Adjustment = data.items.some(item => !!item.stockcount_order_number);
+      
+      // Automatic wms_doc_type mapping based on adjustment type
+      const automappedDocType = isType1Adjustment 
+        ? 'Stock Opname Adjustment' 
+        : 'Standalone Adjustment';
+
+      log.info('Adjustment type detected and doc type auto-mapped', {
+        type: isType1Adjustment ? 'TYPE_1' : 'TYPE_2',
+        automappedDocType: automappedDocType,
+        providedDocType: data.wms_doc_type || 'none',
+      });
+
+      // =========================================================================
       // STEP 2, 3: Transaction - Delete old if date changed, then Upsert new
       // =========================================================================
       const result = await prisma.$transaction(async (tx) => {
@@ -134,7 +152,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
             },
           },
           update: {
-            wms_doc_type: data.wms_doc_type || null,
+            wms_doc_type: automappedDocType,  // UPDATED: Use auto-mapped type
             internal_evidence_number: data.internal_evidence_number,
             timestamp: new Date(data.timestamp),
             updated_at: new Date(),
@@ -144,7 +162,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
             wms_id: data.wms_id,
             company_code: data.company_code,
             owner: data.owner,
-            wms_doc_type: data.wms_doc_type || null,
+            wms_doc_type: automappedDocType,  // UPDATED: Use auto-mapped type
             internal_evidence_number: data.internal_evidence_number,
             transaction_date: transactionDate,
             timestamp: new Date(data.timestamp),
@@ -390,14 +408,34 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         // Don't fail the entire transaction if snapshot fails
       }
 
-      // Step 6: Update wms_stock_opname_items with adjustment_qty_signed
+      // =========================================================================
+      // STEP 6: Update wms_stock_opname_items (TYPE 1 ONLY)
+      // =========================================================================
+      // CRITICAL: Only Type 1 adjustments (those with stockcount_order_number)
+      // should update wms_stock_opname_items. Type 2 (standalone) must remain separate.
+      // NOTE: isType1Adjustment already detected above before transaction
+      
       try {
-        // Pass adjustment_id from header to link Type 1 adjustments
-        await this.updateStockOpnameItems(data, transactionDate, result.header.id);
-        log.info('Stock opname items updated with adjustment_qty_signed and adjustment_id');
+        if (isType1Adjustment) {
+          // Pass adjustment_id from header to link Type 1 adjustments
+          await this.updateStockOpnameItems(data, transactionDate, result.header.id);
+          log.info('Stock opname items updated with adjustment_qty_signed and adjustment_id', {
+            type: 'TYPE_1',
+            adjustmentId: result.header.id,
+            docType: automappedDocType,
+          });
+        } else {
+          // Type 2: Standalone adjustment - do NOT touch wms_stock_opname_items
+          log.info('Skipping wms_stock_opname_items update for standalone adjustment', {
+            type: 'TYPE_2',
+            reason: 'No stockcount_order_number provided',
+            docType: automappedDocType,
+          });
+        }
       } catch (stoError) {
         log.error('Stock opname items update failed', {
           error: (stoError as any).message,
+          type: isType1Adjustment ? 'TYPE_1' : 'TYPE_2',
         });
         // Don't fail the entire transaction if STO update fails
       }
@@ -504,6 +542,9 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
   /**
    * Update wms_stock_opname_items with adjustment_qty_signed
    * 
+   * ⚠️  TYPE 1 ONLY - This method is called ONLY for adjustments with stockcount_order_number
+   * Type 2 (Standalone) adjustments MUST NOT call this method to maintain data integrity
+   * 
    * After adjustment items are created, find matching STO items and update them
    * with the adjustment quantity. Matching is based on:
    * - company_code
@@ -523,6 +564,10 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
    * OPTIMIZED: Batch update instead of per-row loop for performance
    * For each item+uom+adjustment_type combination, find the MOST RECENT (by created_at DESC)
    * unprocessed STO item and update in batch
+   * 
+   * @param data AdjustmentBatchRequestInput (MUST have stockcount_order_number for each item)
+   * @param transactionDate Adjustment transaction date
+   * @param adjustmentId Adjustment header ID for FK linkage
    */
   private async updateStockOpnameItems(
     data: AdjustmentBatchRequestInput,
@@ -537,6 +582,19 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
     });
 
     if (data.items.length === 0) {
+      return;
+    }
+
+    // =========================================================================
+    // SAFEGUARD: TYPE 1 ONLY - Verify all items have stockcount_order_number
+    // =========================================================================
+    const allHaveStockCountOrder = data.items.every(item => !!item.stockcount_order_number);
+    if (!allHaveStockCountOrder) {
+      log.warn('SAFEGUARD: Not all items have stockcount_order_number, aborting STO update', {
+        itemCount: data.items.length,
+        itemsWithStockCountOrder: data.items.filter(i => i.stockcount_order_number).length,
+        message: 'Type 2 (Standalone) adjustments must NOT update wms_stock_opname_items',
+      });
       return;
     }
 
