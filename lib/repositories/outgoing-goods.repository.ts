@@ -86,18 +86,13 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
         companyCode
       );
 
-      if (bomResult.calculation_status !== 'success') {
+      if (bomResult.calculation_status !== 'success' && bomResult.calculation_status !== 'identified_product_n') {
         logger_sub.debug('BOM calculation did not return success', {
           status: bomResult.calculation_status,
           message: bomResult.error_message,
         });
         
-        // For identify_product = 'N', this is expected behavior
-        if (bomResult.calculation_status === 'identified_product_n') {
-          return null;
-        }
-        
-        // For other failures, log and return null
+        // For other failures (not_found, error), return null
         return null;
       }
 

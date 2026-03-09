@@ -194,6 +194,9 @@ export function TraceabilityModal({
             {productionItems.map((item) => {
               const workOrders = item.work_orders || [];
               
+              // Calculate total materials across all work orders for rowSpan
+              const totalMaterialCount = workOrders.reduce((sum, wo) => sum + (wo.materials?.length || 0), 0);
+              
               if (workOrders.length === 0) {
                 return (
                   <TableRow key={`${item.item_code}-no-wo`}>
@@ -231,12 +234,12 @@ export function TraceabilityModal({
                   <TableRow key={`${item.item_code}-${wo.work_order_number}-${material.material_item_code}-${matIdx}`}>
                     {woIdx === 0 && matIdx === 0 && (
                       <>
-                        <TableCell rowSpan={materials.length}>{item.item_code}</TableCell>
-                        <TableCell rowSpan={materials.length}>{item.item_name}</TableCell>
-                        <TableCell align="right" rowSpan={materials.length}>
+                        <TableCell rowSpan={totalMaterialCount}>{item.item_code}</TableCell>
+                        <TableCell rowSpan={totalMaterialCount}>{item.item_name}</TableCell>
+                        <TableCell align="right" rowSpan={totalMaterialCount}>
                           {Number(item.qty).toLocaleString()}
                         </TableCell>
-                        <TableCell rowSpan={materials.length}>{item.uom}</TableCell>
+                        <TableCell rowSpan={totalMaterialCount}>{item.uom}</TableCell>
                       </>
                     )}
                     {matIdx === 0 && (

@@ -101,20 +101,19 @@ export class BOMCalculationService {
       // ========================================================================
       // STEP 2: Check identify_product Flag
       // ========================================================================
-      if (productionOutputItem.identify_product !== 'Y') {
-        calculationLogger.debug('identify_product is not Y, consumption ratio will be zero', {
+      // Flag to indicate if consumption should be zero (identified_product != 'Y')
+      const useZeroConsumption = productionOutputItem.identify_product !== 'Y';
+      
+      if (useZeroConsumption) {
+        calculationLogger.debug('identify_product is not Y, will fetch materials but set consumption ratio to zero', {
           identify_product: productionOutputItem.identify_product,
         });
-        return {
-          work_order_number: workOrderNumber,
-          identify_product: productionOutputItem.identify_product,
-          allocations: [],
-          calculation_status: 'identified_product_n',
-          error_message: `identify_product is ${productionOutputItem.identify_product}, material allocation skipped`,
-        };
       }
 
-      if (!productionOutputItem.planned_production_qty) {
+      // For zero consumption case, we still need planned_production_qty to fetch materials
+      // But it's not used in calculation
+      // For normal case, we need it for ratio calculation
+      if (productionOutputItem.identify_product === 'Y' && !productionOutputItem.planned_production_qty) {
         calculationLogger.warn('Planned production qty is NULL, cannot calculate ratio');
         return {
           work_order_number: workOrderNumber,
@@ -266,9 +265,9 @@ export class BOMCalculationService {
 
       for (const material of consolidatedMaterials.values()) {
         const componentDemandQty = material.component_demand_qty;
-        const plannedProdQty = new Prisma.Decimal(
-          productionOutputItem.planned_production_qty.toString()
-        );
+        const plannedProdQty = productionOutputItem.planned_production_qty 
+          ? new Prisma.Decimal(productionOutputItem.planned_production_qty.toString())
+          : new Prisma.Decimal(1); // Default to 1 to avoid division by zero for zero consumption case
 
         // Verify we can do the calculation
         if (componentDemandQty.isZero()) {
@@ -277,10 +276,15 @@ export class BOMCalculationService {
           });
         }
 
-        // Calculate consumption ratio = consolidated_component_demand_qty / planned_production_qty
-        const consumptionRatio = componentDemandQty.dividedBy(plannedProdQty);
+        // Calculate consumption ratio
+        // If identify_product = 'N', ratio = 0 (zero consumption)
+        // If identify_product = 'Y', ratio = component_demand_qty / planned_production_qty
+        const consumptionRatio = useZeroConsumption 
+          ? new Prisma.Decimal(0)
+          : componentDemandQty.dividedBy(plannedProdQty);
 
         // Calculate allocated qty = qty_fg_exported × consumption_ratio
+        // If identify_product = 'N', this will be 0
         const allocatedQty = qtyFG.mul(consumptionRatio);
 
         allocations.push({
@@ -300,11 +304,13 @@ export class BOMCalculationService {
           consumptionRatio: consumptionRatio.toString(),
           qtyFGExported: qtyFG.toString(),
           allocatedQty: allocatedQty.toString(),
+          identifiedProductFlag: productionOutputItem.identify_product,
         });
       }
 
-      calculationLogger.info('BOM calculation completed successfully', {
+      calculationLogger.info('BOM calculation completed', {
         allocationCount: allocations.length,
+        identifiedProduct: productionOutputItem.identify_product,
         totalAllocated: allocations
           .reduce((sum, a) => sum.add(a.material_qty_allocated), new Prisma.Decimal(0))
           .toString(),
@@ -314,7 +320,7 @@ export class BOMCalculationService {
         work_order_number: workOrderNumber,
         identify_product: productionOutputItem.identify_product,
         allocations,
-        calculation_status: 'success',
+        calculation_status: useZeroConsumption ? 'identified_product_n' : 'success',
       };
     } catch (error) {
       calculationLogger.error('Error calculating BOM', { error });
