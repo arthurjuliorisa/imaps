@@ -866,17 +866,18 @@ SELECT * FROM fn_calculate_lpj_barang_sisa(
 COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - Independent scrap transactions (SCRAP) - YTD';
 
 -- ============================================================================
--- REPORT #8: INTERNAL INCOMING (Production Output + Scrap Incoming)
+-- REPORT #8: INTERNAL INCOMING (Production Output + Scrap Incoming + Material Usage Reversals)
 -- ============================================================================
 -- Real-time view combining:
 -- 1. Production Output activities (goods produced internally)
 -- 2. Scrap Incoming transactions (IN type)
--- Data source: production_outputs + scrap_transactions (transaction-based)
+-- 3. Material Usage Reversals (reversal='Y' - returns material to inventory)
+-- Data source: production_outputs + scrap_transactions + material_usages (transaction-based)
 -- Strategy: UNION ALL for optimal performance with early filtering
 
 CREATE OR REPLACE VIEW vw_internal_incoming AS
 
--- Part 1: Production Output
+-- Part 1: Production Output (Normal)
 SELECT 
     po.id,
     po.company_code,
@@ -901,10 +902,11 @@ JOIN companies c ON po.company_code = c.code
 LEFT JOIN item_types it ON poi.item_type = it.item_type_code
 WHERE po.deleted_at IS NULL
   AND poi.deleted_at IS NULL
+  AND po.reversal IS NULL
 
 UNION ALL
 
--- Part 2: Scrap Incoming
+-- Part 2: Scrap Incoming (type='IN')
 SELECT 
     st.id,
     st.company_code,
@@ -931,17 +933,9 @@ WHERE st.transaction_type = 'IN'
   AND st.deleted_at IS NULL
   AND sti.deleted_at IS NULL
 
-ORDER BY transaction_date DESC, company_code, id;
+UNION ALL
 
-COMMENT ON VIEW vw_internal_incoming IS 'Report #8: Internal Incoming - Real-time view combining production output activities and scrap incoming transactions';
-
--- ============================================================================
--- REPORT #9: INTERNAL OUTGOING (Material Usage Activity)
--- ============================================================================
--- Real-time view of internal material usage activities (materials consumed in production)
--- Data source: material_usages + material_usage_items (transaction-based)
-
-CREATE OR REPLACE VIEW vw_internal_outgoing AS
+-- Part 3: Material Usage Reversals (reversal='Y' - acts as incoming/return)
 SELECT 
     mu.id,
     mu.company_code,
@@ -966,9 +960,112 @@ JOIN companies c ON mu.company_code = c.code
 LEFT JOIN item_types it ON mui.item_type = it.item_type_code
 WHERE mu.deleted_at IS NULL
   AND mui.deleted_at IS NULL
-ORDER BY mu.transaction_date DESC, mu.id, mui.id;
+  AND mu.reversal = 'Y'
 
-COMMENT ON VIEW vw_internal_outgoing IS 'Report #9: Internal Outgoing - Real-time view of material usage activities (materials consumed in production)';
+ORDER BY transaction_date DESC, company_code, id;
+
+COMMENT ON VIEW vw_internal_incoming IS 'Report #8: Internal Incoming - Real-time view combining production output activities, scrap incoming transactions, and material usage reversals (returns to inventory)';
+
+-- ============================================================================
+-- REPORT #9: INTERNAL OUTGOING (Material Usage + Production Output Reversals + Scrap Outgoing)
+-- ============================================================================
+-- Real-time view combining:
+-- 1. Material Usage activities (materials consumed in production)
+-- 2. Production Output Reversals (reversal='Y' - cancels production)
+-- 3. Scrap Outgoing transactions (OUT type - scrap disposal)
+-- Data source: material_usages + production_outputs + scrap_transactions (transaction-based)
+-- Strategy: UNION ALL for optimal performance with early filtering
+
+CREATE OR REPLACE VIEW vw_internal_outgoing AS
+
+-- Part 1: Material Usage (Normal)
+SELECT 
+    mu.id,
+    mu.company_code,
+    c.name as company_name,
+    mu.internal_evidence_number,
+    mu.transaction_date,
+    mu.section,
+    
+    -- Item details
+    mui.item_type as type_code,
+    mui.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    mui.item_name,
+    mui.uom as unit,
+    mui.qty as quantity,
+    mui.amount as value_amount
+FROM material_usages mu
+JOIN material_usage_items mui ON mu.company_code = mui.material_usage_company
+    AND mu.id = mui.material_usage_id
+    AND mu.transaction_date = mui.material_usage_date
+JOIN companies c ON mu.company_code = c.code
+LEFT JOIN item_types it ON mui.item_type = it.item_type_code
+WHERE mu.deleted_at IS NULL
+  AND mui.deleted_at IS NULL
+  AND mu.reversal IS NULL
+
+UNION ALL
+
+-- Part 2: Production Output Reversals (reversal='Y' - acts as outgoing/cancellation)
+SELECT 
+    po.id,
+    po.company_code,
+    c.name as company_name,
+    po.internal_evidence_number,
+    po.transaction_date,
+    po.section,
+    
+    -- Item details
+    poi.item_type as type_code,
+    poi.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    poi.item_name,
+    poi.uom as unit,
+    poi.qty as quantity,
+    poi.amount as value_amount
+FROM production_outputs po
+JOIN production_output_items poi ON po.company_code = poi.production_output_company
+    AND po.id = poi.production_output_id
+    AND po.transaction_date = poi.production_output_date
+JOIN companies c ON po.company_code = c.code
+LEFT JOIN item_types it ON poi.item_type = it.item_type_code
+WHERE po.deleted_at IS NULL
+  AND poi.deleted_at IS NULL
+  AND po.reversal = 'Y'
+
+UNION ALL
+
+-- Part 3: Scrap Outgoing (type='OUT' - scrap disposal)
+SELECT 
+    st.id,
+    st.company_code,
+    c.name as company_name,
+    st.document_number::VARCHAR(50) as internal_evidence_number,
+    st.transaction_date,
+    'General Section'::VARCHAR(100) as section,
+    
+    -- Item details
+    sti.item_type as type_code,
+    sti.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    sti.item_name,
+    sti.uom as unit,
+    sti.qty as quantity,
+    sti.amount::NUMERIC(19,4) as value_amount
+FROM scrap_transactions st
+JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
+    AND st.id = sti.scrap_transaction_id
+    AND st.transaction_date = sti.scrap_transaction_date
+JOIN companies c ON st.company_code = c.code
+LEFT JOIN item_types it ON sti.item_type = it.item_type_code
+WHERE st.transaction_type = 'OUT'
+  AND st.deleted_at IS NULL
+  AND sti.deleted_at IS NULL
+
+ORDER BY transaction_date DESC, company_code, id;
+
+COMMENT ON VIEW vw_internal_outgoing IS 'Report #9: Internal Outgoing - Real-time view combining material usage activities, production output reversals (cancellations), and scrap outgoing transactions (disposal)';
 
 -- ============================================================================
 -- ADDITIONAL HELPER VIEWS
