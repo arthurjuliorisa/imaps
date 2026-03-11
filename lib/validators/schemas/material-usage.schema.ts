@@ -182,51 +182,6 @@ export const materialUsageBatchRequestSchema = z
     
     timestamp: iso8601Schema,
   })
-  // Business rule: ROH/HALB must have work_order_number
-  .refine(
-    (data: any) => {
-      const hasRohOrHalb = data.items.some((item: any) =>
-        ['ROH', 'HALB'].includes(item.item_type.toUpperCase())
-      );
-      if (hasRohOrHalb && !data.work_order_number) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: 'Work order number is required when using ROH or HALB items',
-      path: ['work_order_number'],
-    }
-  )
-  // Business rule: Production support must have cost_center_number
-  .refine(
-    (data: any) => {
-      const hasProductionSupport = data.items.some((item: any) =>
-        ['FERT', 'HIBE', 'HIBE-M', 'HIBE-E', 'HIBE-T'].includes(item.item_type.toUpperCase())
-      );
-      if (hasProductionSupport && !data.cost_center_number) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: 'Cost center number is required for production support items (FERT, HIBE, etc.)',
-      path: ['cost_center_number'],
-    }
-  )
-  // Business rule: Cannot use both work_order and cost_center
-  .refine(
-    (data: any) => {
-      if (data.work_order_number && data.cost_center_number) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: 'Cannot use both work order number and cost center number',
-      path: ['work_order_number'],
-    }
-  )
   // Business rule: Reversal must have items
   .refine(
     (data: any) => {
