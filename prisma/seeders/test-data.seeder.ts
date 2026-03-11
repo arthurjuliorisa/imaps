@@ -98,7 +98,7 @@ export async function seedTestData() {
   });
   console.log(`  ✅ Created ${beginningBalances.length} beginning balances`);
 
-  // 2. INCOMING GOODS (BC23 - Pemasukan)
+  // 2. INCOMING GOODS (BC23 - Import Declaration)
   console.log('  📥 Creating incoming goods...');
 
   const incoming1 = await prisma.incoming_goods.create({
@@ -106,7 +106,7 @@ export async function seedTestData() {
       wms_id: 'INC-1310-20261215-001',
       company_code: COMPANY_CODE,
       owner: COMPANY_CODE,
-      customs_document_type: 'BC23',
+      customs_document_type: 'BC23', // CustomsDocumentType enum: Import Declaration
       ppkek_number: 'PPKEK-1310-2026-001',
       customs_registration_date: new Date('2026-12-14'),
       incoming_evidence_number: 'SJ-IN-20261215-001',
@@ -192,6 +192,7 @@ export async function seedTestData() {
     data: {
       wms_id: 'MAT-1310-20261215-001',
       company_code: COMPANY_CODE,
+      owner: COMPANY_CODE,
       work_order_number: 'WO-1310-20261215-001',
       internal_evidence_number: 'INT-MAT-20261215-001',
       transaction_date: TEST_DATE,
@@ -235,6 +236,7 @@ export async function seedTestData() {
     data: {
       wms_id: 'PROD-1310-20261215-001',
       company_code: COMPANY_CODE,
+      owner: COMPANY_CODE,
       internal_evidence_number: 'INT-PROD-20261215-001',
       transaction_date: TEST_DATE,
       timestamp: new Date(),
@@ -252,7 +254,9 @@ export async function seedTestData() {
         item_name: 'Finished Fabric Roll Grade A',
         uom: 'ROLL',
         qty: 50,
-        work_order_numbers: ['WO-1310-20261215-001'],
+        work_order_number: 'WO-1310-20261215-001',
+        planned_production_qty: 500,
+        identify_product: 'Y',
       },
       {
         production_output_id: production.id,
@@ -263,7 +267,9 @@ export async function seedTestData() {
         item_name: 'Fabric Waste Grade B',
         uom: 'KG',
         qty: 25,
-        work_order_numbers: ['WO-1310-20261215-001'],
+        work_order_number: 'WO-1310-20261215-001',
+        planned_production_qty: 200,
+        identify_product: 'N',
       },
     ],
   });
@@ -289,7 +295,7 @@ export async function seedTestData() {
 
   console.log('  ✅ Created WIP balance');
 
-  // 6. OUTGOING GOODS (Pengeluaran)
+  // 6. OUTGOING GOODS (Export Declaration - BC30)
   console.log('  📤 Creating outgoing goods...');
 
   const outgoing = await prisma.outgoing_goods.create({
@@ -297,7 +303,7 @@ export async function seedTestData() {
       wms_id: 'OUT-1310-20261215-001',
       company_code: COMPANY_CODE,
       owner: COMPANY_CODE,
-      customs_document_type: 'BC30',
+      customs_document_type: 'BC30', // CustomsDocumentType enum: Export Declaration
       ppkek_number: 'PPKEK-1310-2026-003',
       customs_registration_date: new Date('2026-12-14'),
       outgoing_evidence_number: 'SJ-OUT-20261215-001',
@@ -317,7 +323,6 @@ export async function seedTestData() {
       item_type: 'FERT',
       item_code: 'FG-1310-001',
       item_name: 'Finished Fabric Roll Grade A',
-      production_output_wms_ids: ['PROD-1310-20261215-001'],
       hs_code: '5407.42.00',
       uom: 'ROLL',
       qty: 30,

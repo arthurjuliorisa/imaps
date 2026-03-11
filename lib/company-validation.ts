@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
 /**
  * Validates and extracts company code from session
@@ -77,6 +78,39 @@ export function validateCompanyCode(session: any): {
     success: true,
     companyCode,
   };
+}
+
+/**
+ * Validates that the company has company_type = SEZ
+ * Required for INSW data transmission
+ */
+export async function validateSEZCompany(companyCode: number): Promise<{
+  success: true;
+} | {
+  success: false;
+  response: NextResponse;
+}> {
+  const company = await prisma.companies.findUnique({
+    where: { code: companyCode },
+    select: { company_type: true, name: true },
+  });
+
+  if (!company || company.company_type !== 'SEZ') {
+    return {
+      success: false,
+      response: NextResponse.json(
+        {
+          success: false,
+          error: 'COMPANY_TYPE_NOT_ALLOWED',
+          message: 'Hanya perusahaan dengan tipe SEZ yang dapat mengirim data ke INSW',
+          details: `Perusahaan ini memiliki tipe "${company?.company_type ?? 'tidak diketahui'}", bukan SEZ.`,
+        },
+        { status: 403 }
+      ),
+    };
+  }
+
+  return { success: true };
 }
 
 /**

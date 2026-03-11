@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -210,7 +211,7 @@ export async function POST(request: Request) {
             item_type: masterItem.item_type,
             item_code: item.itemCode,
             item_name: masterItem.item_name,
-            production_output_wms_ids: [],
+            incoming_ppkek_numbers: [],  // Capital goods have no incoming reference
             hs_code: null,
             uom: masterItem.uom,
             qty: new Prisma.Decimal(item.qty),
@@ -267,6 +268,12 @@ export async function POST(request: Request) {
           }
         })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
       }
+
+      // Transmit capital goods OUT to INSW (fire-and-forget, with tracking log)
+      const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+      inswTransmission.transmitCapitalGoodsOut(companyCode, [result.wmsId])
+        .then(r => console.log('[INSW] Capital Goods OUT transmitted', { status: r.status, wmsId: result.wmsId }))
+        .catch(err => console.error('[INSW] Capital Goods OUT INSW error', { err }));
 
       return NextResponse.json(
         {

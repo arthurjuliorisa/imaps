@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { logActivity } from '@/lib/log-activity';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -254,6 +255,12 @@ export async function POST(request: Request) {
         companyCode,
       },
     });
+
+    // Transmit to INSW via INSWTransmissionService (async, non-blocking, with tracking log)
+    const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+    inswTransmission.transmitScrapIn(companyCode, [result.transactionId])
+      .then(r => console.log('[INSW] Scrap IN transmitted', { status: r.status, transactionId: result.transactionId }))
+      .catch(err => console.error('[INSW] Scrap IN INSW error', { err }));
 
     return NextResponse.json(
       {

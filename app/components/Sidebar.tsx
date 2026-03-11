@@ -30,6 +30,13 @@ import {
   ChevronRight as ChevronRightIcon,
   History as HistoryIcon,
   Recycling as RecyclingIcon,
+  SwapHoriz as SwapHorizIcon,
+  Assessment as AssessmentIcon,
+  Storage as StorageIcon,
+  PlaylistAdd as PlaylistAddIcon,
+  Inventory as InventoryIcon,
+  CompareArrows as CompareArrowsIcon,
+  ToggleOn as ToggleOnIcon,
 } from '@mui/icons-material';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -76,6 +83,13 @@ const getIconComponent = (iconName: string | null): React.ReactNode => {
     AttachMoney: <AttachMoneyIcon />,
     History: <HistoryIcon />,
     Recycling: <RecyclingIcon />,
+    SwapHoriz: <SwapHorizIcon />,
+    Assessment: <AssessmentIcon />,
+    Storage: <StorageIcon />,
+    PlaylistAdd: <PlaylistAddIcon />,
+    Inventory: <InventoryIcon />,
+    CompareArrows: <CompareArrowsIcon />,
+    ToggleOn: <ToggleOnIcon />,
   };
 
   return iconMap[iconName] || <DescriptionIcon />;
@@ -176,6 +190,7 @@ const menuSections: MenuSection[] = [
       { title: 'User Management', icon: <PeopleIcon />, path: '/settings/users' },
       { title: 'Access Menu', icon: <SettingsIcon />, path: '/settings/access-menu' },
       { title: 'Log Activity', icon: <HistoryIcon />, path: '/settings/log-activity' },
+      { title: 'Database Cleanup', icon: <RecyclingIcon />, path: '/settings/database-cleanup' },
     ],
   },
 ];
@@ -243,6 +258,7 @@ export function Sidebar({ open, onClose, collapsed, onToggleCollapse }: SidebarP
         });
 
         setDynamicMenuSections(sections);
+
       } catch (error) {
         console.error('Error fetching user menus:', error);
         // Fallback to empty menus on error

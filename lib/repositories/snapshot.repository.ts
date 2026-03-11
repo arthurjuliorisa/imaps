@@ -144,6 +144,7 @@ export class SnapshotRepository {
     companyCode: number,
     itemType: string,
     itemCode: string,
+    uom: string,
     fromDate: Date
   ): Promise<number> {
     const log = this.log.child({
@@ -151,6 +152,7 @@ export class SnapshotRepository {
       companyCode,
       itemType,
       itemCode,
+      uom,
       fromDate,
     });
 
@@ -161,6 +163,7 @@ export class SnapshotRepository {
           ${companyCode}::INTEGER,
           ${itemType}::VARCHAR(10),
           ${itemCode}::VARCHAR(50),
+          ${uom}::VARCHAR(20),
           ${fromDate}::DATE
         )
       `;
@@ -173,6 +176,7 @@ export class SnapshotRepository {
           ${companyCode}::INTEGER,
           ${itemType}::VARCHAR(10),
           ${itemCode}::VARCHAR(50),
+          ${uom}::VARCHAR(20),
           ${fromDate}::DATE
         )
       `;

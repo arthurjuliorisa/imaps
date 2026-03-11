@@ -2,11 +2,13 @@ import { logger } from '@/lib/utils/logger';
 import {
   validateProductionOutputBatch,
   validateItemTypes,
+  validateProductionOutputItemTypeConsistency,
   type ProductionOutputBatchRequestInput,
 } from '@/lib/validators/schemas/production-output.schema';
 import { ProductionOutputRepository } from '@/lib/repositories/production-output.repository';
 import { transformZodErrors } from '@/lib/utils/error-transformer';
 import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/api-response';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 
 /**
  * Production Output Service
@@ -83,7 +85,24 @@ export class ProductionOutputService {
         wmsId: data.wms_id,
       });
 
-      // Step 3: Company validation
+      // Step 3: Validate item_type consistency
+      const itemTypeConsistencyErrors = await validateProductionOutputItemTypeConsistency(data);
+      if (itemTypeConsistencyErrors.length > 0) {
+        log.warn('Item type consistency validation failed', {
+          errorCount: itemTypeConsistencyErrors.length,
+        });
+
+        return {
+          success: false,
+          errors: itemTypeConsistencyErrors as ErrorDetail[],
+        };
+      }
+
+      log.info('Item type consistency validated', {
+        wmsId: data.wms_id,
+      });
+
+      // Step 4: Company validation
       const companyExists = await this.validateCompany(data.company_code);
 
       if (!companyExists) {
@@ -110,14 +129,50 @@ export class ProductionOutputService {
         companyCode: data.company_code,
       });
 
-      // Step 4: Queue for immediate async insert (non-blocking)
+      // Step 5: Queue for immediate async insert (non-blocking) + auto-transmit to INSW
       this.repository
         .create(data)
-        .then((result) => {
+        .then(async (result) => {
           log.info('Production output saved successfully', {
             wmsId: data.wms_id,
             productionOutputId: result.header.id,
           });
+
+          // Auto-transmit to INSW
+          try {
+            log.info('Starting auto-transmit to INSW', {
+              wmsId: data.wms_id,
+              companyCode: data.company_code,
+              productionOutputId: result.header.id,
+            });
+
+            const inswService = new INSWTransmissionService(
+              process.env.INSW_USE_TEST_MODE === 'true'
+            );
+
+            const transmissionResult = await inswService.transmitProductionOutput(
+              data.company_code,
+              [result.header.id],
+              [data.wms_id]
+            );
+
+            if (transmissionResult.status === 'success') {
+              log.info('Production output transmitted to INSW successfully', {
+                wmsId: data.wms_id,
+                transmissionResult,
+              });
+            } else {
+              log.warn('Production output INSW transmission failed', {
+                wmsId: data.wms_id,
+                transmissionResult,
+              });
+            }
+          } catch (inswError: any) {
+            log.error('Error during INSW auto-transmit', {
+              wmsId: data.wms_id,
+              error: inswError.message,
+            });
+          }
         })
         .catch((err: any) => {
           log.error('Production output insert failed', {

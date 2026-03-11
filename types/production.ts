@@ -11,7 +11,9 @@ export interface ProductionOutputItem {
   item_type: string;
   uom: string;
   qty: number;
-  work_order_numbers: string[];
+  work_order_number: string;
+  planned_production_qty: number;
+  identify_product: 'Y' | 'N';
 }
 
 export interface ProductionOutputFormData {

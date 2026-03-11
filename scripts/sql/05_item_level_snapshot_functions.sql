@@ -18,6 +18,7 @@ CREATE OR REPLACE FUNCTION get_item_opening_balance(
     p_company_code INTEGER,
     p_item_type VARCHAR(10),
     p_item_code VARCHAR(50),
+    p_uom VARCHAR(20),
     p_snapshot_date DATE
 )
 RETURNS NUMERIC(15,3)
@@ -27,12 +28,13 @@ AS $$
 DECLARE
     v_opening_balance NUMERIC(15,3);
 BEGIN
-    -- Try 1: Get from beginning_balances (exact date)
+    -- Try 1: Get from beginning_balances (exact date, include UOM)
     SELECT qty INTO v_opening_balance
     FROM beginning_balances
     WHERE company_code = p_company_code
       AND item_type = p_item_type
       AND item_code = p_item_code
+      AND uom = p_uom
       AND balance_date = p_snapshot_date
       AND deleted_at IS NULL
     LIMIT 1;
@@ -41,12 +43,13 @@ BEGIN
         RETURN v_opening_balance;
     END IF;
 
-    -- Try 2: Get closing_balance from previous snapshot (latest before target_date)
+    -- Try 2: Get closing_balance from previous snapshot (latest before target_date, include UOM)
     SELECT closing_balance INTO v_opening_balance
     FROM stock_daily_snapshot
     WHERE company_code = p_company_code
       AND item_type = p_item_type
       AND item_code = p_item_code
+      AND uom = p_uom
       AND snapshot_date < p_snapshot_date
     ORDER BY snapshot_date DESC
     LIMIT 1;
@@ -104,9 +107,9 @@ DECLARE
     v_operation VARCHAR(20);
     v_exists BOOLEAN;
 BEGIN
-    -- Get opening balance
+    -- Get opening balance (include UOM filter)
     v_opening_balance := get_item_opening_balance(
-        p_company_code, p_item_type, p_item_code, p_snapshot_date
+        p_company_code, p_item_type, p_item_code, p_uom, p_snapshot_date
     );
 
     -- Query incoming quantities (from incoming_good_items AND scrap_transaction_items)
@@ -120,6 +123,7 @@ BEGIN
         AND item_type = p_item_type
         AND item_type != 'SCRAP'  -- SCRAP items use scrap_transaction_items instead
         AND item_code = p_item_code
+        AND uom = p_uom
         AND incoming_good_date = p_snapshot_date
         AND deleted_at IS NULL
       
@@ -133,6 +137,7 @@ BEGIN
         AND sti.item_type = 'SCRAP'
         AND p_item_type = 'SCRAP'
         AND sti.item_code = p_item_code
+        AND sti.uom = p_uom
         AND st.transaction_type = 'IN'
         AND st.transaction_date = p_snapshot_date
         AND st.deleted_at IS NULL
@@ -149,6 +154,7 @@ BEGIN
       WHERE outgoing_good_company = p_company_code
         AND item_type = p_item_type
         AND item_code = p_item_code
+        AND uom = p_uom
         AND outgoing_good_date = p_snapshot_date
         AND deleted_at IS NULL
       
@@ -162,6 +168,7 @@ BEGIN
         AND sti.item_type = 'SCRAP'
         AND p_item_type = 'SCRAP'
         AND sti.item_code = p_item_code
+        AND sti.uom = p_uom
         AND st.transaction_type = 'OUT'
         AND st.transaction_date = p_snapshot_date
         AND st.deleted_at IS NULL
@@ -171,6 +178,7 @@ BEGIN
           WHERE outgoing_good_company = p_company_code
             AND item_type = 'SCRAP'
             AND item_code = p_item_code
+            AND uom = p_uom
             AND outgoing_good_date = p_snapshot_date
             AND deleted_at IS NULL
         )
@@ -189,6 +197,7 @@ BEGIN
     WHERE mu.company_code = p_company_code
       AND mui.item_type = p_item_type
       AND mui.item_code = p_item_code
+      AND mui.uom = p_uom
       AND mu.transaction_date = p_snapshot_date
       AND mu.deleted_at IS NULL
       AND mui.deleted_at IS NULL;
@@ -206,6 +215,7 @@ BEGIN
     WHERE po.company_code = p_company_code
       AND poi.item_type = p_item_type
       AND poi.item_code = p_item_code
+      AND poi.uom = p_uom
       AND po.transaction_date = p_snapshot_date
       AND po.deleted_at IS NULL
       AND poi.deleted_at IS NULL;
@@ -222,6 +232,7 @@ BEGIN
     WHERE ai.adjustment_company = p_company_code
       AND ai.item_type = p_item_type
       AND ai.item_code = p_item_code
+      AND ai.uom = p_uom
       AND ai.adjustment_date = p_snapshot_date
       AND ai.deleted_at IS NULL;
 
@@ -234,12 +245,13 @@ BEGIN
                        + v_production_qty 
                        + v_adjustment_qty;
 
-    -- Check if exists
+    -- Check if exists (include UOM in check)
     SELECT EXISTS (
         SELECT 1 FROM stock_daily_snapshot
         WHERE company_code = p_company_code
           AND item_type = p_item_type
           AND item_code = p_item_code
+          AND uom = p_uom
           AND snapshot_date = p_snapshot_date
     ) INTO v_exists;
 
@@ -281,7 +293,7 @@ BEGIN
         NOW(),
         NOW()
     )
-    ON CONFLICT (company_code, item_type, item_code, snapshot_date) DO UPDATE
+    ON CONFLICT (company_code, item_type, item_code, uom, snapshot_date) DO UPDATE
     SET
         item_name = CASE WHEN EXCLUDED.item_name != '' THEN EXCLUDED.item_name ELSE stock_daily_snapshot.item_name END,
         uom = CASE WHEN EXCLUDED.uom != '' THEN EXCLUDED.uom ELSE stock_daily_snapshot.uom END,
@@ -393,6 +405,7 @@ CREATE OR REPLACE FUNCTION recalculate_item_snapshots_from_date(
     p_company_code INTEGER,
     p_item_type VARCHAR(10),
     p_item_code VARCHAR(50),
+    p_uom VARCHAR(20),
     p_from_date DATE
 )
 RETURNS INTEGER
@@ -409,45 +422,47 @@ DECLARE
         WHERE company_code = p_company_code
           AND item_type = p_item_type
           AND item_code = p_item_code
+          AND uom = p_uom
           AND snapshot_date >= p_from_date
         ORDER BY snapshot_date ASC;
 BEGIN
     -- Try to find item_name/uom from MOST RECENT transaction (incoming or outgoing)
-    -- Look in both tables to support all transaction types
-    SELECT item_name, uom INTO v_item_name, v_uom
+    -- Look in both tables to support all transaction types  
+    -- Prefer v_uom from incoming_good_items if available with matching UOM
+    SELECT MAX(item_name), MAX(uom) INTO v_item_name, v_uom
     FROM incoming_good_items
     WHERE item_type = p_item_type
       AND item_code = p_item_code
+      AND uom = p_uom
       AND incoming_good_company = p_company_code
       AND incoming_good_date >= p_from_date
-    ORDER BY incoming_good_date DESC
-    LIMIT 1;
+    GROUP BY uom;
 
     -- If not found in incoming, try outgoing
     IF v_item_name IS NULL THEN
-        SELECT item_name, uom INTO v_item_name, v_uom
+        SELECT MAX(item_name), MAX(uom) INTO v_item_name, v_uom
         FROM outgoing_good_items
         WHERE item_type = p_item_type
           AND item_code = p_item_code
+          AND uom = p_uom
           AND outgoing_good_company = p_company_code
           AND outgoing_good_date >= p_from_date
-        ORDER BY outgoing_good_date DESC
-        LIMIT 1;
+        GROUP BY uom;
     END IF;
 
     -- If still not found and item_type is SCRAP, try scrap_transaction_items
     IF v_item_name IS NULL AND p_item_type = 'SCRAP' THEN
-        SELECT item_name, uom INTO v_item_name, v_uom
+        SELECT MAX(item_name), MAX(uom) INTO v_item_name, v_uom
         FROM scrap_transaction_items sti
         JOIN scrap_transactions st ON sti.scrap_transaction_id = st.id
         WHERE sti.item_type = p_item_type
           AND sti.item_code = p_item_code
+          AND sti.uom = p_uom
           AND st.company_code = p_company_code
           AND st.transaction_date >= p_from_date
           AND st.deleted_at IS NULL
           AND sti.deleted_at IS NULL
-        ORDER BY st.transaction_date DESC
-        LIMIT 1;
+        GROUP BY sti.uom;
     END IF;
 
     -- If still no item_name, use empty string (should not happen in normal flow)
@@ -462,13 +477,13 @@ BEGIN
         FETCH v_dates_cursor INTO v_snapshot_date;
         EXIT WHEN v_snapshot_date IS NULL;
 
-        -- Recalculate snapshot for this date
+        -- Recalculate snapshot for this date (use p_uom explicitly)
         PERFORM upsert_item_stock_snapshot(
             p_company_code,
             p_item_type,
             p_item_code,
             v_item_name,
-            v_uom,
+            p_uom,
             v_snapshot_date
         );
 
@@ -485,7 +500,7 @@ $$;
 -- =============================================================================
 
 -- Grant execute permission to app user (adjust appuser to your actual user)
-GRANT EXECUTE ON FUNCTION get_item_opening_balance(INTEGER, VARCHAR, VARCHAR, DATE) TO appuser;
+GRANT EXECUTE ON FUNCTION get_item_opening_balance(INTEGER, VARCHAR, VARCHAR, VARCHAR, DATE) TO appuser;
 GRANT EXECUTE ON FUNCTION upsert_item_stock_snapshot(INTEGER, VARCHAR, VARCHAR, VARCHAR, VARCHAR, DATE) TO appuser;
 GRANT EXECUTE ON FUNCTION upsert_items_stock_snapshot(INTEGER, JSONB, DATE) TO appuser;
-GRANT EXECUTE ON FUNCTION recalculate_item_snapshots_from_date(INTEGER, VARCHAR, VARCHAR, DATE) TO appuser;
+GRANT EXECUTE ON FUNCTION recalculate_item_snapshots_from_date(INTEGER, VARCHAR, VARCHAR, VARCHAR, DATE) TO appuser;

@@ -13,6 +13,8 @@
 
 import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
+import { checkDuplicateMaterialUsageItems } from '@/lib/validators/duplicate-item.validator';
+import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
 
 // =============================================================================
 // CONSTANTS
@@ -101,10 +103,24 @@ export const materialUsageItemSchema = z.object({
     .positive('Quantity must be greater than 0')
     .finite('Quantity must be a finite number'),
   
+  component_demand_qty: z
+    .number()
+    .positive('Component demand quantity must be greater than 0')
+    .finite('Component demand quantity must be a finite number')
+    .nullable()
+    .optional(),
+  
   ppkek_number: z
     .string()
     .trim()
     .max(50, 'PPKEK number must not exceed 50 characters')
+    .nullable()
+    .optional(),
+  
+  amount: z
+    .number()
+    .nonnegative('Amount must be greater than or equal to 0')
+    .finite('Amount must be a finite number')
     .nullable()
     .optional(),
 });
@@ -127,6 +143,7 @@ export const materialUsageBatchRequestSchema = z
       .trim(),
     
     company_code: companyCodeSchema,
+    owner: companyCodeSchema,
     
     work_order_number: z
       .string()
@@ -151,6 +168,13 @@ export const materialUsageBatchRequestSchema = z
     
     reversal: z.enum(['Y']).nullable().optional(),
     
+    section: z
+      .string()
+      .trim()
+      .max(100, 'Section must not exceed 100 characters')
+      .nullable()
+      .optional(),
+    
     items: z
       .array(materialUsageItemSchema)
       .min(1, 'At least one item is required')
@@ -158,51 +182,6 @@ export const materialUsageBatchRequestSchema = z
     
     timestamp: iso8601Schema,
   })
-  // Business rule: ROH/HALB must have work_order_number
-  .refine(
-    (data: any) => {
-      const hasRohOrHalb = data.items.some((item: any) =>
-        ['ROH', 'HALB'].includes(item.item_type.toUpperCase())
-      );
-      if (hasRohOrHalb && !data.work_order_number) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: 'Work order number is required when using ROH or HALB items',
-      path: ['work_order_number'],
-    }
-  )
-  // Business rule: Production support must have cost_center_number
-  .refine(
-    (data: any) => {
-      const hasProductionSupport = data.items.some((item: any) =>
-        ['FERT', 'HIBE', 'HIBE-M', 'HIBE-E', 'HIBE-T'].includes(item.item_type.toUpperCase())
-      );
-      if (hasProductionSupport && !data.cost_center_number) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: 'Cost center number is required for production support items (FERT, HIBE, etc.)',
-      path: ['cost_center_number'],
-    }
-  )
-  // Business rule: Cannot use both work_order and cost_center
-  .refine(
-    (data: any) => {
-      if (data.work_order_number && data.cost_center_number) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: 'Cannot use both work order number and cost center number',
-      path: ['work_order_number'],
-    }
-  )
   // Business rule: Reversal must have items
   .refine(
     (data: any) => {
@@ -352,4 +331,62 @@ export async function validateItemTypes(data: MaterialUsageBatchRequestInput): P
   }
 
   return errors;
+}
+
+/**
+ * Check for duplicate items in the request
+ * Combination: (item_code, item_name, uom, ppkek_number)
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors (empty if no duplicates)
+ */
+export function checkMaterialUsageDuplicates(data: MaterialUsageBatchRequestInput): ValidationErrorDetail[] {
+  const errors = checkDuplicateMaterialUsageItems(
+    data.items.map(item => ({
+      item_code: item.item_code,
+      item_name: item.item_name,
+      uom: item.uom,
+      ppkek_number: item.ppkek_number ?? undefined,
+    }))
+  );
+
+  // Convert generic duplicate errors to material-usage format
+  return errors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
+}
+
+/**
+ * Validate item_type consistency against existing stock_daily_snapshot records
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors
+ */
+export async function validateMaterialUsageItemTypeConsistency(
+  data: MaterialUsageBatchRequestInput
+): Promise<ValidationErrorDetail[]> {
+  const itemErrors = await validateItemTypeConsistency(
+    data.company_code,
+    data.items.map(item => ({
+      item_type: item.item_type,
+      item_code: item.item_code,
+      item_name: item.item_name,
+      uom: item.uom, // Added UOM for proper consistency check
+    }))
+  );
+
+  // Convert generic consistency errors to material-usage format
+  return itemErrors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }

@@ -21,6 +21,8 @@
 import { z } from 'zod';
 import { Currency } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
+import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
+import { OUTGOING_CUSTOMS_TYPES } from '@/lib/validators/constants/customs-document-types';
 
 // =============================================================================
 // CONSTANTS
@@ -28,11 +30,24 @@ import { prisma } from '@/lib/db/prisma';
 
 const VALID_COMPANY_CODES = [1370, 1310, 1380] as const;
 
-// CustomsDocumentType enum values for outgoing goods
-const OUTGOING_CUSTOMS_TYPES = ['BC30', 'BC25', 'BC27', 'BC41', 'BC261'] as const;
-
 // Currency enum values
 const VALID_CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'] as const;
+
+// NOTE: OUTGOING_CUSTOMS_TYPES imported from customs-document-types.ts
+// This ensures single source of truth across validators
+
+// =============================================================================
+// INTERFACES
+// =============================================================================
+
+/**
+ * Work order allocation detail
+ * Represents how much FG quantity comes from each work order
+ */
+export interface WorkOrderAllocation {
+  work_order_number: string;
+  qty: number;
+}
 
 // =============================================================================
 // REUSABLE SCHEMAS
@@ -84,66 +99,118 @@ const companyCodeSchema = z
 
 /**
  * Single item schema for outgoing goods
+ * 
+ * Field Mapping (API v3.3.0):
+ * - work_order_allocations: PREFERRED (required for FERT/HALB)
+ * - production_output_wms_ids: DEPRECATED (for backward compatibility)
  */
-export const outgoingGoodItemSchema = z.object({
-  item_type: z
-    .string()
-    .min(1, 'Item type is required')
-    .max(10, 'Item type must not exceed 10 characters')
-    .trim(),
-  
-  item_code: z
-    .string()
-    .min(1, 'Item code is required')
-    .max(50, 'Item code must not exceed 50 characters')
-    .trim(),
-  
-  item_name: z
-    .string()
-    .min(1, 'Item name is required')
-    .max(200, 'Item name must not exceed 200 characters')
-    .trim(),
-  
-  production_output_wms_ids: z
-    .array(z.string().min(1, 'WMS ID cannot be empty'))
-    .optional()
-    .nullable(),
-  
-  ppkek_number: z
-    .array(z.string().min(1, 'PPKEK number cannot be empty').max(50, 'PPKEK number must not exceed 50 characters'))
-    .optional()
-    .nullable(),
-  
-  hs_code: z
-    .string()
-    .max(20, 'HS code must not exceed 20 characters')
-    .trim()
-    .nullable()
-    .optional(),
-  
-  uom: z
-    .string()
-    .min(1, 'UOM is required')
-    .max(20, 'UOM must not exceed 20 characters')
-    .trim(),
-  
-  qty: z
-    .number()
-    .positive('Quantity must be greater than 0')
-    .finite('Quantity must be a finite number'),
-  
-  currency: z.enum(
-    VALID_CURRENCIES,
+export const outgoingGoodItemSchema = z
+  .object({
+    item_type: z
+      .string()
+      .min(1, 'Item type is required')
+      .max(10, 'Item type must not exceed 10 characters')
+      .trim(),
+    
+    item_code: z
+      .string()
+      .min(1, 'Item code is required')
+      .max(50, 'Item code must not exceed 50 characters')
+      .trim(),
+    
+    item_name: z
+      .string()
+      .min(1, 'Item name is required')
+      .max(200, 'Item name must not exceed 200 characters')
+      .trim(),
+    
+    work_order_allocations: z
+      .array(
+        z.object({
+          work_order_number: z
+            .string()
+            .min(1, 'Work order number cannot be empty')
+            .max(50, 'Work order number must not exceed 50 characters')
+            .trim()
+            .optional()
+            .nullable(),
+          ppkek_number: z
+            .string()
+            .min(1, 'PPKEK number cannot be empty')
+            .max(50, 'PPKEK number must not exceed 50 characters')
+            .trim()
+            .optional()
+            .nullable(),
+          qty: z
+            .number()
+            .positive('Work order allocation quantity must be greater than 0')
+            .finite('Work order allocation quantity must be a finite number'),
+        })
+        .refine(
+          (allocation: any) => {
+            // XOR validation: exactly one of work_order_number or ppkek_number must be present
+            const hasWorkOrder = allocation.work_order_number ? true : false;
+            const hasPPKEK = allocation.ppkek_number ? true : false;
+            return hasWorkOrder !== hasPPKEK; // True only if exactly one is present
+          },
+          {
+            message: 'Allocation must have either work_order_number OR ppkek_number, not both or neither',
+            path: [],
+          }
+        )
+      )
+      .optional()
+      .nullable(),
+    
+    hs_code: z
+      .string()
+      .max(20, 'HS code must not exceed 20 characters')
+      .trim()
+      .nullable()
+      .optional(),
+    
+    uom: z
+      .string()
+      .min(1, 'UOM is required')
+      .max(20, 'UOM must not exceed 20 characters')
+      .trim(),
+    
+    qty: z
+      .number()
+      .positive('Quantity must be greater than 0')
+      .finite('Quantity must be a finite number'),
+    
+    currency: z.enum(
+      VALID_CURRENCIES,
+      {
+        message: `Currency must be one of: ${VALID_CURRENCIES.join(', ')}`,
+      }
+    ) as z.ZodType<Currency>,
+    
+    amount: z
+      .number()
+      .nonnegative('Amount must be greater than or equal to 0')
+      .finite('Amount must be a finite number'),
+  })
+  // Validation Rule: If work_order_allocations provided, sum must equal item qty
+  .refine(
+    (item: any) => {
+      if (item.work_order_allocations && item.work_order_allocations.length > 0) {
+        const totalAllocated = item.work_order_allocations.reduce(
+          (sum: number, allocation: any) => sum + (allocation.qty || 0),
+          0
+        );
+        // Allow small floating point difference (0.01 tolerance for decimals)
+        return Math.abs(totalAllocated - item.qty) < 0.01;
+      }
+      // If no allocations provided, validation passes (backward compat with production_output_wms_ids)
+      return true;
+    },
     {
-      message: `Currency must be one of: ${VALID_CURRENCIES.join(', ')}`,
+      message: 'Sum of work_order_allocations qty must equal item qty (tolerance: 0.01)',
+      path: ['work_order_allocations'],
     }
-  ) as z.ZodType<Currency>,
-  
-  amount: z
-    .number()
-    .nonnegative('Amount must be greater than or equal to 0')
-    .finite('Amount must be a finite number'),
-});
+  );
 
 export type OutgoingGoodItemInput = z.infer<typeof outgoingGoodItemSchema>;
 
@@ -379,32 +446,96 @@ export function validateOutgoingGoodsDates(data: OutgoingGoodRequestInput): Vali
 }
 
 /**
- * Validate conditional production_output_wms_ids for FERT and HALB items
+ * Validate work order allocations for FERT and HALB items
+ * - work_order_allocations is REQUIRED for FERT and HALB items (per API v3.3.0)
+ * - Each work_order_number must exist in Production Output
+ * - Each work_order_number must have Material Usage records
  *
  * @param data - Validated request data
+ * @param companyCode - Company code for database queries
  * @returns Array of validation errors (empty if all valid)
  */
-export function validateProductionTraceability(data: OutgoingGoodRequestInput): ValidationErrorDetail[] {
+export async function validateWorkOrderAllocations(
+  data: OutgoingGoodRequestInput,
+  companyCode: number
+): Promise<ValidationErrorDetail[]> {
   const errors: ValidationErrorDetail[] = [];
 
-  data.items.forEach((item, itemIndex) => {
-    // For FERT and HALB items, production_output_wms_ids is REQUIRED
-    if (['FERT', 'HALB'].includes(item.item_type.toUpperCase())) {
-      if (!item.production_output_wms_ids || item.production_output_wms_ids.length === 0) {
+  for (let itemIndex = 0; itemIndex < data.items.length; itemIndex++) {
+    const item = data.items[itemIndex];
+    const isFERTorHALB = ['FERT', 'HALB'].includes(item.item_type.toUpperCase());
+
+    // Requirement 1: FERT/HALB must have work_order_allocations
+    if (isFERTorHALB) {
+      const hasAllocations = item.work_order_allocations && item.work_order_allocations.length > 0;
+
+      if (!hasAllocations) {
         errors.push({
           location: 'item',
-          field: 'production_output_wms_ids',
+          field: 'work_order_allocations',
           code: 'MISSING_REQUIRED',
-          message: 'Production output WMS IDs required for finished goods',
+          message: 'Work order allocations required for finished goods',
           item_index: itemIndex,
           item_code: item.item_code,
         });
+        continue;
+      }
+
+      // Validate each work order allocation
+      for (const allocation of item.work_order_allocations || []) {
+        if (allocation.work_order_number) {
+          // Check work order exists in Production Output
+          const workOrder = await prisma.work_order_fg_production.findFirst({
+            where: {
+              work_order_number: allocation.work_order_number,
+              item_code: item.item_code,
+              company_code: companyCode,
+            },
+            select: {
+              work_order_number: true,
+            },
+          });
+
+          if (!workOrder) {
+            errors.push({
+              location: 'item',
+              field: 'work_order_allocations',
+              code: 'WORK_ORDER_NOT_FOUND',
+              message: `Work order ${allocation.work_order_number} not found for item ${item.item_code}`,
+              item_index: itemIndex,
+              item_code: item.item_code,
+            });
+          }
+        } else if (allocation.ppkek_number) {
+          // Check PPKEK exists in Incoming Goods
+          const incomingGoods = await prisma.incoming_goods.findFirst({
+            where: {
+              ppkek_number: allocation.ppkek_number,
+              company_code: companyCode,
+            },
+            select: {
+              ppkek_number: true,
+            },
+          });
+
+          if (!incomingGoods) {
+            errors.push({
+              location: 'item',
+              field: 'work_order_allocations',
+              code: 'PPKEK_NOT_FOUND',
+              message: `PPKEK ${allocation.ppkek_number} not found for incoming goods`,
+              item_index: itemIndex,
+              item_code: item.item_code,
+            });
+          }
+        }
       }
     }
-  });
+  }
 
   return errors;
 }
+
 
 /**
  * Validate item_types exist and are active in database
@@ -453,4 +584,35 @@ export async function validateItemTypes(data: OutgoingGoodRequestInput): Promise
   }
 
   return errors;
+}
+
+/**
+ * Validate item_type consistency against existing stock_daily_snapshot records
+ * Consistency check only - no duplikasi check for outgoing-goods
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors
+ */
+export async function validateOutgoingGoodsItemTypeConsistency(
+  data: OutgoingGoodRequestInput
+): Promise<ValidationErrorDetail[]> {
+  const itemErrors = await validateItemTypeConsistency(
+    data.company_code,
+    data.items.map(item => ({
+      item_type: item.item_type,
+      item_code: item.item_code,
+      item_name: item.item_name,
+      uom: item.uom, // Added UOM for proper consistency check
+    }))
+  );
+
+  // Convert generic consistency errors to outgoing-goods format
+  return itemErrors.map(err => ({
+    location: 'item' as const,
+    field: err.field,
+    code: err.code,
+    message: err.message,
+    item_index: err.item_index,
+    item_code: err.item_code,
+  }));
 }

@@ -63,6 +63,15 @@ enum CompanyStatus {
   INACTIVE
 }
 
+enum CompanyType {
+  BZ
+  SEZ
+  FTZ
+  REG
+
+  @@map("company_type")
+}
+
 enum CalculationMethod {
   TRANSACTION
   WIP_SNAPSHOT
@@ -78,18 +87,35 @@ enum StockOpnameStatus {
   @@map("stock_opname_status")
 }
 
+enum WmsStockOpnameStatus {
+  Active    @map("ACTIVE")
+  Confirmed @map("CONFIRMED")
+  Cancelled @map("CANCELLED")
+
+  @@map("wms_stock_opname_status")
+}
+
+enum BeginningBalanceStatus {
+  OPEN
+  TRANSMITTED_TO_INSW
+  LOCKED
+
+  @@map("beginning_balance_status")
+}
+
 // ============================================================================
 // MASTER DATA TABLES
 // ============================================================================
 
 model companies {
-  id         Int           @id @default(autoincrement())
-  code       Int           @unique
-  name       String        @db.VarChar(200)
-  status     CompanyStatus @default(ACTIVE)
-  created_at DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at DateTime      @updatedAt @db.Timestamptz(6)
-  deleted_at DateTime?     @db.Timestamptz(6)
+  id            Int         @id @default(autoincrement())
+  code          Int         @unique
+  name          String      @db.VarChar(200)
+  company_type  CompanyType?
+  status        CompanyStatus @default(ACTIVE)
+  created_at    DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime    @updatedAt @db.Timestamptz(6)
+  deleted_at    DateTime?   @db.Timestamptz(6)
 
   // Relations
   incoming_goods               incoming_goods[]
@@ -106,6 +132,8 @@ model companies {
   stock_daily_snapshot         stock_daily_snapshot[]
   scrap_transactions           scrap_transactions[]
   stock_opnames                stock_opnames[]
+  wms_stock_opnames            wms_stock_opnames[]
+  wms_stock_opname_items       wms_stock_opname_items[]
 
   @@index([code])
   @@index([status])
@@ -198,26 +226,28 @@ model user_access_menus {
 }
 
 model beginning_balances {
-  id           Int       @id @default(autoincrement())
+  id           Int                    @id @default(autoincrement())
   company_code Int
-  item_code    String    @db.VarChar(50)
-  item_name    String    @db.VarChar(200)
-  item_type    String    @db.VarChar(10)
-  uom          String    @db.VarChar(20)
-  qty          Decimal   @db.Decimal(15, 3)
-  balance_date DateTime  @db.Date
-  remarks      String?   @db.VarChar(1000)
-  created_at   DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
-  deleted_at   DateTime? @db.Timestamptz(6)
+  item_code    String                 @db.VarChar(50)
+  item_name    String                 @db.VarChar(200)
+  item_type    String                 @db.VarChar(10)
+  uom          String                 @db.VarChar(20)
+  qty          Decimal                @db.Decimal(15, 3)
+  balance_date DateTime               @db.Date
+  remarks      String?                @db.VarChar(1000)
+  status       BeginningBalanceStatus @default(OPEN)
+  created_at   DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime               @updatedAt @db.Timestamptz(6)
+  deleted_at   DateTime?              @db.Timestamptz(6)
 
   company companies @relation(fields: [company_code], references: [code])
   ppkeks      beginning_balance_ppkeks[]
 
-  @@unique([company_code, item_code, balance_date])
+  @@unique([company_code, item_code, uom])
   @@index([company_code])
   @@index([item_code])
   @@index([balance_date])
+  @@index([status])
 }
 
 model beginning_balance_ppkeks {
@@ -348,6 +378,7 @@ model incoming_goods {
   deleted_at                DateTime?           @db.Timestamptz(6)
 
   company companies @relation(fields: [company_code], references: [code])
+  traceability_links outgoing_fg_production_traceability[]
   // NOTE: items relation removed - use manual joins in queries
   // items   incoming_good_items[]
 
@@ -393,11 +424,13 @@ model material_usages {
   id                       Int       @id @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
+  owner                    Int
   work_order_number        String?   @db.VarChar(50)
   cost_center_number       String?
   internal_evidence_number String    @db.VarChar(50)
   transaction_date         DateTime  @db.Date
   reversal                 String?   @db.VarChar(1)
+  section                  String?   @db.VarChar(100)
   timestamp                DateTime  @db.Timestamptz(6)
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
@@ -427,7 +460,9 @@ model material_usage_items {
   item_name              String    @db.VarChar(200)
   uom                    String    @db.VarChar(20)
   qty                    Decimal   @db.Decimal(15, 3)
+  component_demand_qty   Decimal?  @db.Decimal(15, 3)   // NEW: Material quantity planned for the Work Order
   ppkek_number           String?   @db.VarChar(50)
+  amount                 Decimal?  @db.Decimal(19, 4)
   created_at             DateTime  @default(now()) @db.Timestamptz(6)
   updated_at             DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at             DateTime? @db.Timestamptz(6)
@@ -470,9 +505,11 @@ model production_outputs {
   id                       Int       @id @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
+  owner                    Int
   internal_evidence_number String    @db.VarChar(50)
   transaction_date         DateTime  @db.Date
   reversal                 String?   @db.VarChar(1)
+  section                  String?   @db.VarChar(100)
   timestamp                DateTime  @db.Timestamptz(6)
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
@@ -500,7 +537,10 @@ model production_output_items {
   item_name                 String    @db.VarChar(200)
   uom                       String    @db.VarChar(20)
   qty                       Decimal   @db.Decimal(15, 3)
-  work_order_numbers        String[]
+  amount                    Decimal?  @db.Decimal(19, 4)
+  work_order_number         String    @db.VarChar(50)
+  planned_production_qty    Decimal   @db.Decimal(15, 3)
+  identify_product          String    @db.VarChar(1)
   created_at                DateTime  @default(now()) @db.Timestamptz(6)
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)
   deleted_at                DateTime? @db.Timestamptz(6)
@@ -552,8 +592,7 @@ model outgoing_good_items {
   item_type                 String    @db.VarChar(10)
   item_code                 String    @db.VarChar(50)
   item_name                 String    @db.VarChar(200)
-  production_output_wms_ids String[]
-  incoming_ppkek_numbers    String[]  @default([])
+  incoming_ppkek_numbers    String[]  @db.VarChar(50)   // For non-production export traceability (direct incoming goods reference)
   hs_code                   String?   @db.VarChar(20)
   uom                       String    @db.VarChar(20)
   qty                       Decimal   @db.Decimal(15, 3)
@@ -565,6 +604,7 @@ model outgoing_good_items {
 
   outgoing_good                       outgoing_goods                        @relation(fields: [outgoing_good_company, outgoing_good_id, outgoing_good_date], references: [company_code, id, outgoing_date], onDelete: Cascade)
   outgoing_fg_production_traceability outgoing_fg_production_traceability[]
+  outgoing_work_order_allocations     outgoing_work_order_allocations[]    // NEW: Normalized work order allocation tracking
 
   @@index([outgoing_good_id])
   @@index([outgoing_good_id, outgoing_good_company, outgoing_good_date])
@@ -572,10 +612,39 @@ model outgoing_good_items {
   @@index([item_type])
 }
 
+// ============================================================================
+// WORK ORDER ALLOCATION - NORMALIZED JUNCTION TABLE
+// ============================================================================
+// NEW: Efficient work order quantity tracking for traceability
+// Stores {work_order_number, qty} breakdown per outgoing item
+// Enables fast queries for material allocation calculations
+// ============================================================================
+
+model outgoing_work_order_allocations {
+  id                    Int       @id @default(autoincrement())
+  outgoing_good_item_id Int
+  work_order_number     String    @db.VarChar(50)
+  qty                   Decimal   @db.Decimal(15, 3)      // FG quantity shipped from this work order
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @updatedAt @db.Timestamptz(6)
+
+  outgoing_good_item    outgoing_good_items @relation(fields: [outgoing_good_item_id], references: [id], onDelete: Cascade)
+
+  // Unique constraint: one allocation per work order per outgoing item
+  @@unique([outgoing_good_item_id, work_order_number])
+  
+  // Index for efficient work order lookups
+  @@index([work_order_number])
+  
+  // Index for joins and cascade deletes
+  @@index([outgoing_good_item_id])
+}
+
 model adjustments {
-  id                       Int       @default(autoincrement())
+  id                       Int       @id @default(autoincrement())
   wms_id                   String    @db.VarChar(100)
   company_code             Int
+  owner                    Int
   wms_doc_type             String?   @db.VarChar(100)
   internal_evidence_number String    @db.VarChar(50)
   transaction_date         DateTime  @db.Date
@@ -586,6 +655,7 @@ model adjustments {
 
   company companies          @relation(fields: [company_code], references: [code])
   items   adjustment_items[]
+  wms_stock_opname_items wms_stock_opname_items[]
 
   @@unique([company_code, wms_id, transaction_date])
   @@unique([company_code, id, transaction_date])
@@ -605,8 +675,18 @@ model adjustment_items {
   item_code          String         @db.VarChar(50)
   item_name          String         @db.VarChar(200)
   uom                String         @db.VarChar(20)
-  qty                Decimal        @db.Decimal(15, 3)
+  qty                Decimal        @db.Decimal(15, 3) // Variance amount (can be +/-)
   reason             String?        @db.VarChar(500)
+  stockcount_order_number String?    @db.VarChar(100) // Reference to Stock Opname wms_id (v3.4.0)
+  amount             Decimal?       @db.Decimal(15, 4) // Currency amount with 4 decimals (v3.4.0)
+  
+  // ✅ RECONCILIATION FIELDS (v3.4.0) - Stock mutations calculated at adjustment creation time
+  beginning_qty           Decimal?       @db.Decimal(15, 3) // Opening balance pada adjustment date
+  incoming_qty_on_date    Decimal?       @db.Decimal(15, 3) // Incoming goods pada adjustment date
+  outgoing_qty_on_date    Decimal?       @db.Decimal(15, 3) // Outgoing goods pada adjustment date
+  system_qty              Decimal?       @db.Decimal(15, 3) // Expected system qty (beginning + incoming - outgoing)
+  adjusted_qty            Decimal?       @db.Decimal(15, 3) // Final qty setelah adjustment (system_qty + qty variance)
+  
   created_at         DateTime       @default(now()) @db.Timestamptz(6)
   updated_at         DateTime       @updatedAt @db.Timestamptz(6)
   deleted_at         DateTime?      @db.Timestamptz(6)
@@ -618,6 +698,7 @@ model adjustment_items {
   @@index([item_code])
   @@index([item_type])
   @@index([adjustment_type])
+  @@index([stockcount_order_number]) // For v3.4.0 Stock Opname reference lookup
 }
 
 // ============================================================================
@@ -643,7 +724,7 @@ model scrap_transactions {
   remarks                   String?                   @db.VarChar(1000)
   ppkek_number              String?                   @db.VarChar(50) // Customs registration number (for OUT transactions)
   customs_registration_date DateTime?                 @db.Date // Customs registration date (for OUT transactions)
-  customs_document_type     String?                   @db.VarChar(10) // BC25, BC27, BC41 (for OUT transactions)
+  customs_document_type     CustomsDocumentType?      // BC25, BC27, BC41, BC261, BC262, PPKEK variants (for OUT transactions)
   timestamp                 DateTime                  @default(now()) @db.Timestamptz(6)
   created_at                DateTime                  @default(now()) @db.Timestamptz(6)
   updated_at                DateTime                  @updatedAt @db.Timestamptz(6)
@@ -804,13 +885,31 @@ model outgoing_fg_production_traceability {
   created_at            DateTime @default(now()) @db.Timestamptz(6)
   updated_at            DateTime @updatedAt @db.Timestamptz(6)
 
-  outgoing_good_item outgoing_good_items @relation(fields: [outgoing_good_item_id], references: [id], onDelete: Cascade)
+  // ===== NEW FIELDS FOR DETAILED TRACEABILITY =====
+  work_order_number        String?   @db.VarChar(50)  // Link to work order
+  material_item_code       String?   @db.VarChar(50)  // ROH/HALB material code
+  material_item_name       String?   @db.VarChar(200) // ROH/HALB name
+  material_qty_allocated   Decimal?  @db.Decimal(15, 3)   // Result of: qty_per_wo × ratio
+  consumption_ratio        Decimal?  @db.Decimal(15, 8)   // Result of: component_demand / planned_qty
+  ppkek_number_incoming    String?   @db.VarChar(50)     // PPKEK from incoming goods
+  incoming_goods_id        Int?      // FK to incoming_goods
+  customs_registration_date DateTime? @db.Date           // From incoming_goods
+  customs_document_type    CustomsDocumentType?       // From incoming_goods (BC23, BC27, etc)
+  incoming_date            DateTime? @db.Date           // From incoming_goods (for reference)
 
-  @@unique([outgoing_wms_id, production_wms_id, item_code])
+  outgoing_good_item outgoing_good_items @relation(fields: [outgoing_good_item_id], references: [id], onDelete: Cascade)
+  incoming_good      incoming_goods?     @relation(fields: [incoming_goods_id], references: [id])
+
+  @@unique([outgoing_wms_id, production_wms_id, item_code, material_item_code])
   @@index([outgoing_wms_id])
   @@index([production_wms_id])
   @@index([company_code])
   @@index([trx_date])
+  @@index([work_order_number])
+  @@index([material_item_code])
+  @@index([ppkek_number_incoming])
+  @@index([incoming_goods_id])
+  @@index([customs_registration_date])
 }
 
 model stock_daily_snapshot {
@@ -836,7 +935,7 @@ model stock_daily_snapshot {
 
   company companies @relation(fields: [company_code], references: [code], onDelete: Cascade)
 
-  @@unique([company_code, item_type, item_code, snapshot_date])
+  @@unique([company_code, item_type, item_code, uom, snapshot_date], name: "stock_daily_snapshot_uom_company_item_snapshot_key")
   @@index([company_code, snapshot_date])
   @@index([item_type, snapshot_date])
   @@index([snapshot_date])
@@ -874,4 +973,168 @@ model snapshot_recalc_queue {
   @@unique([company_code, recalc_date, item_type, item_code])
   @@index([status, priority, queued_at])
   @@index([company_code, recalc_date])
+}
+// ============================================================================
+// WMS STOCK OPNAME TABLES (API Integration)
+// ============================================================================
+
+model wms_stock_opnames {
+  id                    BigInt                      @id @default(autoincrement())
+  wms_id                String                      @db.VarChar(100) // External WMS identifier for idempotency
+  company_code          Int
+  owner                 Int? // For consignment tracking
+  document_date         DateTime                    @db.Date
+  status                WmsStockOpnameStatus        @default(Active) // Per API Contract: Active, Confirmed, Cancelled
+  notes                 String?                     @db.Text
+  created_at            DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime                    @updatedAt @db.Timestamptz(6)
+  confirmed_at          DateTime?                   @db.Timestamptz(6)
+  
+  // Relations
+  company               companies                   @relation(fields: [company_code], references: [code], onDelete: Cascade)
+  items                 wms_stock_opname_items[]
+
+  @@unique([company_code, wms_id])
+  @@index([status])
+  @@index([company_code, document_date])
+  @@index([created_at])
+  @@index([wms_id])
+}
+
+model wms_stock_opname_items {
+  id                        BigInt              @id @default(autoincrement())
+  wms_stock_opname_id       BigInt
+  company_code              Int
+  item_code                 String              @db.VarChar(50)
+  item_name                 String              @db.VarChar(200) // Added per API Contract v3.3.0
+  item_type                 String              @db.VarChar(10)
+  
+  // Reconciliation data (locked at POST time)
+  beginning_qty             Decimal             @db.Decimal(15, 3)
+  incoming_qty_on_date      Decimal             @db.Decimal(15, 3) // Sum of incoming goods up to document_date
+  outgoing_qty_on_date      Decimal             @db.Decimal(15, 3) // Sum of outgoing goods up to document_date
+  system_qty                Decimal             @db.Decimal(15, 3) // Calculated: beginning + incoming - outgoing
+  
+  // Physical count from WMS
+  actual_qty_count          Decimal             @db.Decimal(15, 3) // Renamed from physical_qty per API Contract v3.3.0
+  
+  // Variance & adjustment
+  variance_qty              Decimal             @db.Decimal(15, 3) // actual_qty_count - system_qty (calculated at POST/PATCH)
+  adjustment_qty_signed     Decimal?            @db.Decimal(15, 3) // Signed qty: populated ONLY when adjustment is confirmed/transmitted (nullable until adjustment creation)
+  adjustment_type           String?             @db.VarChar(10) // GAIN, LOSS (from created adjustment, nullable until adjustment confirmed)
+  amount                    Decimal?            @db.Decimal(15, 4) // Added per API Contract v3.3.0 for PATCH Confirmed
+  
+  // Final state after adjustments
+  final_adjusted_qty        Decimal?            @db.Decimal(15, 3) // system_qty (STO) or system_qty + adjustment_qty_signed (after adjustment)
+  reason                    String?             @db.Text // Reason for adjustment (from adjustment_items.reason)
+  
+  // ✅ FK to Adjustment (v3.4.0) - Populated when adjustment is transmitted for Type 1
+  adjustment_id             Int?
+  
+  uom                       String              @db.VarChar(20)
+  created_at                DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime            @updatedAt @db.Timestamptz(6)
+  
+  // Relations
+  wms_stock_opname          wms_stock_opnames   @relation(fields: [wms_stock_opname_id], references: [id], onDelete: Cascade)
+  company                   companies           @relation(fields: [company_code], references: [code], onDelete: Cascade)
+  adjustment                adjustments?        @relation(fields: [adjustment_id], references: [id], onDelete: SetNull) // ✅ Link to adjustment
+
+  @@index([wms_stock_opname_id])
+  @@index([company_code, item_code])
+  @@index([item_type])
+  @@index([company_code])
+  @@index([adjustment_id])
+}
+
+// ============================================================================
+// INSW TRACKING LOG
+// ============================================================================
+// Track all INSW transmission attempts for monitoring and debugging
+// Flow: WMS -> iMAPS (saved) -> INSW (transmitted & logged here)
+// ============================================================================
+
+model insw_tracking_log {
+  id                    BigInt    @id @default(autoincrement())
+
+  // Transaction reference
+  transaction_type      String    @db.VarChar(20) // 'incoming', 'outgoing', 'adjustment', 'stock_opname', 'saldo_awal'
+  transaction_id        Int? // ID from source table (incoming_goods.id, outgoing_goods.id, etc)
+  wms_id                String?   @db.VarChar(100) // WMS ID for reference
+  company_code          Int
+
+  // INSW transmission details
+  insw_status           String    @default("PENDING") @db.VarChar(20) // 'PENDING', 'SENT', 'SUCCESS', 'FAILED', 'SKIPPED'
+  insw_activity_code    String?   @db.VarChar(10) // '30' (Pemasukan), '31' (Pengeluaran), '32' (Stock Opname), '33' (Adjustment)
+
+  // Request/Response data
+  insw_request_payload  Json? // Payload sent to INSW
+  insw_response         Json? // Response from INSW API
+  insw_error            String?   @db.Text // Error message if failed
+
+  // Timing
+  sent_at               DateTime? @db.Timestamptz(6) // When sent to INSW
+  retry_count           Int       @default(0) // Number of retry attempts
+
+  // Metadata
+  metadata              Json? // Additional metadata (batch_id, user_id, etc)
+
+  // Audit
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@index([transaction_type, transaction_id])
+  @@index([wms_id, company_code])
+  @@index([insw_status, company_code])
+  @@index([company_code, created_at(sort: Desc)])
+  @@index([sent_at(sort: Desc)])
+}
+
+// ============================================================================
+// INSW UOM REFERENCE
+// ============================================================================
+// Reference data for Unit of Measure from INSW
+// Source: INSW Data Referensi - data_satuan
+// ============================================================================
+
+model insw_uom_reference {
+  id         Int      @id @default(autoincrement())
+  kode       String   @unique @db.VarChar(10) // UOM code from INSW
+  uraian     String   @db.VarChar(255) // Description
+  is_active  Boolean  @default(true) // For soft delete/deactivate
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([kode])
+  @@index([is_active])
+  @@map("insw_uom_reference")
+}
+
+// ============================================================================
+// INSW INTEGRATION SETTINGS
+// ============================================================================
+// Toggle individual INSW endpoint transmissions on/off
+// ============================================================================
+
+model insw_integration_settings {
+  id            Int      @id @default(autoincrement())
+  endpoint_key  String   @unique @db.VarChar(50)
+  endpoint_name String   @db.VarChar(100)
+  description   String?  @db.Text
+  is_enabled    Boolean  @default(true)
+  updated_at    DateTime @updatedAt
+  updated_by    String?  @db.VarChar(100)
+}
+
+model insw_uom_mapping {
+  id          Int      @id @default(autoincrement())
+  wms_uom     String   @unique @db.VarChar(50)
+  insw_uom    String   @db.VarChar(10)
+  description String?  @db.VarChar(255)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([wms_uom])
+  @@map("insw_uom_mapping")
 }

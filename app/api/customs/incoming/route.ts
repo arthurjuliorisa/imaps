@@ -43,6 +43,7 @@ export async function GET(request: Request) {
         quantity,
         currency,
         value_amount,
+        item_code_bahasa,
         created_at
       FROM vw_laporan_pemasukan
       WHERE company_code = $1
@@ -87,6 +88,7 @@ export async function GET(request: Request) {
       date: row.doc_date,
       shipperName: row.shipper_name,
       typeCode: row.type_code,
+      itemCodeBahasa: row.item_code_bahasa || '',
       itemCode: row.item_code,
       itemName: row.item_name,
       unit: row.unit,

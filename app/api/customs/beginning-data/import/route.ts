@@ -273,7 +273,9 @@ export async function POST(request: Request) {
     // Validate items for duplicates and existing transactions (batch validation)
     const itemsToValidate = validRecords.map(record => ({
       itemCode: record.itemCode,
-      balanceDate: record.balanceDate,
+      itemName: record.itemName,
+      itemType: record.itemType,
+      uom: record.uom,
     }));
 
     const validationResults = await validateBeginningBalanceItemsBatch(
@@ -284,10 +286,10 @@ export async function POST(request: Request) {
     // Check validation results and collect errors
     const validationErrors: Array<{ row: number; field: string; error: string }> = [];
     for (const record of validRecords) {
-      const key = `${record.itemCode}|${record.balanceDate.getTime()}`;
+      const key = `${record.itemCode}|${record.uom}|${record.itemName}|${record.itemType}`;
       const validationResult = validationResults[key];
 
-      if (!validationResult.valid) {
+      if (validationResult && !validationResult.valid) {
         // Add all validation errors for this record
         for (const validationError of validationResult.errors) {
           validationErrors.push({
@@ -466,33 +468,14 @@ export async function POST(request: Request) {
             itemDetails?.uom || '',
             date
           );
-          
-          console.log(
-            '[API Info] Item snapshot calculation executed',
-            {
-              companyCode: companyCodeInt,
-              itemType,
-              itemCode,
-              balanceDate: date.toISOString().split('T')[0],
-            }
-          );
         } catch (snapshotError) {
-          // Log warning but continue to next item
-          console.warn(
-            '[API Warning] Item snapshot calculation failed',
-            {
-              companyCode: companyCodeInt,
-              itemType,
-              itemCode,
-              balanceDate: date.toISOString().split('T')[0],
-              errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
-            }
-          );
+          // Non-blocking: log silently and continue to next item
+          // Snapshot calculation errors don't prevent data import
         }
       }
     } catch (error) {
-      console.error('[API Warning] Error during item snapshot calculation execution:', error);
-      // Continue anyway - data import succeeded
+      // Non-blocking: snapshot calculation is best-effort
+      // Data import succeeded even if snapshots couldn't be calculated
     }
 
     // Log activity

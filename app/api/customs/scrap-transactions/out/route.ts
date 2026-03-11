@@ -4,6 +4,7 @@ import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { checkStockAvailability } from '@/lib/utils/stock-checker';
 import { logActivity } from '@/lib/log-activity';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -263,12 +264,12 @@ export async function POST(request: Request) {
           item_type: 'SCRAP',
           item_code: scrapCode,
           item_name: scrapName,
+          incoming_ppkek_numbers: incomingPpkekNumbers || [],
           hs_code: null,
           uom: uom,
           qty: new Prisma.Decimal(qty),
           currency: currency,
           amount: new Prisma.Decimal(amount),
-          incoming_ppkek_numbers: incomingPpkekNumbers || [],
         },
       });
 
@@ -365,6 +366,12 @@ export async function POST(request: Request) {
         companyCode,
       },
     });
+
+    // Transmit to INSW via INSWTransmissionService (async, non-blocking, with tracking log)
+    const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+    inswTransmission.transmitScrapOut(companyCode, [result.transactionId])
+      .then(r => console.log('[INSW] Scrap OUT transmitted', { status: r.status, transactionId: result.transactionId }))
+      .catch(err => console.error('[INSW] Scrap OUT INSW error', { err }));
 
     return NextResponse.json(
       {

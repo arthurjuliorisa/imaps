@@ -1,0 +1,378 @@
+'use client';
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useToast } from '@/app/components/ToastProvider';
+import {
+  Box,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
+  Stack,
+  TablePagination,
+  alpha,
+  useTheme,
+  Chip,
+  CircularProgress,
+  TextField,
+  InputAdornment,
+  MenuItem,
+} from '@mui/material';
+import { Search as SearchIcon } from '@mui/icons-material';
+import { ReportLayout } from '@/app/components/customs/ReportLayout';
+import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
+import { ExportButtons } from '@/app/components/customs/ExportButtons';
+import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
+import { formatQty, formatAmount } from '@/lib/utils/format';
+
+interface InternalTransactionOutgoingData {
+  id: string;
+  companyCode: number;
+  companyName: string;
+  documentNumber: string;
+  date: Date;
+  recipientName: string;
+  typeCode: string;
+  itemCodeBahasa: string;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  qty: number;
+  amount: number;
+}
+
+const EXCEL_HEADERS = [
+  { key: 'no', label: 'No', type: 'number' as const },
+  { key: 'companyName', label: 'Company Name', type: 'text' as const },
+  { key: 'documentType', label: 'Jenis Dokumen Pabean', type: 'text' as const },
+  { key: 'ppkekNumber', label: 'Nomor Daftar', type: 'text' as const },
+  { key: 'registrationDate', label: 'Tanggal Daftar', type: 'date' as const },
+  { key: 'documentNumber', label: 'Nomor Bukti Pengeluaran Barang', type: 'text' as const },
+  { key: 'date', label: 'Tanggal Bukti Pengeluaran Barang', type: 'date' as const },
+  { key: 'recipientName', label: 'Penerima barang', type: 'text' as const },
+  { key: 'typeCode', label: 'Item Type', type: 'text' as const },
+  { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
+  { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
+  { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
+  { key: 'qty', label: 'Jumlah Barang', type: 'number' as const },
+  { key: 'amount', label: 'nilai barang', type: 'number' as const },
+];
+
+const PDF_COLUMNS = [
+  { header: 'No', dataKey: 'no' },
+  { header: 'Company Name', dataKey: 'companyName' },
+  { header: 'Jenis Dokumen Pabean', dataKey: 'documentType' },
+  { header: 'Nomor Bukti Pengeluaran Barang', dataKey: 'documentNumber' },
+  { header: 'Tanggal Bukti Pengeluaran Barang', dataKey: 'date' },
+  { header: 'Penerima barang', dataKey: 'recipientName' },
+  { header: 'Kode Barang', dataKey: 'itemCode' },
+  { header: 'Nama Barang', dataKey: 'itemName' },
+  { header: 'Jumlah Barang', dataKey: 'qty' },
+  { header: 'nilai barang', dataKey: 'amount' },
+];
+
+export default function InternalTransactionOutgoingPage() {
+  const theme = useTheme();
+  const toast = useToast();
+
+  // Default date range: today
+  const now = new Date();
+
+  const [startDate, setStartDate] = useState(now.toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [data, setData] = useState<InternalTransactionOutgoingData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
+      });
+
+      const response = await fetch(`/api/customs/internal-transaction/outgoing?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch data');
+      const result = await response.json();
+      setData(result);
+    } catch (error) {
+      console.error('Error fetching internal transaction outgoing report data:', error);
+      toast.error('Failed to load internal transaction outgoing report');
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [startDate, endDate, toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Reset page to 0 when search query or item type filter changes
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery, itemTypeFilter]);
+
+  // Get unique item types from data
+  const uniqueItemTypes = useMemo(() => {
+    const types = new Set(data.map(item => item.typeCode));
+    return Array.from(types).sort();
+  }, [data]);
+
+  // Filter data based on search query and item type filter
+  const filteredData = useMemo(() => {
+    let filtered = data;
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((row) => {
+        return (
+          row.companyName?.toLowerCase().includes(query) ||
+          row.documentNumber?.toLowerCase().includes(query) ||
+          row.typeCode?.toLowerCase().includes(query) ||
+          row.itemCode?.toLowerCase().includes(query) ||
+          row.itemName?.toLowerCase().includes(query) ||
+          row.unit?.toLowerCase().includes(query)
+        );
+      });
+    }
+
+    // Apply item type filter
+    if (itemTypeFilter) {
+      filtered = filtered.filter(row => row.typeCode === itemTypeFilter);
+    }
+
+    return filtered;
+  }, [data, searchQuery, itemTypeFilter]);
+
+  const handleChangePage = (_event: unknown, newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  const handleExportExcel = () => {
+    const exportData = filteredData.map((row, index) => ({
+      no: index + 1,
+      companyName: row.companyName,
+      documentType: '-',
+      ppkekNumber: '-',
+      registrationDate: row.date,
+      documentNumber: row.documentNumber,
+      date: row.date,
+      recipientName: row.recipientName || '-',
+      typeCode: row.typeCode,
+      itemCode: row.itemCode,
+      itemName: row.itemName,
+      unit: row.unit,
+      qty: row.qty,
+      amount: row.amount,
+    }));
+
+    exportToExcelWithHeaders(
+      exportData,
+      EXCEL_HEADERS,
+      `Internal_Transaction_Outgoing_${startDate}_${endDate}`,
+      'Laporan Internal Transaction - Outgoing'
+    );
+  };
+
+  const handleExportPDF = () => {
+    const exportData = filteredData.map((row, index) => ({
+      no: index + 1,
+      companyName: row.companyName,
+      documentType: '-',
+      documentNumber: row.documentNumber,
+      date: formatDateShort(row.date),
+      recipientName: row.recipientName || '-',
+      itemCode: row.itemCode,
+      itemName: row.itemName,
+      qty: formatQty(row.qty),
+      amount: formatAmount(row.amount),
+    }));
+
+    exportToPDF(
+      exportData,
+      PDF_COLUMNS,
+      `Internal_Transaction_Outgoing_${startDate}_${endDate}`,
+      'Laporan Internal Transaction - Outgoing',
+      `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`
+    );
+  };
+
+  const paginatedData = filteredData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+
+  return (
+    <ReportLayout
+      title="Laporan Internal Transaction - Outgoing"
+      subtitle="Laporan barang keluar dari transaksi internal"
+      actions={
+        <Stack spacing={3}>
+          <DateRangeFilter
+            startDate={startDate}
+            endDate={endDate}
+            onStartDateChange={setStartDate}
+            onEndDateChange={setEndDate}
+          />
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <ExportButtons
+              onExportExcel={handleExportExcel}
+              onExportPDF={handleExportPDF}
+              disabled={filteredData.length === 0 || loading}
+            />
+          </Box>
+        </Stack>
+      }
+    >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3, mb: 3, px: 3, gap: 2 }}>
+        <TextField
+          select
+          label="Item Type"
+          value={itemTypeFilter}
+          onChange={(e) => setItemTypeFilter(e.target.value)}
+          size="small"
+          sx={{ minWidth: 200 }}
+        >
+          <MenuItem value="">All Item Types</MenuItem>
+          {uniqueItemTypes.map((type) => (
+            <MenuItem key={type} value={type}>
+              {type}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          placeholder="Search transactions..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          size="small"
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+          sx={{ maxWidth: 400 }}
+        />
+      </Box>
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 8 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer>
+          <Table sx={{ minWidth: 650 }} aria-label="internal transaction outgoing report table">
+            <TableHead>
+              <TableRow
+                sx={{
+                  bgcolor: alpha(theme.palette.primary.main, 0.08),
+                }}
+              >
+                <TableCell sx={{ fontWeight: 600 }}>No</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Company Name</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Jenis Dokumen Pabean</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Nomor Daftar</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Tanggal Daftar</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Nomor Bukti Pengeluaran Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Tanggal Bukti Pengeluaran Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Penerima barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">nilai barang</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {paginatedData.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={14} align="center" sx={{ py: 8 }}>
+                    <Typography variant="body1" color="text.secondary">
+                      No records found for the selected date range
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedData.map((row, index) => (
+                  <TableRow
+                    key={row.id}
+                    sx={{
+                      '&:hover': {
+                        bgcolor: alpha(theme.palette.primary.main, 0.04),
+                      },
+                    }}
+                  >
+                    <TableCell>{page * rowsPerPage + index + 1}</TableCell>
+                    <TableCell>{row.companyName}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">-</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">-</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">-</Typography>
+                    </TableCell>
+                    <TableCell>{row.documentNumber}</TableCell>
+                    <TableCell>{formatDate(row.date)}</TableCell>
+                    <TableCell>{row.recipientName || '-'}</TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                        <Chip label={row.typeCode} size="small" color="secondary" />
+                        {row.itemCodeBahasa && (
+                          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+                            {row.itemCodeBahasa}
+                          </Typography>
+                        )}
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={600}>
+                        {row.itemCode}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{row.itemName}</TableCell>
+                    <TableCell>
+                      <Chip label={row.unit} size="small" />
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" fontWeight={600}>
+                        {formatQty(row.qty)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" fontWeight={600}>
+                        {formatAmount(row.amount)}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+      <TablePagination
+        rowsPerPageOptions={[5, 10, 25, 50]}
+        component="div"
+        count={filteredData.length}
+        rowsPerPage={rowsPerPage}
+        page={page}
+        onPageChange={handleChangePage}
+        onRowsPerPageChange={handleChangeRowsPerPage}
+      />
+    </ReportLayout>
+  );
+}

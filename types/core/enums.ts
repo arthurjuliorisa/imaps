@@ -31,14 +31,17 @@ export enum ItemTypeCode {
  * Matches: CustomsDocumentType enum in Prisma schema
  */
 export enum CustomsDocumentType {
-  BC23 = 'BC23',   // Import Declaration
-  BC27 = 'BC27',   // Other Bonded Zone Release (Incoming & Outgoing)
-  BC40 = 'BC40',   // Local Purchase from Non-Bonded Zone
-  BC30 = 'BC30',   // Export Declaration
-  BC25 = 'BC25',   // Local Sales to Non-Bonded Zone
-  BC41 = 'BC41',   // Local Sales to Non-Bonded Zone from Local Purchase (BC40)
-  BC261 = 'BC261', // Subcontracting - Incoming
-  BC262 = 'BC262'  // Subcontracting - Outgoing
+  BC23 = 'BC23',            // Import Declaration (Incoming)
+  BC27 = 'BC27',            // Other Bonded Zone Release (Incoming & Outgoing)
+  BC40 = 'BC40',            // Local Purchase from Non-Bonded Zone (Incoming)
+  BC30 = 'BC30',            // Export Declaration (Outgoing)
+  BC25 = 'BC25',            // Local Sales to Non-Bonded Zone (Outgoing)
+  BC41 = 'BC41',            // Local Sales from Local Purchase (Outgoing)
+  BC261 = 'BC261',          // Subcontracting - Incoming
+  BC262 = 'BC262',          // Subcontracting - Outgoing
+  PPKEKTLDDP = 'PPKEKTLDDP', // PPKEK for TLDDP Program - NEW
+  PPKEKLDIN = 'PPKEKLDIN',   // PPKEK LDP Incoming - NEW
+  PPKEKLDPOUT = 'PPKEKLDPOUT' // PPKEK LDP Outgoing - NEW
 }
 
 /**

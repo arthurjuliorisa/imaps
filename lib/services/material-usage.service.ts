@@ -2,10 +2,13 @@ import { logger } from '@/lib/utils/logger';
 import {
   validateMaterialUsageBatch,
   validateItemTypes,
+  checkMaterialUsageDuplicates,
+  validateMaterialUsageItemTypeConsistency,
   type MaterialUsageBatchRequestInput,
   type BatchValidationError,
 } from '@/lib/validators/schemas/material-usage.schema';
 import { MaterialUsageRepository } from '@/lib/repositories/material-usage.repository';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 
 /**
  * Material Usage Service
@@ -103,7 +106,45 @@ export class MaterialUsageService {
         wmsId: data.wms_id,
       });
 
-      // Step 3: Business validation (company, work order, etc.)
+      // Step 3: Check for duplicate items
+      const duplicateErrors = checkMaterialUsageDuplicates(data);
+      if (duplicateErrors.length > 0) {
+        log.warn('Duplicate items found', {
+          errorCount: duplicateErrors.length,
+        });
+
+        return {
+          status: 'failed',
+          message: 'Validation failed',
+          wms_id: data.wms_id,
+          errors: duplicateErrors as BatchValidationError[],
+        };
+      }
+
+      log.info('Duplicate items check passed', {
+        wmsId: data.wms_id,
+      });
+
+      // Step 4: Validate item_type consistency
+      const itemTypeConsistencyErrors = await validateMaterialUsageItemTypeConsistency(data);
+      if (itemTypeConsistencyErrors.length > 0) {
+        log.warn('Item type consistency validation failed', {
+          errorCount: itemTypeConsistencyErrors.length,
+        });
+
+        return {
+          status: 'failed',
+          message: 'Validation failed',
+          wms_id: data.wms_id,
+          errors: itemTypeConsistencyErrors as BatchValidationError[],
+        };
+      }
+
+      log.info('Item type consistency validated', {
+        wmsId: data.wms_id,
+      });
+
+      // Step 5: Business validation (company, work order, etc.)
       const businessErrors = await this.validateBusiness(data);
 
       if (businessErrors.length > 0) {
@@ -125,14 +166,63 @@ export class MaterialUsageService {
         itemsCount: data.items.length,
       });
 
-      // Step 3: Queue for immediate async insert (non-blocking)
+      // Step 6: Queue for immediate async insert (non-blocking) + auto-transmit to INSW
       this.repository
         .batchUpsert(data)
-        .then(() => {
+        .then(async () => {
           log.info('Material usage saved successfully', {
             wmsId: data.wms_id,
             itemsCount: data.items.length,
           });
+
+          // Auto-transmit to INSW
+          try {
+            log.info('Starting auto-transmit to INSW', {
+              wmsId: data.wms_id,
+              companyCode: data.company_code,
+            });
+
+            // Get the saved record ID
+            const savedRecord = await this.repository.findByWmsId(
+              data.company_code,
+              data.wms_id,
+              new Date(data.transaction_date)
+            );
+
+            if (!savedRecord) {
+              log.error('Cannot find saved record for INSW transmission', {
+                wmsId: data.wms_id,
+              });
+              return;
+            }
+
+            const inswService = new INSWTransmissionService(
+              process.env.INSW_USE_TEST_MODE === 'true'
+            );
+
+            const transmissionResult = await inswService.transmitMaterialUsage(
+              data.company_code,
+              [savedRecord.id],
+              [data.wms_id]
+            );
+
+            if (transmissionResult.status === 'success') {
+              log.info('Material usage transmitted to INSW successfully', {
+                wmsId: data.wms_id,
+                transmissionResult,
+              });
+            } else {
+              log.warn('Material usage INSW transmission failed', {
+                wmsId: data.wms_id,
+                transmissionResult,
+              });
+            }
+          } catch (inswError: any) {
+            log.error('Error during INSW auto-transmit', {
+              wmsId: data.wms_id,
+              error: inswError.message,
+            });
+          }
         })
         .catch((err: any) => {
           log.error('Material usage insert failed', {

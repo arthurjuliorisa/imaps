@@ -128,6 +128,7 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
           update: {
             internal_evidence_number: data.internal_evidence_number,
             reversal: data.reversal || null,
+            section: data.section || null,
             timestamp: new Date(data.timestamp),
             updated_at: new Date(),
             deleted_at: null,
@@ -135,9 +136,11 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
           create: {
             wms_id: data.wms_id,
             company_code: data.company_code,
+            owner: data.owner,
             internal_evidence_number: data.internal_evidence_number,
             transaction_date: transactionDate,
             reversal: data.reversal || null,
+            section: data.section || null,
             timestamp: new Date(data.timestamp),
           },
         });
@@ -203,6 +206,10 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
             item_name: item.item_name,
             uom: item.uom,
             qty: new Prisma.Decimal(item.qty),
+            work_order_number: item.work_order_number,
+            planned_production_qty: new Prisma.Decimal(item.planned_production_qty),
+            identify_product: item.identify_product,
+            amount: item.amount ? new Prisma.Decimal(item.amount) : null,
           }));
 
           await tx.production_output_items.createMany({
@@ -244,6 +251,10 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
             item_name: item.item_name,
             uom: item.uom,
             qty: new Prisma.Decimal(item.qty),
+            work_order_number: item.work_order_number,
+            planned_production_qty: new Prisma.Decimal(item.planned_production_qty),
+            identify_product: item.identify_product,
+            amount: item.amount ? new Prisma.Decimal(item.amount) : null,
           }));
 
           await tx.production_output_items.createMany({
@@ -295,39 +306,37 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
 
         try {
           for (const item of data.items) {
-            if (item.work_order_numbers && item.work_order_numbers.length > 0 && itemCodeToIdMap.has(item.item_code)) {
+            if (item.work_order_number && itemCodeToIdMap.has(item.item_code)) {
               const itemId = itemCodeToIdMap.get(item.item_code)!;
 
-              for (const woNumber of item.work_order_numbers) {
-                await prisma.work_order_fg_production.upsert({
-                  where: {
-                    work_order_fg_production_unique: {
-                      production_wms_id: data.wms_id,
-                      work_order_number: woNumber,
-                      item_code: item.item_code,
-                    },
-                  },
-                  update: {
-                    qty_produced: new Prisma.Decimal(item.qty),
-                  },
-                  create: {
-                    production_output_id: result.header.id,
-                    production_output_item_id: itemId,
+              await prisma.work_order_fg_production.upsert({
+                where: {
+                  work_order_fg_production_unique: {
                     production_wms_id: data.wms_id,
-                    work_order_number: woNumber,
-                    company_code: data.company_code,
-                    item_type: item.item_type,
+                    work_order_number: item.work_order_number,
                     item_code: item.item_code,
-                    qty_produced: new Prisma.Decimal(item.qty),
-                    trx_date: transactionDate,
                   },
-                });
-              }
+                },
+                update: {
+                  qty_produced: new Prisma.Decimal(item.qty),
+                },
+                create: {
+                  production_output_id: result.header.id,
+                  production_output_item_id: itemId,
+                  production_wms_id: data.wms_id,
+                  work_order_number: item.work_order_number,
+                  company_code: data.company_code,
+                  item_type: item.item_type,
+                  item_code: item.item_code,
+                  qty_produced: new Prisma.Decimal(item.qty),
+                  trx_date: transactionDate,
+                },
+              });
             }
           }
 
           log.info('Production traceability records created', {
-            count: data.items.filter(i => i.work_order_numbers && i.work_order_numbers.length > 0).length,
+            count: data.items.filter(i => i.work_order_number).length,
           });
         } catch (err) {
           log.warn('Failed to create production traceability records', {

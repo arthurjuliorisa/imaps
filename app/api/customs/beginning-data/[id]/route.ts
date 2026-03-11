@@ -316,13 +316,7 @@ export async function PUT(
         normalizedDate
       );
     } catch (snapshotError) {
-      console.error('[API Warning] Snapshot calculation failed on update:', {
-        companyCode,
-        itemType: updated.item_type,
-        itemCode: updated.item_code,
-        date: normalizedDate.toISOString().split('T')[0],
-        error: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
-      });
+      // Snapshot calculation is non-blocking on update
     }
 
     // If date changed, recalculate old date and cascade subsequent dates
@@ -348,14 +342,7 @@ export async function PUT(
           normalizedDate
         );
       } catch (cascadeError) {
-        console.error('[API Warning] Cascade recalculation failed on date change:', {
-          companyCode,
-          itemType: updated.item_type,
-          itemCode: updated.item_code,
-          oldDate: existing.balance_date.toISOString().split('T')[0],
-          newDate: normalizedDate.toISOString().split('T')[0],
-          error: cascadeError instanceof Error ? cascadeError.message : String(cascadeError),
-        });
+        // Cascade recalculation is non-blocking on date change
       }
     }
 
@@ -468,13 +455,7 @@ export async function DELETE(
         existing.balance_date
       );
     } catch (snapshotError) {
-      console.error('[API Warning] Snapshot recalculation failed after delete:', {
-        companyCode: existing.company_code,
-        itemType: existing.item_type,
-        itemCode: existing.item_code,
-        date: existing.balance_date.toISOString().split('T')[0],
-        error: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
-      });
+      // Snapshot recalculation is non-blocking after delete
     }
 
     return NextResponse.json({

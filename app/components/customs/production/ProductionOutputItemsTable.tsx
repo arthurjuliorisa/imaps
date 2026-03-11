@@ -52,15 +52,17 @@ export function ProductionOutputItemsTable({ control }: ProductionOutputItemsTab
       item_type: 'FERT',
       uom: '',
       qty: 0,
-      work_order_numbers: [],
+      work_order_number: '',
+      planned_production_qty: 0,
+      identify_product: 'Y',
     });
   };
 
-  const handleWorkOrdersChange = (index: number, workOrders: string[]) => {
+  const handleWorkOrderChange = (index: number, workOrder: string) => {
     const currentItem = fields[index];
     update(index, {
       ...currentItem,
-      work_order_numbers: workOrders,
+      work_order_number: workOrder,
     });
   };
 
@@ -218,16 +220,15 @@ export function ProductionOutputItemsTable({ control }: ProductionOutputItemsTab
 
                   <TableCell>
                     <Stack direction="row" spacing={1} alignItems="center">
-                      <WorkOrderLinkingTable
-                        itemIndex={index}
-                        linkedWorkOrders={field.work_order_numbers}
-                        onWorkOrdersChange={(workOrders) => handleWorkOrdersChange(index, workOrders)}
+                      <TextField
+                        size="small"
+                        label="Work Order"
+                        value={field.work_order_number || ''}
+                        onChange={(e) => handleWorkOrderChange(index, e.target.value)}
+                        placeholder="e.g., WO-001"
+                        fullWidth
+                        sx={{ minWidth: 150 }}
                       />
-                      {field.work_order_numbers.length > 0 && (
-                        <Typography variant="caption" color="text.secondary">
-                          {field.work_order_numbers.length} linked
-                        </Typography>
-                      )}
                     </Stack>
                   </TableCell>
 

@@ -59,6 +59,7 @@ RETURNS TABLE (
     company_code INTEGER,
     company_name VARCHAR(200),
     item_code VARCHAR(50),
+    item_code_bahasa VARCHAR(100),
     item_name VARCHAR(200),
     item_type VARCHAR(10),
     unit_quantity VARCHAR(20),
@@ -101,10 +102,12 @@ BEGIN
             -- Aggregate mutations for items within the specified date range
             -- For HALB: include BOTH incoming_qty (purchased) + production_qty (from production output)
             -- For other items (ROH, HIBE): only incoming_qty
+            -- CRITICAL: Include UOM in grouping to separate mutations by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
                 sds.item_type,
+                sds.uom,
                 SUM(CASE 
                     WHEN sds.item_type = 'HALB' THEN sds.incoming_qty + sds.production_qty
                     ELSE sds.incoming_qty
@@ -114,39 +117,44 @@ BEGIN
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
-            GROUP BY sds.company_code, sds.item_code, sds.item_type
+            GROUP BY sds.company_code, sds.item_code, sds.item_type, sds.uom
         ),
         opening_balance_data AS (
             -- Priority 1: If snapshot exists ON start_date, use its opening_balance
             -- Priority 2: Otherwise, use closing_balance from latest snapshot ON or BEFORE start_date
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 CASE 
                     WHEN sds.snapshot_date = v_start_date THEN sds.opening_balance
                     ELSE sds.closing_balance
                 END as balance_value,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_start_date
         ),
         closing_balance_data AS (
             -- Get closing_balance FIELD from snapshot ON or BEFORE end_date (most recent snapshot up to period end)
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 sds.closing_balance,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_end_date
         )
         SELECT
-            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code) as no,
+            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code, ai.uom) as no,
             ai.company_code,
             c.name as company_name,
             ai.item_code,
+            COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
             ai.item_name,
             ai.item_type,
             COALESCE(ai.uom, 'UNIT')::VARCHAR(20) as unit_quantity,
@@ -155,6 +163,7 @@ BEGIN
                 (SELECT obd.balance_value FROM opening_balance_data obd 
                  WHERE obd.company_code = ai.company_code 
                    AND obd.item_code = ai.item_code 
+                   AND obd.uom = ai.uom 
                    AND obd.rn = 1),
                 0::NUMERIC(15,3)
             ) as opening_balance,
@@ -165,6 +174,7 @@ BEGIN
                 (SELECT cbd.closing_balance FROM closing_balance_data cbd 
                  WHERE cbd.company_code = ai.company_code 
                    AND cbd.item_code = ai.item_code 
+                   AND cbd.uom = ai.uom 
                    AND cbd.rn = 1),
                 0::NUMERIC(15,3)
             ) as closing_balance,
@@ -175,8 +185,9 @@ BEGIN
             'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
         FROM all_items ai
         JOIN companies c ON ai.company_code = c.code
-        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code
-        ORDER BY ai.company_code, ai.item_code;
+        LEFT JOIN item_types it ON ai.item_type = it.item_type_code
+        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code AND ai.uom = rm.uom
+        ORDER BY ai.company_code, ai.item_code, ai.uom;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
@@ -208,6 +219,7 @@ RETURNS TABLE (
     company_code INTEGER,
     company_name VARCHAR(200),
     item_code VARCHAR(50),
+    item_code_bahasa VARCHAR(100),
     item_name VARCHAR(200),
     item_type VARCHAR(10),
     unit_quantity VARCHAR(20),
@@ -248,48 +260,55 @@ BEGIN
         ),
         range_mutations AS (
             -- Aggregate mutations for items within the specified date range
+            -- CRITICAL: Include UOM in grouping to separate mutations by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 SUM(sds.production_qty) as total_production_qty,
                 SUM(sds.outgoing_qty) as total_outgoing_qty,
                 SUM(sds.adjustment_qty) as total_adjustment_qty
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
-            GROUP BY sds.company_code, sds.item_code
+            GROUP BY sds.company_code, sds.item_code, sds.uom
         ),
         opening_balance_data AS (
             -- Priority 1: If snapshot exists ON start_date, use its opening_balance
             -- Priority 2: Otherwise, use closing_balance from latest snapshot ON or BEFORE start_date
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 CASE 
                     WHEN sds.snapshot_date = v_start_date THEN sds.opening_balance
                     ELSE sds.closing_balance
                 END as balance_value,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_start_date
         ),
         closing_balance_data AS (
             -- Get closing_balance FIELD from snapshot ON or BEFORE end_date (most recent snapshot up to period end)
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 sds.closing_balance,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_end_date
         )
         SELECT
-            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code) as no,
+            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code, ai.uom) as no,
             ai.company_code,
             c.name as company_name,
             ai.item_code,
+            COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
             ai.item_name,
             ai.item_type,
             COALESCE(ai.uom, 'UNIT')::VARCHAR(20) as unit_quantity,
@@ -298,6 +317,7 @@ BEGIN
                 (SELECT obd.balance_value FROM opening_balance_data obd 
                  WHERE obd.company_code = ai.company_code 
                    AND obd.item_code = ai.item_code 
+                   AND obd.uom = ai.uom 
                    AND obd.rn = 1),
                 0::NUMERIC(15,3)
             ) as opening_balance,
@@ -308,6 +328,7 @@ BEGIN
                 (SELECT cbd.closing_balance FROM closing_balance_data cbd 
                  WHERE cbd.company_code = ai.company_code 
                    AND cbd.item_code = ai.item_code 
+                   AND cbd.uom = ai.uom 
                    AND cbd.rn = 1),
                 0::NUMERIC(15,3)
             ) as closing_balance,
@@ -318,8 +339,9 @@ BEGIN
             'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
         FROM all_items ai
         JOIN companies c ON ai.company_code = c.code
-        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code
-        ORDER BY ai.company_code, ai.item_code;
+        LEFT JOIN item_types it ON ai.item_type = it.item_type_code
+        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code AND ai.uom = rm.uom
+        ORDER BY ai.company_code, ai.item_code, ai.uom;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -348,6 +370,7 @@ SELECT
     -- Item details
     igi.item_type as type_code,
     igi.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     igi.item_name,
     igi.uom as unit,
     igi.qty as quantity,
@@ -363,6 +386,7 @@ JOIN incoming_good_items igi ON ig.company_code = igi.incoming_good_company
     AND ig.id = igi.incoming_good_id
     AND ig.incoming_date = igi.incoming_good_date
 JOIN companies c ON ig.company_code = c.code
+LEFT JOIN item_types it ON igi.item_type = it.item_type_code
 WHERE ig.deleted_at IS NULL
   AND igi.deleted_at IS NULL
 ORDER BY ig.incoming_date DESC, ig.id, igi.id;
@@ -390,12 +414,13 @@ SELECT
     -- Item details
     ogi.item_type as type_code,
     ogi.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     ogi.item_name,
     ogi.uom as unit,
     ogi.qty as quantity,
     ogi.currency,
     ogi.amount as value_amount,
-    ogi.production_output_wms_ids,
+    ogi.incoming_ppkek_numbers,
     
     -- Audit fields
     og.created_at,
@@ -406,6 +431,7 @@ JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
     AND og.id = ogi.outgoing_good_id
     AND og.outgoing_date = ogi.outgoing_good_date
 JOIN companies c ON og.company_code = c.code
+LEFT JOIN item_types it ON ogi.item_type = it.item_type_code
 WHERE og.deleted_at IS NULL
   AND ogi.deleted_at IS NULL
 ORDER BY og.outgoing_date DESC, og.id, ogi.id;
@@ -413,7 +439,184 @@ ORDER BY og.outgoing_date DESC, og.id, ogi.id;
 COMMENT ON VIEW vw_laporan_pengeluaran IS 'Report #2: Goods Issuance Report - Real-time view of outgoing goods transactions';
 
 -- ============================================================================
--- REPORT #3: LPJ BAHAN BAKU DAN BAHAN PENOLONG (Raw Material Mutation Report)
+-- REPORT #2.5: LAPORAN STOCK OPNAME (Stock Opname Report)
+-- ============================================================================
+
+
+CREATE OR REPLACE VIEW vw_laporan_stock_opname AS
+SELECT 
+    so.id,
+    so.wms_id as sto_wms_id,
+    so.company_code,
+    c.name as company_name,
+    so.document_date as doc_date,
+    so.status,
+    
+    -- Item details
+    soi.item_type as type_code,
+    soi.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    soi.item_name,
+    soi.uom as unit,
+    soi.actual_qty_count as qty,
+    soi.system_qty,
+    soi.amount as value_amount,
+    
+    -- Audit fields
+    so.created_at,
+    so.updated_at,
+    so.confirmed_at
+FROM wms_stock_opnames so
+JOIN wms_stock_opname_items soi ON so.id = soi.wms_stock_opname_id
+    AND so.company_code = soi.company_code
+JOIN companies c ON so.company_code = c.code
+LEFT JOIN item_types it ON soi.item_type = it.item_type_code
+ORDER BY so.document_date DESC, so.id, soi.id;
+
+COMMENT ON VIEW vw_laporan_stock_opname IS 'Report #2.5: Stock Opname Report - Real-time view of stock opname transactions with physical count details';
+
+-- ============================================================================
+-- REPORT #2.7: LAPORAN ADJUSTMENT (Adjustment Report - Unified for Type 1 & 2)
+-- ============================================================================
+-- Unified report combining both adjustment types in single view
+-- 
+-- Type 1 (STO-Related):
+--   Source: wms_stock_opnames + wms_stock_opname_items
+--   Relationship: stockcount_order_number in adjustment_items references STO wms_id
+--   Tracking: adjustment_id FK links STO items to adjustment
+--   
+-- Type 2 (Standalone):
+--   Source: adjustments + adjustment_items
+--   Relationship: None (stockcount_order_number = NULL)
+--   Reconciliation: Calculated and stored in adjustment_items at creation time
+--   
+-- Display:
+--   - adjustment_flow field distinguishes type ('STO_RELATED' | 'STANDALONE')
+--   - internal_evidence_number available for both types
+--   - Separate rows for same date if both types exist (as per requirement)
+
+CREATE OR REPLACE VIEW vw_laporan_adjustment AS
+
+-- ============================================================================
+-- Part 1: STO-Related Adjustments (Type 1)
+-- ============================================================================
+-- Source: wms_stock_opnames + wms_stock_opname_items
+-- Items linked via adjustment_id FK (populated when adjustment transmitted)
+SELECT 
+    CONCAT('STO_', waso.id) as id,
+    waso.wms_id as sto_wms_id,
+    adj.wms_id as adjustment_wms_id,
+    adj.internal_evidence_number,
+    waso.company_code,
+    c.name as company_name,
+    waso.document_date as doc_date,
+    waso.status,
+    
+    -- Item details (stored directly in wms_stock_opname_items)
+    wasoi.item_type as type_code,
+    wasoi.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    wasoi.item_name,
+    wasoi.uom as unit,
+    
+    -- Reconciliation (from wms_stock_opname_items - locked at POST)
+    wasoi.beginning_qty,
+    wasoi.incoming_qty_on_date,
+    wasoi.outgoing_qty_on_date,
+    wasoi.system_qty,
+    
+    -- Physical count & variance
+    wasoi.actual_qty_count,
+    wasoi.variance_qty,
+    
+    -- Adjustment & final state
+    wasoi.adjustment_qty_signed,
+    wasoi.final_adjusted_qty,
+    
+    -- Amount & reason
+    wasoi.amount as value_amount,
+    wasoi.reason,
+    
+    -- Flow indicator
+    'STO_RELATED' as adjustment_flow,
+    
+    -- Audit fields
+    waso.created_at,
+    waso.updated_at,
+    waso.confirmed_at
+    
+FROM wms_stock_opnames waso
+JOIN wms_stock_opname_items wasoi ON wasoi.wms_stock_opname_id = waso.id
+    AND wasoi.company_code = waso.company_code
+LEFT JOIN adjustments adj ON adj.id = wasoi.adjustment_id
+JOIN companies c ON waso.company_code = c.code
+LEFT JOIN item_types it ON wasoi.item_type = it.item_type_code
+WHERE wasoi.adjustment_qty_signed IS NOT NULL
+  AND wasoi.adjustment_id IS NOT NULL
+
+UNION ALL
+
+-- ============================================================================
+-- Part 2: Standalone Adjustments (Type 2)
+-- ============================================================================
+-- Source: adjustments + adjustment_items
+-- Items with NO stock opname relationship (stockcount_order_number = NULL)
+SELECT 
+    CONCAT('ADJ_', ajust.id) as id,
+    NULL::VARCHAR(100) as sto_wms_id,
+    ajust.wms_id as adjustment_wms_id,
+    ajust.internal_evidence_number,
+    ajust.company_code,
+    c.name as company_name,
+    ajust.transaction_date as doc_date,
+    NULL as status,
+    
+    -- Item details (stored directly in adjustment_items)
+    ajust_items.item_type as type_code,
+    ajust_items.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    ajust_items.item_name,
+    ajust_items.uom as unit,
+    
+    -- Reconciliation (from adjustment_items - calculated at creation time)
+    ajust_items.beginning_qty,
+    ajust_items.incoming_qty_on_date,
+    ajust_items.outgoing_qty_on_date,
+    ajust_items.system_qty,
+    
+    -- Physical count & variance
+    (ajust_items.system_qty + ajust_items.qty) as actual_qty_count,
+    ajust_items.qty as variance_qty,
+    
+    -- Adjustment & final state
+    ajust_items.qty as adjustment_qty_signed,
+    ajust_items.adjusted_qty,
+    
+    -- Amount & reason
+    ajust_items.amount as value_amount,
+    ajust_items.reason,
+    
+    -- Flow indicator
+    'STANDALONE' as adjustment_flow,
+    
+    -- Audit fields
+    ajust.created_at,
+    ajust.updated_at,
+    NULL::TIMESTAMP as confirmed_at
+    
+FROM adjustments ajust
+JOIN adjustment_items ajust_items ON ajust_items.adjustment_id = ajust.id
+    AND ajust_items.adjustment_company = ajust.company_code
+    AND ajust_items.adjustment_date = ajust.transaction_date
+JOIN companies c ON ajust.company_code = c.code
+LEFT JOIN item_types it ON ajust_items.item_type = it.item_type_code
+WHERE ajust_items.stockcount_order_number IS NULL
+
+ORDER BY company_code, doc_date DESC, id;
+
+COMMENT ON VIEW vw_laporan_adjustment IS 'Report #2.7: Adjustment Report - Unified view combining both adjustment types (Type 1: STO-related via adjustment_id FK, Type 2: Standalone with calculated reconciliation). Separate rows for same date if both types exist. Columns: sto_wms_id (Type 1 only), adjustment_wms_id, internal_evidence_number, adjustment_flow (STO_RELATED|STANDALONE), all reconciliation data';
+
+-- ============================================================================
 -- ============================================================================
 -- Uses function for incoming-based materials (excludes production)
 -- Item types: ROH, HALB (purchased from incoming), HIBE
@@ -441,6 +644,7 @@ SELECT
     wb.company_code,
     c.name as company_name,
     wb.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     wb.item_name,
     wb.item_type,
     wb.uom as unit_quantity,
@@ -451,6 +655,7 @@ SELECT
     wb.updated_at
 FROM wip_balances wb
 JOIN companies c ON wb.company_code = c.code
+LEFT JOIN item_types it ON wb.item_type = it.item_type_code
 WHERE wb.deleted_at IS NULL
 ORDER BY wb.company_code, wb.stock_date DESC, wb.item_code;
 
@@ -517,6 +722,7 @@ RETURNS TABLE (
     company_code INTEGER,
     company_name VARCHAR(200),
     item_code VARCHAR(50),
+    item_code_bahasa VARCHAR(100),
     item_name VARCHAR(200),
     item_type VARCHAR(10),
     unit_quantity VARCHAR(20),
@@ -557,47 +763,54 @@ BEGIN
         ),
         range_mutations AS (
             -- Aggregate mutations for items within the specified date range
+            -- CRITICAL: Include UOM in grouping to separate mutations by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 SUM(sds.incoming_qty) as total_incoming_qty,
                 SUM(sds.outgoing_qty) as total_outgoing_qty
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
-            GROUP BY sds.company_code, sds.item_code
+            GROUP BY sds.company_code, sds.item_code, sds.uom
         ),
         opening_balance_data AS (
             -- Priority 1: If snapshot exists ON start_date, use its opening_balance
             -- Priority 2: Otherwise, use closing_balance from latest snapshot ON or BEFORE start_date
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 CASE 
                     WHEN sds.snapshot_date = v_start_date THEN sds.opening_balance
                     ELSE sds.closing_balance
                 END as balance_value,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_start_date
         ),
         closing_balance_data AS (
             -- Get closing_balance FIELD from snapshot ON or BEFORE end_date (most recent snapshot up to period end)
+            -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
+                sds.uom,
                 sds.closing_balance,
-                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code ORDER BY sds.snapshot_date DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date <= v_end_date
         )
         SELECT
-            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code) as no,
+            ROW_NUMBER() OVER (PARTITION BY ai.company_code ORDER BY ai.item_code, ai.uom) as no,
             ai.company_code,
             c.name as company_name,
             ai.item_code,
+            COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
             ai.item_name,
             ai.item_type,
             COALESCE(ai.uom, 'UNIT')::VARCHAR(20) as unit_quantity,
@@ -606,6 +819,7 @@ BEGIN
                 (SELECT obd.balance_value FROM opening_balance_data obd 
                  WHERE obd.company_code = ai.company_code 
                    AND obd.item_code = ai.item_code 
+                   AND obd.uom = ai.uom 
                    AND obd.rn = 1),
                 0::NUMERIC(15,3)
             ) as opening_balance,
@@ -616,6 +830,7 @@ BEGIN
                 (SELECT cbd.closing_balance FROM closing_balance_data cbd 
                  WHERE cbd.company_code = ai.company_code 
                    AND cbd.item_code = ai.item_code 
+                   AND cbd.uom = ai.uom 
                    AND cbd.rn = 1),
                 0::NUMERIC(15,3)
             ) as closing_balance,
@@ -626,8 +841,9 @@ BEGIN
             'ACCUMULATED FROM ' || v_start_date::TEXT || ' TO ' || v_end_date::TEXT as remarks
         FROM all_items ai
         JOIN companies c ON ai.company_code = c.code
-        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code
-        ORDER BY ai.company_code, ai.item_code;
+        LEFT JOIN item_types it ON ai.item_type = it.item_type_code
+        LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code AND ai.uom = rm.uom
+        ORDER BY ai.company_code, ai.item_code, ai.uom;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -648,6 +864,208 @@ SELECT * FROM fn_calculate_lpj_barang_sisa(
 );
 
 COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - Independent scrap transactions (SCRAP) - YTD';
+
+-- ============================================================================
+-- REPORT #8: INTERNAL INCOMING (Production Output + Scrap Incoming + Material Usage Reversals)
+-- ============================================================================
+-- Real-time view combining:
+-- 1. Production Output activities (goods produced internally)
+-- 2. Scrap Incoming transactions (IN type)
+-- 3. Material Usage Reversals (reversal='Y' - returns material to inventory)
+-- Data source: production_outputs + scrap_transactions + material_usages (transaction-based)
+-- Strategy: UNION ALL for optimal performance with early filtering
+
+CREATE OR REPLACE VIEW vw_internal_incoming AS
+
+-- Part 1: Production Output (Normal)
+SELECT 
+    po.id,
+    po.company_code,
+    c.name as company_name,
+    po.internal_evidence_number,
+    po.transaction_date,
+    po.section,
+    
+    -- Item details
+    poi.item_type as type_code,
+    poi.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    poi.item_name,
+    poi.uom as unit,
+    poi.qty as quantity,
+    poi.amount as value_amount
+FROM production_outputs po
+JOIN production_output_items poi ON po.company_code = poi.production_output_company
+    AND po.id = poi.production_output_id
+    AND po.transaction_date = poi.production_output_date
+JOIN companies c ON po.company_code = c.code
+LEFT JOIN item_types it ON poi.item_type = it.item_type_code
+WHERE po.deleted_at IS NULL
+  AND poi.deleted_at IS NULL
+  AND po.reversal IS NULL
+
+UNION ALL
+
+-- Part 2: Scrap Incoming (type='IN')
+SELECT 
+    st.id,
+    st.company_code,
+    c.name as company_name,
+    st.document_number::VARCHAR(50) as internal_evidence_number,
+    st.transaction_date,
+    'General Section'::VARCHAR(100) as section,
+    
+    -- Item details
+    sti.item_type as type_code,
+    sti.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    sti.item_name,
+    sti.uom as unit,
+    sti.qty as quantity,
+    sti.amount::NUMERIC(19,4) as value_amount
+FROM scrap_transactions st
+JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
+    AND st.id = sti.scrap_transaction_id
+    AND st.transaction_date = sti.scrap_transaction_date
+JOIN companies c ON st.company_code = c.code
+LEFT JOIN item_types it ON sti.item_type = it.item_type_code
+WHERE st.transaction_type = 'IN'
+  AND st.deleted_at IS NULL
+  AND sti.deleted_at IS NULL
+
+UNION ALL
+
+-- Part 3: Material Usage Reversals (reversal='Y' - acts as incoming/return)
+SELECT 
+    mu.id,
+    mu.company_code,
+    c.name as company_name,
+    mu.internal_evidence_number,
+    mu.transaction_date,
+    mu.section,
+    
+    -- Item details
+    mui.item_type as type_code,
+    mui.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    mui.item_name,
+    mui.uom as unit,
+    mui.qty as quantity,
+    mui.amount as value_amount
+FROM material_usages mu
+JOIN material_usage_items mui ON mu.company_code = mui.material_usage_company
+    AND mu.id = mui.material_usage_id
+    AND mu.transaction_date = mui.material_usage_date
+JOIN companies c ON mu.company_code = c.code
+LEFT JOIN item_types it ON mui.item_type = it.item_type_code
+WHERE mu.deleted_at IS NULL
+  AND mui.deleted_at IS NULL
+  AND mu.reversal = 'Y'
+
+ORDER BY transaction_date DESC, company_code, id;
+
+COMMENT ON VIEW vw_internal_incoming IS 'Report #8: Internal Incoming - Real-time view combining production output activities, scrap incoming transactions, and material usage reversals (returns to inventory)';
+
+-- ============================================================================
+-- REPORT #9: INTERNAL OUTGOING (Material Usage + Production Output Reversals + Scrap Outgoing)
+-- ============================================================================
+-- Real-time view combining:
+-- 1. Material Usage activities (materials consumed in production)
+-- 2. Production Output Reversals (reversal='Y' - cancels production)
+-- 3. Scrap Outgoing transactions (OUT type - scrap disposal)
+-- Data source: material_usages + production_outputs + scrap_transactions (transaction-based)
+-- Strategy: UNION ALL for optimal performance with early filtering
+
+CREATE OR REPLACE VIEW vw_internal_outgoing AS
+
+-- Part 1: Material Usage (Normal)
+SELECT 
+    mu.id,
+    mu.company_code,
+    c.name as company_name,
+    mu.internal_evidence_number,
+    mu.transaction_date,
+    mu.section,
+    
+    -- Item details
+    mui.item_type as type_code,
+    mui.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    mui.item_name,
+    mui.uom as unit,
+    mui.qty as quantity,
+    mui.amount as value_amount
+FROM material_usages mu
+JOIN material_usage_items mui ON mu.company_code = mui.material_usage_company
+    AND mu.id = mui.material_usage_id
+    AND mu.transaction_date = mui.material_usage_date
+JOIN companies c ON mu.company_code = c.code
+LEFT JOIN item_types it ON mui.item_type = it.item_type_code
+WHERE mu.deleted_at IS NULL
+  AND mui.deleted_at IS NULL
+  AND mu.reversal IS NULL
+
+UNION ALL
+
+-- Part 2: Production Output Reversals (reversal='Y' - acts as outgoing/cancellation)
+SELECT 
+    po.id,
+    po.company_code,
+    c.name as company_name,
+    po.internal_evidence_number,
+    po.transaction_date,
+    po.section,
+    
+    -- Item details
+    poi.item_type as type_code,
+    poi.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    poi.item_name,
+    poi.uom as unit,
+    poi.qty as quantity,
+    poi.amount as value_amount
+FROM production_outputs po
+JOIN production_output_items poi ON po.company_code = poi.production_output_company
+    AND po.id = poi.production_output_id
+    AND po.transaction_date = poi.production_output_date
+JOIN companies c ON po.company_code = c.code
+LEFT JOIN item_types it ON poi.item_type = it.item_type_code
+WHERE po.deleted_at IS NULL
+  AND poi.deleted_at IS NULL
+  AND po.reversal = 'Y'
+
+UNION ALL
+
+-- Part 3: Scrap Outgoing (type='OUT' - scrap disposal)
+SELECT 
+    st.id,
+    st.company_code,
+    c.name as company_name,
+    st.document_number::VARCHAR(50) as internal_evidence_number,
+    st.transaction_date,
+    'General Section'::VARCHAR(100) as section,
+    
+    -- Item details
+    sti.item_type as type_code,
+    sti.item_code,
+    COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
+    sti.item_name,
+    sti.uom as unit,
+    sti.qty as quantity,
+    sti.amount::NUMERIC(19,4) as value_amount
+FROM scrap_transactions st
+JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
+    AND st.id = sti.scrap_transaction_id
+    AND st.transaction_date = sti.scrap_transaction_date
+JOIN companies c ON st.company_code = c.code
+LEFT JOIN item_types it ON sti.item_type = it.item_type_code
+WHERE st.transaction_type = 'OUT'
+  AND st.deleted_at IS NULL
+  AND sti.deleted_at IS NULL
+
+ORDER BY transaction_date DESC, company_code, id;
+
+COMMENT ON VIEW vw_internal_outgoing IS 'Report #9: Internal Outgoing - Real-time view combining material usage activities, production output reversals (cancellations), and scrap outgoing transactions (disposal)';
 
 -- ============================================================================
 -- ADDITIONAL HELPER VIEWS

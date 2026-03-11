@@ -158,18 +158,21 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
             cost_center_number: data.cost_center_number || null,
             internal_evidence_number: data.internal_evidence_number,
             reversal: data.reversal || null,
+            section: data.section || null,
             timestamp: new Date(data.timestamp),
             updated_at: new Date(),
             deleted_at: null,
           },
           create: {
             company_code: data.company_code,
+            owner: data.owner,
             wms_id: data.wms_id,
             work_order_number: data.work_order_number || null,
             cost_center_number: data.cost_center_number || null,
             internal_evidence_number: data.internal_evidence_number,
             transaction_date: transactionDate,
             reversal: data.reversal || null,
+            section: data.section || null,
             timestamp: new Date(data.timestamp),
           },
         });
@@ -230,7 +233,9 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
             item_name: item.item_name,
             uom: item.uom,
             qty: new Prisma.Decimal(item.qty),
+            component_demand_qty: item.component_demand_qty ? new Prisma.Decimal(item.component_demand_qty) : null,
             ppkek_number: item.ppkek_number || null,
+            amount: item.amount ? new Prisma.Decimal(item.amount) : null,
           }));
 
           const createdItems = await tx.material_usage_items.createMany({
@@ -277,6 +282,7 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
             item_name: item.item_name,
             uom: item.uom,
             qty: new Prisma.Decimal(item.qty),
+            component_demand_qty: item.component_demand_qty ? new Prisma.Decimal(item.component_demand_qty) : null,
             ppkek_number: item.ppkek_number || null,
           }));
 
@@ -492,6 +498,37 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
         stack: err.stack,
       });
       throw err;
+    }
+  }
+
+  /**
+   * Find material usage by WMS ID
+   */
+  async findByWmsId(
+    companyCode: number,
+    wmsId: string,
+    transactionDate: Date
+  ): Promise<{ id: number } | null> {
+    try {
+      const record = await prisma.material_usages.findFirst({
+        where: {
+          company_code: companyCode,
+          wms_id: wmsId,
+          transaction_date: transactionDate,
+          deleted_at: null,
+        },
+        select: {
+          id: true,
+        },
+      });
+      return record;
+    } catch (err) {
+      logger.error('Error finding material usage by wms_id', {
+        companyCode,
+        wmsId,
+        error: (err as any).message,
+      });
+      return null;
     }
   }
 

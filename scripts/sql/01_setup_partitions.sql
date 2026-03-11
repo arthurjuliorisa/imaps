@@ -46,7 +46,7 @@ CREATE TABLE incoming_goods (
     wms_id VARCHAR(100) NOT NULL,
     company_code INTEGER NOT NULL,
     owner INTEGER NOT NULL,
-    customs_document_type VARCHAR(10) NOT NULL,
+    customs_document_type VARCHAR(20) NOT NULL,
     ppkek_number VARCHAR(50) NOT NULL,
     customs_registration_date DATE NOT NULL,
     incoming_evidence_number VARCHAR(50) NOT NULL,
@@ -204,11 +204,13 @@ CREATE TABLE material_usages (
     id SERIAL,
     wms_id VARCHAR(100) NOT NULL,
     company_code INTEGER NOT NULL,
+    owner INTEGER NOT NULL,
     work_order_number VARCHAR(50),
     cost_center_number VARCHAR(100),
     internal_evidence_number VARCHAR(50) NOT NULL,
     transaction_date DATE NOT NULL,
     reversal VARCHAR(1),
+    section VARCHAR(100),
     "timestamp" TIMESTAMPTZ(6) NOT NULL,
     created_at TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ(6) NOT NULL,
@@ -505,9 +507,11 @@ CREATE TABLE production_outputs (
     id SERIAL,
     wms_id VARCHAR(100) NOT NULL,
     company_code INTEGER NOT NULL,
+    owner INTEGER NOT NULL,
     internal_evidence_number VARCHAR(50) NOT NULL,
     transaction_date DATE NOT NULL,
     reversal VARCHAR(1),
+    section VARCHAR(100),
     "timestamp" TIMESTAMPTZ(6) NOT NULL,
     created_at TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ(6) NOT NULL,
@@ -653,7 +657,7 @@ CREATE TABLE outgoing_goods (
     wms_id VARCHAR(100) NOT NULL,
     company_code INTEGER NOT NULL,
     owner INTEGER NOT NULL,
-    customs_document_type VARCHAR(10) NOT NULL,
+    customs_document_type VARCHAR(20) NOT NULL,
     ppkek_number VARCHAR(50) NOT NULL,
     customs_registration_date DATE NOT NULL,
     outgoing_evidence_number VARCHAR(50) NOT NULL,
@@ -807,6 +811,7 @@ CREATE TABLE adjustments (
     id SERIAL,
     wms_id VARCHAR(100) NOT NULL,
     company_code INTEGER NOT NULL,
+    owner INTEGER NOT NULL,
     wms_doc_type VARCHAR(100),
     internal_evidence_number VARCHAR(50) NOT NULL,
     transaction_date DATE NOT NULL,
@@ -989,8 +994,9 @@ CREATE TABLE stock_daily_snapshot_2026 PARTITION OF stock_daily_snapshot
 ALTER TABLE stock_daily_snapshot_2026 OWNER TO appuser;
 
 -- Create indexes with Prisma naming convention
-CREATE UNIQUE INDEX stock_snapshot_company_item_date_key 
-    ON stock_daily_snapshot (company_code, item_type, item_code, snapshot_date);
+-- UNIQUE INDEX for ON CONFLICT support with UOM
+CREATE UNIQUE INDEX stock_daily_snapshot_uom_company_item_snapshot_key 
+    ON stock_daily_snapshot (company_code, item_type, item_code, uom, snapshot_date);
 CREATE INDEX stock_snapshot_company_date_idx 
     ON stock_daily_snapshot (company_code, snapshot_date);
 CREATE INDEX stock_snapshot_item_date_idx 

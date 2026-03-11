@@ -4,6 +4,7 @@ import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { checkStockAvailability } from '@/lib/utils/stock-checker';
 import { logActivity } from '@/lib/log-activity';
+import { INSWIntegrationService } from '@/lib/services/insw-integration.service';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -210,13 +211,12 @@ export async function POST(request: Request) {
           item_type: itemType,
           item_code: itemCode,
           item_name: itemName,
-          production_output_wms_ids: [],
+          incoming_ppkek_numbers: incomingPpkekNumbers || [],
           hs_code: null,
           uom: uom,
           qty: new Prisma.Decimal(qty),
           currency: currency,
           amount: new Prisma.Decimal(amount),
-          incoming_ppkek_numbers: incomingPpkekNumbers || [],
         },
       });
 
@@ -292,6 +292,59 @@ export async function POST(request: Request) {
         companyCode,
       },
     });
+
+    // Transmit to INSW (async, non-blocking)
+    (async () => {
+      try {
+        const inswService = new INSWIntegrationService(
+          process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
+          process.env.INSW_UNIQUE_KEY_TEST || '',
+          process.env.INSW_USE_TEST_MODE === 'true'
+        );
+
+        const payload = await inswService.convertCapitalGoodsOutToINSWByWmsIds(
+          companyCode,
+          [result.wmsId]
+        );
+
+        const inswResponse = await inswService.postPengeluaran(payload);
+
+        console.log('[INSW] Capital Goods OUT transmitted successfully:', {
+          wmsId: result.wmsId,
+          outgoingGoodId: result.outgoingGoodId,
+          inswResponse,
+        });
+
+        await logActivity({
+          action: 'INSW_TRANSMIT_CAPITAL_GOODS_OUT',
+          description: `INSW transmit for capital goods OUT: ${result.wmsId}`,
+          status: 'success',
+          metadata: {
+            wmsId: result.wmsId,
+            outgoingGoodId: result.outgoingGoodId.toString(),
+            itemType: result.itemType,
+            itemCode: result.itemCode,
+            inswResponse,
+          },
+        });
+      } catch (inswError) {
+        console.error('[INSW] Failed to transmit capital goods OUT:', {
+          wmsId: result.wmsId,
+          error: inswError instanceof Error ? inswError.message : String(inswError),
+        });
+
+        await logActivity({
+          action: 'INSW_TRANSMIT_CAPITAL_GOODS_OUT',
+          description: `INSW transmit failed for capital goods OUT: ${result.wmsId}`,
+          status: 'error',
+          metadata: {
+            wmsId: result.wmsId,
+            outgoingGoodId: result.outgoingGoodId.toString(),
+            error: inswError instanceof Error ? inswError.message : String(inswError),
+          },
+        });
+      }
+    })().catch(err => console.error('[INSW] Background INSW transmit task failed:', err));
 
     return NextResponse.json(
       {
