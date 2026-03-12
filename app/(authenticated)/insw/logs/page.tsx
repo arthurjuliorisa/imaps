@@ -22,7 +22,7 @@ import {
   Button,
   CircularProgress,
 } from '@mui/material';
-import { Refresh, Visibility, ContentCopy, Check, Replay as ReplayIcon } from '@mui/icons-material';
+import { Refresh, Visibility, ContentCopy, Check, Replay as ReplayIcon, GetApp } from '@mui/icons-material';
 import {
   AreaChart,
   Area,
@@ -142,6 +142,9 @@ export default function INSWLogsPage() {
   const [selectedLog, setSelectedLog] = useState<INSWLog | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  const [dateFrom, setDateFrom] = useState(dayjs().subtract(1, 'month').format('YYYY-MM-DD'));
+  const [dateTo, setDateTo] = useState(dayjs().format('YYYY-MM-DD'));
+
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [resendingId, setResendingId] = useState<string | null>(null);
@@ -167,12 +170,6 @@ export default function INSWLogsPage() {
           sx={{ fontWeight: 'bold' }}
         />
       ),
-    },
-    {
-      id: 'transaction_id',
-      label: 'Trans ID',
-      minWidth: 100,
-      format: (value: any) => value || '-',
     },
     {
       id: 'wms_id',
@@ -255,7 +252,7 @@ export default function INSWLogsPage() {
 
   useEffect(() => {
     fetchLogs();
-  }, [transactionTypeFilter, statusFilter]);
+  }, [transactionTypeFilter, statusFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     fetchChartData();
@@ -266,6 +263,8 @@ export default function INSWLogsPage() {
     try {
       const params = new URLSearchParams({
         limit: '100',
+        ...(dateFrom && { date_from: dateFrom }),
+        ...(dateTo && { date_to: dateTo + 'T23:59:59' }),
         ...(transactionTypeFilter !== 'ALL' && { transaction_type: transactionTypeFilter }),
         ...(statusFilter !== 'ALL' && { insw_status: statusFilter }),
       });
@@ -312,6 +311,16 @@ export default function INSWLogsPage() {
     fetchLogs();
     fetchChartData();
     toast.success('INSW logs refreshed');
+  };
+
+  const handleExportExcel = () => {
+    const params = new URLSearchParams({
+      ...(dateFrom && { date_from: dateFrom }),
+      ...(dateTo && { date_to: dateTo + 'T23:59:59' }),
+      ...(transactionTypeFilter !== 'ALL' && { transaction_type: transactionTypeFilter }),
+      ...(statusFilter !== 'ALL' && { insw_status: statusFilter }),
+    });
+    window.open(`/api/insw/logs/export?${params}`, '_blank');
   };
 
   const handleViewDetails = (log: INSWLog) => {
@@ -380,6 +389,11 @@ export default function INSWLogsPage() {
           </Typography>
         </Box>
         <Stack direction="row" spacing={1}>
+          <Tooltip title="Export Excel">
+            <IconButton onClick={handleExportExcel} color="success">
+              <GetApp />
+            </IconButton>
+          </Tooltip>
           <Tooltip title="Refresh">
             <IconButton onClick={handleRefresh} color="primary">
               <Refresh />
@@ -522,6 +536,24 @@ export default function INSWLogsPage() {
         <CardContent>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField
+              label="Dari Tanggal"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              sx={{ minWidth: 160 }}
+            />
+            <TextField
+              label="Sampai Tanggal"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              sx={{ minWidth: 160 }}
+            />
+            <TextField
               select
               label="Transaction Type"
               value={transactionTypeFilter}
@@ -557,10 +589,6 @@ export default function INSWLogsPage() {
         loading={loading}
         searchable={false}
       />
-
-      <Typography variant="caption" color="text.secondary" sx={{ px: 2, pb: 1, display: 'block' }}>
-        * Trans ID adalah ID transaksi dari sistem WMS (material_usages, production_outputs, scrap_transactions, dll), bukan ID log INSW. Digunakan untuk menelusuri kembali data transaksi asal.
-      </Typography>
 
       <Dialog
         open={detailDialogOpen}

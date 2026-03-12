@@ -38,6 +38,8 @@ export async function GET(request: Request) {
     const transactionType = searchParams.get('transaction_type');
     const inswStatus = searchParams.get('insw_status');
     const limit = parseInt(searchParams.get('limit') || '100', 10);
+    const dateFrom = searchParams.get('date_from');
+    const dateTo = searchParams.get('date_to');
 
     const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
     const service = new INSWTransmissionService(useTestMode);
@@ -47,6 +49,8 @@ export async function GET(request: Request) {
       transaction_type: transactionType || undefined,
       insw_status: inswStatus || undefined,
       limit,
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
     });
 
     // Transform BigInt fields to strings for JSON serialization

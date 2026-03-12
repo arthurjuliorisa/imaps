@@ -44,6 +44,16 @@ export class INSWTransmissionService {
     this.log.info('Starting incoming goods transmission', { companyCode, ids });
 
     if (!(await this.isEndpointEnabled('PEMASUKAN'))) {
+      for (const id of ids) {
+        await this.logTransmission({
+          transaction_type: 'incoming',
+          transaction_id: id,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.PENDING,
+          insw_activity_code: '30',
+          insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+        });
+      }
       return {
         status: 'success',
         message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
@@ -224,6 +234,16 @@ export class INSWTransmissionService {
     });
 
     if (!(await this.isEndpointEnabled('PENGELUARAN'))) {
+      for (const id of ids) {
+        await this.logTransmission({
+          transaction_type: 'outgoing',
+          transaction_id: id,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.PENDING,
+          insw_activity_code: '31',
+          insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+        });
+      }
       return {
         status: 'success',
         message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
@@ -385,6 +405,16 @@ export class INSWTransmissionService {
     });
 
     if (!(await this.isEndpointEnabled('PENGELUARAN'))) {
+      for (const wmsId of wmsIds) {
+        await this.logTransmission({
+          transaction_type: 'outgoing',
+          wms_id: wmsId,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.PENDING,
+          insw_activity_code: '31',
+          insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+        });
+      }
       return {
         status: 'success',
         message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
@@ -545,6 +575,17 @@ export class INSWTransmissionService {
     this.log.info('Starting material usage transmission', { companyCode, ids });
 
     if (!(await this.isEndpointEnabled('MATERIAL_USAGE'))) {
+      for (let i = 0; i < ids.length; i++) {
+        await this.logTransmission({
+          transaction_type: 'material_usage',
+          transaction_id: ids[i],
+          wms_id: wmsIds[i],
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.PENDING,
+          insw_activity_code: '30',
+          insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+        });
+      }
       return {
         status: 'success',
         message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
@@ -720,6 +761,17 @@ export class INSWTransmissionService {
     });
 
     if (!(await this.isEndpointEnabled('PRODUCTION_OUTPUT'))) {
+      for (let i = 0; i < ids.length; i++) {
+        await this.logTransmission({
+          transaction_type: 'production_output',
+          transaction_id: ids[i],
+          wms_id: wmsIds[i],
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.PENDING,
+          insw_activity_code: '30',
+          insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+        });
+      }
       return {
         status: 'success',
         message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
@@ -889,6 +941,15 @@ export class INSWTransmissionService {
     this.log.info('Starting adjustment transmission', { companyCode, adjustmentId, wmsId });
 
     if (!(await this.isEndpointEnabled('ADJUSTMENT'))) {
+      await this.logTransmission({
+        transaction_type: 'adjustment',
+        transaction_id: adjustmentId,
+        wms_id: wmsId,
+        company_code: companyCode,
+        insw_status: INSWTransmissionStatus.PENDING,
+        insw_activity_code: '33',
+        insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+      });
       return {
         status: 'success',
         message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
@@ -1014,6 +1075,16 @@ export class INSWTransmissionService {
     this.log.info('Starting scrap IN transmission', { companyCode, transactionIds });
 
     if (!(await this.isEndpointEnabled('SCRAP_IN'))) {
+      for (const id of transactionIds) {
+        await this.logTransmission({
+          transaction_type: 'scrap_in',
+          transaction_id: id,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.PENDING,
+          insw_activity_code: '30',
+          insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+        });
+      }
       return {
         status: 'success',
         message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
@@ -1096,6 +1167,16 @@ export class INSWTransmissionService {
     this.log.info('Starting scrap OUT transmission', { companyCode, transactionIds });
 
     if (!(await this.isEndpointEnabled('SCRAP_OUT'))) {
+      for (const id of transactionIds) {
+        await this.logTransmission({
+          transaction_type: 'scrap_out',
+          transaction_id: id,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.PENDING,
+          insw_activity_code: '31',
+          insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+        });
+      }
       return {
         status: 'success',
         message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
@@ -1169,6 +1250,16 @@ export class INSWTransmissionService {
     this.log.info('Starting capital goods OUT transmission', { companyCode, wmsIds });
 
     if (!(await this.isEndpointEnabled('CAPITAL_GOODS_OUT'))) {
+      for (const wmsId of wmsIds) {
+        await this.logTransmission({
+          transaction_type: 'capital_goods_out',
+          wms_id: wmsId,
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.PENDING,
+          insw_activity_code: '31',
+          insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+        });
+      }
       return {
         status: 'success',
         message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
@@ -1232,6 +1323,15 @@ export class INSWTransmissionService {
     this.log.info('Starting stock opname transmission', { companyCode, stockOpnameId, wmsId });
 
     if (!(await this.isEndpointEnabled('STOCK_OPNAME'))) {
+      await this.logTransmission({
+        transaction_type: 'stock_opname',
+        transaction_id: stockOpnameId,
+        wms_id: wmsId,
+        company_code: companyCode,
+        insw_status: INSWTransmissionStatus.PENDING,
+        insw_activity_code: '32',
+        insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+      });
       return {
         status: 'success',
         message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
@@ -1319,6 +1419,13 @@ export class INSWTransmissionService {
     this.log.info('Starting saldo awal transmission', { companyCode });
 
     if (!(await this.isEndpointEnabled('SALDO_AWAL'))) {
+      await this.logTransmission({
+        transaction_type: 'saldo_awal',
+        company_code: companyCode,
+        insw_status: INSWTransmissionStatus.PENDING,
+        insw_activity_code: '30',
+        insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+      });
       return { status: 'success', message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini' };
     }
 
@@ -1381,6 +1488,13 @@ export class INSWTransmissionService {
     this.log.info('Starting saldo awal lock (registrasi final)', { companyCode });
 
     if (!(await this.isEndpointEnabled('SALDO_AWAL_FINAL'))) {
+      await this.logTransmission({
+        transaction_type: 'saldo_awal_final',
+        company_code: companyCode,
+        insw_status: INSWTransmissionStatus.PENDING,
+        insw_activity_code: '30',
+        insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+      });
       return { status: 'success', message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini' };
     }
 
@@ -1437,6 +1551,8 @@ export class INSWTransmissionService {
     transaction_type?: string;
     insw_status?: string;
     limit?: number;
+    date_from?: string;
+    date_to?: string;
   }) {
     return await prisma.insw_tracking_log.findMany({
       where: {
@@ -1445,6 +1561,12 @@ export class INSWTransmissionService {
           transaction_type: filters.transaction_type,
         }),
         ...(filters.insw_status && { insw_status: filters.insw_status }),
+        ...(filters.date_from && filters.date_to && {
+          sent_at: {
+            gte: new Date(filters.date_from),
+            lte: new Date(filters.date_to),
+          },
+        }),
       },
       orderBy: {
         created_at: 'desc',
