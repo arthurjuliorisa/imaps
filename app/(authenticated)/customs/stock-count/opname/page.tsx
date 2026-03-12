@@ -138,6 +138,7 @@ export default function StockOpnameReportPage() {
       filtered = filtered.filter((row) => {
         return (
           row.companyName?.toLowerCase().includes(query) ||
+          row.stoWmsId?.toLowerCase().includes(query) ||
           row.itemCode?.toLowerCase().includes(query) ||
           row.itemName?.toLowerCase().includes(query)
         );
