@@ -225,7 +225,7 @@ export default function INSWLogsPage() {
               <Visibility fontSize="small" />
             </IconButton>
           </Tooltip>
-          {(row as INSWLog).insw_status === 'FAILED' && (
+          {((row as INSWLog).insw_status === 'FAILED' || (row as INSWLog).insw_status === 'PENDING') && (
             <Tooltip title="Kirim Ulang">
               <span>
                 <IconButton
@@ -739,7 +739,7 @@ export default function INSWLogsPage() {
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'space-between' }}>
           <Box>
-            {selectedLog?.insw_status === 'FAILED' && (
+            {(selectedLog?.insw_status === 'FAILED' || selectedLog?.insw_status === 'PENDING') && (
               <Button
                 onClick={() => {
                   setPendingResendId(String(selectedLog.id));

@@ -35,9 +35,9 @@ export async function POST(
       );
     }
 
-    if (log.insw_status !== 'FAILED') {
+    if (log.insw_status !== 'FAILED' && log.insw_status !== 'PENDING') {
       return NextResponse.json(
-        { success: false, message: 'Hanya log dengan status FAILED yang dapat dikirim ulang' },
+        { success: false, message: 'Hanya log dengan status FAILED atau PENDING yang dapat dikirim ulang' },
         { status: 400 }
       );
     }
