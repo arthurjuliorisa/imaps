@@ -129,6 +129,12 @@ export class WmsStockOpnameRepository {
           amount: null,
           final_adjusted_qty: system_qty,
           reason: null,
+          // ✅ v3.4.0: Original values NULL at POST (Active status)
+          // Will be set at PATCH Confirmed time
+          original_beginning_qty: null,
+          original_system_qty: null,
+          adjustment_applied_at: null,
+          adjustment_applied_by: null,
         };
       });
 
@@ -194,9 +200,22 @@ export class WmsStockOpnameRepository {
           const system_qty = r.beginning_qty + r.incoming_qty_on_date - r.outgoing_qty_on_date;
           const variance_qty = (item.actual_qty_count ?? 0) - system_qty;
 
+          // ✅ v3.4.0: Apply variance adjustment if status is Confirmed
+          let adjusted_beginning_qty = r.beginning_qty;
+          let adjusted_system_qty = system_qty;
+          let adjustment_applied_at: Date | null = null;
+          let adjustment_applied_by: string | null = null;
+
+          if (newStatus === 'Confirmed' && variance_qty !== 0) {
+            // Apply variance to BOTH beginning and system qty to sync with WMS count
+            adjusted_beginning_qty = r.beginning_qty + variance_qty;
+            adjusted_system_qty = system_qty + variance_qty;
+            adjustment_applied_at = new Date();
+            adjustment_applied_by = 'system';
+          }
+
           return {
             wms_stock_opname_id: current.id,
-            // ✅ CRITICAL: adjustment_type must remain NULL until user transmits adjustment
             adjustment_type: null,
             company_code: companyCode,
             item_code: item.item_code,
@@ -204,14 +223,20 @@ export class WmsStockOpnameRepository {
             item_type: item.item_type,
             actual_qty_count: item.actual_qty_count ?? 0,
             uom: item.uom,
-            beginning_qty: r.beginning_qty,
+            beginning_qty: adjusted_beginning_qty,
             incoming_qty_on_date: r.incoming_qty_on_date,
             outgoing_qty_on_date: r.outgoing_qty_on_date,
-            system_qty,
+            system_qty: adjusted_system_qty,
             variance_qty,
             adjustment_qty_signed: null,
             amount: item.amount ?? null,
-            final_adjusted_qty: system_qty,
+            // ✅ v3.4.0: ALWAYS save original calculated values at Confirmed time
+            original_beginning_qty: newStatus === 'Confirmed' ? r.beginning_qty : null,
+            original_system_qty: newStatus === 'Confirmed' ? system_qty : null,
+            // ✅ v3.4.0: Track when variance adjustment was applied
+            adjustment_applied_at: newStatus === 'Confirmed' ? adjustment_applied_at : null,
+            adjustment_applied_by: newStatus === 'Confirmed' ? adjustment_applied_by : null,
+            final_adjusted_qty: adjusted_system_qty,
             reason: null,
           };
         });

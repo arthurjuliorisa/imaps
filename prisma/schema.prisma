@@ -1028,6 +1028,16 @@ model wms_stock_opname_items {
   final_adjusted_qty        Decimal?            @db.Decimal(15, 3) // system_qty (STO) or system_qty + adjustment_qty_signed (after adjustment)
   reason                    String?             @db.Text // Reason for adjustment (from adjustment_items.reason)
   
+  // ✅ HISTORY TRACKING (v3.4.0) - Capture iMAPS calculated values at Confirmed time
+  // Populated ALWAYS when status changes to Confirmed (even if variance = 0)
+  original_beginning_qty    Decimal?            @db.Decimal(15, 3) // iMAPS calculated beginning_qty before any adjustment
+  original_system_qty       Decimal?            @db.Decimal(15, 3) // iMAPS calculated system_qty before any adjustment
+  
+  // ✅ ADJUSTMENT TRACKING (v3.4.0) - Track when variance-based adjustment is applied
+  // Populated ONLY when variance_qty != 0 (adjustment is applied to sync beginning & ending)
+  adjustment_applied_at     DateTime?           @db.Timestamptz(6) // Timestamp when variance adjustment applied
+  adjustment_applied_by     String?             @db.VarChar(50) // Who applied adjustment (e.g., 'system', user_id)
+  
   // ✅ FK to Adjustment (v3.4.0) - Populated when adjustment is transmitted for Type 1
   adjustment_id             Int?
   

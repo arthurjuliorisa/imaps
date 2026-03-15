@@ -443,6 +443,14 @@ COMMENT ON VIEW vw_laporan_pengeluaran IS 'Report #2: Goods Issuance Report - Re
 -- ============================================================================
 
 
+-- ============================================================================
+-- REPORT #2.5: LAPORAN STOCK OPNAME (Stock Opname Report)
+-- ============================================================================
+-- ✅ v3.4.0: Updated to include reconciliation and history tracking fields
+
+-- Drop existing view if it exists to allow structural changes
+DROP VIEW IF EXISTS vw_laporan_stock_opname CASCADE;
+
 CREATE OR REPLACE VIEW vw_laporan_stock_opname AS
 SELECT 
     so.id,
@@ -459,7 +467,27 @@ SELECT
     soi.item_name,
     soi.uom as unit,
     soi.actual_qty_count as qty,
+    
+    -- ✅ v3.4.0: Reconciliation fields (INTERNAL ONLY)
+    soi.beginning_qty,
+    soi.incoming_qty_on_date,
+    soi.outgoing_qty_on_date,
     soi.system_qty,
+    soi.actual_qty_count as wms_ending_qty,
+    soi.variance_qty,
+    
+    -- ✅ v3.4.0: History tracking fields (INTERNAL ONLY)
+    soi.original_beginning_qty,
+    soi.original_system_qty,
+    CASE 
+        WHEN soi.original_beginning_qty IS NOT NULL 
+             AND soi.original_beginning_qty != soi.beginning_qty 
+        THEN true 
+        ELSE false 
+    END as is_adjusted,
+    soi.adjustment_applied_at,
+    
+    -- Other fields
     soi.amount as value_amount,
     
     -- Audit fields

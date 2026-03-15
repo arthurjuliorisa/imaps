@@ -29,7 +29,10 @@ export async function GET(request: Request) {
         id, sto_wms_id, company_code, company_name,
         doc_date, status,
         type_code, item_code, item_code_bahasa, item_name,
-        unit, qty, system_qty, value_amount
+        unit, qty, system_qty, value_amount,
+        beginning_qty, incoming_qty_on_date, outgoing_qty_on_date,
+        wms_ending_qty, variance_qty,
+        original_beginning_qty, original_system_qty, is_adjusted, adjustment_applied_at
       FROM vw_laporan_stock_opname
       WHERE company_code = $1
       ORDER BY doc_date DESC, id`,
@@ -54,9 +57,20 @@ export async function GET(request: Request) {
         reason: '',
       };
 
-      // Include system_qty only for users who can view it
+      // Include system_qty and reconciliation fields only for users who can view it (INTERNAL ONLY)
       if (showSystemQty) {
         data.systemQty = Number(row.system_qty || 0);
+        // ✅ v3.4.0: Reconciliation fields
+        data.beginningQty = row.beginning_qty ? Number(row.beginning_qty) : undefined;
+        data.incomingQtyOnDate = row.incoming_qty_on_date ? Number(row.incoming_qty_on_date) : undefined;
+        data.outgoingQtyOnDate = row.outgoing_qty_on_date ? Number(row.outgoing_qty_on_date) : undefined;
+        data.actualQtyCount = row.wms_ending_qty ? Number(row.wms_ending_qty) : undefined;
+        data.varianceQty = row.variance_qty ? Number(row.variance_qty) : undefined;
+        // ✅ v3.4.0: History tracking fields
+        data.originalBeginningQty = row.original_beginning_qty ? Number(row.original_beginning_qty) : null;
+        data.originalSystemQty = row.original_system_qty ? Number(row.original_system_qty) : null;
+        data.isAdjusted = row.is_adjusted || false;
+        data.adjustmentAppliedAt = row.adjustment_applied_at || null;
       }
 
       return data;

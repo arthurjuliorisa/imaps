@@ -191,6 +191,14 @@ export class WmsStockOpnameService {
       adjustment_qty_signed: item.adjustment_qty_signed ? Number(item.adjustment_qty_signed) : null,
       adjustment_type: item.adjustment_type,
       amount: item.amount ? Number(item.amount) : null,
+      // ✅ v3.4.0: Add history fields (original iMAPS calculated values at Confirmed time)
+      original_beginning_qty: item.original_beginning_qty ? Number(item.original_beginning_qty) : null,
+      original_system_qty: item.original_system_qty ? Number(item.original_system_qty) : null,
+      // ✅ v3.4.0: Add adjustment tracking fields
+      adjustment_applied_at: item.adjustment_applied_at ? item.adjustment_applied_at.toISOString() : null,
+      adjustment_applied_by: item.adjustment_applied_by,
+      // ✅ v3.4.0: Helper field to determine if adjustment was applied
+      is_adjusted: item.original_beginning_qty !== null && (Number(item.original_beginning_qty) !== Number(item.beginning_qty)),
     }));
 
     return {
