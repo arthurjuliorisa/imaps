@@ -56,22 +56,34 @@ export interface UpdateStockOpnameRequest {
 
 /**
  * Item detail in response
+ * ✅ v3.4.0: Added reconciliation tracking and history fields
  */
 export interface WmsStockOpnameItemResponse {
+  // Basic fields
   id: bigint;
   item_code: string;
   item_name: string; // Added per contract
   item_type: string;
   uom: string;
-  actual_qty_count: number | null; // Renamed from physical_qty per contract
-  beginning_qty: number;
-  incoming_qty_on_date: number;
-  outgoing_qty_on_date: number;
-  system_qty: number;
-  variance_qty: number;
+  // ✅ v3.4.0 Core reconciliation fields
+  actualQtyCount: number | null; // Renamed from physical_qty per contract
+  beginningQty: number;
+  incomingQtyOnDate: number;
+  outgoingQtyOnDate: number;
+  systemQty: number;
+  varianceQty: number;
+  // Legacy fields (kept for backward compatibility)
   adjustment_qty_signed: number; // Signed: negative=LOSS, positive=GAIN
   adjustment_type: string | null; // GAIN or LOSS
   amount?: number | null; // Added per contract for PATCH Confirmed responses
+  // ✅ v3.4.0: History tracking fields
+  originalBeginningQty?: number | null;
+  originalSystemQty?: number | null;
+  isAdjusted?: boolean;
+  adjustmentAppliedAt?: string | null;
+  // ✅ v3.4.0 NEW: Step 2/3 variance fields
+  wmsEnding?: number | null;
+  varianceVsOriginal?: number | null;
 }
 
 /**

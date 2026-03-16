@@ -39,23 +39,9 @@ interface StockOpnameData {
   itemCode: string;
   itemName: string;
   unit: string;
-  
-  // ✅ v3.4.0: Reconciliation fields (INTERNAL ONLY)
-  beginningQty?: number;
-  incomingQtyOnDate?: number;
-  outgoingQtyOnDate?: number;
-  systemQty?: number;
-  actualQtyCount?: number; // WMS ending
-  varianceQty?: number;
-  
-  // ✅ v3.4.0: History tracking fields (INTERNAL ONLY)
-  originalBeginningQty?: number | null;
-  originalSystemQty?: number | null;
-  isAdjusted?: boolean;
-  adjustmentAppliedAt?: string | null;
-  
-  valueAmount: number;
-  reason: string;
+  qty: number; // Quantity taken/counted
+  valueAmount?: number; // Value amount
+  reason?: string;
 }
 
 const getExcelHeaders = (canShowSystemQty: boolean) => [
@@ -68,15 +54,8 @@ const getExcelHeaders = (canShowSystemQty: boolean) => [
   { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
   { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
   { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
-  // ✅ v3.4.0: Reconciliation columns (INTERNAL ONLY)
-  ...(canShowSystemQty ? [
-    { key: 'beginningQty', label: 'Beginning', type: 'number' as const },
-    { key: 'incomingQtyOnDate', label: 'Incoming', type: 'number' as const },
-    { key: 'outgoingQtyOnDate', label: 'Outgoing', type: 'number' as const },
-    { key: 'systemQty', label: 'System Ending', type: 'number' as const },
-    { key: 'actualQtyCount', label: 'WMS Ending', type: 'number' as const },
-    { key: 'varianceQty', label: 'Variance', type: 'number' as const },
-  ] : []),
+  { key: 'qty', label: 'Jumlah Barang', type: 'number' as const },
+  { key: 'valueAmount', label: 'Nilai', type: 'number' as const },
   { key: 'reason', label: 'Keterangan', type: 'text' as const },
 ];
 
@@ -88,15 +67,8 @@ const getPdfColumns = (canShowSystemQty: boolean) => [
   { header: 'STO WMS ID', dataKey: 'stoWmsId' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
-  // ✅ v3.4.0: Reconciliation columns (INTERNAL ONLY)
-  ...(canShowSystemQty ? [
-    { header: 'Beginning', dataKey: 'beginningQty' },
-    { header: 'Incoming', dataKey: 'incomingQtyOnDate' },
-    { header: 'Outgoing', dataKey: 'outgoingQtyOnDate' },
-    { header: 'System Ending', dataKey: 'systemQty' },
-    { header: 'WMS Ending', dataKey: 'actualQtyCount' },
-    { header: 'Variance', dataKey: 'varianceQty' },
-  ] : []),
+  { header: 'Jumlah Barang', dataKey: 'qty' },
+  { header: 'Nilai', dataKey: 'valueAmount' },
   { header: 'Keterangan', dataKey: 'reason' },
 ];
 
@@ -186,7 +158,7 @@ export default function StockOpnameReportPage() {
 
   const handleExportExcel = () => {
     const exportData = filteredData.map((row, index) => {
-      const baseExport: any = {
+      return {
         no: index + 1,
         companyName: row.companyName,
         docDate: row.docDate,
@@ -196,21 +168,10 @@ export default function StockOpnameReportPage() {
         itemCode: row.itemCode,
         itemName: row.itemName,
         unit: row.unit,
+        qty: row.qty ?? '-',
+        valueAmount: row.valueAmount ?? '-',
+        reason: row.reason || '-',
       };
-
-      // ✅ v3.4.0: Include reconciliation fields (INTERNAL ONLY)
-      if (canShowSystemQty) {
-        baseExport.beginningQty = row.beginningQty ?? '-';
-        baseExport.incomingQtyOnDate = row.incomingQtyOnDate ?? '-';
-        baseExport.outgoingQtyOnDate = row.outgoingQtyOnDate ?? '-';
-        baseExport.systemQty = row.systemQty ?? '-';
-        baseExport.actualQtyCount = row.actualQtyCount ?? '-';
-        baseExport.varianceQty = row.varianceQty ?? '-';
-      }
-
-      baseExport.reason = row.reason || '-';
-
-      return baseExport;
     });
 
     exportToExcelWithHeaders(
@@ -223,7 +184,7 @@ export default function StockOpnameReportPage() {
 
   const handleExportPDF = () => {
     const exportData = filteredData.map((row, index) => {
-      const baseExport: any = {
+      return {
         no: index + 1,
         companyName: row.companyName,
         docDate: formatDateShort(row.docDate),
@@ -231,21 +192,10 @@ export default function StockOpnameReportPage() {
         stoWmsId: row.stoWmsId,
         itemCode: row.itemCode,
         itemName: row.itemName,
+        qty: row.qty !== undefined ? formatQty(row.qty) : '-',
+        valueAmount: row.valueAmount !== undefined ? formatQty(row.valueAmount) : '-',
+        reason: row.reason || '-',
       };
-
-      // ✅ v3.4.0: Include reconciliation fields (INTERNAL ONLY)
-      if (canShowSystemQty) {
-        baseExport.beginningQty = row.beginningQty !== undefined ? formatQty(row.beginningQty) : '-';
-        baseExport.incomingQtyOnDate = row.incomingQtyOnDate !== undefined ? formatQty(row.incomingQtyOnDate) : '-';
-        baseExport.outgoingQtyOnDate = row.outgoingQtyOnDate !== undefined ? formatQty(row.outgoingQtyOnDate) : '-';
-        baseExport.systemQty = row.systemQty !== undefined ? formatQty(row.systemQty) : '-';
-        baseExport.actualQtyCount = row.actualQtyCount !== undefined ? formatQty(row.actualQtyCount) : '-';
-        baseExport.varianceQty = row.varianceQty !== undefined ? formatQty(row.varianceQty) : '-';
-      }
-
-      baseExport.reason = row.reason || '-';
-
-      return baseExport;
     });
 
     exportToPDF(
@@ -329,28 +279,15 @@ export default function StockOpnameReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
-                {/* ✅ v3.4.0: Reconciliation columns */}
-                {canShowSystemQty ? (
-                  /* INTERNAL ONLY: Show all reconciliation details */
-                  <>
-                    <TableCell sx={{ fontWeight: 600 }} align="right">Beginning</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }} align="right">In</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }} align="right">Out</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }} align="right">System Ending</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }} align="right">WMS Ending</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }} align="right">Variance</TableCell>
-                  </>
-                ) : (
-                  /* EXTERNAL (CUSTOMS): Show only WMS count with localized label */
-                  <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Hasil Pencacahan</TableCell>
-                )}
+                <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Nilai</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Keterangan</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={canShowSystemQty ? 16 : 11} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={12} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found
                     </Typography>
@@ -406,60 +343,16 @@ export default function StockOpnameReportPage() {
                     <TableCell>
                       <Chip label={row.unit} size="small" />
                     </TableCell>
-                    {/* ✅ v3.4.0: Reconciliation columns */}
-                    {canShowSystemQty ? (
-                      /* INTERNAL ONLY: Show all reconciliation details */
-                      <>
-                        <TableCell align="right">
-                          <Typography variant="body2">
-                            {row.beginningQty !== undefined ? formatQty(row.beginningQty) : '-'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2">
-                            {row.incomingQtyOnDate !== undefined ? formatQty(row.incomingQtyOnDate) : '-'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2">
-                            {row.outgoingQtyOnDate !== undefined ? formatQty(row.outgoingQtyOnDate) : '-'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2" fontWeight={600}>
-                            {row.systemQty !== undefined ? formatQty(row.systemQty) : '-'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2" fontWeight={600}>
-                            {row.actualQtyCount !== undefined ? formatQty(row.actualQtyCount) : '-'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              color:
-                                row.varianceQty && row.varianceQty < 0
-                                  ? '#d32f2f'
-                                  : row.varianceQty && row.varianceQty > 0
-                                  ? '#388e3c'
-                                  : 'text.secondary',
-                              fontWeight: row.varianceQty !== 0 ? 600 : 'normal',
-                            }}
-                          >
-                            {row.varianceQty !== undefined ? formatQty(row.varianceQty) : '-'}
-                          </Typography>
-                        </TableCell>
-                      </>
-                    ) : (
-                      /* EXTERNAL (CUSTOMS): Show only WMS count */
-                      <TableCell align="right">
-                        <Typography variant="body2" fontWeight={600}>
-                          {row.actualQtyCount !== undefined ? formatQty(row.actualQtyCount) : '-'}
-                        </Typography>
-                      </TableCell>
-                    )}
+                    <TableCell align="right">
+                      <Typography variant="body2" fontWeight={600}>
+                        {row.qty !== undefined ? formatQty(row.qty) : '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2">
+                        {row.valueAmount !== undefined ? formatQty(row.valueAmount) : '-'}
+                      </Typography>
+                    </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary">
                         {row.reason || '-'}

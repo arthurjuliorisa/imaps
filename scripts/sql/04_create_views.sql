@@ -446,7 +446,7 @@ COMMENT ON VIEW vw_laporan_pengeluaran IS 'Report #2: Goods Issuance Report - Re
 -- ============================================================================
 -- REPORT #2.5: LAPORAN STOCK OPNAME (Stock Opname Report)
 -- ============================================================================
--- ✅ v3.4.0: Updated to include reconciliation and history tracking fields
+-- Simplified view showing basic info and quantity counted only
 
 -- Drop existing view if it exists to allow structural changes
 DROP VIEW IF EXISTS vw_laporan_stock_opname CASCADE;
@@ -466,28 +466,11 @@ SELECT
     COALESCE(it.name_id, '')::VARCHAR(100) as item_code_bahasa,
     soi.item_name,
     soi.uom as unit,
+    
+    -- Quantity taken/counted
     soi.actual_qty_count as qty,
     
-    -- ✅ v3.4.0: Reconciliation fields (INTERNAL ONLY)
-    soi.beginning_qty,
-    soi.incoming_qty_on_date,
-    soi.outgoing_qty_on_date,
-    soi.system_qty,
-    soi.actual_qty_count as wms_ending_qty,
-    soi.variance_qty,
-    
-    -- ✅ v3.4.0: History tracking fields (INTERNAL ONLY)
-    soi.original_beginning_qty,
-    soi.original_system_qty,
-    CASE 
-        WHEN soi.original_beginning_qty IS NOT NULL 
-             AND soi.original_beginning_qty != soi.beginning_qty 
-        THEN true 
-        ELSE false 
-    END as is_adjusted,
-    soi.adjustment_applied_at,
-    
-    -- Other fields
+    -- Value amount
     soi.amount as value_amount,
     
     -- Audit fields
@@ -501,7 +484,7 @@ JOIN companies c ON so.company_code = c.code
 LEFT JOIN item_types it ON soi.item_type = it.item_type_code
 ORDER BY so.document_date DESC, so.id, soi.id;
 
-COMMENT ON VIEW vw_laporan_stock_opname IS 'Report #2.5: Stock Opname Report - Real-time view of stock opname transactions with physical count details';
+COMMENT ON VIEW vw_laporan_stock_opname IS 'Report #2.5: Stock Opname Report - Simple view with basic info and quantity taken';
 
 -- ============================================================================
 -- REPORT #2.7: LAPORAN ADJUSTMENT (Adjustment Report - Unified for Type 1 & 2)
@@ -554,8 +537,10 @@ SELECT
     wasoi.system_qty,
     
     -- Physical count & variance
-    wasoi.actual_qty_count,
+    wasoi.wms_ending,                  -- ✅ NEW: WMS ending at Step 2
+    wasoi.actual_qty_count,            -- Step 3 count
     wasoi.variance_qty,
+    wasoi.variance_vs_original,        -- ✅ NEW: Progressive variance
     
     -- Adjustment & final state
     wasoi.adjustment_qty_signed,
@@ -612,9 +597,11 @@ SELECT
     ajust_items.outgoing_qty_on_date,
     ajust_items.system_qty,
     
-    -- Physical count & variance
-    (ajust_items.system_qty + ajust_items.qty) as actual_qty_count,
-    ajust_items.qty as variance_qty,
+    -- Physical count & variance  
+    NULL::DECIMAL as wms_ending,       -- Type 2: no wms_ending (not applicable)
+    ajust_items.actual_qty_count,      -- ✅ NEW: From adjustment_items (Type 2)
+    ajust_items.qty as variance_qty,   -- ✅ NEW: Adjustment qty = variance
+    ajust_items.variance_vs_original,  -- ✅ NEW: Progressive variance (Type 2)
     
     -- Adjustment & final state
     ajust_items.qty as adjustment_qty_signed,

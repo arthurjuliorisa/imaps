@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 import { validateCompanyCode } from '@/lib/company-validation';
-import { canViewSystemQty } from '@/lib/utils/user-role.util';
+import { isCustomsUser } from '@/lib/utils/user-role.util';
 
 export async function GET(request: Request) {
   try {
@@ -20,27 +20,58 @@ export async function GET(request: Request) {
     }
     const { companyCode } = companyValidation;
 
-    // Check user role for system qty visibility
+    // Check user role for INSW transmission filter
     const userRole = (session as any)?.user?.role;
-    const showSystemQty = canViewSystemQty(userRole);
+    console.log('[Stock Opname API] User Role:', userRole); // Debug log
+    
+    const isCustUser = isCustomsUser(userRole);
+    console.log('[Stock Opname API] Is Customs User:', isCustUser); // Debug log
 
-    const result = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT
-        id, sto_wms_id, company_code, company_name,
-        doc_date, status,
-        type_code, item_code, item_code_bahasa, item_name,
-        unit, qty, system_qty, value_amount,
-        beginning_qty, incoming_qty_on_date, outgoing_qty_on_date,
-        wms_ending_qty, variance_qty,
-        original_beginning_qty, original_system_qty, is_adjusted, adjustment_applied_at
-      FROM vw_laporan_stock_opname
-      WHERE company_code = $1
-      ORDER BY doc_date DESC, id`,
-      companyCode
-    );
+    // Fetch all stock opname data for the company
+    let result: any[] = [];
+
+    if (isCustUser) {
+      // Customs users: only show data that's been successfully transmitted to INSW
+      console.log('[Stock Opname API] Fetching INSW-transmitted data for customs user');
+      
+      result = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT DISTINCT
+          so.id, so.sto_wms_id, so.company_code, so.company_name,
+          so.doc_date, so.status,
+          so.type_code, so.item_code, so.item_code_bahasa, so.item_name,
+          so.unit, so.qty, so.value_amount,
+          so.created_at, so.updated_at, so.confirmed_at
+        FROM vw_laporan_stock_opname so
+        INNER JOIN insw_tracking_log log ON so.sto_wms_id = log.wms_id
+        WHERE so.company_code = $1
+          AND log.transaction_type = 'stock_opname'
+          AND log.insw_status = 'SUCCESS'
+          AND log.company_code = $1
+        ORDER BY so.doc_date DESC, so.id`,
+        companyCode
+      );
+    } else {
+      // Internal users: show all data
+      console.log('[Stock Opname API] Fetching all data for internal user');
+      
+      result = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT
+          id, sto_wms_id, company_code, company_name,
+          doc_date, status,
+          type_code, item_code, item_code_bahasa, item_name,
+          unit, qty, value_amount,
+          created_at, updated_at, confirmed_at
+        FROM vw_laporan_stock_opname
+        WHERE company_code = $1
+        ORDER BY doc_date DESC, id`,
+        companyCode
+      );
+    }
+
+    console.log('[Stock Opname API] Result count:', result.length); // Debug log
 
     const transformedData = result.map((row: any, index: number) => {
-      const data: any = {
+      return {
         id: `${row.id}-${row.item_code}-${index}`,
         companyCode: row.company_code,
         companyName: row.company_name,
@@ -56,24 +87,6 @@ export async function GET(request: Request) {
         valueAmount: Number(row.value_amount || 0),
         reason: '',
       };
-
-      // Include system_qty and reconciliation fields only for users who can view it (INTERNAL ONLY)
-      if (showSystemQty) {
-        data.systemQty = Number(row.system_qty || 0);
-        // ✅ v3.4.0: Reconciliation fields
-        data.beginningQty = row.beginning_qty ? Number(row.beginning_qty) : undefined;
-        data.incomingQtyOnDate = row.incoming_qty_on_date ? Number(row.incoming_qty_on_date) : undefined;
-        data.outgoingQtyOnDate = row.outgoing_qty_on_date ? Number(row.outgoing_qty_on_date) : undefined;
-        data.actualQtyCount = row.wms_ending_qty ? Number(row.wms_ending_qty) : undefined;
-        data.varianceQty = row.variance_qty ? Number(row.variance_qty) : undefined;
-        // ✅ v3.4.0: History tracking fields
-        data.originalBeginningQty = row.original_beginning_qty ? Number(row.original_beginning_qty) : null;
-        data.originalSystemQty = row.original_system_qty ? Number(row.original_system_qty) : null;
-        data.isAdjusted = row.is_adjusted || false;
-        data.adjustmentAppliedAt = row.adjustment_applied_at || null;
-      }
-
-      return data;
     });
 
     return NextResponse.json(serializeBigInt(transformedData));

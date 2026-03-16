@@ -199,6 +199,9 @@ export class WmsStockOpnameService {
       adjustment_applied_by: item.adjustment_applied_by,
       // ✅ v3.4.0: Helper field to determine if adjustment was applied
       is_adjusted: item.original_beginning_qty !== null && (Number(item.original_beginning_qty) !== Number(item.beginning_qty)),
+      // ✅ v3.4.0 NEW: Step 2/3 fields
+      wms_ending: item.wms_ending ? Number(item.wms_ending) : null,
+      variance_vs_original: item.variance_vs_original ? Number(item.variance_vs_original) : null,
     }));
 
     return {

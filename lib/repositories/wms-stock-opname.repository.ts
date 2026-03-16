@@ -152,6 +152,9 @@ export class WmsStockOpnameRepository {
 
   /**
    * Update stock opname status and optionally items
+   * 
+   * ✅ v3.4.0: When status='Confirmed', ALWAYS update existing items with v3.4.0 fields
+   * even if no new items are provided in payload
    */
   async update(
     wmsId: string,
@@ -178,7 +181,9 @@ export class WmsStockOpnameRepository {
 
       this.validateStatusTransition(current.status, newStatus);
 
+      // ✅ v3.4.0: ALWAYS handle items for Confirmed status to populate v3.4.0 fields
       if (items && items.length > 0) {
+        // Case 1: New items provided (e.g., Step 3 with physical counts) - DELETE and CREATE
         await tx.wms_stock_opname_items.deleteMany({
           where: { wms_stock_opname_id: current.id },
         });
@@ -198,20 +203,28 @@ export class WmsStockOpnameRepository {
             outgoing_qty_on_date: 0,
           };
           const system_qty = r.beginning_qty + r.incoming_qty_on_date - r.outgoing_qty_on_date;
-          const variance_qty = (item.actual_qty_count ?? 0) - system_qty;
 
-          // ✅ v3.4.0: Apply variance adjustment if status is Confirmed
+          // ✅ v3.4.0 Step 2: WMS ending count (from payload) and variance calculation
+          const wms_ending = item.actual_qty_count ?? 0; // From WMS payload (physical count)
+          const variance_qty_calc = wms_ending - system_qty; // Variance from expected system
+
+          // Apply variance adjustment for reconciliation
           let adjusted_beginning_qty = r.beginning_qty;
           let adjusted_system_qty = system_qty;
+          let variance_vs_original_calc: number | null = null;
           let adjustment_applied_at: Date | null = null;
           let adjustment_applied_by: string | null = null;
 
-          if (newStatus === 'Confirmed' && variance_qty !== 0) {
-            // Apply variance to BOTH beginning and system qty to sync with WMS count
-            adjusted_beginning_qty = r.beginning_qty + variance_qty;
-            adjusted_system_qty = system_qty + variance_qty;
-            adjustment_applied_at = new Date();
-            adjustment_applied_by = 'system';
+          if (newStatus === 'Confirmed') {
+            if (variance_qty_calc !== 0) {
+              // Apply variance to BOTH beginning and system qty to sync with WMS count
+              adjusted_beginning_qty = r.beginning_qty + variance_qty_calc;
+              adjusted_system_qty = system_qty + variance_qty_calc;
+              adjustment_applied_at = new Date();
+              adjustment_applied_by = 'system';
+            }
+            // Progressive variance tracking: difference from original
+            variance_vs_original_calc = system_qty - adjusted_system_qty;
           }
 
           return {
@@ -221,13 +234,13 @@ export class WmsStockOpnameRepository {
             item_code: item.item_code,
             item_name: item.item_name,
             item_type: item.item_type,
-            actual_qty_count: item.actual_qty_count ?? 0,
+            actual_qty_count: null,  // ✅ DEFER to Step 3 - DO NOT populate at Step 2
             uom: item.uom,
             beginning_qty: adjusted_beginning_qty,
             incoming_qty_on_date: r.incoming_qty_on_date,
             outgoing_qty_on_date: r.outgoing_qty_on_date,
             system_qty: adjusted_system_qty,
-            variance_qty,
+            variance_qty: variance_qty_calc,  // WMS ending variance
             adjustment_qty_signed: null,
             amount: item.amount ?? null,
             // ✅ v3.4.0: ALWAYS save original calculated values at Confirmed time
@@ -238,12 +251,59 @@ export class WmsStockOpnameRepository {
             adjustment_applied_by: newStatus === 'Confirmed' ? adjustment_applied_by : null,
             final_adjusted_qty: adjusted_system_qty,
             reason: null,
+            // ✅ v3.4.0 Step 2: Store WMS ending count and progressive variance
+            wms_ending: newStatus === 'Confirmed' ? wms_ending : null,
+            variance_vs_original: newStatus === 'Confirmed' ? variance_vs_original_calc : null,
           };
         });
 
         await tx.wms_stock_opname_items.createMany({
           data: newItemsData,
         });
+      } else if (newStatus === 'Confirmed') {
+        // Case 2: No new items provided but status=Confirmed - UPDATE existing items with v3.4.0 fields
+        // This handles Step 2 where we only change status without item replacement
+        const existingItems = current.items || [];
+
+        for (const existingItem of existingItems) {
+          // ✅ v3.4.0: Populate original values at Confirmed time
+          // These capture the iMAPS calculated values at the moment of confirmation
+          const original_beginning_qty = Number(existingItem.beginning_qty);
+          const original_system_qty = Number(existingItem.system_qty);
+
+          // WMS ending count: should come from actual_qty_count (physical count from WMS)
+          // If not provided, use system_qty as fallback for reconciliation
+          const wms_ending = existingItem.actual_qty_count 
+            ? Number(existingItem.actual_qty_count) 
+            : Number(existingItem.system_qty);
+
+          // Progressive variance tracking: how much system_qty shifted from original
+          // = original_system_qty - (original_system_qty + variance_qty) 
+          // = -variance_qty (negative if variance is positive adjustment)
+          const variance_vs_original_calc = existingItem.variance_qty 
+            ? -Number(existingItem.variance_qty) 
+            : 0;
+
+          // Determine if adjustment was applied (variance != 0)
+          const variance_is_nonzero = existingItem.variance_qty && Number(existingItem.variance_qty) !== 0;
+          const adjustment_applied_at = variance_is_nonzero ? new Date() : null;
+          const adjustment_applied_by = variance_is_nonzero ? 'system' : null;
+
+          await tx.wms_stock_opname_items.update({
+            where: { id: existingItem.id },
+            data: {
+              // ✅ v3.4.0: Populate original calculated values
+              original_beginning_qty,
+              original_system_qty,
+              // ✅ v3.4.0: Track adjustment application
+              adjustment_applied_at,
+              adjustment_applied_by,
+              // ✅ v3.4.0: Step 2 WMS ending count and progressive variance
+              wms_ending,
+              variance_vs_original: variance_vs_original_calc,
+            },
+          });
+        }
       }
 
       const updateData: any = { status: newStatus };

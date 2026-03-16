@@ -234,6 +234,23 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
             if (existingItem) {
               // Item exists, update it
               const reconciliation = reconciliationDataMap.get(item.item_code);
+              
+              // ✅ v3.4.0 Type 2: Calculate variance tracking (Type 2 only, no stockcount_order_number)
+              const isType2 = !item.stockcount_order_number;
+              let original_beginning_qty_val: Prisma.Decimal | null = null;
+              let original_system_qty_val: Prisma.Decimal | null = null;
+              let variance_vs_original_val: Prisma.Decimal | null = null;
+              let actual_qty_count_val: Prisma.Decimal | null = null;
+              
+              if (isType2 && reconciliation) {
+                const multiplier = item.adjustment_type === 'LOSS' ? -1 : 1;
+                const adjustment_qty_signed = new Prisma.Decimal(item.qty * multiplier);
+                original_beginning_qty_val = reconciliation.beginning_qty;
+                original_system_qty_val = reconciliation.system_qty;
+                actual_qty_count_val = reconciliation.system_qty.plus(adjustment_qty_signed);
+                variance_vs_original_val = reconciliation.system_qty.minus(actual_qty_count_val);
+              }
+              
               await tx.adjustment_items.update({
                 where: { id: existingItem.id },
                 data: {
@@ -249,6 +266,11 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
                   outgoing_qty_on_date: reconciliation?.outgoing_qty_on_date || null,
                   system_qty: reconciliation?.system_qty || null,
                   adjusted_qty: reconciliation?.adjusted_qty || null,
+                  // ✅ v3.4.0: Type 2 history and variance tracking
+                  original_beginning_qty: original_beginning_qty_val,
+                  original_system_qty: original_system_qty_val,
+                  variance_vs_original: variance_vs_original_val,
+                  actual_qty_count: actual_qty_count_val,
                   updated_at: new Date(),
                   deleted_at: null,
                 },
@@ -256,6 +278,23 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
             } else {
               // New item, insert it
               const reconciliation = reconciliationDataMap.get(item.item_code);
+              
+              // ✅ v3.4.0 Type 2: Calculate variance tracking (Type 2 only, no stockcount_order_number)
+              const isType2 = !item.stockcount_order_number;
+              let original_beginning_qty_val: Prisma.Decimal | null = null;
+              let original_system_qty_val: Prisma.Decimal | null = null;
+              let variance_vs_original_val: Prisma.Decimal | null = null;
+              let actual_qty_count_val: Prisma.Decimal | null = null;
+              
+              if (isType2 && reconciliation) {
+                const multiplier = item.adjustment_type === 'LOSS' ? -1 : 1;
+                const adjustment_qty_signed = new Prisma.Decimal(item.qty * multiplier);
+                original_beginning_qty_val = reconciliation.beginning_qty;
+                original_system_qty_val = reconciliation.system_qty;
+                actual_qty_count_val = reconciliation.system_qty.plus(adjustment_qty_signed);
+                variance_vs_original_val = reconciliation.system_qty.minus(actual_qty_count_val);
+              }
+              
               await tx.adjustment_items.create({
                 data: {
                   adjustment_id: header.id,
@@ -276,6 +315,11 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
                   outgoing_qty_on_date: reconciliation?.outgoing_qty_on_date || null,
                   system_qty: reconciliation?.system_qty || null,
                   adjusted_qty: reconciliation?.adjusted_qty || null,
+                  // ✅ v3.4.0: Type 2 history and variance tracking
+                  original_beginning_qty: original_beginning_qty_val,
+                  original_system_qty: original_system_qty_val,
+                  variance_vs_original: variance_vs_original_val,
+                  actual_qty_count: actual_qty_count_val,
                 },
               });
             }
@@ -760,7 +804,8 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
 
 
       // Step 6: Batch update using CASE statements in single UPDATE query
-      // Update 5 fields: adjustment_qty_signed, final_adjusted_qty, reason, adjustment_type, adjustment_id (NEW for FK linkage)
+      // Update fields: adjustment_qty_signed, final_adjusted_qty, reason, adjustment_type, adjustment_id
+      // AND NEW for v3.4.0: actual_qty_count, variance_qty, variance_vs_original
       const qtyStatements = updates
         .map((u) => `WHEN ${u.id}::bigint THEN ${u.qty.toString()}::decimal(15,3)`)
         .join('\n');
@@ -776,20 +821,34 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         })
         .join('\n');
 
-      // NEW: adjustment_type SET for all items (GAIN/LOSS from adjustment payload)
+      // adjustment_type SET for all items (GAIN/LOSS from adjustment payload)
       const adjustmentTypeStatements = updates
         .map((u) => `WHEN ${u.id}::bigint THEN '${u.adjustmentType}'`)
         .join('\n');
 
-      // NEW: adjustment_id SET only for Type 1 adjustments
+      // adjustment_id SET only for Type 1 adjustments
       const adjustmentIdStatements = updates
         .filter(u => u.isType1)  // Only Type 1
         .map((u) => `WHEN ${u.id}::bigint THEN ${adjustmentId}::int`)
         .join('\n');
 
+      // ✅ NEW v3.4.0: actual_qty_count = final_adjusted_qty (same value)
+      const actualQtyCountStatements = updates
+        .map((u) => `WHEN ${u.id}::bigint THEN ${u.finalAdjustedQty.toString()}::decimal(15,3)`)
+        .join('\n');
+
+      // ✅ NEW v3.4.0: variance_qty = |original_system_qty - actual_qty_count|
+      const varianceQtyStatements = updates
+        .map((u) => `WHEN ${u.id}::bigint THEN ABS(COALESCE(soi.original_system_qty, 0) - ${u.finalAdjustedQty.toString()}::decimal(15,3))`)
+        .join('\n');
+
+      // ✅ NEW v3.4.0: variance_vs_original = original_system_qty - actual_qty_count
+      const varianceVsOriginalStatements = updates
+        .map((u) => `WHEN ${u.id}::bigint THEN (COALESCE(soi.original_system_qty, 0) - ${u.finalAdjustedQty.toString()}::decimal(15,3))::decimal(15,3)`)
+        .join('\n');
+
       const idList = updates.map((u) => `${u.id}::bigint`).join(',');
 
-      // NEW: Include adjustment_id in UPDATE if any Type 1 items exist
       const hasType1 = updates.some(u => u.isType1);
       const adjustmentIdUpdateClause = hasType1
         ? `adjustment_id = CASE id
@@ -798,8 +857,9 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
           END,`
         : '';
 
+      // ✅ UPDATED: Include actual_qty_count, variance_qty, variance_vs_original
       await prisma.$executeRawUnsafe(`
-        UPDATE wms_stock_opname_items
+        UPDATE wms_stock_opname_items soi
         SET 
           adjustment_qty_signed = CASE id
             ${qtyStatements}
@@ -808,6 +868,18 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
           final_adjusted_qty = CASE id
             ${finalQtyStatements}
             ELSE final_adjusted_qty
+          END,
+          actual_qty_count = CASE id
+            ${actualQtyCountStatements}
+            ELSE actual_qty_count
+          END,
+          variance_qty = CASE id
+            ${varianceQtyStatements}
+            ELSE variance_qty
+          END,
+          variance_vs_original = CASE id
+            ${varianceVsOriginalStatements}
+            ELSE variance_vs_original
           END,
           reason = CASE id
             ${reasonStatements}
@@ -822,7 +894,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         WHERE id IN (${idList})
       `);
 
-      log.info('STO items updated with adjustment data', {
+      log.info('STO items updated with Step 3 adjustment data', {
         updatedCount: updates.length,
         adjustmentIdLinked: hasType1,
       });

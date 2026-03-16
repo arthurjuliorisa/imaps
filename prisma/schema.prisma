@@ -687,6 +687,16 @@ model adjustment_items {
   system_qty              Decimal?       @db.Decimal(15, 3) // Expected system qty (beginning + incoming - outgoing)
   adjusted_qty            Decimal?       @db.Decimal(15, 3) // Final qty setelah adjustment (system_qty + qty variance)
   
+  // ✅ HISTORY TRACKING (v3.4.0) - Original reconciliation at adjustment submission time (Type 2 only)
+  original_beginning_qty   Decimal?       @db.Decimal(15, 3) // Beginning balance on adjustment date (Type 2)
+  original_system_qty      Decimal?       @db.Decimal(15, 3) // Expected system qty on adjustment date before adjustment (Type 2)
+  
+  // ✅ VARIANCE TRACKING (v3.4.0) - Progressive variance from original to final (Type 2 only)
+  variance_vs_original     Decimal?       @db.Decimal(15, 3) // original_system_qty - actual_qty_count (can be negative, Type 2)
+  
+  // ✅ ACTUAL COUNT (v3.4.0) - Final quantity after adjustment applied (Type 2 only)
+  actual_qty_count         Decimal?       @db.Decimal(15, 3) // Final qty = system_qty + adjustment_qty_signed (Type 2)
+  
   created_at         DateTime       @default(now()) @db.Timestamptz(6)
   updated_at         DateTime       @updatedAt @db.Timestamptz(6)
   deleted_at         DateTime?      @db.Timestamptz(6)
@@ -1016,7 +1026,7 @@ model wms_stock_opname_items {
   system_qty                Decimal             @db.Decimal(15, 3) // Calculated: beginning + incoming - outgoing
   
   // Physical count from WMS
-  actual_qty_count          Decimal             @db.Decimal(15, 3) // Renamed from physical_qty per API Contract v3.3.0
+  actual_qty_count          Decimal?            @db.Decimal(15, 3) // ✅ v3.4.0: Optional until physical count is captured (Step 3)
   
   // Variance & adjustment
   variance_qty              Decimal             @db.Decimal(15, 3) // actual_qty_count - system_qty (calculated at POST/PATCH)
@@ -1040,6 +1050,12 @@ model wms_stock_opname_items {
   
   // ✅ FK to Adjustment (v3.4.0) - Populated when adjustment is transmitted for Type 1
   adjustment_id             Int?
+  
+  // ✅ Step 2 - WMS Ending Count (v3.4.0)
+  wms_ending                Decimal?            @db.Decimal(15, 3) // WMS physical count at Step 2 (intermediate value before final adjustment)
+  
+  // ✅ Step 2/3 - Progressive Variance Tracking (v3.4.0)
+  variance_vs_original      Decimal?            @db.Decimal(15, 3) // original_system_qty - current_system_qty (can be negative)
   
   uom                       String              @db.VarChar(20)
   created_at                DateTime            @default(now()) @db.Timestamptz(6)
