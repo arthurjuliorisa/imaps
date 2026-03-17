@@ -123,6 +123,26 @@ export async function POST(
         result = await service.transmitCapitalGoodsOut(companyCode, [wmsId]);
         break;
 
+      case 'stock_opname':
+        if (!transactionId || !wmsId) {
+          return NextResponse.json(
+            { success: false, message: 'Transaction ID dan WMS ID tidak ditemukan pada log ini' },
+            { status: 400 }
+          );
+        }
+        result = await service.transmitStockOpname(companyCode, transactionId, wmsId);
+        break;
+
+      case 'adjustment':
+        if (!transactionId || !wmsId) {
+          return NextResponse.json(
+            { success: false, message: 'Transaction ID dan WMS ID tidak ditemukan pada log ini' },
+            { status: 400 }
+          );
+        }
+        result = await service.transmitAdjustment(companyCode, transactionId, wmsId);
+        break;
+
       default:
         return NextResponse.json(
           { success: false, message: `Tipe transaksi "${log.transaction_type}" tidak didukung untuk pengiriman ulang` },
