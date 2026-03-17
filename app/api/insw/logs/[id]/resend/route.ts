@@ -152,6 +152,14 @@ export async function POST(
         );
     }
 
+    // Hybrid status update: If retry PENDING and SUCCESS, update original log to PENDING_RESOLVED
+    if (log.insw_status === 'PENDING' && result.status === 'success') {
+      await prisma.insw_tracking_log.update({
+        where: { id: logId },
+        data: { insw_status: 'PENDING_RESOLVED' },
+      });
+    }
+
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
     console.error('Error resending INSW log:', error);

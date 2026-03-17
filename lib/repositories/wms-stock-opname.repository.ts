@@ -183,6 +183,24 @@ export class WmsStockOpnameRepository {
 
       // ✅ v3.4.0: ALWAYS handle items for Confirmed status to populate v3.4.0 fields
       if (items && items.length > 0) {
+        // ✅ Validate items composition matches activation (Opsi C)
+        if (newStatus === 'Confirmed') {
+          const existingItemKeys = new Set(
+            current.items.map((item: any) => `${item.item_code}|${item.item_type}|${item.uom}`)
+          );
+          const incomingItemKeys = new Set(
+            items.map((item) => `${item.item_code}|${item.item_type}|${item.uom}`)
+          );
+
+          // Check if items composition is different
+          if (existingItemKeys.size !== incomingItemKeys.size ||
+              ![...existingItemKeys].every(key => incomingItemKeys.has(key))) {
+            throw new Error(
+              'Items in Confirmed request must match items from Activation. Found differences in items.'
+            );
+          }
+        }
+
         // Case 1: New items provided (e.g., Step 3 with physical counts) - DELETE and CREATE
         await tx.wms_stock_opname_items.deleteMany({
           where: { wms_stock_opname_id: current.id },
@@ -208,7 +226,7 @@ export class WmsStockOpnameRepository {
           const wms_ending = item.actual_qty_count ?? 0; // From WMS payload (physical count)
           const variance_qty_calc = system_qty - wms_ending; // ✅ Same formula as Step 3: system_qty - actual_qty_count
 
-          // Apply variance adjustment for reconciliation
+          // ✅ Adjust beginning_qty and system_qty to sync with WMS count
           let adjusted_beginning_qty = r.beginning_qty;
           let adjusted_system_qty = system_qty;
           let variance_vs_original_calc: number | null = null;
@@ -217,14 +235,15 @@ export class WmsStockOpnameRepository {
 
           if (newStatus === 'Confirmed') {
             if (variance_qty_calc !== 0) {
-              // Apply variance to BOTH beginning and system qty to sync with WMS count
-              adjusted_beginning_qty = r.beginning_qty + variance_qty_calc;
-              adjusted_system_qty = system_qty + variance_qty_calc;
+              // Sync system_qty to match WMS ending count
+              adjusted_system_qty = wms_ending;
+              // Adjust beginning_qty to maintain the incoming/outgoing flow
+              adjusted_beginning_qty = wms_ending - r.incoming_qty_on_date + r.outgoing_qty_on_date;
               adjustment_applied_at = new Date();
               adjustment_applied_by = 'system';
             }
-            // Progressive variance tracking: difference from original
-            variance_vs_original_calc = system_qty - adjusted_system_qty;
+            // ✅ Variance from original system_qty to adjusted (WMS ending)
+            variance_vs_original_calc = system_qty - wms_ending;
           }
 
           return {
@@ -234,7 +253,7 @@ export class WmsStockOpnameRepository {
             item_code: item.item_code,
             item_name: item.item_name,
             item_type: item.item_type,
-            actual_qty_count: null,  // ✅ DEFER to Step 3 - DO NOT populate at Step 2
+            actual_qty_count: wms_ending,  // ✅ Populate with physical count at Step 2
             uom: item.uom,
             beginning_qty: adjusted_beginning_qty,
             incoming_qty_on_date: r.incoming_qty_on_date,
@@ -266,28 +285,37 @@ export class WmsStockOpnameRepository {
         const existingItems = current.items || [];
 
         for (const existingItem of existingItems) {
-          // ✅ v3.4.0: Populate original values at Confirmed time
-          // These capture the iMAPS calculated values at the moment of confirmation
+          // ✅ v3.4.0: Capture original calculated values at Confirmed time
           const original_beginning_qty = Number(existingItem.beginning_qty);
           const original_system_qty = Number(existingItem.system_qty);
 
-          // WMS ending count: should come from actual_qty_count (physical count from WMS)
-          // If not provided, use system_qty as fallback for reconciliation
+          // WMS ending count: from actual_qty_count (physical count already in system)
           const wms_ending = existingItem.actual_qty_count 
             ? Number(existingItem.actual_qty_count) 
             : Number(existingItem.system_qty);
 
-          // Progressive variance tracking: how much system_qty shifted from original
-          // = original_system_qty - (original_system_qty + variance_qty) 
-          // = -variance_qty (negative if variance is positive adjustment)
-          const variance_vs_original_calc = existingItem.variance_qty 
-            ? -Number(existingItem.variance_qty) 
-            : 0;
+          // ✅ v3.4.0 Step 2: Calculate variance between system and WMS physical count
+          const variance_qty_calc = original_system_qty - wms_ending;
 
-          // Determine if adjustment was applied (variance != 0)
-          const variance_is_nonzero = existingItem.variance_qty && Number(existingItem.variance_qty) !== 0;
-          const adjustment_applied_at = variance_is_nonzero ? new Date() : null;
-          const adjustment_applied_by = variance_is_nonzero ? 'system' : null;
+          // ✅ Adjust beginning_qty and system_qty to sync with WMS count at Step 2
+          let adjusted_beginning_qty = original_beginning_qty;
+          let adjusted_system_qty = original_system_qty;
+          let variance_vs_original_calc: number | null = null;
+          let adjustment_applied_at: Date | null = null;
+          let adjustment_applied_by: string | null = null;
+
+          if (variance_qty_calc !== 0) {
+            // Sync system_qty to match WMS physical count
+            adjusted_system_qty = wms_ending;
+            // Adjust beginning_qty to maintain the incoming/outgoing flow
+            const incoming = Number(existingItem.incoming_qty_on_date || 0);
+            const outgoing = Number(existingItem.outgoing_qty_on_date || 0);
+            adjusted_beginning_qty = wms_ending - incoming + outgoing;
+            adjustment_applied_at = new Date();
+            adjustment_applied_by = 'system';
+          }
+          // ✅ Variance from original system_qty to adjusted (WMS ending)
+          variance_vs_original_calc = original_system_qty - wms_ending;
 
           await tx.wms_stock_opname_items.update({
             where: { id: existingItem.id },
@@ -298,8 +326,11 @@ export class WmsStockOpnameRepository {
               // ✅ v3.4.0: Track adjustment application
               adjustment_applied_at,
               adjustment_applied_by,
-              // ✅ v3.4.0: Step 2 WMS ending count and progressive variance
-              wms_ending,
+              // ✅ v3.4.0: Adjust and track reconciliation at Step 2
+              actual_qty_count: wms_ending,  // Populate with WMS physical count
+              beginning_qty: adjusted_beginning_qty,  // Adjust to maintain flow
+              system_qty: adjusted_system_qty,       // Sync to WMS count
+              variance_qty: variance_qty_calc,       // Same formula as Case 1
               variance_vs_original: variance_vs_original_calc,
             },
           });
@@ -467,6 +498,7 @@ export class WmsStockOpnameRepository {
           item_code: true,
           uom: true,
           opening_balance: true,
+          closing_balance: true,  // ✅ Fetch closing_balance for fallback
           snapshot_date: true,
         },
         orderBy: [{ snapshot_date: 'desc' }],
@@ -484,9 +516,9 @@ export class WmsStockOpnameRepository {
       snapshotDataFallback = Array.from(latestByItemUom.values()).map((snap) => ({
         item_code: snap.item_code,
         uom: snap.uom,
-        opening_balance: snap.opening_balance,
-        incoming_qty: 0,
-        outgoing_qty: 0,
+        opening_balance: snap.closing_balance,  // ✅ Use closing_balance from previous day as beginning_qty
+        incoming_qty: 0,  // ✅ No transaction on STO date
+        outgoing_qty: 0,  // ✅ No transaction on STO date
       }));
     }
 

@@ -151,6 +151,9 @@ export default function INSWLogsPage() {
   const [resendingDialog, setResendingDialog] = useState(false);
   const [confirmResendOpen, setConfirmResendOpen] = useState(false);
   const [pendingResendId, setPendingResendId] = useState<string | null>(null);
+  const [checkingAdjustments, setCheckingAdjustments] = useState(false);
+  const [adjustmentCheckResult, setAdjustmentCheckResult] = useState<{ hasAdjustments: boolean } | null>(null);
+  const [confirmationMessage, setConfirmationMessage] = useState<string>('Apakah Anda yakin ingin mengirim ulang data ini ke INSW?');
 
   const columns: Column[] = [
     {
@@ -193,6 +196,7 @@ export default function INSWLogsPage() {
         if (upperValue === 'SUCCESS') color = 'success';
         else if (upperValue === 'FAILED') color = 'error';
         else if (upperValue === 'PENDING' || upperValue === 'SENT') color = 'warning';
+        else if (upperValue === 'PENDING_RESOLVED') color = 'success';
 
         return (
           <Chip
@@ -232,10 +236,22 @@ export default function INSWLogsPage() {
                   size="small"
                   color="warning"
                   onClick={() => {
-                    setPendingResendId(String((row as INSWLog).id));
-                    setConfirmResendOpen(true);
+                    const log = row as INSWLog;
+                    // Untuk stock_opname, check adjustments terlebih dahulu
+                    if (log.transaction_type === 'stock_opname' && (log.insw_status === 'FAILED' || log.insw_status === 'PENDING')) {
+                      checkAdjustments(String(log.id)).then((success) => {
+                        if (success) {
+                          setPendingResendId(String(log.id));
+                          setConfirmResendOpen(true);
+                        }
+                      });
+                    } else {
+                      // For non-stock_opname, proceed directly with resend
+                      setPendingResendId(String(log.id));
+                      handleResend(String(log.id));
+                    }
                   }}
-                  disabled={resendingId === String((row as INSWLog).id)}
+                  disabled={resendingId === String((row as INSWLog).id) || checkingAdjustments}
                 >
                   {resendingId === String((row as INSWLog).id)
                     ? <CircularProgress size={16} />
@@ -340,6 +356,37 @@ export default function INSWLogsPage() {
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(null), 2000);
     });
+  };
+
+  const checkAdjustments = async (logId: string): Promise<boolean> => {
+    try {
+      setCheckingAdjustments(true);
+      const res = await fetch(`/api/insw/logs/${logId}/check-adjustments`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.message || 'Gagal mengecek adjustment');
+        return false;
+      }
+
+      const hasAdjustments = data.hasAdjustments;
+      setAdjustmentCheckResult({ hasAdjustments });
+
+      // Set confirmation message based on adjustment check result
+      if (hasAdjustments) {
+        setConfirmationMessage('Please click OK only if you confirm that all adjustment postings are correct!');
+      } else {
+        setConfirmationMessage('Please click if You confirm that there is NO adjustment at all for this stockcount order?');
+      }
+
+      return true;
+    } catch (err: any) {
+      console.error('Error checking adjustments:', err);
+      toast.error('Gagal mengecek adjustment');
+      return false;
+    } finally {
+      setCheckingAdjustments(false);
+    }
   };
 
   const handleResend = async (logId: string) => {
@@ -577,6 +624,7 @@ export default function INSWLogsPage() {
               <MenuItem value="SUCCESS">Success</MenuItem>
               <MenuItem value="FAILED">Failed</MenuItem>
               <MenuItem value="PENDING">Pending</MenuItem>
+              <MenuItem value="PENDING_RESOLVED">Pending Resolved</MenuItem>
               <MenuItem value="SENT">Sent</MenuItem>
             </TextField>
           </Stack>
@@ -742,13 +790,23 @@ export default function INSWLogsPage() {
             {(selectedLog?.insw_status === 'FAILED' || selectedLog?.insw_status === 'PENDING') && (
               <Button
                 onClick={() => {
-                  setPendingResendId(String(selectedLog.id));
-                  setConfirmResendOpen(true);
+                  if (selectedLog && selectedLog.transaction_type === 'stock_opname' && (selectedLog.insw_status === 'FAILED' || selectedLog.insw_status === 'PENDING')) {
+                    checkAdjustments(String(selectedLog.id)).then((success) => {
+                      if (success) {
+                        setPendingResendId(String(selectedLog.id));
+                        setConfirmResendOpen(true);
+                      }
+                    });
+                  } else {
+                    // For non-stock_opname, proceed directly with resend
+                    setPendingResendId(String(selectedLog.id));
+                    handleResend(String(selectedLog.id));
+                  }
                 }}
                 color="warning"
                 variant="contained"
-                disabled={resendingDialog}
-                startIcon={resendingDialog ? <CircularProgress size={16} /> : <ReplayIcon />}
+                disabled={resendingDialog || checkingAdjustments}
+                startIcon={resendingDialog || checkingAdjustments ? <CircularProgress size={16} /> : <ReplayIcon />}
               >
                 Kirim Ulang
               </Button>
@@ -764,7 +822,7 @@ export default function INSWLogsPage() {
         <DialogTitle>Konfirmasi Kirim Ulang</DialogTitle>
         <DialogContent>
           <Typography>
-            Apakah Anda yakin ingin mengirim ulang data ini ke INSW?
+            {confirmationMessage}
           </Typography>
         </DialogContent>
         <DialogActions>
