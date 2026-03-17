@@ -73,6 +73,7 @@ const menuStructure: MenuInput[] = [
     children: [
       { menu_name: 'Laporan Stock Opname', menu_path: '/customs/stock-count/opname', menu_icon: 'Assessment', menu_order: 1 },
       { menu_name: 'Laporan Adjustment', menu_path: '/customs/stock-count/adjustment', menu_icon: 'Assessment', menu_order: 2 },
+      { menu_name: 'STO & Adjustment Control', menu_path: '/customs/stock-count/sto-control', menu_icon: 'Assessment', menu_order: 3 },
     ],
   },
   {
