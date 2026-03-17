@@ -44,10 +44,11 @@ interface StoControlData {
   originalEndingQty: number;
   adjustedEndingQty: number;
   wmsEndingQty: number;
-  varianceQty: number;
+  varianceAdjustedEnding: number;
+  varianceOriginalEnding: number;
   stoCountQty: number;
   adjustmentQty: number;
-  finalAdjustedQty: number;
+  finalQty: number;
   reason: string;
 }
 
@@ -69,10 +70,11 @@ const EXCEL_HEADERS = [
   { key: 'originalEndingQty', label: 'Original Ending', type: 'number' as const },
   { key: 'adjustedEndingQty', label: 'Adjusted Ending', type: 'number' as const },
   { key: 'wmsEndingQty', label: 'WMS Ending', type: 'number' as const },
-  { key: 'varianceQty', label: 'Variance', type: 'number' as const },
+  { key: 'varianceAdjustedEnding', label: 'Variance (Adjusted Ending)', type: 'number' as const },
+  { key: 'varianceOriginalEnding', label: 'Variance (Original Ending)', type: 'number' as const },
   { key: 'stoCountQty', label: 'STO Count', type: 'number' as const },
   { key: 'adjustmentQty', label: 'Adjustment', type: 'number' as const },
-  { key: 'finalAdjustedQty', label: 'Final Adjusted', type: 'number' as const },
+  { key: 'finalQty', label: 'Final Qty', type: 'number' as const },
   { key: 'reason', label: 'Reason', type: 'text' as const },
 ];
 
@@ -91,9 +93,11 @@ const PDF_COLUMNS = [
   { header: 'Orig. Ending', dataKey: 'originalEndingQty' },
   { header: 'Adj. Ending', dataKey: 'adjustedEndingQty' },
   { header: 'WMS Ending', dataKey: 'wmsEndingQty' },
-  { header: 'Variance', dataKey: 'varianceQty' },
+  { header: 'Var. (Adj. End.)', dataKey: 'varianceAdjustedEnding' },
+  { header: 'Var. (Orig. End.)', dataKey: 'varianceOriginalEnding' },
   { header: 'STO Count', dataKey: 'stoCountQty' },
   { header: 'Adjustment', dataKey: 'adjustmentQty' },
+  { header: 'Final Qty', dataKey: 'finalQty' },
 ];
 
 const STATUS_OPTIONS = ['PROCESS', 'RELEASED'];
@@ -183,10 +187,11 @@ export default function StoControlPage() {
       originalEndingQty: row.originalEndingQty,
       adjustedEndingQty: row.adjustedEndingQty,
       wmsEndingQty: row.wmsEndingQty,
-      varianceQty: row.varianceQty,
+      varianceAdjustedEnding: row.varianceAdjustedEnding,
+      varianceOriginalEnding: row.varianceOriginalEnding,
       stoCountQty: row.stoCountQty,
       adjustmentQty: row.adjustmentQty,
-      finalAdjustedQty: row.finalAdjustedQty,
+      finalQty: row.finalQty,
       reason: row.reason,
     }));
 
@@ -214,9 +219,11 @@ export default function StoControlPage() {
       originalEndingQty: formatQty(row.originalEndingQty),
       adjustedEndingQty: formatQty(row.adjustedEndingQty),
       wmsEndingQty: formatQty(row.wmsEndingQty),
-      varianceQty: formatQty(row.varianceQty),
+      varianceAdjustedEnding: formatQty(row.varianceAdjustedEnding),
+      varianceOriginalEnding: formatQty(row.varianceOriginalEnding),
       stoCountQty: formatQty(row.stoCountQty),
       adjustmentQty: formatQty(row.adjustmentQty),
+      finalQty: formatQty(row.finalQty),
     }));
 
     exportToPDF(
@@ -311,15 +318,17 @@ export default function StoControlPage() {
                 <TableCell sx={{ fontWeight: 600 }} align="right">Original Ending</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Adjusted Ending</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">WMS Ending</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} align="right">Variance</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Variance (Adjusted Ending)</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Variance (Original Ending)</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">STO Count</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Adjustment</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Final Qty</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={19} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={21} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found
                     </Typography>
@@ -375,9 +384,18 @@ export default function StoControlPage() {
                       <Typography
                         variant="body2"
                         fontWeight={600}
-                        sx={{ color: getVarianceColor(row.varianceQty) }}
+                        sx={{ color: getVarianceColor(row.varianceAdjustedEnding) }}
                       >
-                        {row.varianceQty > 0 ? '+' : ''}{formatQty(row.varianceQty)}
+                        {row.varianceAdjustedEnding > 0 ? '+' : ''}{formatQty(row.varianceAdjustedEnding)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        fontWeight={600}
+                        sx={{ color: getVarianceColor(row.varianceOriginalEnding) }}
+                      >
+                        {row.varianceOriginalEnding > 0 ? '+' : ''}{formatQty(row.varianceOriginalEnding)}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">{formatQty(row.stoCountQty)}</TableCell>
@@ -390,6 +408,7 @@ export default function StoControlPage() {
                         {row.adjustmentQty > 0 ? '+' : ''}{formatQty(row.adjustmentQty)}
                       </Typography>
                     </TableCell>
+                    <TableCell align="right">{formatQty(row.finalQty)}</TableCell>
                   </TableRow>
                 ))
               )}

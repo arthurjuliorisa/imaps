@@ -40,10 +40,11 @@ export async function GET(request: Request) {
         original_ending_qty,
         adjusted_ending_qty,
         wms_ending_qty,
-        variance_qty,
+        variance_adjusted_ending,
+        variance_original_ending,
         sto_count_qty,
         adjustment_qty,
-        final_adjusted_qty,
+        final_qty,
         reason,
         confirmed_at
       FROM vw_sto_control
@@ -70,10 +71,11 @@ export async function GET(request: Request) {
       originalEndingQty: Number(row.original_ending_qty || 0),
       adjustedEndingQty: Number(row.adjusted_ending_qty || 0),
       wmsEndingQty: Number(row.wms_ending_qty || 0),
-      varianceQty: Number(row.variance_qty || 0),
+      varianceAdjustedEnding: Number(row.variance_adjusted_ending || 0),
+      varianceOriginalEnding: Number(row.variance_original_ending || 0),
       stoCountQty: Number(row.sto_count_qty || 0),
       adjustmentQty: Number(row.adjustment_qty || 0),
-      finalAdjustedQty: Number(row.final_adjusted_qty || 0),
+      finalQty: Number(row.final_qty || 0),
       reason: row.reason || '',
     }));
 

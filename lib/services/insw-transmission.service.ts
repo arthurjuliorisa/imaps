@@ -950,16 +950,17 @@ export class INSWTransmissionService {
   async transmitAdjustment(
     companyCode: number,
     adjustmentId: number,
-    wmsId: string
+    wmsId: string,
+    skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
-    this.log.info('Starting adjustment transmission', { companyCode, adjustmentId, wmsId });
+    this.log.info('Starting adjustment transmission', { companyCode, adjustmentId, wmsId, skipEndpointCheck });
 
     let payload: any = null;
     try {
       payload = await this.inswService.convertAdjustmentToINSW(companyCode, adjustmentId);
     } catch { /* payload remains null if generation fails */ }
 
-    if (!(await this.isEndpointEnabled('ADJUSTMENT'))) {
+    if (!skipEndpointCheck && !(await this.isEndpointEnabled('ADJUSTMENT'))) {
       await this.logTransmission({
         transaction_type: 'adjustment',
         transaction_id: adjustmentId,
@@ -1356,16 +1357,17 @@ export class INSWTransmissionService {
   async transmitStockOpname(
     companyCode: number,
     stockOpnameId: number,
-    wmsId: string
+    wmsId: string,
+    skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
-    this.log.info('Starting stock opname transmission', { companyCode, stockOpnameId, wmsId });
+    this.log.info('Starting stock opname transmission', { companyCode, stockOpnameId, wmsId, skipEndpointCheck });
 
     let payload: any = null;
     try {
       payload = await this.inswService.convertStockOpnameToINSW(companyCode, stockOpnameId);
     } catch { /* payload remains null if generation fails */ }
 
-    if (!(await this.isEndpointEnabled('STOCK_OPNAME'))) {
+    if (!skipEndpointCheck && !(await this.isEndpointEnabled('STOCK_OPNAME'))) {
       await this.logTransmission({
         transaction_type: 'stock_opname',
         transaction_id: stockOpnameId,

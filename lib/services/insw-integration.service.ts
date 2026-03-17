@@ -697,15 +697,25 @@ export class INSWIntegrationService {
     const uomMap = await this.loadUomMappings();
     const missingUoms = new Set<string>();
 
+    // ✅ v3.4.0 Phase 1.3: Handle NULL actual_qty_count with fallback values
+    // Fallback order: actual_qty_count → wms_ending → system_qty → 0
+    // This ensures we never send jumlah:0 when data is available
     const barangTransaksi: INSWBarangTransaksi[] = opname.items.map((item) => {
       const uomKey = (item.uom || '').toUpperCase();
       const kdSatuan = uomMap.get(uomKey) ?? null;
       if (!kdSatuan) missingUoms.add(uomKey);
+      
+      // ✅ Calculate jumlah with fallback logic
+      const jumlahValue = item.actual_qty_count ?? 
+                         (item.wms_ending as any) ?? 
+                         (item.system_qty as any) ?? 
+                         0;
+      
       return {
         kdKategoriBarang: this.mapItemTypeToINSWCategory(item.item_type),
         kdBarang: item.item_code,
         uraianBarang: item.item_name,
-        jumlah: Number(item.actual_qty_count),
+        jumlah: Number(jumlahValue),
         kdSatuan: kdSatuan || uomKey,
         nilai: Number(item.amount || 0),
         dokumen: [],

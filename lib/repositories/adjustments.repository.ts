@@ -837,9 +837,9 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         .map((u) => `WHEN ${u.id}::bigint THEN ${u.finalAdjustedQty.toString()}::decimal(15,3)`)
         .join('\n');
 
-      // ✅ NEW v3.4.0: variance_qty = |original_system_qty - actual_qty_count|
+      // ✅ NEW v3.4.0: variance_qty = system_qty - actual_qty_count
       const varianceQtyStatements = updates
-        .map((u) => `WHEN ${u.id}::bigint THEN ABS(COALESCE(soi.original_system_qty, 0) - ${u.finalAdjustedQty.toString()}::decimal(15,3))`)
+        .map((u) => `WHEN ${u.id}::bigint THEN (COALESCE(soi.system_qty, 0) - ${u.finalAdjustedQty.toString()}::decimal(15,3))::decimal(15,3)`)
         .join('\n');
 
       // ✅ NEW v3.4.0: variance_vs_original = original_system_qty - actual_qty_count

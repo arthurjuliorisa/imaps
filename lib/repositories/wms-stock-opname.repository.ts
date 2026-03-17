@@ -206,7 +206,7 @@ export class WmsStockOpnameRepository {
 
           // ✅ v3.4.0 Step 2: WMS ending count (from payload) and variance calculation
           const wms_ending = item.actual_qty_count ?? 0; // From WMS payload (physical count)
-          const variance_qty_calc = wms_ending - system_qty; // Variance from expected system
+          const variance_qty_calc = system_qty - wms_ending; // ✅ Same formula as Step 3: system_qty - actual_qty_count
 
           // Apply variance adjustment for reconciliation
           let adjusted_beginning_qty = r.beginning_qty;
@@ -240,7 +240,7 @@ export class WmsStockOpnameRepository {
             incoming_qty_on_date: r.incoming_qty_on_date,
             outgoing_qty_on_date: r.outgoing_qty_on_date,
             system_qty: adjusted_system_qty,
-            variance_qty: variance_qty_calc,  // WMS ending variance
+            variance_qty: variance_qty_calc,  // ✅ Same formula as Step 3: system_qty - actual_qty_count
             adjustment_qty_signed: null,
             amount: item.amount ?? null,
             // ✅ v3.4.0: ALWAYS save original calculated values at Confirmed time

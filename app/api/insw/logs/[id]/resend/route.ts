@@ -48,6 +48,8 @@ export async function POST(
     let result;
     const transactionId = log.transaction_id ? Number(log.transaction_id) : null;
     const wmsId = log.wms_id;
+    // Only skip endpoint check for PENDING status. FAILED status must respect endpoint settings.
+    const skipEndpointCheck = log.insw_status === 'PENDING';
 
     switch (log.transaction_type) {
       case 'incoming':
@@ -130,7 +132,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitStockOpname(companyCode, transactionId, wmsId);
+        result = await service.transmitStockOpname(companyCode, transactionId, wmsId, skipEndpointCheck);
         break;
 
       case 'adjustment':
@@ -140,7 +142,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitAdjustment(companyCode, transactionId, wmsId);
+        result = await service.transmitAdjustment(companyCode, transactionId, wmsId, skipEndpointCheck);
         break;
 
       default:
