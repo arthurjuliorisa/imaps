@@ -18,6 +18,16 @@ import { logActivity } from '@/lib/log-activity';
 /**
  * Detect environment phase (dev/staging/production)
  * Uses 4-layer strategy: ENV_VAR -> NODE_ENV -> DB_FLAG -> DEFAULT_PROD
+ * 
+ * IMPORTANT: Only 'development' and 'staging' allow cleanup API access
+ * 'production' blocks all cleanup operations (safest default)
+ * 
+ * Configuration Guide: See ENVIRONMENT_PHASE_CONFIG.md for setup instructions
+ * - Local dev: Set NEXT_PUBLIC_ENVIRONMENT_PHASE=development in .env
+ * - Staging: Set NEXT_PUBLIC_ENVIRONMENT_PHASE=staging in .env
+ * - Production: Leave unset or set to 'production' (will default safely)
+ * 
+ * PM2 Setup: ecosystem.config.js automatically reads from .env file
  */
 function detectEnvironmentPhase(): 'development' | 'staging' | 'production' {
   // Layer 1: Explicit environment variable
