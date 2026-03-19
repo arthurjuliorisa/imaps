@@ -31,7 +31,8 @@ interface StoControlData {
   companyName: string;
   wmsId: string;
   owner: number;
-  documentDate: string;
+  activationDate: string;
+  adjustmentWmsId: string | null;
   status: string;
   itemType: string;
   itemCode: string;
@@ -57,7 +58,8 @@ const EXCEL_HEADERS = [
   { key: 'companyName', label: 'Company', type: 'text' as const },
   { key: 'wmsId', label: 'WMS ID', type: 'text' as const },
   { key: 'owner', label: 'Owner', type: 'number' as const },
-  { key: 'documentDate', label: 'Document Date', type: 'date' as const },
+  { key: 'activationDate', label: 'Activation Date', type: 'date' as const },
+  { key: 'adjustmentWmsId', label: 'WMS Adjustment ID', type: 'text' as const },
   { key: 'status', label: 'Status', type: 'text' as const },
   { key: 'itemType', label: 'Item Type', type: 'text' as const },
   { key: 'itemCode', label: 'Item Code', type: 'text' as const },
@@ -83,6 +85,8 @@ const PDF_COLUMNS = [
   { header: 'Company', dataKey: 'companyName' },
   { header: 'WMS ID', dataKey: 'wmsId' },
   { header: 'Owner', dataKey: 'owner' },
+  { header: 'Activation Date', dataKey: 'activationDate' },
+  { header: 'WMS Adj. ID', dataKey: 'adjustmentWmsId' },
   { header: 'Item Code', dataKey: 'itemCode' },
   { header: 'Item Name', dataKey: 'itemName' },
   { header: 'UOM', dataKey: 'uom' },
@@ -100,7 +104,19 @@ const PDF_COLUMNS = [
   { header: 'Final Qty', dataKey: 'finalQty' },
 ];
 
-const STATUS_OPTIONS = ['PROCESS', 'RELEASED'];
+const STATUS_OPTIONS = [
+  { value: 'Active', label: 'Active' },
+  { value: 'Confirmed', label: 'Confirmed' },
+  { value: 'Cancelled', label: 'Cancelled' },
+];
+
+const ITEM_TYPE_OPTIONS = [
+  { value: 'ROH', label: 'ROH - Raw Material' },
+  { value: 'HALB', label: 'HALB - Semi-Finished' },
+  { value: 'FERT', label: 'FERT - Finished Good' },
+  { value: 'HIBE', label: 'HIBE - Auxiliary Material' },
+  { value: 'SCRAP', label: 'SCRAP - Scrap' },
+];
 
 export default function StoControlPage() {
   const theme = useTheme();
@@ -112,6 +128,10 @@ export default function StoControlPage() {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedItemType, setSelectedItemType] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
+  const [availableDates, setAvailableDates] = useState<{ date: string; label: string }[]>([]);
+  const [loadingDates, setLoadingDates] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -129,21 +149,49 @@ export default function StoControlPage() {
     }
   }, [toast]);
 
+  const fetchAvailableDates = useCallback(async () => {
+    setLoadingDates(true);
+    try {
+      const response = await fetch('/api/customs/stock-count/sto-control?type=dates');
+      if (!response.ok) throw new Error('Failed to fetch dates');
+      const result = await response.json();
+      setAvailableDates(result);
+    } catch (error) {
+      console.error('Error fetching available dates:', error);
+      setAvailableDates([]);
+    } finally {
+      setLoadingDates(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    fetchAvailableDates();
+  }, [fetchData, fetchAvailableDates]);
 
   useEffect(() => {
     setPage(0);
-  }, [searchQuery, selectedStatus]);
+  }, [searchQuery, selectedStatus, selectedItemType, selectedDate]);
 
   const filteredData = useMemo(() => {
     let filtered = data;
 
+    // Filter by status (case-insensitive)
     if (selectedStatus) {
-      filtered = filtered.filter((row) => row.status === selectedStatus);
+      filtered = filtered.filter((row) => row.status?.toLowerCase() === selectedStatus.toLowerCase());
     }
 
+    // Filter by item type (case-insensitive)
+    if (selectedItemType) {
+      filtered = filtered.filter((row) => row.itemType?.toLowerCase() === selectedItemType.toLowerCase());
+    }
+
+    // Filter by exact activation date (activationDate is already in YYYY-MM-DD format)
+    if (selectedDate) {
+      filtered = filtered.filter((row) => row.activationDate === selectedDate);
+    }
+
+    // Search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter((row) => {
@@ -157,7 +205,7 @@ export default function StoControlPage() {
     }
 
     return filtered;
-  }, [data, selectedStatus, searchQuery]);
+  }, [data, selectedStatus, selectedItemType, selectedDate, searchQuery]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -174,7 +222,14 @@ export default function StoControlPage() {
       companyName: row.companyName,
       wmsId: row.wmsId,
       owner: row.owner,
-      documentDate: row.documentDate,
+      activationDate: row.activationDate
+        ? new Date(row.activationDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: '2-digit',
+          })
+        : '-',
+      adjustmentWmsId: row.adjustmentWmsId || '-',
       status: row.status,
       itemType: row.itemType,
       itemCode: row.itemCode,
@@ -209,6 +264,14 @@ export default function StoControlPage() {
       companyName: row.companyName,
       wmsId: row.wmsId,
       owner: row.owner,
+      activationDate: row.activationDate
+        ? new Date(row.activationDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: '2-digit',
+          })
+        : '-',
+      adjustmentWmsId: row.adjustmentWmsId || '-',
       itemCode: row.itemCode,
       itemName: row.itemName,
       uom: row.uom,
@@ -242,10 +305,11 @@ export default function StoControlPage() {
     return 'text.primary';
   };
 
-  const getStatusColor = (status: string): 'warning' | 'success' | 'default' => {
-    if (status === 'PROCESS') return 'warning';
-    if (status === 'RELEASED') return 'success';
-    return 'default';
+  const getStatusColor = (status: string): 'warning' | 'success' | 'error' => {
+    if (status === 'Active') return 'warning';
+    if (status === 'Confirmed') return 'success';
+    if (status === 'Cancelled') return 'error';
+    return 'warning';
   };
 
   return (
@@ -262,36 +326,74 @@ export default function StoControlPage() {
         </Box>
       }
     >
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3, mb: 3, px: 3, gap: 2 }}>
+      <Box sx={{ display: 'flex', gap: 2, mt: 3, mb: 3, px: 3, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        {/* Filters */}
         <TextField
           select
-          label="Filter Status"
+          label="Status"
           value={selectedStatus}
           onChange={(e) => setSelectedStatus(e.target.value)}
           size="small"
-          sx={{ minWidth: 200 }}
+          sx={{ minWidth: 150 }}
         >
-          <MenuItem value="">Semua Status</MenuItem>
-          {STATUS_OPTIONS.map((status) => (
-            <MenuItem key={status} value={status}>
-              {status}
+          <MenuItem value="">All Status</MenuItem>
+          {STATUS_OPTIONS.map((option) => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
             </MenuItem>
           ))}
         </TextField>
+
         <TextField
-          placeholder="Search by company, WMS ID, item code, item name..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          select
+          label="Item Type"
+          value={selectedItemType}
+          onChange={(e) => setSelectedItemType(e.target.value)}
           size="small"
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-          }}
-          sx={{ maxWidth: 420 }}
-        />
+          sx={{ minWidth: 200 }}
+        >
+          <MenuItem value="">All Item Types</MenuItem>
+          {ITEM_TYPE_OPTIONS.map((option) => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
+            </MenuItem>
+          ))}
+        </TextField>
+
+        <TextField
+          select
+          label="Activation Date"
+          value={selectedDate}
+          onChange={(e) => setSelectedDate(e.target.value)}
+          size="small"
+          sx={{ minWidth: 200 }}
+          disabled={loadingDates}
+        >
+          <MenuItem value="">All Dates</MenuItem>
+          {availableDates.map((dateOption) => (
+            <MenuItem key={dateOption.date} value={dateOption.date}>
+              {dateOption.label}
+            </MenuItem>
+          ))}
+        </TextField>
+
+        {/* Search Bar - Aligned to right */}
+        <Box sx={{ ml: 'auto' }}>
+          <TextField
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            size="small"
+            sx={{ width: 250 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+          />
+        </Box>
       </Box>
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 8 }}>
@@ -306,6 +408,8 @@ export default function StoControlPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>WMS ID</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Owner</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Activation Date</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>WMS Adjustment ID</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
@@ -328,7 +432,7 @@ export default function StoControlPage() {
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={21} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={23} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found
                     </Typography>
@@ -352,6 +456,22 @@ export default function StoControlPage() {
                       </Typography>
                     </TableCell>
                     <TableCell>{row.owner}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {row.activationDate
+                          ? new Date(row.activationDate).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: '2-digit',
+                            })
+                          : '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {row.adjustmentWmsId || '-'}
+                      </Typography>
+                    </TableCell>
                     <TableCell>
                       <Chip
                         label={row.status || '-'}

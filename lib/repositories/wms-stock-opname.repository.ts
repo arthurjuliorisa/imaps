@@ -469,7 +469,9 @@ export class WmsStockOpnameRepository {
         uom: true,
         opening_balance: true,
         incoming_qty: true,
+        production_qty: true,      // ✅ Include production qty
         outgoing_qty: true,
+        material_usage_qty: true,  // ✅ Include material usage qty
       },
     });
 
@@ -529,8 +531,8 @@ export class WmsStockOpnameRepository {
       const key = `${record.item_code}:${record.uom}`;
       result[key] = {
         beginning_qty: Number(record.opening_balance || 0),
-        incoming_qty_on_date: Number(record.incoming_qty || 0),
-        outgoing_qty_on_date: Number(record.outgoing_qty || 0),
+        incoming_qty_on_date: Number(record.incoming_qty || 0) + Number(record.production_qty || 0),  // ✅ Include production_qty
+        outgoing_qty_on_date: Number(record.outgoing_qty || 0) + Number(record.material_usage_qty || 0),  // ✅ Include material_usage_qty
       };
     }
 
