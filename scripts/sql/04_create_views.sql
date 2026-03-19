@@ -536,7 +536,11 @@ SELECT
     -- Additional info
     wasoi.reason,
     waso.document_date,
+    waso.document_date as activation_date,
     waso.status,
+    
+    -- Linked Adjustment (if adjustment transmitted)
+    adj.wms_id as adjustment_wms_id,
     
     -- Audit
     waso.confirmed_at
@@ -545,9 +549,10 @@ JOIN wms_stock_opname_items wasoi ON wasoi.wms_stock_opname_id = waso.id
     AND wasoi.company_code = waso.company_code
 JOIN companies c ON waso.company_code = c.code
 LEFT JOIN item_types it ON wasoi.item_type = it.item_type_code
+LEFT JOIN adjustments adj ON adj.id = wasoi.adjustment_id
 ORDER BY waso.document_date DESC, waso.wms_id, wasoi.item_code;
 
-COMMENT ON VIEW vw_sto_control IS 'Report #2.6: STO Control - Stock opname control with reconciliation flow. Fields: sto_id, item_id (for composite key), wms_id, company_code, company_name, owner, item_type/code/name/uom, original_beginning_qty, adjusted_beginning_qty, in_qty, out_qty, original_ending_qty, adjusted_ending_qty (from system_qty), wms_ending_qty, variance_adjusted_ending, variance_original_ending, sto_count_qty, adjustment_qty, final_qty, reason, document_date, status, confirmed_at';
+COMMENT ON VIEW vw_sto_control IS 'Report #2.6: STO Control - Stock opname control with reconciliation flow. Fields: sto_id, item_id (for composite key), wms_id, company_code, company_name, owner, item_type/code/name/uom, original_beginning_qty, adjusted_beginning_qty, in_qty, out_qty, original_ending_qty, adjusted_ending_qty (from system_qty), wms_ending_qty, variance_adjusted_ending, variance_original_ending, sto_count_qty, adjustment_qty, final_qty, reason, document_date, activation_date, status, adjustment_wms_id, confirmed_at';
 
 -- ============================================================================
 -- REPORT #2.7: LAPORAN ADJUSTMENT (Adjustment Report - Unified for Type 1 & 2)
