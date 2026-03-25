@@ -1597,6 +1597,107 @@ export class INSWTransmissionService {
   }
 
   /**
+   * Clean up temporary transaction data in INSW (test mode only)
+   */
+  async cleanupINSWData(
+    companyCode: number,
+    npwp: string
+  ): Promise<INSWTransmitResponse> {
+    this.log.info('Starting INSW temporary data cleanup', { companyCode, npwp });
+
+    try {
+      const inswResponse = await this.inswService.cleansingData(npwp);
+
+      if (inswResponse.status) {
+        await this.logTransmission({
+          transaction_type: 'insw_cleanup',
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.SUCCESS,
+          insw_activity_code: '99', // Custom code for cleanup
+          insw_request_payload: { npwp },
+          insw_response: inswResponse,
+        });
+
+        this.log.info('INSW cleanup completed successfully', { response: inswResponse });
+
+        return {
+          status: 'success',
+          message: inswResponse.message || 'INSW temporary data cleanup completed successfully',
+          total: 1,
+          success_count: 1,
+          failed_count: 0,
+          skipped_count: 0,
+          results: [
+            {
+              id: 0,
+              wms_id: 'SYSTEM',
+              status: 'success',
+              insw_status: INSWTransmissionStatus.SUCCESS,
+            },
+          ],
+        };
+      } else {
+        await this.logTransmission({
+          transaction_type: 'insw_cleanup',
+          company_code: companyCode,
+          insw_status: INSWTransmissionStatus.FAILED,
+          insw_activity_code: '99',
+          insw_request_payload: { npwp },
+          insw_response: inswResponse,
+          insw_error: inswResponse.message || 'Cleanup failed',
+        });
+
+        return {
+          status: 'failed',
+          message: inswResponse.message || 'Failed to cleanup INSW temporary data',
+          total: 1,
+          success_count: 0,
+          failed_count: 1,
+          skipped_count: 0,
+          results: [
+            {
+              id: 0,
+              wms_id: 'SYSTEM',
+              status: 'failed',
+              insw_status: INSWTransmissionStatus.FAILED,
+              error: inswResponse.message || 'Cleanup failed',
+            },
+          ],
+        };
+      }
+    } catch (error: any) {
+      this.log.error('Error cleaning up INSW data', { error: error.message });
+
+      await this.logTransmission({
+        transaction_type: 'insw_cleanup',
+        company_code: companyCode,
+        insw_status: INSWTransmissionStatus.FAILED,
+        insw_activity_code: '99',
+        insw_request_payload: { npwp },
+        insw_error: error.message,
+      });
+
+      return {
+        status: 'failed',
+        message: error.message,
+        total: 1,
+        success_count: 0,
+        failed_count: 1,
+        skipped_count: 0,
+        results: [
+          {
+            id: 0,
+            wms_id: 'SYSTEM',
+            status: 'failed',
+            insw_status: INSWTransmissionStatus.FAILED,
+            error: error.message,
+          },
+        ],
+      };
+    }
+  }
+
+  /**
    * Get transmission logs
    */
   async getTransmissionLogs(filters: {

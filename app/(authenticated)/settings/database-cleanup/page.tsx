@@ -19,8 +19,9 @@ import { useRouter } from 'next/navigation';
 import { CleanupModeSelector } from './components/CleanupModeSelector';
 import { FullResetMode } from './components/FullResetMode';
 import { SelectiveMode } from './components/SelectiveMode';
+import { INSWCleanupMode } from './components/INSWCleanupMode';
 
-type CleanupMode = 'selector' | 'full' | 'selective';
+type CleanupMode = 'selector' | 'full' | 'selective' | 'insw';
 
 export default function DatabaseCleanupPage() {
   const theme = useTheme();
@@ -144,6 +145,7 @@ export default function DatabaseCleanupPage() {
               <CleanupModeSelector
                 onSelectFullReset={() => setMode('full')}
                 onSelectSelective={() => setMode('selective')}
+                onSelectINSWCleanup={() => setMode('insw')}
               />
             )}
 
@@ -157,6 +159,13 @@ export default function DatabaseCleanupPage() {
             {/* Selective Mode */}
             {mode === 'selective' && (
               <SelectiveMode
+                onBack={() => setMode('selector')}
+              />
+            )}
+
+            {/* INSW Cleanup Mode */}
+            {mode === 'insw' && (
+              <INSWCleanupMode
                 onBack={() => setMode('selector')}
               />
             )}
