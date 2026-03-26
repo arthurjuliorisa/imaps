@@ -1,12 +1,25 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { serializeBigInt } from '@/lib/bigint-serializer';
+import { checkAuth } from '@/lib/api-auth';
 
 export async function GET(request: Request) {
   try {
+    // Check authentication
+    const authCheck = await checkAuth();
+    if (!authCheck.authenticated) {
+      return authCheck.response;
+    }
+
+    const session = authCheck.session as any;
+    const userCompanyCode = session?.user?.companyCode;
+    const userRole = session?.user?.role;
+    const isSuperAdmin = userRole === 'SUPER_ADMIN';
+
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
+    const companyCodeParam = searchParams.get('companyCode');
     const exportData = searchParams.get('export') === 'true';
 
     // Build where clause
@@ -25,6 +38,24 @@ export async function GET(request: Request) {
       where.status = status.toLowerCase();
     }
 
+    // ===================== COMPANY FILTERING LOGIC =====================
+    // SUPER_ADMIN can view all activity logs or filter by specific company
+    // Non-SUPER_ADMIN can only view logs from their assigned company
+    if (companyCodeParam && companyCodeParam !== 'ALL') {
+      const requestedCompanyCode = parseInt(companyCodeParam, 10);
+
+      // Authorization check: prevent non-SUPER_ADMIN from accessing other companies
+      if (!isSuperAdmin && requestedCompanyCode !== parseInt(userCompanyCode || '0', 10)) {
+        return NextResponse.json([], { status: 403 });
+      }
+
+      where.users = { company_code: requestedCompanyCode };
+    } else if (!isSuperAdmin && userCompanyCode) {
+      // Non-SUPER_ADMIN users always see only their company's logs by default
+      where.users = { company_code: parseInt(userCompanyCode, 10) };
+    }
+    // SUPER_ADMIN with no company filter: see all company logs (no where clause)
+
     // Get all data (client-side pagination will be handled by DataTable)
     const logs = await prisma.activity_logs.findMany({
       where,
@@ -35,6 +66,7 @@ export async function GET(request: Request) {
             username: true,
             email: true,
             full_name: true,
+            company_code: true,
           },
         },
       },
@@ -45,9 +77,10 @@ export async function GET(request: Request) {
 
     // If export, return CSV
     if (exportData) {
-      const headers = ['Date & Time', 'User', 'Email', 'Action', 'Description', 'Status', 'IP Address'];
+      const headers = ['Date & Time', 'Company Code', 'User', 'Email', 'Action', 'Description', 'Status', 'IP Address'];
       const rows = logs.map(log => [
         log.created_at.toISOString(),
+        log.users?.company_code?.toString() || '-',
         log.users?.username || 'System',
         log.users?.email || '-',
         log.action,
@@ -73,6 +106,7 @@ export async function GET(request: Request) {
     const data = logs.map(log => ({
       id: serializeBigInt(log.id),
       userId: log.user_id,
+      companyCode: log.users?.company_code,
       user: {
         username: log.users?.username || 'System',
         email: log.users?.email || '-',

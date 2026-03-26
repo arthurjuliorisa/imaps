@@ -246,9 +246,10 @@ export default function INSWLogsPage() {
                         }
                       });
                     } else {
-                      // For non-stock_opname, proceed directly with resend
+                      // For other transaction types, show confirmation dialog with standard message
+                      setConfirmationMessage('Apakah Anda yakin ingin mengirim ulang data ini ke INSW?');
                       setPendingResendId(String(log.id));
-                      handleResend(String(log.id));
+                      setConfirmResendOpen(true);
                     }
                   }}
                   disabled={resendingId === String((row as INSWLog).id) || checkingAdjustments}
@@ -798,9 +799,10 @@ export default function INSWLogsPage() {
                       }
                     });
                   } else {
-                    // For non-stock_opname, proceed directly with resend
+                    // For other transaction types, show confirmation dialog with standard message
+                    setConfirmationMessage('Apakah Anda yakin ingin mengirim ulang data ini ke INSW?');
                     setPendingResendId(String(selectedLog.id));
-                    handleResend(String(selectedLog.id));
+                    setConfirmResendOpen(true);
                   }
                 }}
                 color="warning"

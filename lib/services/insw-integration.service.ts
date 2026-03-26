@@ -99,6 +99,18 @@ export class INSWIntegrationService {
       };
     }
 
+    // Get wms_id mapping from incoming_goods
+    const wmsIdMap = new Map<number, string>();
+    const uniqueIds = [...new Set(data.map((item) => item.id))];
+    const incomingGoods = await prisma.incoming_goods.findMany({
+      where: {
+        id: { in: uniqueIds },
+        company_code: companyCode,
+      },
+      select: { id: true, wms_id: true },
+    });
+    incomingGoods.forEach((ig) => wmsIdMap.set(ig.id, ig.wms_id));
+
     const uomMap = await this.loadUomMappings();
     const missingUoms = new Set<string>();
 
@@ -106,7 +118,7 @@ export class INSWIntegrationService {
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
       (group) => ({
-        nomorDokKegiatan: group.doc_number,
+        nomorDokKegiatan: wmsIdMap.get(group.items[0].id) || group.doc_number,
         tanggalKegiatan: this.formatINSWDateOnly(group.doc_date),
         namaEntitas: group.shipper_name || 'Unknown',
         barangTransaksi: group.items.map((item) => ({
@@ -174,6 +186,18 @@ export class INSWIntegrationService {
       };
     }
 
+    // Get wms_id mapping from outgoing_goods
+    const wmsIdMap = new Map<number, string>();
+    const uniqueIds = [...new Set(data.map((item) => item.id))];
+    const outgoingGoods = await prisma.outgoing_goods.findMany({
+      where: {
+        id: { in: uniqueIds },
+        company_code: companyCode,
+      },
+      select: { id: true, wms_id: true },
+    });
+    outgoingGoods.forEach((og) => wmsIdMap.set(og.id, og.wms_id));
+
     const uomMap = await this.loadUomMappings();
     const missingUoms = new Set<string>();
 
@@ -181,7 +205,7 @@ export class INSWIntegrationService {
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
       (group) => ({
-        nomorDokKegiatan: group.doc_number,
+        nomorDokKegiatan: wmsIdMap.get(group.items[0].id) || group.doc_number,
         tanggalKegiatan: this.formatINSWDateOnly(group.doc_date),
         namaEntitas: group.recipient_name || 'Unknown',
         barangTransaksi: group.items.map((item) => ({
@@ -249,6 +273,18 @@ export class INSWIntegrationService {
       };
     }
 
+    // Get wms_id mapping from outgoing_goods
+    const wmsIdMap = new Map<number, string>();
+    const uniqueIds = [...new Set(data.map((item) => item.id))];
+    const outgoingGoods = await prisma.outgoing_goods.findMany({
+      where: {
+        id: { in: uniqueIds },
+        company_code: companyCode,
+      },
+      select: { id: true, wms_id: true },
+    });
+    outgoingGoods.forEach((og) => wmsIdMap.set(og.id, og.wms_id));
+
     const uomMap = await this.loadUomMappings();
     const missingUoms = new Set<string>();
 
@@ -256,7 +292,7 @@ export class INSWIntegrationService {
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
       (group) => ({
-        nomorDokKegiatan: group.doc_number,
+        nomorDokKegiatan: wmsIdMap.get(group.items[0].id) || group.doc_number,
         tanggalKegiatan: this.formatINSWDateOnly(group.doc_date),
         namaEntitas: group.recipient_name || 'Unknown',
         barangTransaksi: group.items.map((item) => ({
@@ -463,6 +499,18 @@ export class INSWIntegrationService {
       };
     }
 
+    // Get wms_id mapping from outgoing_goods
+    const wmsIdMap = new Map<number, string>();
+    const uniqueIds = [...new Set(data.map((item) => item.id))];
+    const outgoingGoods = await prisma.outgoing_goods.findMany({
+      where: {
+        id: { in: uniqueIds },
+        company_code: companyCode,
+      },
+      select: { id: true, wms_id: true },
+    });
+    outgoingGoods.forEach((og) => wmsIdMap.set(og.id, og.wms_id));
+
     const uomMap = await this.loadUomMappings();
     const missingUoms = new Set<string>();
 
@@ -470,7 +518,7 @@ export class INSWIntegrationService {
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
       (group) => ({
-        nomorDokKegiatan: group.doc_number,
+        nomorDokKegiatan: wmsIdMap.get(group.items[0].id) || group.doc_number,
         tanggalKegiatan: this.formatINSWDateOnly(group.doc_date),
         namaEntitas: group.recipient_name || 'Unknown',
         barangTransaksi: group.items.map((item) => ({
@@ -574,11 +622,23 @@ export class INSWIntegrationService {
     const uomMap = await this.loadUomMappings();
     const missingUoms = new Set<string>();
 
+    // Get wms_id mapping from material_usages
+    const wmsIdMap = new Map<number, string>();
+    const uniqueTransactionIds = [...new Set(data.map((item) => item.transaction_id))];
+    const materialUsages = await prisma.material_usages.findMany({
+      where: {
+        id: { in: uniqueTransactionIds },
+        company_code: companyCode,
+      },
+      select: { id: true, wms_id: true },
+    });
+    materialUsages.forEach((mu) => wmsIdMap.set(Number(mu.id), mu.wms_id));
+
     const groupedByDoc = this.groupMaterialUsageByDocument(data);
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
       (group) => ({
-        nomorDokKegiatan: group.internal_evidence_number,
+        nomorDokKegiatan: wmsIdMap.get(group.items[0].transaction_id) || group.internal_evidence_number,
         tanggalKegiatan: this.formatINSWDateOnly(group.transaction_date),
         namaEntitas: group.company_name,
         barangTransaksi: group.items.map((item) => ({
@@ -638,11 +698,23 @@ export class INSWIntegrationService {
     const uomMap = await this.loadUomMappings();
     const missingUoms = new Set<string>();
 
+    // Get wms_id mapping from production_outputs
+    const wmsIdMap = new Map<number, string>();
+    const uniqueTransactionIds = [...new Set(data.map((item) => item.transaction_id))];
+    const productionOutputs = await prisma.production_outputs.findMany({
+      where: {
+        id: { in: uniqueTransactionIds },
+        company_code: companyCode,
+      },
+      select: { id: true, wms_id: true },
+    });
+    productionOutputs.forEach((po) => wmsIdMap.set(Number(po.id), po.wms_id));
+
     const groupedByDoc = this.groupProductionOutputByDocument(data);
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
       (group) => ({
-        nomorDokKegiatan: group.internal_evidence_number,
+        nomorDokKegiatan: wmsIdMap.get(group.items[0].transaction_id) || group.internal_evidence_number,
         tanggalKegiatan: this.formatINSWDateOnly(group.transaction_date),
         namaEntitas: group.company_name,
         barangTransaksi: group.items.map((item) => ({
@@ -803,7 +875,7 @@ export class INSWIntegrationService {
           kdKegiatan: INSWActivityCode.ADJUSTMENT,
           dokumenKegiatan: [
             {
-              nomorDokKegiatan: adjustment.internal_evidence_number,
+              nomorDokKegiatan: adjustment.wms_id,
               tanggalKegiatan: this.formatINSWDateOnly(adjustment.transaction_date),
               namaEntitas: String(adjustment.company_code),
               keterangan: keteranganDokumen,
@@ -833,6 +905,7 @@ export class INSWIntegrationService {
       internal_evidence_number: items[0].internal_evidence_number,
       transaction_date: items[0].transaction_date,
       company_name: items[0].company_name,
+      transaction_id: items[0].transaction_id,
       items,
     }));
   }
@@ -853,6 +926,7 @@ export class INSWIntegrationService {
       internal_evidence_number: items[0].internal_evidence_number,
       transaction_date: items[0].transaction_date,
       company_name: items[0].company_name,
+      transaction_id: items[0].transaction_id,
       items,
     }));
   }

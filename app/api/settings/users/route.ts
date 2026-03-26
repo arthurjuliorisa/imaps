@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
+import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { serializeBigInt } from '@/lib/bigint-serializer';
+import { authOptions } from '@/lib/auth';
 import {
   handleApiError,
   validateRequiredFields,
@@ -14,7 +16,10 @@ import {
 
 /**
  * GET /api/settings/users
- * Retrieves all users with pagination (NEVER returns passwords)
+ * Retrieves users with pagination (NEVER returns passwords)
+ *
+ * SUPER_ADMIN: Can view all users
+ * Other roles: Can only view users from their assigned company
  *
  * Query parameters:
  * - page: number (default: 1)
@@ -23,12 +28,25 @@ import {
  */
 export async function GET(request: NextRequest) {
   try {
+    // ==================== AUTHENTICATION & AUTHORIZATION ====================
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Please log in' },
+        { status: 401 }
+      );
+    }
+
+    const userRole = (session.user as any)?.role;
+    const userCompanyCode = (session.user as any)?.companyCode;
+    const isSuperAdmin = userRole === 'SUPER_ADMIN';
+
     const searchParams = request.nextUrl.searchParams;
     const { skip, take, page, limit } = getPaginationParams(searchParams);
     const search = searchParams.get('search')?.trim() || '';
 
     // Build where clause for search
-    const where = search
+    const searchWhere = search
       ? {
           OR: [
             { username: { contains: search, mode: 'insensitive' as const } },
@@ -36,6 +54,19 @@ export async function GET(request: NextRequest) {
           ],
         }
       : {};
+
+    // ===================== COMPANY FILTERING LOGIC =====================
+    // SUPER_ADMIN can see all users
+    // Other roles can only see users from their company
+    const companyFilter =
+      !isSuperAdmin && userCompanyCode
+        ? { company_code: parseInt(userCompanyCode, 10) }
+        : {};
+
+    const where = {
+      ...searchWhere,
+      ...companyFilter,
+    };
 
     // Get total count
     const total = await prisma.users.count({ where });
@@ -76,13 +107,32 @@ export async function GET(request: NextRequest) {
  * POST /api/settings/users
  * Creates a new user with hashed password
  *
+ * SUPER_ADMIN: Can create users in any company
+ * Other roles: Can only create users in their own company
+ *
  * Request body:
  * - username: string (required, unique, min 3 chars)
  * - email: string (required, unique, valid email format)
  * - password: string (required, min 8 chars)
+ * - full_name: string (required)
+ * - role: string (optional, default: USER)
+ * - company_code: number (required for non-SUPER_ADMIN)
  */
 export async function POST(request: NextRequest) {
   try {
+    // ==================== AUTHENTICATION & AUTHORIZATION ====================
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Please log in' },
+        { status: 401 }
+      );
+    }
+
+    const userRole = (session.user as any)?.role;
+    const userCompanyCode = (session.user as any)?.companyCode;
+    const isSuperAdmin = userRole === 'SUPER_ADMIN';
+
     const body = await request.json();
 
     // Validate required fields
@@ -115,7 +165,29 @@ export async function POST(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
     // Parse company_code to integer
-    const companyCode = body.company_code ? parseInt(body.company_code, 10) : null;
+    const requestedCompanyCode = body.company_code
+      ? parseInt(body.company_code, 10)
+      : null;
+
+    // ===================== COMPANY AUTHORIZATION =====================
+    // Non-SUPER_ADMIN can only create users in their own company
+    if (!isSuperAdmin) {
+      if (!userCompanyCode) {
+        return NextResponse.json(
+          { error: 'You do not have a company assigned' },
+          { status: 403 }
+        );
+      }
+
+      if (requestedCompanyCode !== userCompanyCode) {
+        return NextResponse.json(
+          {
+            error: `You can only create users in your assigned company (${userCompanyCode})`,
+          },
+          { status: 403 }
+        );
+      }
+    }
 
     // Create user
     const id = `USER-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -126,8 +198,8 @@ export async function POST(request: NextRequest) {
         email: data.email,
         password: hashedPassword,
         full_name: data.full_name,
-        role: body.role || 'User',
-        company_code: companyCode,
+        role: body.role || 'USER',
+        company_code: requestedCompanyCode,
         updated_at: new Date(),
       },
       select: {

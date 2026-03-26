@@ -59,14 +59,14 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitIncomingGoods(companyCode, [transactionId]);
+        result = await service.transmitIncomingGoods(companyCode, [transactionId], skipEndpointCheck);
         break;
 
       case 'outgoing':
         if (wmsId) {
-          result = await service.transmitOutgoingGoodsByWmsIds(companyCode, [wmsId]);
+          result = await service.transmitOutgoingGoodsByWmsIds(companyCode, [wmsId], skipEndpointCheck);
         } else if (transactionId) {
-          result = await service.transmitOutgoingGoodsByIds(companyCode, [transactionId]);
+          result = await service.transmitOutgoingGoodsByIds(companyCode, [transactionId], skipEndpointCheck);
         } else {
           return NextResponse.json(
             { success: false, message: 'Transaction ID atau WMS ID tidak ditemukan pada log ini' },
@@ -82,7 +82,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitMaterialUsage(companyCode, [transactionId], []);
+        result = await service.transmitMaterialUsage(companyCode, [transactionId], [wmsId || ''], skipEndpointCheck);
         break;
 
       case 'production_output':
@@ -92,7 +92,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitProductionOutput(companyCode, [transactionId], []);
+        result = await service.transmitProductionOutput(companyCode, [transactionId], [wmsId || ''], skipEndpointCheck);
         break;
 
       case 'scrap_in':
@@ -102,7 +102,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitScrapIn(companyCode, [transactionId]);
+        result = await service.transmitScrapIn(companyCode, [transactionId], skipEndpointCheck);
         break;
 
       case 'scrap_out':
@@ -112,7 +112,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitScrapOut(companyCode, [transactionId]);
+        result = await service.transmitScrapOut(companyCode, [transactionId], skipEndpointCheck);
         break;
 
       case 'capital_goods_out':
@@ -122,7 +122,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitCapitalGoodsOut(companyCode, [wmsId]);
+        result = await service.transmitCapitalGoodsOut(companyCode, [wmsId], skipEndpointCheck);
         break;
 
       case 'stock_opname':

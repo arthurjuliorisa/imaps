@@ -89,6 +89,7 @@ CREATE OR REPLACE VIEW vw_laporan_pemasukan AS
     ig.incoming_evidence_number AS doc_number,
     ig.incoming_date AS doc_date,
     ig.shipper_name,
+    ig.wms_id,
     igi.item_type AS type_code,
     igi.item_code,
     (COALESCE(it.name_id, ''::character varying))::character varying(100) AS item_code_bahasa,

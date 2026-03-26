@@ -355,6 +355,8 @@ Opening balance from closest snapshot BEFORE start_date (or 0), closing balance 
 -- ============================================================================
 -- No changes needed - already real-time only (transaction-based)
 
+DROP VIEW IF EXISTS vw_laporan_pemasukan CASCADE;
+
 CREATE OR REPLACE VIEW vw_laporan_pemasukan AS
 SELECT 
     ig.id,
@@ -366,6 +368,7 @@ SELECT
     ig.incoming_evidence_number as doc_number,
     ig.incoming_date as doc_date,
     ig.shipper_name,
+    ig.wms_id,
     
     -- Item details
     igi.item_type as type_code,

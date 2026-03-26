@@ -8,6 +8,12 @@ import { serializeBigInt } from '@/lib/bigint-serializer';
  * GET /api/dashboard/metrics
  * Returns enhanced real-time dashboard metrics from database
  *
+ * SUPER_ADMIN: Can view all metrics or filter by specific company via query parameter
+ * Other roles: Always filtered to their assigned company
+ *
+ * Query parameters:
+ * - companyCode: number (optional for SUPER_ADMIN to filter by specific company)
+ *
  * Metrics include:
  * - Total counts for master data (Companies, Customers, Suppliers, Users)
  * - Total transaction counts (Incoming, Outgoing, Material Usage, Production)
@@ -22,10 +28,43 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Build where clause with company_code filter
+    const userRole = (session.user as any)?.role;
+    const userCompanyCode = (session.user as any)?.companyCode;
+    const isSuperAdmin = userRole === 'SUPER_ADMIN';
+
+    // ===================== COMPANY FILTERING LOGIC =====================
+    // Extract optional companyCode parameter from query
+    const { searchParams } = new URL(request.url);
+    const companyCodeParam = searchParams.get('companyCode');
+
+    let effectiveCompanyCode: number | null = null;
+
+    if (companyCodeParam) {
+      const parsedCode = parseInt(companyCodeParam, 10);
+
+      // SUPER_ADMIN can request any company's metrics
+      if (isSuperAdmin) {
+        effectiveCompanyCode = parsedCode;
+      } else {
+        // Non-SUPER_ADMIN can only request their own company
+        if (parsedCode !== userCompanyCode) {
+          return NextResponse.json(
+            { error: 'You can only view metrics for your assigned company' },
+            { status: 403 }
+          );
+        }
+        effectiveCompanyCode = userCompanyCode;
+      }
+    } else if (!isSuperAdmin && userCompanyCode) {
+      // Non-SUPER_ADMIN without param: default to their company
+      effectiveCompanyCode = userCompanyCode;
+    }
+    // SUPER_ADMIN without param: show all companies (effectiveCompanyCode stays null)
+
+    // Build where clause based on effective company code
     const whereClause: any = {};
-    if (session.user.companyCode) {
-      whereClause.company_code = session.user.companyCode;
+    if (effectiveCompanyCode) {
+      whereClause.company_code = effectiveCompanyCode;
     }
 
     // Calculate date ranges for trend analysis

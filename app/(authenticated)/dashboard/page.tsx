@@ -88,28 +88,48 @@ function QuickLinkCard({ title, description, icon, href, gradient }: QuickLinkCa
 export default function DashboardPage() {
   const theme = useTheme();
   const { data: session } = useSession();
-  const [companyName, setCompanyName] = useState<string>('PT. Polygroup Manufaktur Indonesia');
+  const [companyName, setCompanyName] = useState<string>('Integrated Material Administration and Planning System');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchCompanyName = async () => {
-      if (session?.user?.companyCode) {
-        try {
-          const response = await fetch(`/api/master/companies?code=${session.user.companyCode}`);
+      setIsLoading(true);
+      try {
+        const userRole = (session?.user as any)?.role;
+        const userCompanyCode = session?.user?.companyCode;
+
+        // SUPER_ADMIN does not have a company assigned - show system-level greeting
+        if (userRole === 'SUPER_ADMIN') {
+          setCompanyName('SUPER ADMIN - All Companies');
+          return;
+        }
+
+        // For other roles, fetch their company details
+        if (userCompanyCode) {
+          const response = await fetch(`/api/master/companies?code=${userCompanyCode}`);
           if (response.ok) {
             const result = await response.json();
             if (result.success && result.data && result.data.length > 0 && result.data[0].name) {
               setCompanyName(result.data[0].name);
+              return;
             }
           }
-        } catch (error) {
-          console.error('Error fetching company:', error);
-          // Keep default company name on error
         }
+
+        // Fallback if fetch fails or no company code
+        setCompanyName('Integrated Material Administration and Planning System');
+      } catch (error) {
+        console.error('Error fetching company:', error);
+        setCompanyName('Integrated Material Administration and Planning System');
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    fetchCompanyName();
-  }, [session?.user?.companyCode]);
+    if (session?.user) {
+      fetchCompanyName();
+    }
+  }, [session?.user]);
 
   const quickLinks: QuickLinkCardProps[] = [
     {

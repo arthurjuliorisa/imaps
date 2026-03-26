@@ -39,20 +39,35 @@ export class INSWTransmissionService {
    */
   async transmitIncomingGoods(
     companyCode: number,
-    ids: number[]
+    ids: number[],
+    skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
-    this.log.info('Starting incoming goods transmission', { companyCode, ids });
+    this.log.info('Starting incoming goods transmission', { companyCode, ids, skipEndpointCheck });
 
     let payload: any = null;
     try {
       payload = await this.inswService.convertPemasukanToINSW(companyCode, ids);
     } catch { /* payload remains null if generation fails */ }
 
-    if (!(await this.isEndpointEnabled('PEMASUKAN'))) {
+    // Fetch incoming goods WMS IDs early (needed for all cases including endpoint disabled)
+    let incomingDocMap = new Map<number, string>();
+    try {
+      const incomingDocs = await prisma.incoming_goods.findMany({
+        where: { 
+          company_code: companyCode, 
+          id: { in: ids }
+        },
+        select: { id: true, wms_id: true }
+      });
+      incomingDocMap = new Map(incomingDocs.map(r => [Number(r.id), r.wms_id]));
+    } catch { /* fallback to empty map */ }
+
+    if (!skipEndpointCheck && !(await this.isEndpointEnabled('PEMASUKAN'))) {
       for (const id of ids) {
         await this.logTransmission({
           transaction_type: 'incoming',
           transaction_id: id,
+          wms_id: incomingDocMap.get(id),
           company_code: companyCode,
           insw_status: INSWTransmissionStatus.PENDING,
           insw_activity_code: '30',
@@ -74,14 +89,6 @@ export class INSWTransmissionService {
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
-    let incomingDocMap = new Map<number, string>();
-
-    try {
-      const incomingDocs = await prisma.$queryRaw<Array<{ id: number; doc_number: string }>>`
-        SELECT id, doc_number FROM vw_laporan_pemasukan WHERE company_code = ${companyCode} AND id = ANY(${ids}::int[])
-      `;
-      incomingDocMap = new Map(incomingDocs.map(r => [Number(r.id), r.doc_number]));
-    } catch { /* fallback to empty map */ }
 
     try {
       // Convert to INSW format
@@ -229,11 +236,13 @@ export class INSWTransmissionService {
    */
   async transmitOutgoingGoodsByIds(
     companyCode: number,
-    ids: number[]
+    ids: number[],
+    skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting outgoing goods transmission by IDs', {
       companyCode,
       ids,
+      skipEndpointCheck,
     });
 
     let payload: any = null;
@@ -241,7 +250,7 @@ export class INSWTransmissionService {
       payload = await this.inswService.convertPengeluaranToINSWByIds(companyCode, ids);
     } catch { /* payload remains null if generation fails */ }
 
-    if (!(await this.isEndpointEnabled('PENGELUARAN'))) {
+    if (!skipEndpointCheck && !(await this.isEndpointEnabled('PENGELUARAN'))) {
       for (const id of ids) {
         await this.logTransmission({
           transaction_type: 'outgoing',
@@ -403,11 +412,13 @@ export class INSWTransmissionService {
    */
   async transmitOutgoingGoodsByWmsIds(
     companyCode: number,
-    wmsIds: string[]
+    wmsIds: string[],
+    skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting outgoing goods transmission by WMS IDs', {
       companyCode,
       wmsIds,
+      skipEndpointCheck,
     });
 
     let payload: any = null;
@@ -415,7 +426,7 @@ export class INSWTransmissionService {
       payload = await this.inswService.convertPengeluaranToINSWByWmsIds(companyCode, wmsIds);
     } catch { /* payload remains null if generation fails */ }
 
-    if (!(await this.isEndpointEnabled('PENGELUARAN'))) {
+    if (!skipEndpointCheck && !(await this.isEndpointEnabled('PENGELUARAN'))) {
       for (const wmsId of wmsIds) {
         await this.logTransmission({
           transaction_type: 'outgoing',
@@ -578,16 +589,17 @@ export class INSWTransmissionService {
   async transmitMaterialUsage(
     companyCode: number,
     ids: number[],
-    wmsIds: string[]
+    wmsIds: string[],
+    skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
-    this.log.info('Starting material usage transmission', { companyCode, ids });
+    this.log.info('Starting material usage transmission', { companyCode, ids, skipEndpointCheck });
 
     let payload: any = null;
     try {
       payload = await this.inswService.convertMaterialUsageToINSW(companyCode, ids);
     } catch { /* payload remains null if generation fails */ }
 
-    if (!(await this.isEndpointEnabled('MATERIAL_USAGE'))) {
+    if (!skipEndpointCheck && !(await this.isEndpointEnabled('MATERIAL_USAGE'))) {
       for (let i = 0; i < ids.length; i++) {
         await this.logTransmission({
           transaction_type: 'material_usage',
@@ -764,11 +776,13 @@ export class INSWTransmissionService {
   async transmitProductionOutput(
     companyCode: number,
     ids: number[],
-    wmsIds: string[]
+    wmsIds: string[],
+    skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting production output transmission', {
       companyCode,
       ids,
+      skipEndpointCheck,
     });
 
     let payload: any = null;
@@ -776,7 +790,7 @@ export class INSWTransmissionService {
       payload = await this.inswService.convertProductionOutputToINSW(companyCode, ids);
     } catch { /* payload remains null if generation fails */ }
 
-    if (!(await this.isEndpointEnabled('PRODUCTION_OUTPUT'))) {
+    if (!skipEndpointCheck && !(await this.isEndpointEnabled('PRODUCTION_OUTPUT'))) {
       for (let i = 0; i < ids.length; i++) {
         await this.logTransmission({
           transaction_type: 'production_output',
@@ -1091,20 +1105,31 @@ export class INSWTransmissionService {
    */
   async transmitScrapIn(
     companyCode: number,
-    transactionIds: number[]
+    transactionIds: number[],
+    skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
-    this.log.info('Starting scrap IN transmission', { companyCode, transactionIds });
+    this.log.info('Starting scrap IN transmission', { companyCode, transactionIds, skipEndpointCheck });
 
     let payload: any = null;
     try {
       payload = await this.inswService.convertScrapInToINSW(companyCode, transactionIds);
     } catch { /* payload remains null if generation fails */ }
 
-    if (!(await this.isEndpointEnabled('SCRAP_IN'))) {
+    // Fetch scrap documents early (needed for all cases including endpoint disabled)
+    let scrapInDocMap = new Map<number, string>();
+    try {
+      const scrapDocs = await prisma.$queryRaw<Array<{ id: number; document_number: string }>>`
+        SELECT id, document_number FROM scrap_transactions WHERE id = ANY(${transactionIds}::int[]) AND deleted_at IS NULL
+      `;
+      scrapInDocMap = new Map(scrapDocs.map(r => [Number(r.id), r.document_number]));
+    } catch { /* fallback to empty map */ }
+
+    if (!skipEndpointCheck && !(await this.isEndpointEnabled('SCRAP_IN'))) {
       for (const id of transactionIds) {
         await this.logTransmission({
           transaction_type: 'scrap_in',
           transaction_id: id,
+          wms_id: scrapInDocMap.get(id),
           company_code: companyCode,
           insw_status: INSWTransmissionStatus.PENDING,
           insw_activity_code: '30',
@@ -1126,14 +1151,6 @@ export class INSWTransmissionService {
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
-    let scrapInDocMap = new Map<number, string>();
-
-    try {
-      const scrapDocs = await prisma.$queryRaw<Array<{ id: number; document_number: string }>>`
-        SELECT id, document_number FROM scrap_transactions WHERE id = ANY(${transactionIds}::int[]) AND deleted_at IS NULL
-      `;
-      scrapInDocMap = new Map(scrapDocs.map(r => [Number(r.id), r.document_number]));
-    } catch { /* fallback to empty map */ }
 
     try {
       if (!payload) payload = await this.inswService.convertScrapInToINSW(companyCode, transactionIds);
@@ -1189,20 +1206,31 @@ export class INSWTransmissionService {
    */
   async transmitScrapOut(
     companyCode: number,
-    transactionIds: number[]
+    transactionIds: number[],
+    skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
-    this.log.info('Starting scrap OUT transmission', { companyCode, transactionIds });
+    this.log.info('Starting scrap OUT transmission', { companyCode, transactionIds, skipEndpointCheck });
 
     let payload: any = null;
     try {
       payload = await this.inswService.convertScrapOutToINSW(companyCode, transactionIds);
     } catch { /* payload remains null if generation fails */ }
 
-    if (!(await this.isEndpointEnabled('SCRAP_OUT'))) {
+    // Fetch scrap documents early (needed for all cases including endpoint disabled)
+    let scrapOutDocMap = new Map<number, string>();
+    try {
+      const scrapDocs = await prisma.$queryRaw<Array<{ id: number; document_number: string }>>`
+        SELECT id, document_number FROM scrap_transactions WHERE id = ANY(${transactionIds}::int[]) AND deleted_at IS NULL
+      `;
+      scrapOutDocMap = new Map(scrapDocs.map(r => [Number(r.id), r.document_number]));
+    } catch { /* fallback to empty map */ }
+
+    if (!skipEndpointCheck && !(await this.isEndpointEnabled('SCRAP_OUT'))) {
       for (const id of transactionIds) {
         await this.logTransmission({
           transaction_type: 'scrap_out',
           transaction_id: id,
+          wms_id: scrapOutDocMap.get(id),
           company_code: companyCode,
           insw_status: INSWTransmissionStatus.PENDING,
           insw_activity_code: '31',
@@ -1224,14 +1252,6 @@ export class INSWTransmissionService {
     const results: INSWTransmitResult[] = [];
     let successCount = 0;
     let failedCount = 0;
-    let scrapOutDocMap = new Map<number, string>();
-
-    try {
-      const scrapDocs = await prisma.$queryRaw<Array<{ id: number; document_number: string }>>`
-        SELECT id, document_number FROM scrap_transactions WHERE id = ANY(${transactionIds}::int[]) AND deleted_at IS NULL
-      `;
-      scrapOutDocMap = new Map(scrapDocs.map(r => [Number(r.id), r.document_number]));
-    } catch { /* fallback to empty map */ }
 
     try {
       if (!payload) payload = await this.inswService.convertScrapOutToINSW(companyCode, transactionIds);
@@ -1278,16 +1298,17 @@ export class INSWTransmissionService {
    */
   async transmitCapitalGoodsOut(
     companyCode: number,
-    wmsIds: string[]
+    wmsIds: string[],
+    skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
-    this.log.info('Starting capital goods OUT transmission', { companyCode, wmsIds });
+    this.log.info('Starting capital goods OUT transmission', { companyCode, wmsIds, skipEndpointCheck });
 
     let payload: any = null;
     try {
       payload = await this.inswService.convertCapitalGoodsOutToINSWByWmsIds(companyCode, wmsIds);
     } catch { /* payload remains null if generation fails */ }
 
-    if (!(await this.isEndpointEnabled('CAPITAL_GOODS_OUT'))) {
+    if (!skipEndpointCheck && !(await this.isEndpointEnabled('CAPITAL_GOODS_OUT'))) {
       for (const wmsId of wmsIds) {
         await this.logTransmission({
           transaction_type: 'capital_goods_out',

@@ -19,6 +19,12 @@ interface TransactionTrend {
  * GET /api/dashboard/transaction-trends
  * Returns transaction trends for the last 12 months
  *
+ * SUPER_ADMIN: Can view all trends or filter by specific company via query parameter
+ * Other roles: Always filtered to their assigned company
+ *
+ * Query parameters:
+ * - companyCode: number (optional for SUPER_ADMIN to filter by specific company)
+ *
  * Note: Amount data is not available in current schema
  * Returns:
  * - Monthly incoming/outgoing document volume
@@ -32,38 +38,70 @@ export async function GET(request: Request) {
   }
 
   try {
+    const userRole = (session.user as any)?.role;
+    const userCompanyCode = (session.user as any)?.companyCode;
+    const isSuperAdmin = userRole === 'SUPER_ADMIN';
+
+    // ===================== COMPANY FILTERING LOGIC =====================
+    // Extract optional companyCode parameter from query
+    const { searchParams } = new URL(request.url);
+    const companyCodeParam = searchParams.get('companyCode');
+
+    let effectiveCompanyCode: number | null = null;
+
+    if (companyCodeParam) {
+      const parsedCode = parseInt(companyCodeParam, 10);
+
+      // SUPER_ADMIN can request any company's trends
+      if (isSuperAdmin) {
+        effectiveCompanyCode = parsedCode;
+      } else {
+        // Non-SUPER_ADMIN can only request their own company
+        if (parsedCode !== userCompanyCode) {
+          return NextResponse.json(
+            { error: 'You can only view trends for your assigned company' },
+            { status: 403 }
+          );
+        }
+        effectiveCompanyCode = userCompanyCode;
+      }
+    } else if (!isSuperAdmin && userCompanyCode) {
+      // Non-SUPER_ADMIN without param: default to their company
+      effectiveCompanyCode = userCompanyCode;
+    }
+    // SUPER_ADMIN without param: show all companies (effectiveCompanyCode stays null)
+
     // Calculate date range for last 12 months
     const now = new Date();
     const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
-    // Build where clause with company_code filter
-    const whereClause: any = {
+    // Build where clauses with optional company_code filter
+    const incomingWhereClause: any = {
       incoming_date: {
         gte: twelveMonthsAgo,
       },
     };
-    if (session.user.companyCode) {
-      whereClause.company_code = session.user.companyCode;
+    if (effectiveCompanyCode) {
+      incomingWhereClause.company_code = effectiveCompanyCode;
     }
 
-    // Fetch incoming headers for last 12 months
-    const incomingHeaders = await prisma.incoming_goods.findMany({
-      where: whereClause,
-      select: {
-        id: true,
-        incoming_date: true,
-      },
-    });
-
-    // Fetch outgoing headers for last 12 months
     const outgoingWhereClause: any = {
       outgoing_date: {
         gte: twelveMonthsAgo,
       },
     };
-    if (session.user.companyCode) {
-      outgoingWhereClause.company_code = session.user.companyCode;
+    if (effectiveCompanyCode) {
+      outgoingWhereClause.company_code = effectiveCompanyCode;
     }
+
+    // Fetch incoming headers for last 12 months
+    const incomingHeaders = await prisma.incoming_goods.findMany({
+      where: incomingWhereClause,
+      select: {
+        id: true,
+        incoming_date: true,
+      },
+    });
 
     const outgoingHeaders = await prisma.outgoing_goods.findMany({
       where: outgoingWhereClause,
@@ -124,12 +162,12 @@ export async function GET(request: Request) {
       const monthLabel = `${monthNames[month]} ${year}`;
 
       // Filter documents for this month
-      const incomingForMonth = incomingHeaders.filter(doc => {
+      const incomingForMonth = incomingHeaders.filter((doc: any) => {
         const docDate = new Date(doc.incoming_date);
         return docDate.getFullYear() === year && docDate.getMonth() === month;
       });
 
-      const outgoingForMonth = outgoingHeaders.filter(doc => {
+      const outgoingForMonth = outgoingHeaders.filter((doc: any) => {
         const docDate = new Date(doc.outgoing_date);
         return docDate.getFullYear() === year && docDate.getMonth() === month;
       });
@@ -139,15 +177,15 @@ export async function GET(request: Request) {
       const outgoingCount = outgoingForMonth.length;
 
       // Sum quantities from details
-      const incomingQuantity = incomingForMonth.reduce((sum, doc) => {
+      const incomingQuantity = incomingForMonth.reduce((sum: number, doc: any) => {
         const items = incomingItemsByHeaderId.get(doc.id) || [];
-        const docQty = items.reduce((detailSum, detail) => detailSum + Number(detail.qty), 0);
+        const docQty = items.reduce((detailSum: number, detail: any) => detailSum + Number(detail.qty), 0);
         return sum + docQty;
       }, 0);
 
-      const outgoingQuantity = outgoingForMonth.reduce((sum, doc) => {
+      const outgoingQuantity = outgoingForMonth.reduce((sum: number, doc: any) => {
         const items = outgoingItemsByHeaderId.get(doc.id) || [];
-        const docQty = items.reduce((detailSum, detail) => detailSum + Number(detail.qty), 0);
+        const docQty = items.reduce((detailSum: number, detail: any) => detailSum + Number(detail.qty), 0);
         return sum + docQty;
       }, 0);
 

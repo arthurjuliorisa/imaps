@@ -24,6 +24,7 @@ import dayjs from 'dayjs';
 interface ActivityLog {
   id: string;
   userId: string;
+  companyCode?: number;
   action: string;
   description: string;
   status: string;
@@ -36,12 +37,23 @@ interface ActivityLog {
   };
 }
 
+interface Company {
+  code: number;
+  name: string;
+}
+
 const columns: Column[] = [
   {
     id: 'createdAt',
     label: 'Date & Time',
     minWidth: 180,
     format: (value: any) => dayjs(value).format('MM/DD/YYYY HH:mm:ss'),
+  },
+  {
+    id: 'companyCode',
+    label: 'Company Code',
+    minWidth: 120,
+    format: (value: any) => value || '-',
   },
   {
     id: 'user',
@@ -97,14 +109,33 @@ export default function LogActivityPage() {
   const theme = useTheme();
   const toast = useToast();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [companyCodeFilter, setCompanyCodeFilter] = useState('ALL');
+
+  useEffect(() => {
+    fetchCompanies();
+  }, []);
 
   useEffect(() => {
     fetchLogs();
-  }, [searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter, companyCodeFilter]);
+
+  const fetchCompanies = async () => {
+    try {
+      const response = await fetch('/api/settings/companies');
+      const data = await response.json();
+      
+      if (Array.isArray(data)) {
+        setCompanies(data);
+      }
+    } catch (err) {
+      console.error('Error fetching companies:', err);
+    }
+  };
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -112,6 +143,7 @@ export default function LogActivityPage() {
       const params = new URLSearchParams({
         ...(searchQuery && { search: searchQuery }),
         ...(statusFilter !== 'ALL' && { status: statusFilter }),
+        ...(companyCodeFilter !== 'ALL' && { companyCode: companyCodeFilter }),
       });
 
       const response = await fetch(`/api/settings/activity-logs?${params}`);
@@ -143,6 +175,7 @@ export default function LogActivityPage() {
       const params = new URLSearchParams({
         ...(searchQuery && { search: searchQuery }),
         ...(statusFilter !== 'ALL' && { status: statusFilter }),
+        ...(companyCodeFilter !== 'ALL' && { companyCode: companyCodeFilter }),
         export: 'true',
       });
 
@@ -218,6 +251,21 @@ export default function LogActivityPage() {
               fullWidth
               sx={{ maxWidth: { sm: 400 } }}
             />
+            <TextField
+              select
+              label="Company"
+              value={companyCodeFilter}
+              onChange={(e) => setCompanyCodeFilter(e.target.value)}
+              size="small"
+              sx={{ minWidth: 200 }}
+            >
+              <MenuItem value="ALL">All Companies</MenuItem>
+              {companies.map((company) => (
+                <MenuItem key={company.code} value={company.code.toString()}>
+                  {company.code} - {company.name}
+                </MenuItem>
+              ))}
+            </TextField>
             <TextField
               select
               label="Status"
