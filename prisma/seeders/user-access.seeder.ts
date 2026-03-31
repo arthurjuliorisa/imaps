@@ -7,7 +7,7 @@ export async function seedUserAccessMenus() {
 
   // Admin has access to all menus
   const adminUser = await prisma.users.findUnique({
-    where: { email: 'admin@imaps.local' },
+    where: { email: 'superadmin@imaps.co.id' },
   });
 
   if (adminUser) {

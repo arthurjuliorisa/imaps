@@ -33,6 +33,7 @@ interface IncomingReportData {
   wmsId: number;
   companyCode: number;
   companyName: string;
+  companyType?: string;
   documentType: string;
   ppkekNumber: string;
   registrationDate: Date;
@@ -48,15 +49,17 @@ interface IncomingReportData {
   currency: string;
   amount: number;
   createdAt: Date;
+  internalDocument?: string;
 }
 
-const EXCEL_HEADERS = [
+const getExcelHeaders = (isSEZ: boolean) => [
   { key: 'no', label: 'No', type: 'number' as const },
   { key: 'companyName', label: 'Company Name', type: 'text' as const },
   { key: 'documentType', label: 'Jenis Dokumen Pabean', type: 'text' as const },
   { key: 'ppkekNumber', label: 'Nomor Daftar', type: 'text' as const },
   { key: 'registrationDate', label: 'Tanggal Daftar', type: 'date' as const },
   { key: 'documentNumber', label: 'Nomor Bukti Penerimaan Barang', type: 'text' as const },
+  ...(isSEZ ? [{ key: 'internalDocument', label: 'Internal Document', type: 'text' as const }] : []),
   { key: 'date', label: 'Tanggal Bukti Penerimaan Barang', type: 'date' as const },
   { key: 'shipperName', label: 'Nama Pengirim Barang', type: 'text' as const },
   { key: 'typeCode', label: 'Kategori Barang', type: 'text' as const },
@@ -69,11 +72,12 @@ const EXCEL_HEADERS = [
   { key: 'amount', label: 'nilai barang', type: 'number' as const },
 ];
 
-const PDF_COLUMNS = [
+const getPdfColumns = (isSEZ: boolean) => [
   { header: 'No', dataKey: 'no' },
   { header: 'Company Name', dataKey: 'companyName' },
   { header: 'Jenis Dokumen Pabean', dataKey: 'documentType' },
   { header: 'Nomor Bukti Penerimaan Barang', dataKey: 'documentNumber' },
+  ...(isSEZ ? [{ header: 'Internal Document', dataKey: 'internalDocument' }] : []),
   { header: 'Tanggal Bukti Penerimaan Barang', dataKey: 'date' },
   { header: 'Nama Pengirim Barang', dataKey: 'shipperName' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
@@ -82,6 +86,9 @@ const PDF_COLUMNS = [
   { header: 'valas', dataKey: 'currency' },
   { header: 'nilai barang', dataKey: 'amount' },
 ];
+
+const EXCEL_HEADERS = getExcelHeaders(false);
+const PDF_COLUMNS = getPdfColumns(false);
 
 export default function IncomingGoodsReportPage() {
   const theme = useTheme();
@@ -135,6 +142,11 @@ export default function IncomingGoodsReportPage() {
     return Array.from(types).sort();
   }, [data]);
 
+  // Determine if company is SEZ type
+  const isSEZ = useMemo(() => {
+    return data.length > 0 && data[0].companyType === 'SEZ';
+  }, [data]);
+
   // Filter data based on search query and item type filter
   const filteredData = useMemo(() => {
     let filtered = data;
@@ -183,6 +195,7 @@ export default function IncomingGoodsReportPage() {
       ppkekNumber: row.ppkekNumber || '-',
       registrationDate: row.registrationDate,
       documentNumber: row.documentNumber,
+      internalDocument: row.internalDocument || '',
       date: row.date,
       shipperName: row.shipperName,
       typeCode: row.typeCode,
@@ -197,7 +210,7 @@ export default function IncomingGoodsReportPage() {
 
     exportToExcelWithHeaders(
       exportData,
-      EXCEL_HEADERS,
+      getExcelHeaders(isSEZ),
       `Laporan_Pemasukan_Barang_${startDate}_${endDate}`,
       'Laporan Pemasukan Barang'
     );
@@ -209,6 +222,7 @@ export default function IncomingGoodsReportPage() {
       companyName: row.companyName,
       documentType: row.documentType,
       documentNumber: row.documentNumber,
+      internalDocument: row.internalDocument || '',
       date: formatDateShort(row.date),
       shipperName: row.shipperName,
       itemCode: row.itemCode,
@@ -220,7 +234,7 @@ export default function IncomingGoodsReportPage() {
 
     exportToPDF(
       exportData,
-      PDF_COLUMNS,
+      getPdfColumns(isSEZ),
       `Laporan_Pemasukan_Barang_${startDate}_${endDate}`,
       'Laporan Pemasukan Barang',
       `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`
@@ -301,6 +315,7 @@ export default function IncomingGoodsReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Nomor Daftar</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Tanggal Daftar</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nomor Bukti Penerimaan Barang</TableCell>
+                {isSEZ && <TableCell sx={{ fontWeight: 600 }}>Internal Document</TableCell>}
                 <TableCell sx={{ fontWeight: 600 }}>Tanggal Bukti Penerimaan Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nama Pengirim Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Kategori Barang</TableCell>
@@ -350,6 +365,7 @@ export default function IncomingGoodsReportPage() {
                     </TableCell>
                     <TableCell>{formatDate(row.registrationDate)}</TableCell>
                     <TableCell>{row.documentNumber}</TableCell>
+                    {isSEZ && <TableCell>{row.internalDocument || '-'}</TableCell>}
                     <TableCell>{formatDate(row.date)}</TableCell>
                     <TableCell>{row.shipperName}</TableCell>
                     <TableCell>

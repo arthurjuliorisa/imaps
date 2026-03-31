@@ -338,11 +338,54 @@ model activity_logs {
   created_at  DateTime @default(now()) @db.Timestamptz(6)
 
   users users? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  wms_transmission_logs wms_transmission_logs?
 
   @@index([user_id])
   @@index([action])
   @@index([status])
   @@index([created_at])
+}
+
+// ============================================================================
+// WMS TRANSMISSION LOGS
+// Separate table for detailed WMS payload/response logging with retention
+// ============================================================================
+model wms_transmission_logs {
+  id                      BigInt   @id @default(autoincrement())
+
+  // Relation to activity_logs for tracking
+  activity_log_id         BigInt   @unique
+  activity_logs           activity_logs @relation(fields: [activity_log_id], references: [id], onDelete: Cascade)
+
+  // Transaction metadata
+  action                  String   @db.VarChar(100)
+  wms_id                  String?  @db.VarChar(100)
+  company_code            Int?
+
+  // Transmission status and error details
+  transmission_status     String   @default("UNKNOWN") @db.VarChar(20)  // SUCCESS, FAILED, ERROR
+  error_type              String?  @db.VarChar(50)    // Only for errors: VALIDATION_ERROR, BUSINESS_LOGIC_ERROR, SYSTEM_ERROR
+  summary                 String?  @db.Text           // Success or error message
+
+  // Full payloads (stored only for FAILED/ERROR cases)
+  wms_request_payload     Json?
+  imaps_error_response    Json?
+
+  // Metadata
+  item_count              Int?
+
+  // Retention
+  created_at              DateTime @default(now()) @db.Timestamptz(6)
+  expires_at              DateTime @default(dbgenerated("NOW() + INTERVAL '90 days'")) @db.Timestamptz(6)
+
+  @@index([transmission_status, created_at(sort: Desc)])
+  @@index([wms_id, company_code, created_at(sort: Desc)])
+  @@index([wms_id, created_at(sort: Desc)])
+  @@index([company_code, created_at(sort: Desc)])
+  @@index([action, transmission_status])
+  @@index([error_type])
+  @@index([expires_at])
+  @@index([created_at(sort: Desc)])
 }
 
 // ============================================================================

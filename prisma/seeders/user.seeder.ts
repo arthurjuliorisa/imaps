@@ -8,12 +8,30 @@ export async function seedUsers() {
 
   const users = [
     {
-      username: 'admin',
+      username: 'superadmin',
+      email: 'superadmin@imaps.co.id',
+      password: await bcrypt.hash('superadmin123', 10),
+      full_name: 'System Administrator',
+      role: 'SUPER_ADMIN',
+      company_code: null, // All companies access for SUPER_ADMIN
+      is_active: true,
+    },
+    {
+      username: 'admin_1310',
       email: 'admin@harmoni.co.id',
       password: await bcrypt.hash('admin123', 10),
-      full_name: 'System Administrator',
+      full_name: 'Administrator Harmoni',
       role: 'ADMIN',
       company_code: 1310, // Default company for admin UI access
+      is_active: true,
+    },
+    {
+      username: 'admin_1370',
+      email: 'admin@pmi.co.id',
+      password: await bcrypt.hash('admin123', 10),
+      full_name: 'Administrator PMI',
+      role: 'ADMIN',
+      company_code: 1370, // Default company for admin UI access
       is_active: true,
     },
     {

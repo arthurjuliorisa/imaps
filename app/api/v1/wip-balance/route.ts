@@ -29,6 +29,8 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
   const { requestId, logger: requestLogger } = createRequestLogger(request);
 
+  let body: any;
+
   try {
     // Log incoming request
     await logRequest(request, requestLogger);
@@ -62,7 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse request body
-    const body = await request.json();
+    body = await request.json();
 
     // Process WIP Balance batch
     const service = new WIPBalanceService();
@@ -75,15 +77,24 @@ export async function POST(request: NextRequest) {
       
       logResponse(requestLogger, 400, startTime);
       
-      // Log validation failure
+      // Log validation failure with payload tracking
       await logActivity({
         action: 'WMS_PROCESS_WIP_BALANCE',
         description: 'Failed to process WIP balance - batch validation error',
         status: 'failed',
+        wms_payload: body,
+        imaps_response: {
+          status: 'failed',
+          message: 'Batch validation failed',
+          errors: result.errors,
+        },
         metadata: {
+          wms_id: body?.wms_id,
+          company_code: body?.company_code,
+          error_type: 'VALIDATION_ERROR',
           totalRecords,
           failedCount: totalRecords,
-          errors: result.errors,
+          error_count: result.errors?.length || 0,
         },
       });
       
@@ -122,6 +133,9 @@ export async function POST(request: NextRequest) {
       description: `Successfully processed WIP balance - ${result.data?.summary?.success_count || 0} records processed`,
       status: 'success',
       metadata: {
+        wms_id: body?.records?.[0]?.wms_id,
+        company_code: body?.company_code,
+        item_count: result.data?.summary?.success_count,
         summary: result.data?.summary,
       },
     });
@@ -130,13 +144,20 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     requestLogger.error('Failed to process WIP Balance batch', { error });
 
-    // Log error
+    // Log error with payload tracking
     await logActivity({
       action: 'WMS_PROCESS_WIP_BALANCE',
       description: 'Failed to process WIP balance - system error',
       status: 'error',
+      wms_payload: body,
+      imaps_response: {
+        error: error instanceof Error ? error.name : 'UNKNOWN',
+        message: error instanceof Error ? error.message : String(error),
+      },
       metadata: {
-        error: error instanceof Error ? error.message : String(error),
+        wms_id: body?.wms_id,
+        company_code: body?.company_code,
+        error_type: 'SYSTEM_ERROR',
       },
     });
 

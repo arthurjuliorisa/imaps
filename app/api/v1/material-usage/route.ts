@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
   const log = logger.child({ scope: 'POST /api/v1/material-usage', requestId });
 
   let wmsId: string | undefined;
+  let body: any;
 
   try {
     // 1. Middleware: Authentication
@@ -59,7 +60,6 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Parse request body
-    let body;
     try {
       body = await request.json();
       wmsId = body.wms_id;
@@ -100,7 +100,8 @@ export async function POST(request: NextRequest) {
         status: 'success',
         metadata: {
           wms_id: response.wms_id,
-          itemCount: response.queued_items_count,
+          company_code: body?.company_code,
+          item_count: response.queued_items_count,
         },
       });
       
@@ -111,14 +112,22 @@ export async function POST(request: NextRequest) {
         errorCount: response.errors.length,
       });
       
-      // Log validation failure
+      // Log validation failure with payload tracking
       await logActivity({
         action: 'WMS_PROCESS_MATERIAL_USAGE',
         description: 'Failed to process material usage - validation error',
         status: 'failed',
+        wms_payload: body,
+        imaps_response: {
+          status: 'failed',
+          message: 'Validation failed',
+          errors: response.errors,
+        },
         metadata: {
           wms_id: response.wms_id,
-          errors: response.errors,
+          company_code: body?.company_code,
+          error_type: 'VALIDATION_ERROR',
+          error_count: response.errors?.length || 0,
         },
       });
       
@@ -139,14 +148,20 @@ export async function POST(request: NextRequest) {
       wmsId,
     });
 
-    // Log error
+    // Log error with payload tracking
     await logActivity({
       action: 'WMS_PROCESS_MATERIAL_USAGE',
       description: 'Failed to process material usage - system error',
       status: 'error',
+      wms_payload: body,
+      imaps_response: {
+        error: err.name || 'UNKNOWN',
+        message: err.message || 'Internal server error',
+      },
       metadata: {
         wms_id: wmsId,
-        error: err.message || 'Internal server error',
+        company_code: body?.company_code,
+        error_type: 'SYSTEM_ERROR',
       },
     });
 

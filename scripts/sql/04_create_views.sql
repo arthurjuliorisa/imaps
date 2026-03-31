@@ -961,11 +961,14 @@ COMMENT ON VIEW vw_lpj_barang_sisa IS 'Report #7: Scrap/Waste Mutation Report - 
 -- Data source: production_outputs + scrap_transactions + material_usages (transaction-based)
 -- Strategy: UNION ALL for optimal performance with early filtering
 
+DROP VIEW IF EXISTS vw_internal_incoming CASCADE;
+
 CREATE OR REPLACE VIEW vw_internal_incoming AS
 
 -- Part 1: Production Output (Normal)
 SELECT 
     po.id,
+    po.wms_id,
     po.company_code,
     c.name as company_name,
     po.internal_evidence_number,
@@ -995,6 +998,7 @@ UNION ALL
 -- Part 2: Scrap Incoming (type='IN')
 SELECT 
     st.id,
+    st.document_number as wms_id,
     st.company_code,
     c.name as company_name,
     st.document_number::VARCHAR(50) as internal_evidence_number,
@@ -1024,6 +1028,7 @@ UNION ALL
 -- Part 3: Material Usage Reversals (reversal='Y' - acts as incoming/return)
 SELECT 
     mu.id,
+    mu.wms_id,
     mu.company_code,
     c.name as company_name,
     mu.internal_evidence_number,
@@ -1062,11 +1067,14 @@ COMMENT ON VIEW vw_internal_incoming IS 'Report #8: Internal Incoming - Real-tim
 -- Data source: material_usages + production_outputs + scrap_transactions (transaction-based)
 -- Strategy: UNION ALL for optimal performance with early filtering
 
+DROP VIEW IF EXISTS vw_internal_outgoing CASCADE;
+
 CREATE OR REPLACE VIEW vw_internal_outgoing AS
 
 -- Part 1: Material Usage (Normal)
 SELECT 
     mu.id,
+    mu.wms_id,
     mu.company_code,
     c.name as company_name,
     mu.internal_evidence_number,
@@ -1096,6 +1104,7 @@ UNION ALL
 -- Part 2: Production Output Reversals (reversal='Y' - acts as outgoing/cancellation)
 SELECT 
     po.id,
+    po.wms_id,
     po.company_code,
     c.name as company_name,
     po.internal_evidence_number,
@@ -1125,6 +1134,7 @@ UNION ALL
 -- Part 3: Scrap Outgoing (type='OUT' - scrap disposal)
 SELECT 
     st.id,
+    st.document_number as wms_id,
     st.company_code,
     c.name as company_name,
     st.document_number::VARCHAR(50) as internal_evidence_number,

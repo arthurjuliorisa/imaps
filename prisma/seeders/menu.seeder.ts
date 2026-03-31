@@ -115,6 +115,7 @@ const menuStructure: MenuInput[] = [
       { menu_name: 'Access Menu', menu_path: '/settings/access-menu', menu_icon: 'Settings', menu_order: 2 },
       { menu_name: 'Clean up Data', menu_path: '/settings/database-cleanup', menu_icon: 'DeleteSweep', menu_order: 3 },
       { menu_name: 'Log Activity', menu_path: '/settings/log-activity', menu_icon: 'History', menu_order: 4 },
+      { menu_name: 'WMS Log', menu_path: '/settings/wms-logs', menu_icon: 'Data Usage', menu_order: 5 }
     ],
   },
 ];

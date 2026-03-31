@@ -23,6 +23,13 @@ export async function GET(request: Request) {
     }
     const { companyCode } = companyValidation;
 
+    // Fetch company type to determine field mapping for SEZ companies
+    const company = await prisma.companies.findUnique({
+      where: { code: companyCode },
+      select: { company_type: true },
+    });
+    const companyType = company?.company_type || null;
+
     // Query from vw_laporan_pemasukan view with date filtering
     // Filter by doc_date OR reg_date within the date range
     let query = `
@@ -34,6 +41,7 @@ export async function GET(request: Request) {
         cust_doc_registration_no as ppkek_number,
         reg_date as registration_date,
         doc_number,
+        wms_id,
         doc_date,
         shipper_name,
         type_code,
@@ -76,27 +84,44 @@ export async function GET(request: Request) {
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
     // Transform to expected format
-    const transformedData = result.map((row: any, index: number) => ({
-      id: `${row.id}-${row.item_code}-${index}`,
-      wmsId: row.id,
-      companyCode: row.company_code,
-      companyName: row.company_name,
-      documentType: row.customs_document_type,
-      ppkekNumber: row.ppkek_number,
-      registrationDate: row.registration_date,
-      documentNumber: row.doc_number,
-      date: row.doc_date,
-      shipperName: row.shipper_name,
-      typeCode: row.type_code,
-      itemCodeBahasa: row.item_code_bahasa || '',
-      itemCode: row.item_code,
-      itemName: row.item_name,
-      unit: row.unit,
-      qty: Number(row.quantity || 0),
-      currency: row.currency,
-      amount: Number(row.value_amount || 0),
-      createdAt: row.created_at,
-    }));
+    const transformedData = result.map((row: any, index: number) => {
+      const baseData = {
+        id: `${row.id}-${row.item_code}-${index}`,
+        wmsId: row.id,
+        companyCode: row.company_code,
+        companyName: row.company_name,
+        companyType: companyType,
+        documentType: row.customs_document_type,
+        ppkekNumber: row.ppkek_number,
+        registrationDate: row.registration_date,
+        date: row.doc_date,
+        shipperName: row.shipper_name,
+        typeCode: row.type_code,
+        itemCodeBahasa: row.item_code_bahasa || '',
+        itemCode: row.item_code,
+        itemName: row.item_name,
+        unit: row.unit,
+        qty: Number(row.quantity || 0),
+        currency: row.currency,
+        amount: Number(row.value_amount || 0),
+        createdAt: row.created_at,
+      };
+
+      // For SEZ companies: documentNumber uses wms_id, and add internalDocument from doc_number
+      // For other companies: documentNumber uses doc_number as usual
+      if (companyType === 'SEZ') {
+        return {
+          ...baseData,
+          documentNumber: String(row.wms_id),
+          internalDocument: row.doc_number,
+        };
+      } else {
+        return {
+          ...baseData,
+          documentNumber: row.doc_number,
+        };
+      }
+    });
 
     return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {

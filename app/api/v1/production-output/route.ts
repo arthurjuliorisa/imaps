@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
   const log = logger.child({ scope: 'POST /api/v1/production-output', requestId });
 
   let wmsId: string | undefined;
+  let body: any;
 
   try {
     // 1. Middleware: Authentication
@@ -60,7 +61,6 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Parse request body
-    let body;
     try {
       body = await request.json();
       wmsId = body.wms_id;
@@ -92,14 +92,22 @@ export async function POST(request: NextRequest) {
         errorCount: result.errors.length,
       });
       
-      // Log validation failure
+      // Log validation failure with payload tracking
       await logActivity({
         action: 'WMS_PROCESS_PRODUCTION_OUTPUT',
         description: 'Failed to process production output - validation error',
         status: 'failed',
+        wms_payload: body,
+        imaps_response: {
+          status: 'failed',
+          message: 'Validation failed',
+          errors: result.errors,
+        },
         metadata: {
           wms_id: wmsId,
-          errors: result.errors,
+          company_code: body?.company_code,
+          error_type: 'VALIDATION_ERROR',
+          error_count: result.errors?.length || 0,
         },
       });
       
@@ -127,7 +135,8 @@ export async function POST(request: NextRequest) {
       status: 'success',
       metadata: {
         wms_id: result.data.wms_id,
-        itemCount: result.data.queued_items_count,
+        company_code: body?.company_code,
+        item_count: result.data.queued_items_count,
       },
     });
 
@@ -138,14 +147,20 @@ export async function POST(request: NextRequest) {
       wmsId,
     });
     
-    // Log error
+    // Log error with payload tracking
     await logActivity({
       action: 'WMS_PROCESS_PRODUCTION_OUTPUT',
       description: 'Failed to process production output - system error',
       status: 'error',
+      wms_payload: body,
+      imaps_response: {
+        error: error instanceof Error ? error.name : 'UNKNOWN',
+        message: error instanceof Error ? error.message : String(error),
+      },
       metadata: {
         wms_id: wmsId,
-        error: error instanceof Error ? error.message : String(error),
+        company_code: body?.company_code,
+        error_type: 'SYSTEM_ERROR',
       },
     });
     

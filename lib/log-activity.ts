@@ -2,6 +2,7 @@ import { prisma } from './prisma';
 import { headers } from 'next/headers';
 import { getServerSession } from 'next-auth';
 import { authOptions } from './auth';
+import { normalizeWmsPayload, getTransactionTypeFromAction } from './utils/payload-normalizer';
 
 /**
  * Interface for logging activity
@@ -12,6 +13,8 @@ interface LogActivityParams {
   status?: string;
   metadata?: Record<string, any>;
   userId?: string | null;
+  wms_payload?: any;        // Full WMS request payload
+  imaps_response?: any;     // Response error from iMAPS
 }
 
 /**
@@ -84,6 +87,8 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
       status = 'success',
       metadata = null,
       userId: providedUserId,
+      wms_payload,
+      imaps_response,
     } = params;
 
     // Get user ID from session if not provided
@@ -109,8 +114,8 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
       // Headers might not be available in all contexts
     }
 
-    // Write to activity_logs table
-    await prisma.activity_logs.create({
+    // 1. Write to activity_logs table (lightweight entry)
+    const activityLog = await prisma.activity_logs.create({
       data: {
         user_id: userId,
         action,
@@ -122,7 +127,74 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
       },
     });
 
-    console.log('[Activity Log] Logged:', { action, userId, status });
+    // 2. For ANY WMS transmission action, create detailed transmission log
+    // Strategy: ALWAYS log WMS transmissions (success, failed, error)
+    // Difference: Only FAILED/ERROR cases include wms_payload and imaps_response (for storage efficiency)
+    if (action && action.startsWith('WMS_')) {
+      try {
+        // Determine transmission status
+        let transmissionStatus = 'UNKNOWN';
+        if (status === 'success') transmissionStatus = 'SUCCESS';
+        else if (status === 'failed') transmissionStatus = 'FAILED';
+        else if (status === 'error') transmissionStatus = 'ERROR';
+
+        // Normalize payload structure before storing
+        const transactionType = getTransactionTypeFromAction(action);
+        const normalizedPayload = status !== 'success' && wms_payload 
+          ? normalizeWmsPayload(wms_payload, transactionType)
+          : null;
+
+        // Serialize payloads before storing
+        let serializedPayload = null;
+        let serializedResponse = null;
+
+        try {
+          if (normalizedPayload) {
+            serializedPayload = JSON.parse(JSON.stringify(normalizedPayload));
+          }
+        } catch (serializeError) {
+          // Proceed anyway, will store null if serialization fails
+        }
+
+        try {
+          if (status !== 'success' && imaps_response) {
+            serializedResponse = JSON.parse(JSON.stringify(imaps_response));
+          }
+        } catch (serializeError) {
+          // Proceed anyway, will store null if serialization fails
+        }
+
+        const result = await prisma.wms_transmission_logs.create({
+          data: {
+            activity_log_id: activityLog.id,
+            action,
+            wms_id: metadata?.wms_id || null,
+            // Convert company_code to number if it's a string
+            company_code: metadata?.company_code 
+              ? typeof metadata.company_code === 'string' 
+                ? parseInt(metadata.company_code, 10) 
+                : metadata.company_code
+              : null,
+            transmission_status: transmissionStatus,
+            error_type: status !== 'success' ? (metadata?.error_type || 'UNKNOWN') : null,
+            summary: description,
+            // Only store payloads for FAILED/ERROR cases
+            wms_request_payload: serializedPayload,
+            imaps_error_response: serializedResponse,
+            item_count: Array.isArray(wms_payload?.items) ? wms_payload.items.length : null,
+            expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days retention
+          },
+        });
+      } catch (transmissionLogError) {
+        // Log transmission log creation error, but don't break main flow
+        console.error('[logActivity] Failed to create transmission log:', {
+          error: transmissionLogError instanceof Error ? transmissionLogError.message : String(transmissionLogError),
+          action,
+          status,
+          stack: transmissionLogError instanceof Error ? transmissionLogError.stack : undefined,
+        });
+      }
+    }
   } catch (error) {
     // Log the error but don't throw - we don't want logging failures to break the app
     console.error('[logActivity] Failed to log activity:', error);

@@ -87,7 +87,18 @@ export async function POST(request: NextRequest) {
         action: 'WMS_CREATE_STOCK_OPNAME',
         description: 'Failed to create stock opname - validation error',
         status: 'failed',
-        metadata: { wms_id: wmsId, company_code: companyCode, error_count: details.length },
+        wms_payload: body,
+        imaps_response: {
+          status: 'failed',
+          message: 'Validation failed',
+          details,
+        },
+        metadata: { 
+          wms_id: wmsId, 
+          company_code: companyCode, 
+          error_type: 'VALIDATION_ERROR',
+          error_count: details.length 
+        },
       });
 
       return NextResponse.json(
@@ -133,7 +144,16 @@ export async function POST(request: NextRequest) {
       action: 'WMS_CREATE_STOCK_OPNAME',
       description: 'Failed to create stock opname - system error',
       status: 'error',
-      metadata: { wms_id: wmsId, company_code: companyCode, error: errorMessage },
+      wms_payload: body,
+      imaps_response: {
+        error: error instanceof Error ? error.name : 'UNKNOWN',
+        message: errorMessage,
+      },
+      metadata: { 
+        wms_id: wmsId, 
+        company_code: companyCode, 
+        error_type: 'SYSTEM_ERROR',
+      },
     });
 
     return NextResponse.json(
@@ -158,6 +178,7 @@ export async function PATCH(request: NextRequest) {
   const log = logger.child({ scope: 'PATCH /api/v1/stock-opname', requestId });
 
   let wmsId: string | undefined;
+  let body: any;
 
   try {
     // 1. Middleware: Authentication
@@ -186,7 +207,6 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 3. Parse request body
-    let body;
     try {
       body = await request.json();
       wmsId = body.wms_id;

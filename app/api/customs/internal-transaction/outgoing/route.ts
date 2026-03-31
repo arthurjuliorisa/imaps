@@ -23,10 +23,18 @@ export async function GET(request: Request) {
     }
     const { companyCode } = companyValidation;
 
+    // Fetch company type to determine field mapping for SEZ companies
+    const company = await prisma.companies.findUnique({
+      where: { code: companyCode },
+      select: { company_type: true },
+    });
+    const companyType = company?.company_type || null;
+
     // Query from vw_internal_outgoing view with date filtering
     let query = `
       SELECT
         id,
+        wms_id,
         company_code,
         company_name,
         internal_evidence_number as document_number,
@@ -65,23 +73,41 @@ export async function GET(request: Request) {
 
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
-    // Transform to expected format
-    const transformedData = result.map((row: any, index: number) => ({
-      id: `${row.id}-${row.item_code}-${index}`,
-      companyCode: row.company_code,
-      companyName: row.company_name,
-      documentNumber: row.document_number,
-      date: row.transaction_date,
-      recipientName: row.section || '-',
-      typeCode: row.type_code,
-      itemCodeBahasa: row.item_code_bahasa || '',
-      itemCode: row.item_code,
-      itemName: row.item_name,
-      unit: row.unit,
-      qty: Number(row.quantity || 0),
-      currency: 'USD', // Default currency, can be updated if currency field is added to view
-      amount: Number(row.value_amount || 0),
-    }));
+    // Transform to expected format with SEZ-specific logic
+    const transformedData = result.map((row: any, index: number) => {
+      const baseData = {
+        id: `${row.id}-${row.item_code}-${index}`,
+        wmsId: row.wms_id,
+        companyCode: row.company_code,
+        companyName: row.company_name,
+        companyType: companyType,
+        date: row.transaction_date,
+        recipientName: row.section || '-',
+        typeCode: row.type_code,
+        itemCodeBahasa: row.item_code_bahasa || '',
+        itemCode: row.item_code,
+        itemName: row.item_name,
+        unit: row.unit,
+        qty: Number(row.quantity || 0),
+        currency: 'USD',
+        amount: Number(row.value_amount || 0),
+      };
+
+      // For SEZ companies: documentNumber uses wms_id, and add internalDocument from internal_evidence_number
+      // For other companies: documentNumber uses internal_evidence_number as usual
+      if (companyType === 'SEZ') {
+        return {
+          ...baseData,
+          documentNumber: String(row.wms_id),
+          internalDocument: row.document_number,
+        };
+      } else {
+        return {
+          ...baseData,
+          documentNumber: row.document_number,
+        };
+      }
+    });
 
     return NextResponse.json(serializeBigInt(transformedData));
   } catch (error) {

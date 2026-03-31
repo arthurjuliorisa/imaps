@@ -30,9 +30,12 @@ import { formatQty, formatAmount } from '@/lib/utils/format';
 
 interface InternalTransactionOutgoingData {
   id: string;
+  wmsId?: number;
   companyCode: number;
   companyName: string;
+  companyType?: string;
   documentNumber: string;
+  internalDocument?: string;
   date: Date;
   recipientName: string;
   typeCode: string;
@@ -44,13 +47,14 @@ interface InternalTransactionOutgoingData {
   amount: number;
 }
 
-const EXCEL_HEADERS = [
+const getExcelHeaders = (isSEZ: boolean) => [
   { key: 'no', label: 'No', type: 'number' as const },
   { key: 'companyName', label: 'Company Name', type: 'text' as const },
   { key: 'documentType', label: 'Jenis Dokumen Pabean', type: 'text' as const },
   { key: 'ppkekNumber', label: 'Nomor Daftar', type: 'text' as const },
   { key: 'registrationDate', label: 'Tanggal Daftar', type: 'date' as const },
   { key: 'documentNumber', label: 'Nomor Bukti Pengeluaran Barang', type: 'text' as const },
+  ...(isSEZ ? [{ key: 'internalDocument', label: 'Internal Document', type: 'text' as const }] : []),
   { key: 'date', label: 'Tanggal Bukti Pengeluaran Barang', type: 'date' as const },
   { key: 'recipientName', label: 'Penerima barang', type: 'text' as const },
   { key: 'typeCode', label: 'Item Type', type: 'text' as const },
@@ -61,11 +65,12 @@ const EXCEL_HEADERS = [
   { key: 'amount', label: 'nilai barang', type: 'number' as const },
 ];
 
-const PDF_COLUMNS = [
+const getPdfColumns = (isSEZ: boolean) => [
   { header: 'No', dataKey: 'no' },
   { header: 'Company Name', dataKey: 'companyName' },
   { header: 'Jenis Dokumen Pabean', dataKey: 'documentType' },
   { header: 'Nomor Bukti Pengeluaran Barang', dataKey: 'documentNumber' },
+  ...(isSEZ ? [{ header: 'Internal Document', dataKey: 'internalDocument' }] : []),
   { header: 'Tanggal Bukti Pengeluaran Barang', dataKey: 'date' },
   { header: 'Penerima barang', dataKey: 'recipientName' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
@@ -126,6 +131,11 @@ export default function InternalTransactionOutgoingPage() {
     return Array.from(types).sort();
   }, [data]);
 
+  // Determine if company is SEZ type
+  const isSEZ = useMemo(() => {
+    return data.length > 0 && data[0].companyType === 'SEZ';
+  }, [data]);
+
   // Filter data based on search query and item type filter
   const filteredData = useMemo(() => {
     let filtered = data;
@@ -170,6 +180,7 @@ export default function InternalTransactionOutgoingPage() {
       ppkekNumber: '-',
       registrationDate: row.date,
       documentNumber: row.documentNumber,
+      internalDocument: row.internalDocument || '',
       date: row.date,
       recipientName: row.recipientName || '-',
       typeCode: row.typeCode,
@@ -182,7 +193,7 @@ export default function InternalTransactionOutgoingPage() {
 
     exportToExcelWithHeaders(
       exportData,
-      EXCEL_HEADERS,
+      getExcelHeaders(isSEZ),
       `Internal_Transaction_Outgoing_${startDate}_${endDate}`,
       'Laporan Internal Transaction - Outgoing'
     );
@@ -194,6 +205,7 @@ export default function InternalTransactionOutgoingPage() {
       companyName: row.companyName,
       documentType: '-',
       documentNumber: row.documentNumber,
+      internalDocument: row.internalDocument || '',
       date: formatDateShort(row.date),
       recipientName: row.recipientName || '-',
       itemCode: row.itemCode,
@@ -204,7 +216,7 @@ export default function InternalTransactionOutgoingPage() {
 
     exportToPDF(
       exportData,
-      PDF_COLUMNS,
+      getPdfColumns(isSEZ),
       `Internal_Transaction_Outgoing_${startDate}_${endDate}`,
       'Laporan Internal Transaction - Outgoing',
       `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`
@@ -285,6 +297,7 @@ export default function InternalTransactionOutgoingPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Nomor Daftar</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Tanggal Daftar</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nomor Bukti Pengeluaran Barang</TableCell>
+                {isSEZ && <TableCell sx={{ fontWeight: 600 }}>Internal Document</TableCell>}
                 <TableCell sx={{ fontWeight: 600 }}>Tanggal Bukti Pengeluaran Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Penerima barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
@@ -298,7 +311,7 @@ export default function InternalTransactionOutgoingPage() {
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={14} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={isSEZ ? 15 : 14} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -326,6 +339,7 @@ export default function InternalTransactionOutgoingPage() {
                       <Typography variant="body2" color="text.secondary">-</Typography>
                     </TableCell>
                     <TableCell>{row.documentNumber}</TableCell>
+                    {isSEZ && <TableCell>{row.internalDocument || '-'}</TableCell>}
                     <TableCell>{formatDate(row.date)}</TableCell>
                     <TableCell>{row.recipientName || '-'}</TableCell>
                     <TableCell>

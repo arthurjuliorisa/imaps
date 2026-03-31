@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
   const { logger: requestLogger } = createRequestLogger(request);
 
   let wmsId: string | undefined;
+  let body: any;
 
   try {
     // Log incoming request
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse request body
-    const body = await request.json();
+    body = await request.json();
     wmsId = body.wms_id;
 
     // Process incoming goods
@@ -60,14 +61,22 @@ export async function POST(request: NextRequest) {
       // Validation failed
       logResponse(requestLogger, 400, startTime);
       
-      // Log validation failure
+      // Log validation failure with payload tracking
       await logActivity({
         action: 'WMS_PROCESS_INCOMING_GOODS',
         description: 'Failed to process incoming goods - validation error',
         status: 'failed',
+        wms_payload: body,
+        imaps_response: {
+          status: 'failed',
+          message: 'Validation failed',
+          errors: result.errors,
+        },
         metadata: {
           wms_id: wmsId,
-          errors: result.errors,
+          company_code: body?.company_code,
+          error_type: 'VALIDATION_ERROR',
+          error_count: result.errors?.length || 0,
         },
       });
       
@@ -92,7 +101,8 @@ export async function POST(request: NextRequest) {
       status: 'success',
       metadata: {
         wms_id: wmsId,
-        data: result.data,
+        company_code: body?.company_code,
+        item_count: Array.isArray(body?.items) ? body.items.length : null,
       },
     });
     
@@ -100,14 +110,20 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     requestLogger.error('Failed to process incoming goods', { error, wmsId });
 
-    // Log error
+    // Log error with payload tracking
     await logActivity({
       action: 'WMS_PROCESS_INCOMING_GOODS',
       description: 'Failed to process incoming goods - system error',
       status: 'error',
+      wms_payload: body,
+      imaps_response: {
+        error: error instanceof Error ? error.name : 'UNKNOWN',
+        message: error instanceof Error ? error.message : String(error),
+      },
       metadata: {
         wms_id: wmsId,
-        error: error instanceof Error ? error.message : String(error),
+        company_code: body?.company_code,
+        error_type: 'SYSTEM_ERROR',
       },
     });
 
