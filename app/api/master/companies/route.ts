@@ -71,6 +71,15 @@ export async function GET(request: NextRequest) {
     // Get companies
     const companies = await prisma.companies.findMany({
       where,
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        company_type: true,
+        status: true,
+        created_at: true,
+        updated_at: true,
+      },
       orderBy: {
         name: 'asc'
       }

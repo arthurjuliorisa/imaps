@@ -10,6 +10,11 @@ export async function GET(request: NextRequest) {
       return authCheck.response;
     }
 
+    const session = authCheck.session as any;
+    const userCompanyCode = session?.user?.companyCode;
+    const userRole = session?.user?.role;
+    const isSuperAdmin = userRole === 'SUPER_ADMIN';
+
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '100');
     const offset = parseInt(searchParams.get('offset') || '0');
@@ -41,9 +46,26 @@ export async function GET(request: NextRequest) {
       where.transmission_status = transmissionStatusFilter;
     }
 
+    // ===================== COMPANY FILTERING LOGIC =====================
+    // SUPER_ADMIN can view all WMS logs or filter by specific company
+    // Non-SUPER_ADMIN can only view logs from their assigned company
     if (companyCodeFilter && companyCodeFilter !== 'ALL') {
-      where.company_code = parseInt(companyCodeFilter);
+      const requestedCompanyCode = parseInt(companyCodeFilter, 10);
+
+      // Authorization check: prevent non-SUPER_ADMIN from accessing other companies
+      if (!isSuperAdmin && requestedCompanyCode !== parseInt(userCompanyCode || '0', 10)) {
+        return NextResponse.json(
+          { success: false, data: [], error: 'Unauthorized - cannot access other company logs' },
+          { status: 403 }
+        );
+      }
+
+      where.company_code = requestedCompanyCode;
+    } else if (!isSuperAdmin && userCompanyCode) {
+      // Non-SUPER_ADMIN users always see only their company's logs by default
+      where.company_code = parseInt(userCompanyCode, 10);
     }
+    // SUPER_ADMIN with no company filter: see all company logs (no where clause)
 
     // Fetch logs
     const [logs, total] = await Promise.all([

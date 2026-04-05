@@ -327,23 +327,26 @@ model audit_logs {
 }
 
 model activity_logs {
-  id          BigInt   @id @default(autoincrement())
-  user_id     String?  @db.VarChar(100)
-  action      String   @db.VarChar(100)
-  description String   @db.Text
-  status      String   @default("success") @db.VarChar(20)
-  metadata    Json?
-  ip_address  String?  @db.VarChar(50)
-  user_agent  String?  @db.VarChar(500)
-  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  id             BigInt   @id @default(autoincrement())
+  user_id        String?  @db.VarChar(100)
+  company_code   Int?     @db.Integer  // Denormalized for performance and consistency
+  action         String   @db.VarChar(100)
+  description    String   @db.Text
+  status         String   @default("success") @db.VarChar(20)
+  metadata       Json?
+  ip_address     String?  @db.VarChar(50)
+  user_agent     String?  @db.VarChar(500)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
 
   users users? @relation(fields: [user_id], references: [id], onDelete: SetNull)
   wms_transmission_logs wms_transmission_logs?
 
   @@index([user_id])
+  @@index([company_code])
   @@index([action])
   @@index([status])
   @@index([created_at])
+  @@index([company_code, created_at(sort: Desc)])
 }
 
 // ============================================================================

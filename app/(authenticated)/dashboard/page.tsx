@@ -89,6 +89,7 @@ export default function DashboardPage() {
   const theme = useTheme();
   const { data: session } = useSession();
   const [companyName, setCompanyName] = useState<string>('Integrated Material Administration and Planning System');
+  const [companyType, setCompanyType] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -101,6 +102,7 @@ export default function DashboardPage() {
         // SUPER_ADMIN does not have a company assigned - show system-level greeting
         if (userRole === 'SUPER_ADMIN') {
           setCompanyName('SUPER ADMIN - All Companies');
+          setCompanyType(null);
           return;
         }
 
@@ -109,8 +111,14 @@ export default function DashboardPage() {
           const response = await fetch(`/api/master/companies?code=${userCompanyCode}`);
           if (response.ok) {
             const result = await response.json();
-            if (result.success && result.data && result.data.length > 0 && result.data[0].name) {
-              setCompanyName(result.data[0].name);
+            if (result.success && result.data && result.data.length > 0) {
+              const company = result.data[0];
+              if (company.name) {
+                setCompanyName(company.name);
+              }
+              if (company.company_type) {
+                setCompanyType(company.company_type);
+              }
               return;
             }
           }
@@ -118,9 +126,11 @@ export default function DashboardPage() {
 
         // Fallback if fetch fails or no company code
         setCompanyName('Integrated Material Administration and Planning System');
+        setCompanyType(null);
       } catch (error) {
         console.error('Error fetching company:', error);
         setCompanyName('Integrated Material Administration and Planning System');
+        setCompanyType(null);
       } finally {
         setIsLoading(false);
       }
@@ -131,7 +141,8 @@ export default function DashboardPage() {
     }
   }, [session?.user]);
 
-  const quickLinks: QuickLinkCardProps[] = [
+  // Quick links for BZ company type
+  const bzQuickLinks: QuickLinkCardProps[] = [
     {
       title: 'Laporan Pemasukan Barang',
       description: 'Laporan barang masuk (Incoming)',
@@ -182,6 +193,54 @@ export default function DashboardPage() {
       gradient: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
     },
   ];
+
+  // Quick links for SEZ company type
+  const sezQuickLinks: QuickLinkCardProps[] = [
+    {
+      title: 'Laporan Pemasukan Barang',
+      description: 'Laporan barang masuk (Incoming)',
+      icon: <ImportExport sx={{ fontSize: 32 }} />,
+      href: '/customs/incoming',
+      gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    },
+    {
+      title: 'Laporan Pengeluaran Barang',
+      description: 'Laporan barang keluar (Outgoing)',
+      icon: <ImportExport sx={{ fontSize: 32, transform: 'rotate(180deg)' }} />,
+      href: '/customs/outgoing',
+      gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+    },
+    {
+      title: 'Laporan Pemasukan Barang (Internal)',
+      description: 'Laporan barang masuk internal',
+      icon: <ImportExport sx={{ fontSize: 32 }} />,
+      href: '/customs/internal-transaction/incoming',
+      gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    },
+    {
+      title: 'Laporan Pengeluaran Barang (Internal)',
+      description: 'Laporan barang keluar internal',
+      icon: <ImportExport sx={{ fontSize: 32, transform: 'rotate(180deg)' }} />,
+      href: '/customs/internal-transaction/outgoing',
+      gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+    },
+    {
+      title: 'Laporan Stock Opname',
+      description: 'Laporan stock opname barang',
+      icon: <Inventory2 sx={{ fontSize: 32 }} />,
+      href: '/customs/stock-count/opname',
+      gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+    },
+    {
+      title: 'Laporan Adjustment',
+      description: 'Laporan adjustment stok barang',
+      icon: <Assessment sx={{ fontSize: 32 }} />,
+      href: '/customs/stock-count/adjustment',
+      gradient: 'linear-gradient(135deg, #30cfd0 0%, #330867 100%)',
+    },
+  ];
+
+  const quickLinks = companyType === 'SEZ' ? sezQuickLinks : bzQuickLinks;
 
   return (
     <Box>

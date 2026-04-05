@@ -59,7 +59,8 @@ const EXCEL_HEADERS = [
   { key: 'typeCode', label: 'Kategori Barang', type: 'text' as const },
   { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
   { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
-  { key: 'unit', label: 'Satuan', type: 'text' as const },
+  { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
+  { key: 'jumlahBarang', label: 'Jumlah Barang', type: 'number' as const },
   { key: 'beginningQty', label: 'Saldo Awal', type: 'number' as const },
   { key: 'incomingQty', label: 'Jumlah Pemasukan Barang', type: 'number' as const },
   { key: 'outgoingQty', label: 'Jumlah Pengeluaran Barang', type: 'number' as const },
@@ -79,6 +80,8 @@ const PDF_COLUMNS = [
   { header: 'No. Bukti Internal', dataKey: 'internalEvidenceNumber' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
+  { header: 'Satuan Barang', dataKey: 'unit' },
+  { header: 'Jumlah Barang', dataKey: 'jumlahBarang' },
   { header: 'Stok Sistem', dataKey: 'systemQty' },
   { header: 'Hasil Pencacahan', dataKey: 'actualQty' },
   { header: 'Jumlah selisih', dataKey: 'varianceQty' },
@@ -181,6 +184,7 @@ export default function AdjustmentReportPage() {
       itemCode: row.itemCode,
       itemName: row.itemName,
       unit: row.unit,
+      jumlahBarang: row.incomingQty,
       beginningQty: row.beginningQty,
       incomingQty: row.incomingQty,
       outgoingQty: row.outgoingQty,
@@ -209,6 +213,8 @@ export default function AdjustmentReportPage() {
       internalEvidenceNumber: row.internalEvidenceNumber,
       itemCode: row.itemCode,
       itemName: row.itemName,
+      unit: row.unit,
+      jumlahBarang: formatQty(row.incomingQty),
       systemQty: formatQty(row.systemQty),
       actualQty: formatQty(row.actualQty),
       varianceQty: formatQty(row.varianceQty),
@@ -299,7 +305,8 @@ export default function AdjustmentReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Kategori Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Satuan</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Saldo Awal</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Pemasukan Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Pengeluaran Barang</TableCell>
@@ -367,6 +374,7 @@ export default function AdjustmentReportPage() {
                     <TableCell>
                       <Chip label={row.unit} size="small" />
                     </TableCell>
+                    <TableCell align="right">{formatQty(row.incomingQty)}</TableCell>
                     <TableCell align="right">{formatQty(row.beginningQty)}</TableCell>
                     <TableCell align="right">{formatQty(row.incomingQty)}</TableCell>
                     <TableCell align="right">{formatQty(row.outgoingQty)}</TableCell>

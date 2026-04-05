@@ -41,6 +41,7 @@ export async function GET(request: Request) {
     // ===================== COMPANY FILTERING LOGIC =====================
     // SUPER_ADMIN can view all activity logs or filter by specific company
     // Non-SUPER_ADMIN can only view logs from their assigned company
+    // Note: company_code is denormalized in activity_logs for direct filtering (no JOIN needed)
     if (companyCodeParam && companyCodeParam !== 'ALL') {
       const requestedCompanyCode = parseInt(companyCodeParam, 10);
 
@@ -49,10 +50,10 @@ export async function GET(request: Request) {
         return NextResponse.json([], { status: 403 });
       }
 
-      where.users = { company_code: requestedCompanyCode };
+      where.company_code = requestedCompanyCode;
     } else if (!isSuperAdmin && userCompanyCode) {
       // Non-SUPER_ADMIN users always see only their company's logs by default
-      where.users = { company_code: parseInt(userCompanyCode, 10) };
+      where.company_code = parseInt(userCompanyCode, 10);
     }
     // SUPER_ADMIN with no company filter: see all company logs (no where clause)
 
@@ -80,7 +81,7 @@ export async function GET(request: Request) {
       const headers = ['Date & Time', 'Company Code', 'User', 'Email', 'Action', 'Description', 'Status', 'IP Address'];
       const rows = logs.map(log => [
         log.created_at.toISOString(),
-        log.users?.company_code?.toString() || '-',
+        log.company_code?.toString() || '-',
         log.users?.username || 'System',
         log.users?.email || '-',
         log.action,
@@ -106,7 +107,7 @@ export async function GET(request: Request) {
     const data = logs.map(log => ({
       id: serializeBigInt(log.id),
       userId: log.user_id,
-      companyCode: log.users?.company_code,
+      companyCode: log.company_code,
       user: {
         username: log.users?.username || 'System',
         email: log.users?.email || '-',

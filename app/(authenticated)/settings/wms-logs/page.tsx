@@ -31,6 +31,7 @@ import {
 import { Refresh, Visibility, ContentCopy, Check, GetApp } from '@mui/icons-material';
 import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
+import { useSession } from 'next-auth/react';
 import dayjs from 'dayjs';
 
 interface WMSTransmissionLog {
@@ -49,22 +50,32 @@ interface WMSTransmissionLog {
   expires_at: string;
 }
 
+interface Company {
+  code: number;
+  name: string;
+}
+
 export default function WMSTransmissionLogsPage() {
   const theme = useTheme();
   const toast = useToast();
+  const { data: session } = useSession();
 
   const [logs, setLogs] = useState<WMSTransmissionLog[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionFilter, setActionFilter] = useState('ALL');
   const [errorTypeFilter, setErrorTypeFilter] = useState('ALL');
   const [transmissionStatusFilter, setTransmissionStatusFilter] = useState('ALL');
-  const [companyCodeFilter, setCompanyCodeFilter] = useState('ALL');
+  const [companyCodeFilter, setCompanyCodeFilter] = useState<string>('ALL');
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedLog, setSelectedLog] = useState<WMSTransmissionLog | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState(dayjs().subtract(7, 'days').format('YYYY-MM-DD'));
-  const [dateTo, setDateTo] = useState(dayjs().format('YYYY-MM-DD'));
+  const [dateTo, setDateTo] = useState(dayjs().format('YYYY-MM-DD')); 
+ 
+  const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
+  const userCompanyCode = session?.user?.companyCode as string | undefined;
 
   const columns: Column[] = [
     {
@@ -113,6 +124,16 @@ export default function WMSTransmissionLogsPage() {
       label: 'WMS ID',
       minWidth: 150,
       format: (value: any) => value || '-',
+    },
+    {
+      id: 'company_code',
+      label: 'Company Code',
+      minWidth: 120,
+      format: (value: any) => {
+        if (!value) return '-';
+        const company = companies.find((c) => c.code === value);
+        return company ? `${company.name} (${value})` : value;
+      },
     },
     {
       id: 'error_type',
@@ -166,8 +187,28 @@ export default function WMSTransmissionLogsPage() {
   ];
 
   useEffect(() => {
+    fetchCompanies();
+    // Set default company filter for non-SUPER_ADMIN
+    if (!isSuperAdmin && userCompanyCode) {
+      setCompanyCodeFilter(userCompanyCode);
+    }
+  }, [isSuperAdmin, userCompanyCode]);
+
+  useEffect(() => {
     fetchLogs();
   }, [actionFilter, errorTypeFilter, transmissionStatusFilter, companyCodeFilter, dateFrom, dateTo]);
+
+  const fetchCompanies = async () => {
+    try {
+      const response = await fetch('/api/settings/companies');
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        setCompanies(data);
+      }
+    } catch (err) {
+      console.error('Error fetching companies:', err);
+    }
+  };
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -372,6 +413,23 @@ export default function WMSTransmissionLogsPage() {
               <MenuItem value="BUSINESS_LOGIC_ERROR">Business Logic Error</MenuItem>
               <MenuItem value="SYSTEM_ERROR">System Error</MenuItem>
             </TextField>
+            {isSuperAdmin && (
+              <TextField
+                select
+                label="Company Code"
+                value={companyCodeFilter}
+                onChange={(e) => setCompanyCodeFilter(e.target.value)}
+                size="small"
+                sx={{ minWidth: 180 }}
+              >
+                <MenuItem value="ALL">All Companies</MenuItem>
+                {companies.map((company) => (
+                  <MenuItem key={company.code} value={company.code.toString()}>
+                    {company.name} ({company.code})
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
           </Stack>
         </CardContent>
       </Card>
