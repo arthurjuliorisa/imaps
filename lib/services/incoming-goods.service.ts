@@ -4,6 +4,7 @@ import type { IncomingGoodRequestInput } from '../validators/schemas/incoming-go
 import type { ErrorDetail, SuccessResponse } from '../types/api-response';
 import { logger } from '../utils/logger';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
+import { prisma } from '@/lib/db/prisma';
 
 export class IncomingGoodsService {
   private repository: IncomingGoodsRepository;
@@ -114,14 +115,26 @@ export class IncomingGoodsService {
       );
 
       // 8. Auto-transmit to INSW (fire-and-forget, non-blocking)
+      // Only transmit if company type is SEZ
       (async () => {
         try {
-          const inswService = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
-          const transmissionResult = await inswService.transmitIncomingGoods(data.company_code, [result.id]);
-          if (transmissionResult.status === 'success') {
-            requestLogger.info('Incoming goods transmitted to INSW', { wmsId: data.wms_id });
+          // Check company type
+          const company = await prisma.companies.findUnique({
+            where: { code: data.company_code },
+            select: { company_type: true },
+          });
+
+          // Only transmit if SEZ company
+          if (company?.company_type === 'SEZ') {
+            const inswService = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+            const transmissionResult = await inswService.transmitIncomingGoods(data.company_code, [result.id]);
+            if (transmissionResult.status === 'success') {
+              requestLogger.info('Incoming goods transmitted to INSW', { wmsId: data.wms_id });
+            } else {
+              requestLogger.warn('Incoming goods INSW transmission failed', { wmsId: data.wms_id });
+            }
           } else {
-            requestLogger.warn('Incoming goods INSW transmission failed', { wmsId: data.wms_id });
+            requestLogger.info('Incoming goods NOT transmitted to INSW (non-SEZ company)', { wmsId: data.wms_id, companyType: company?.company_type });
           }
         } catch (err: any) {
           requestLogger.error('INSW auto-transmit error', { wmsId: data.wms_id, error: err.message });

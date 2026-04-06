@@ -294,39 +294,55 @@ export async function POST(request: Request) {
     });
 
     // Transmit to INSW (async, non-blocking)
+    // Only transmit if company type is SEZ
     (async () => {
       try {
-        const inswService = new INSWIntegrationService(
-          process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-          process.env.INSW_UNIQUE_KEY_TEST || '',
-          process.env.INSW_USE_TEST_MODE === 'true'
-        );
-
-        const payload = await inswService.convertCapitalGoodsOutToINSWByWmsIds(
-          companyCode,
-          [result.wmsId]
-        );
-
-        const inswResponse = await inswService.postPengeluaran(payload);
-
-        console.log('[INSW] Capital Goods OUT transmitted successfully:', {
-          wmsId: result.wmsId,
-          outgoingGoodId: result.outgoingGoodId,
-          inswResponse,
+        // Check company type
+        const company = await prisma.companies.findUnique({
+          where: { code: companyCode },
+          select: { company_type: true },
         });
 
-        await logActivity({
-          action: 'INSW_TRANSMIT_CAPITAL_GOODS_OUT',
-          description: `INSW transmit for capital goods OUT: ${result.wmsId}`,
-          status: 'success',
-          metadata: {
+        // Only transmit if SEZ company
+        if (company?.company_type === 'SEZ') {
+          const inswService = new INSWIntegrationService(
+            process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
+            process.env.INSW_UNIQUE_KEY_TEST || '',
+            process.env.INSW_USE_TEST_MODE === 'true'
+          );
+
+          const payload = await inswService.convertCapitalGoodsOutToINSWByWmsIds(
+            companyCode,
+            [result.wmsId]
+          );
+
+          const inswResponse = await inswService.postPengeluaran(payload);
+
+          console.log('[INSW] Capital Goods OUT transmitted successfully:', {
             wmsId: result.wmsId,
-            outgoingGoodId: result.outgoingGoodId.toString(),
-            itemType: result.itemType,
-            itemCode: result.itemCode,
+            outgoingGoodId: result.outgoingGoodId,
             inswResponse,
-          },
-        });
+          });
+
+          await logActivity({
+            action: 'INSW_TRANSMIT_CAPITAL_GOODS_OUT',
+            description: `INSW transmit for capital goods OUT: ${result.wmsId}`,
+            status: 'success',
+            metadata: {
+              wmsId: result.wmsId,
+              outgoingGoodId: result.outgoingGoodId.toString(),
+              itemType: result.itemType,
+              itemCode: result.itemCode,
+              inswResponse,
+            },
+          });
+        } else {
+          console.log('[INSW] Capital Goods OUT NOT transmitted (non-SEZ company)', {
+            wmsId: result.wmsId,
+            companyCode,
+            companyType: company?.company_type,
+          });
+        }
       } catch (inswError) {
         console.error('[INSW] Failed to transmit capital goods OUT:', {
           wmsId: result.wmsId,

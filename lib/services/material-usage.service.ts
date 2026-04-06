@@ -9,6 +9,7 @@ import {
 } from '@/lib/validators/schemas/material-usage.schema';
 import { MaterialUsageRepository } from '@/lib/repositories/material-usage.repository';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
+import { prisma } from '@/lib/db/prisma';
 
 /**
  * Material Usage Service
@@ -196,25 +197,39 @@ export class MaterialUsageService {
               return;
             }
 
-            const inswService = new INSWTransmissionService(
-              process.env.INSW_USE_TEST_MODE === 'true'
-            );
+            // Check company type
+            const company = await prisma.companies.findUnique({
+              where: { code: data.company_code },
+              select: { company_type: true },
+            });
 
-            const transmissionResult = await inswService.transmitMaterialUsage(
-              data.company_code,
-              [savedRecord.id],
-              [data.wms_id]
-            );
+            // Only transmit if SEZ company
+            if (company?.company_type === 'SEZ') {
+              const inswService = new INSWTransmissionService(
+                process.env.INSW_USE_TEST_MODE === 'true'
+              );
 
-            if (transmissionResult.status === 'success') {
-              log.info('Material usage transmitted to INSW successfully', {
-                wmsId: data.wms_id,
-                transmissionResult,
-              });
+              const transmissionResult = await inswService.transmitMaterialUsage(
+                data.company_code,
+                [savedRecord.id],
+                [data.wms_id]
+              );
+
+              if (transmissionResult.status === 'success') {
+                log.info('Material usage transmitted to INSW successfully', {
+                  wmsId: data.wms_id,
+                  transmissionResult,
+                });
+              } else {
+                log.warn('Material usage INSW transmission failed', {
+                  wmsId: data.wms_id,
+                  transmissionResult,
+                });
+              }
             } else {
-              log.warn('Material usage INSW transmission failed', {
+              log.info('Material usage NOT transmitted to INSW (non-SEZ company)', {
                 wmsId: data.wms_id,
-                transmissionResult,
+                companyType: company?.company_type,
               });
             }
           } catch (inswError: any) {

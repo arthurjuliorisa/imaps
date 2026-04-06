@@ -10,6 +10,7 @@ import { AdjustmentsRepository } from '@/lib/repositories/adjustments.repository
 import { transformZodErrors } from '@/lib/utils/error-transformer';
 import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/api-response';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
+import { prisma } from '@/lib/db/prisma';
 
 /**
  * Adjustments Service
@@ -172,16 +173,34 @@ export class AdjustmentsService {
             wmsId: data.wms_id,
             adjustmentId: result.header.id,
           });
-          const inswTransmission = new INSWTransmissionService();
-          inswTransmission.transmitAdjustment(
-            data.company_code,
-            result.header.id,
-            data.wms_id
-          ).then((res) => {
-            log.info('INSW adjustment transmitted', { wmsId: data.wms_id, status: res.status });
-          }).catch((err: any) => {
-            log.error('INSW adjustment transmission error', { wmsId: data.wms_id, error: err.message });
-          });
+
+          // Check company type before INSW transmission
+          (async () => {
+            try {
+              const company = await prisma.companies.findUnique({
+                where: { code: data.company_code },
+                select: { company_type: true },
+              });
+
+              // Only transmit if SEZ company
+              if (company?.company_type === 'SEZ') {
+                const inswTransmission = new INSWTransmissionService();
+                const res = await inswTransmission.transmitAdjustment(
+                  data.company_code,
+                  result.header.id,
+                  data.wms_id
+                );
+                log.info('INSW adjustment transmitted', { wmsId: data.wms_id, status: res.status });
+              } else {
+                log.info('INSW adjustment NOT transmitted (non-SEZ company)', { 
+                  wmsId: data.wms_id,
+                  companyType: company?.company_type
+                });
+              }
+            } catch (err: any) {
+              log.error('INSW adjustment transmission error', { wmsId: data.wms_id, error: err.message });
+            }
+          })();
         })
         .catch((err: any) => {
           log.error('Adjustment insert failed', {

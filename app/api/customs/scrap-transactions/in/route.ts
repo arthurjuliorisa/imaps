@@ -257,10 +257,25 @@ export async function POST(request: Request) {
     });
 
     // Transmit to INSW via INSWTransmissionService (async, non-blocking, with tracking log)
-    const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
-    inswTransmission.transmitScrapIn(companyCode, [result.transactionId])
-      .then(r => console.log('[INSW] Scrap IN transmitted', { status: r.status, transactionId: result.transactionId }))
-      .catch(err => console.error('[INSW] Scrap IN INSW error', { err }));
+    // Only transmit if company type is SEZ
+    (async () => {
+      try {
+        const company = await prisma.companies.findUnique({
+          where: { code: companyCode },
+          select: { company_type: true },
+        });
+
+        if (company?.company_type === 'SEZ') {
+          const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+          const r = await inswTransmission.transmitScrapIn(companyCode, [result.transactionId]);
+          console.log('[INSW] Scrap IN transmitted', { status: r.status, transactionId: result.transactionId });
+        } else {
+          console.log('[INSW] Scrap IN NOT transmitted (non-SEZ company)', { companyCode, companyType: company?.company_type });
+        }
+      } catch (err) {
+        console.error('[INSW] Scrap IN INSW error', { err });
+      }
+    })();
 
     return NextResponse.json(
       {

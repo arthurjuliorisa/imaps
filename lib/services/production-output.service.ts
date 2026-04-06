@@ -9,6 +9,7 @@ import { ProductionOutputRepository } from '@/lib/repositories/production-output
 import { transformZodErrors } from '@/lib/utils/error-transformer';
 import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/api-response';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
+import { prisma } from '@/lib/db/prisma';
 
 /**
  * Production Output Service
@@ -140,31 +141,46 @@ export class ProductionOutputService {
 
           // Auto-transmit to INSW
           try {
-            log.info('Starting auto-transmit to INSW', {
-              wmsId: data.wms_id,
-              companyCode: data.company_code,
-              productionOutputId: result.header.id,
+            // Check company type
+            const company = await prisma.companies.findUnique({
+              where: { code: data.company_code },
+              select: { company_type: true },
             });
 
-            const inswService = new INSWTransmissionService(
-              process.env.INSW_USE_TEST_MODE === 'true'
-            );
-
-            const transmissionResult = await inswService.transmitProductionOutput(
-              data.company_code,
-              [result.header.id],
-              [data.wms_id]
-            );
-
-            if (transmissionResult.status === 'success') {
-              log.info('Production output transmitted to INSW successfully', {
+            // Only transmit if SEZ company
+            if (company?.company_type === 'SEZ') {
+              log.info('Starting auto-transmit to INSW (SEZ company)', {
                 wmsId: data.wms_id,
-                transmissionResult,
+                companyCode: data.company_code,
+                productionOutputId: result.header.id,
               });
+
+              const inswService = new INSWTransmissionService(
+                process.env.INSW_USE_TEST_MODE === 'true'
+              );
+
+              const transmissionResult = await inswService.transmitProductionOutput(
+                data.company_code,
+                [result.header.id],
+                [data.wms_id]
+              );
+
+              if (transmissionResult.status === 'success') {
+                log.info('Production output transmitted to INSW successfully', {
+                  wmsId: data.wms_id,
+                  transmissionResult,
+                });
+              } else {
+                log.warn('Production output INSW transmission failed', {
+                  wmsId: data.wms_id,
+                  transmissionResult,
+                });
+              }
             } else {
-              log.warn('Production output INSW transmission failed', {
+              log.info('Production output NOT transmitted to INSW (non-SEZ company)', {
                 wmsId: data.wms_id,
-                transmissionResult,
+                companyCode: data.company_code,
+                companyType: company?.company_type,
               });
             }
           } catch (inswError: any) {

@@ -148,12 +148,23 @@ export class OutgoingGoodsService {
       repository.insertOutgoingGoodsAsync(data)
         .then(async () => {
           try {
-            const inswService = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
-            const result = await inswService.transmitOutgoingGoodsByWmsIds(data.company_code, [data.wms_id]);
-            if (result.status !== 'success') {
-              requestLogger.warn('Outgoing goods INSW transmission failed', { wmsId: data.wms_id });
+            // Check company type
+            const company = await prisma.companies.findUnique({
+              where: { code: data.company_code },
+              select: { company_type: true },
+            });
+
+            // Only transmit if SEZ company
+            if (company?.company_type === 'SEZ') {
+              const inswService = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+              const result = await inswService.transmitOutgoingGoodsByWmsIds(data.company_code, [data.wms_id]);
+              if (result.status !== 'success') {
+                requestLogger.warn('Outgoing goods INSW transmission failed', { wmsId: data.wms_id });
+              } else {
+                requestLogger.info('Outgoing goods transmitted to INSW', { wmsId: data.wms_id });
+              }
             } else {
-              requestLogger.info('Outgoing goods transmitted to INSW', { wmsId: data.wms_id });
+              requestLogger.info('Outgoing goods NOT transmitted to INSW (non-SEZ company)', { wmsId: data.wms_id, companyType: company?.company_type });
             }
           } catch (inswErr: any) {
             requestLogger.error('INSW auto-transmit error for outgoing goods', { wmsId: data.wms_id, error: inswErr.message });
