@@ -260,12 +260,17 @@ BEGIN
         ),
         range_mutations AS (
             -- Aggregate mutations for items within the specified date range
+            -- For FERT: use production_qty as input
+            -- For HALB: use outgoing_qty as input (outgoing-based pass-through flow)
             -- CRITICAL: Include UOM in grouping to separate mutations by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
                 sds.uom,
-                SUM(sds.production_qty) as total_production_qty,
+                SUM(CASE 
+                    WHEN sds.item_type = 'HALB' THEN sds.outgoing_qty
+                    ELSE sds.production_qty
+                END) as total_production_qty,
                 SUM(sds.outgoing_qty) as total_outgoing_qty,
                 SUM(sds.adjustment_qty) as total_adjustment_qty
             FROM stock_daily_snapshot sds
@@ -276,12 +281,14 @@ BEGIN
         opening_balance_data AS (
             -- Priority 1: If snapshot exists ON start_date, use its opening_balance
             -- Priority 2: Otherwise, use closing_balance from latest snapshot ON or BEFORE start_date
+            -- For HALB: always 0 (pass-through flow, no opening balance)
             -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
                 sds.uom,
                 CASE 
+                    WHEN sds.item_type = 'HALB' THEN 0
                     WHEN sds.snapshot_date = v_start_date THEN sds.opening_balance
                     ELSE sds.closing_balance
                 END as balance_value,
@@ -292,12 +299,16 @@ BEGIN
         ),
         closing_balance_data AS (
             -- Get closing_balance FIELD from snapshot ON or BEFORE end_date (most recent snapshot up to period end)
+            -- For HALB: always 0 (pass-through flow, no closing balance)
             -- CRITICAL: Include UOM in PARTITION BY to separate by UOM
             SELECT
                 sds.company_code,
                 sds.item_code,
                 sds.uom,
-                sds.closing_balance,
+                CASE 
+                    WHEN sds.item_type = 'HALB' THEN 0
+                    ELSE sds.closing_balance
+                END as closing_balance,
                 ROW_NUMBER() OVER (PARTITION BY sds.company_code, sds.item_code, sds.uom ORDER BY sds.snapshot_date DESC) as rn
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
@@ -341,13 +352,18 @@ BEGIN
         JOIN companies c ON ai.company_code = c.code
         LEFT JOIN item_types it ON ai.item_type = it.item_type_code
         LEFT JOIN range_mutations rm ON ai.company_code = rm.company_code AND ai.item_code = rm.item_code AND ai.uom = rm.uom
+        WHERE ai.item_type = 'FERT'
+           OR (ai.item_type = 'HALB' AND COALESCE(rm.total_outgoing_qty, 0) > 0)
         ORDER BY ai.company_code, ai.item_code, ai.uom;
 END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION fn_calculate_lpj_hasil_produksi IS 
-'Calculate LPJ (Laporan Pemasukan Jurnal) for finished and produced goods (FERT, HALB)
-Using snapshot-only approach: sum production_qty and outgoing_qty within date range
+'Calculate LPJ (Laporan Pemasukan Jurnal) for finished/produced goods and HALB outgoing pass-through
+For FERT: uses production_qty as input, normal balance calculation
+For HALB: uses outgoing_qty as pass-through flow with zero balance (opening=0, in=out=outgoing_qty, closing=0)
+Only includes HALB with outgoing_qty > 0 (outgoing-based reporting)
+Using snapshot-only approach: accumulated mutations within date range
 Opening balance from closest snapshot BEFORE start_date (or 0), closing balance from end_date snapshot';
 
 -- ============================================================================
