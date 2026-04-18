@@ -1,13 +1,17 @@
 /**
  * Format a number as quantity with comma as thousands separator and dot for decimal
- * @param value - The numeric value to format
+ * @param value - The numeric value to format (can be number or string from API)
  * @returns Formatted string with 3 decimal places
  */
-export function formatQty(value: number | null | undefined): string {
-  if (value === null || value === undefined) {
+export function formatQty(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') {
     return '0.000';
   }
-  return value.toLocaleString('en-US', {
+  const numValue = typeof value === 'string' ? parseFloat(value) : value;
+  if (isNaN(numValue)) {
+    return '0.000';
+  }
+  return numValue.toLocaleString('en-US', {
     minimumFractionDigits: 3,
     maximumFractionDigits: 3,
   });
@@ -15,14 +19,18 @@ export function formatQty(value: number | null | undefined): string {
 
 /**
  * Format a number as amount with comma as thousands separator and dot for decimal
- * @param value - The numeric value to format
+ * @param value - The numeric value to format (can be number or string from API)
  * @returns Formatted string with 4 decimal places
  */
-export function formatAmount(value: number | null | undefined): string {
-  if (value === null || value === undefined) {
+export function formatAmount(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') {
     return '0.0000';
   }
-  return value.toLocaleString('en-US', {
+  const numValue = typeof value === 'string' ? parseFloat(value) : value;
+  if (isNaN(numValue)) {
+    return '0.0000';
+  }
+  return numValue.toLocaleString('en-US', {
     minimumFractionDigits: 4,
     maximumFractionDigits: 4,
   });

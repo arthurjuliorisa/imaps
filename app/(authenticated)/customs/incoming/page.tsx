@@ -45,9 +45,9 @@ interface IncomingReportData {
   itemCode: string;
   itemName: string;
   unit: string;
-  qty: number;
+  qty: string; // Changed from number to string for decimal precision
   currency: string;
-  amount: number;
+  amount: string; // Changed from number to string for decimal precision
   createdAt: Date;
   internalDocument?: string;
 }
@@ -117,7 +117,8 @@ export default function IncomingGoodsReportPage() {
       const response = await fetch(`/api/customs/incoming?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
-      setData(result);
+      // Extract data array from new API response format
+      setData(result.data || []);
     } catch (error) {
       console.error('Error fetching incoming report data:', error);
       toast.error('Failed to load incoming goods report');
@@ -203,9 +204,9 @@ export default function IncomingGoodsReportPage() {
       itemCode: row.itemCode,
       itemName: row.itemName,
       unit: row.unit,
-      qty: row.qty,
+      qty: typeof row.qty === 'string' ? parseFloat(row.qty) : row.qty,
       currency: row.currency,
-      amount: row.amount,
+      amount: typeof row.amount === 'string' ? parseFloat(row.amount) : row.amount,
     }));
 
     exportToExcelWithHeaders(

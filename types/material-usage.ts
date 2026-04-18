@@ -6,14 +6,23 @@ export interface MaterialUsageHeaderData {
   reversal?: string;
 }
 
+/**
+ * Traceability entry containing PPKEK and quantity (NEW in v3.5.0)
+ */
+export interface TraceabilityEntry {
+  ppkek_number?: string | null;
+  qty: number;
+}
+
 export interface MaterialUsageItem {
   id: string;
   item_code: string;
   item_name: string;
   item_type: string;
   uom: string;
-  qty: number;
-  ppkek_number?: string;
+  component_demand_qty?: number | null;
+  amount?: number | null;
+  traceability_data: TraceabilityEntry[];
 }
 
 export interface MaterialUsageFormData {

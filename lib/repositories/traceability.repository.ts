@@ -23,6 +23,11 @@ export interface TraceabilityPPKEKDetail {
   incoming_evidence_number?: string; // Additional context for incoming-based
 }
 
+export interface TraceabilityPPKEKWithQty extends TraceabilityPPKEKDetail {
+  qty_allocated: number; // Quantity allocated per this PPKEK
+  qty_uom: string; // Unit of measure for this allocation
+}
+
 // ============================================================================
 // LEVEL 3: MATERIALS (Production-Based Only)
 // ============================================================================
@@ -31,9 +36,7 @@ export interface TraceabilityMaterialDetail {
   material_item_code: string;
   material_item_name: string;
   consumption_ratio: number; // component_demand_qty / planned_production_qty
-  material_qty_allocated: number; // qty_per_wo × consumption_ratio
-  qty_uom: string; // Material unit of measure
-  ppkek?: TraceabilityPPKEKDetail | null; // Resolved PPKEK if available
+  ppkeks?: TraceabilityPPKEKWithQty[]; // Multiple PPKEKs with qty allocation for each
 }
 
 // ============================================================================
@@ -157,7 +160,7 @@ export class TraceabilityRepository {
         return {
           item_code: outgoingItem.item_code,
           item_name: outgoingItem.item_name,
-          qty: Number(outgoingItem.qty),
+          qty: outgoingItem.qty ? Number(outgoingItem.qty.toString()) : 0,
           item_type: outgoingItem.item_type,
           uom: outgoingItem.uom,
           source_type: 'incoming',
@@ -196,7 +199,7 @@ export class TraceabilityRepository {
       const workOrders: TraceabilityWorkOrderDetail[] = [];
 
       for (const allocation of allocations) {
-        // Get materials for this work order allocation
+        // Get materials for this work order from production traceability (for basic info)
         const traceabilityRecords = await prisma.outgoing_fg_production_traceability.findMany({
           where: {
             outgoing_good_item_id: outgoingItemId,
@@ -206,61 +209,137 @@ export class TraceabilityRepository {
           orderBy: [{ material_item_code: 'asc' }],
         });
 
-        // Group materials by material_item_code to avoid duplicates
-        const materialMap = new Map<string, typeof traceabilityRecords[0]>();
+        // Get unique material codes from traceability records
+        const materialCodes = Array.from(
+          new Set(traceabilityRecords.map((r) => r.material_item_code).filter(Boolean))
+        );
+
+        // Group materials by material_item_code and collect all PPKEKs with their quantities
+        const materialMap = new Map<string, {
+          materialName: string;
+          consumptionRatio: number;
+          ppkeksWithQty: TraceabilityPPKEKWithQty[];
+          qtyUom: string;
+        }>();
+
+        // First pass: Create entries for all materials from traceability
         for (const record of traceabilityRecords) {
-          if (record.material_item_code) {
-            if (!materialMap.has(record.material_item_code)) {
-              materialMap.set(record.material_item_code, record);
+          if (!record.material_item_code) {
+            continue;
+          }
+
+          if (!materialMap.has(record.material_item_code)) {
+            // Get material UOM from material usage items
+            const materialUsage = await prisma.material_usage_items.findFirst({
+              where: {
+                item_code: record.material_item_code,
+              },
+              select: { uom: true },
+            });
+
+            materialMap.set(record.material_item_code, {
+              materialName: record.material_item_name || '',
+              consumptionRatio: record.consumption_ratio
+                ? Number(record.consumption_ratio.toString())
+                : 0,
+              ppkeksWithQty: [],
+              qtyUom: materialUsage?.uom || outgoingItem.uom,
+            });
+          }
+        }
+
+        // Second pass: Get PPKEK data from work_order_material_consumption (source of truth)
+        for (const materialCode of materialCodes) {
+          const materialEntry = materialMap.get(materialCode);
+          if (!materialEntry) continue;
+
+          // Query work_order_material_consumption for all PPKEK records for this material
+          const consumptionRecords = await prisma.work_order_material_consumption.findMany({
+            where: {
+              work_order_number: allocation.work_order_number,
+              item_code: materialCode,
+              company_code: companyCode,
+              ppkek_number: { not: null }, // Only get records with PPKEK
+            },
+            orderBy: [{ ppkek_number: 'asc' }],
+          });
+
+          // Process each consumption record to get PPKEK details
+          for (const consumption of consumptionRecords) {
+            if (!consumption.ppkek_number) continue;
+
+            // Check if PPKEK already added
+            const ppkekExists = materialEntry.ppkeksWithQty.some(
+              (p) => p.ppkek_number === consumption.ppkek_number
+            );
+
+            if (!ppkekExists) {
+              // Query incoming_goods to get customs details
+              const incomingGood = await prisma.incoming_goods.findFirst({
+                where: {
+                  ppkek_number: consumption.ppkek_number,
+                  company_code: companyCode,
+                },
+                orderBy: { incoming_date: 'desc' },
+              });
+
+              materialEntry.ppkeksWithQty.push({
+                ppkek_number: consumption.ppkek_number,
+                customs_registration_date: incomingGood?.customs_registration_date
+                  ? new Date(incomingGood.customs_registration_date).toISOString().split('T')[0]
+                  : '',
+                customs_document_type: incomingGood?.customs_document_type || '',
+                incoming_date: incomingGood?.incoming_date
+                  ? new Date(incomingGood.incoming_date).toISOString().split('T')[0]
+                  : '',
+                qty_allocated: consumption.qty_consumed 
+                  ? Number(consumption.qty_consumed.toString())
+                  : 0,
+                qty_uom: materialEntry.qtyUom,
+              });
+            }
+          }
+
+          // If no consumption records found in work_order_material_consumption,
+          // fallback to outgoing_fg_production_traceability
+          if (materialEntry.ppkeksWithQty.length === 0) {
+            const traceRecord = traceabilityRecords.find(
+              (r) => r.material_item_code === materialCode && r.ppkek_number_incoming
+            );
+
+            if (traceRecord?.ppkek_number_incoming) {
+              materialEntry.ppkeksWithQty.push({
+                ppkek_number: traceRecord.ppkek_number_incoming,
+                customs_registration_date: traceRecord.customs_registration_date
+                  ? new Date(traceRecord.customs_registration_date).toISOString().split('T')[0]
+                  : '',
+                customs_document_type: traceRecord.customs_document_type || '',
+                incoming_date: traceRecord.incoming_date
+                  ? new Date(traceRecord.incoming_date).toISOString().split('T')[0]
+                  : '',
+                qty_allocated: traceRecord.material_qty_allocated 
+                  ? Number(traceRecord.material_qty_allocated.toString())
+                  : 0,
+                qty_uom: materialEntry.qtyUom,
+              });
             }
           }
         }
 
         const materials: TraceabilityMaterialDetail[] = [];
 
-        for (const record of materialMap.values()) {
-          let ppkekDetail: TraceabilityPPKEKDetail | null = null;
-
-          // Resolve PPKEK if available
-          if (record.ppkek_number_incoming) {
-            ppkekDetail = {
-              ppkek_number: record.ppkek_number_incoming,
-              customs_registration_date: record.customs_registration_date
-                ? new Date(record.customs_registration_date).toISOString().split('T')[0]
-                : '',
-              customs_document_type: record.customs_document_type || '',
-              incoming_date: record.incoming_date
-                ? new Date(record.incoming_date).toISOString().split('T')[0]
-                : '',
-            };
-          }
-
-          // Only process if we have material_item_code
-          if (!record.material_item_code) {
-            continue;
-          }
-
-          // Get material UOM from material usage items
-          const materialUsage = await prisma.material_usage_items.findFirst({
-            where: {
-              item_code: record.material_item_code,
-            },
-            select: { uom: true },
-          });
-
+        for (const [materialCode, { materialName, consumptionRatio, ppkeksWithQty }] of materialMap.entries()) {
           materials.push({
-            material_item_code: record.material_item_code,
-            material_item_name: record.material_item_name || '',
-            consumption_ratio: Number(record.consumption_ratio || 0),
-            material_qty_allocated: Number(record.material_qty_allocated || 0),
-            qty_uom: materialUsage?.uom || outgoingItem.uom,
-            ppkek: ppkekDetail,
+            material_item_code: materialCode,
+            material_item_name: materialName,
+            consumption_ratio: consumptionRatio,
+            ppkeks: ppkeksWithQty.length > 0 ? ppkeksWithQty : undefined,
           });
         }
 
         workOrders.push({
           work_order_number: allocation.work_order_number,
-          qty_per_wo: Number(allocation.qty),
+          qty_per_wo: allocation.qty ? Number(allocation.qty.toString()) : 0,
           materials,
         });
       }
@@ -268,7 +347,7 @@ export class TraceabilityRepository {
       const result: TraceabilityItem = {
         item_code: outgoingItem.item_code,
         item_name: outgoingItem.item_name,
-        qty: Number(outgoingItem.qty),
+        qty: outgoingItem.qty ? Number(outgoingItem.qty.toString()) : 0,
         item_type: outgoingItem.item_type,
         uom: outgoingItem.uom,
         source_type: 'production',

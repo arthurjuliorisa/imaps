@@ -13,7 +13,6 @@
 
 import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
-import { checkDuplicateMaterialUsageItems } from '@/lib/validators/duplicate-item.validator';
 import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
 
 // =============================================================================
@@ -67,11 +66,36 @@ const companyCodeSchema = z
   .min(1, 'Company code must be greater than 0');
 
 // =============================================================================
+// TRACEABILITY ENTRY SCHEMA (NEW in v3.5.0)
+// =============================================================================
+
+/**
+ * Traceability entry schema for PPKEK+quantity pairs
+ * NEW in v3.5.0: Supports multiple PPKEKs per item
+ */
+export const traceabilityEntrySchema = z.object({
+  ppkek_number: z
+    .string()
+    .trim()
+    .max(255, 'PPKEK number must not exceed 255 characters')
+    .nullable()
+    .optional(),
+  
+  qty: z
+    .number()
+    .positive('Traceability quantity must be greater than 0')
+    .finite('Traceability quantity must be a finite number'),
+});
+
+export type TraceabilityEntryInput = z.infer<typeof traceabilityEntrySchema>;
+
+// =============================================================================
 // ITEM SCHEMA
 // =============================================================================
 
 /**
  * Single material usage item schema
+ * NEW in v3.5.0: traceability_data replaces qty+ppkek_number structure
  */
 export const materialUsageItemSchema = z.object({
   item_type: z
@@ -98,22 +122,10 @@ export const materialUsageItemSchema = z.object({
     .max(20, 'UOM must not exceed 20 characters')
     .trim(),
   
-  qty: z
-    .number()
-    .positive('Quantity must be greater than 0')
-    .finite('Quantity must be a finite number'),
-  
   component_demand_qty: z
     .number()
     .positive('Component demand quantity must be greater than 0')
     .finite('Component demand quantity must be a finite number')
-    .nullable()
-    .optional(),
-  
-  ppkek_number: z
-    .string()
-    .trim()
-    .max(50, 'PPKEK number must not exceed 50 characters')
     .nullable()
     .optional(),
   
@@ -123,6 +135,11 @@ export const materialUsageItemSchema = z.object({
     .finite('Amount must be a finite number')
     .nullable()
     .optional(),
+  
+  traceability_data: z
+    .array(traceabilityEntrySchema)
+    .min(1, 'Traceability data must contain at least 1 entry')
+    .max(1000, 'Traceability data must not exceed 1000 entries'),
 });
 
 export type MaterialUsageItemInput = z.infer<typeof materialUsageItemSchema>;
@@ -335,30 +352,39 @@ export async function validateItemTypes(data: MaterialUsageBatchRequestInput): P
 
 /**
  * Check for duplicate items in the request
- * Combination: (item_code, item_name, uom, ppkek_number)
+ * Combination: (item_code, item_name, uom, ppkek_number from each traceability_data entry)
+ * NEW in v3.5.0: Checks traceability_data array entries for duplicates
  *
  * @param data - Validated request data
  * @returns Array of validation errors (empty if no duplicates)
  */
 export function checkMaterialUsageDuplicates(data: MaterialUsageBatchRequestInput): ValidationErrorDetail[] {
-  const errors = checkDuplicateMaterialUsageItems(
-    data.items.map(item => ({
-      item_code: item.item_code,
-      item_name: item.item_name,
-      uom: item.uom,
-      ppkek_number: item.ppkek_number ?? undefined,
-    }))
-  );
+  const errors: ValidationErrorDetail[] = [];
+  const seen = new Map<string, { itemIndex: number; tracIndex: number }>();
 
-  // Convert generic duplicate errors to material-usage format
-  return errors.map(err => ({
-    location: 'item' as const,
-    field: err.field,
-    code: err.code,
-    message: err.message,
-    item_index: err.item_index,
-    item_code: err.item_code,
-  }));
+  data.items.forEach((item, itemIndex) => {
+    // NEW in v3.5.0: Loop through traceability_data array
+    item.traceability_data.forEach((tracEntry, tracIndex) => {
+      // Build key with ppkek_number from traceability_data entry
+      const key = `${item.item_code}|${item.item_name}|${item.uom}|${tracEntry.ppkek_number ?? ''}`;
+
+      if (seen.has(key)) {
+        const prevLocation = seen.get(key)!;
+        errors.push({
+          location: 'item' as const,
+          field: 'traceability_data',
+          code: 'DUPLICATE_ITEM',
+          message: `Duplicate item: item_code="${item.item_code}", item_name="${item.item_name}", uom="${item.uom}"${tracEntry.ppkek_number ? `, ppkek_number="${tracEntry.ppkek_number}"` : ''} found at item row ${prevLocation.itemIndex + 1} and item row ${itemIndex + 1}`,
+          item_index: itemIndex,
+          item_code: item.item_code,
+        });
+      } else {
+        seen.set(key, { itemIndex, tracIndex });
+      }
+    });
+  });
+
+  return errors;
 }
 
 /**

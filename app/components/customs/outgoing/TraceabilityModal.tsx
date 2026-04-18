@@ -37,13 +37,16 @@ interface TraceabilityPPKEKDetail {
   incoming_evidence_number?: string;
 }
 
+interface TraceabilityPPKEKWithQty extends TraceabilityPPKEKDetail {
+  qty_allocated: number;
+  qty_uom: string;
+}
+
 interface TraceabilityMaterial {
   material_item_code: string;
   material_item_name: string;
   consumption_ratio: number;
-  material_qty_allocated: number;
-  qty_uom: string;
-  ppkek?: TraceabilityPPKEKDetail | null;
+  ppkeks?: TraceabilityPPKEKWithQty[];
 }
 
 interface TraceabilityWorkOrder {
@@ -179,23 +182,30 @@ export function TraceabilityModal({
               <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>WO Qty</TableCell>
               <TableCell sx={{ fontWeight: 700, minWidth: 150 }}>Material Code</TableCell>
               <TableCell sx={{ fontWeight: 700, minWidth: 200 }}>Material Name</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 120 }}>Reg Number</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 100 }}>Doc Type</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 100 }}>Reg Date</TableCell>
               {renderShouldShowQtyColumns() && (
                 <>
                   <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Qty Allocated</TableCell>
                   <TableCell sx={{ fontWeight: 700, minWidth: 80, textAlign: 'right' }}>UOM</TableCell>
                 </>
               )}
-              <TableCell sx={{ fontWeight: 700, minWidth: 120 }}>Reg Number</TableCell>
-              <TableCell sx={{ fontWeight: 700, minWidth: 100 }}>Doc Type</TableCell>
-              <TableCell sx={{ fontWeight: 700, minWidth: 100 }}>Reg Date</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {productionItems.map((item) => {
               const workOrders = item.work_orders || [];
               
-              // Calculate total materials across all work orders for rowSpan
-              const totalMaterialCount = workOrders.reduce((sum, wo) => sum + (wo.materials?.length || 0), 0);
+              // Calculate total PPKEK rows across all work orders
+              // Each material has 1 or more PPKEK rows (min 1 if no PPKEKs)
+              const totalPPKEKRows = workOrders.reduce((woSum, wo) => {
+                const woPPKEKCount = (wo.materials || []).reduce(
+                  (matSum, mat) => matSum + Math.max(1, mat.ppkeks?.length || 0),
+                  0
+                );
+                return woSum + woPPKEKCount;
+              }, 0);
               
               if (workOrders.length === 0) {
                 return (
@@ -204,7 +214,7 @@ export function TraceabilityModal({
                     <TableCell>{item.item_name}</TableCell>
                     <TableCell align="right">{Number(item.qty).toLocaleString()}</TableCell>
                     <TableCell>{item.uom}</TableCell>
-                    <TableCell colSpan={11} sx={{ color: 'text.secondary' }}>
+                    <TableCell colSpan={9} sx={{ color: 'text.secondary' }}>
                       No work order allocations
                     </TableCell>
                   </TableRow>
@@ -223,46 +233,65 @@ export function TraceabilityModal({
                       <TableCell>{woIdx === 0 ? item.uom : ''}</TableCell>
                       <TableCell>{wo.work_order_number}</TableCell>
                       <TableCell align="right">{Number(wo.qty_per_wo).toLocaleString()}</TableCell>
-                      <TableCell colSpan={8} sx={{ color: 'text.secondary' }}>
+                      <TableCell colSpan={7} sx={{ color: 'text.secondary' }}>
                         No materials
                       </TableCell>
                     </TableRow>
                   );
                 }
 
-                return materials.map((material, matIdx) => (
-                  <TableRow key={`${item.item_code}-${wo.work_order_number}-${material.material_item_code}-${matIdx}`}>
-                    {woIdx === 0 && matIdx === 0 && (
-                      <>
-                        <TableCell rowSpan={totalMaterialCount}>{item.item_code}</TableCell>
-                        <TableCell rowSpan={totalMaterialCount}>{item.item_name}</TableCell>
-                        <TableCell align="right" rowSpan={totalMaterialCount}>
-                          {Number(item.qty).toLocaleString()}
-                        </TableCell>
-                        <TableCell rowSpan={totalMaterialCount}>{item.uom}</TableCell>
-                      </>
-                    )}
-                    {matIdx === 0 && (
-                      <>
-                        <TableCell rowSpan={materials.length}>{wo.work_order_number}</TableCell>
-                        <TableCell align="right" rowSpan={materials.length}>
-                          {Number(wo.qty_per_wo).toLocaleString()}
-                        </TableCell>
-                      </>
-                    )}
-                    <TableCell>{material.material_item_code}</TableCell>
-                    <TableCell>{material.material_item_name}</TableCell>
-                    {renderShouldShowQtyColumns() && (
-                      <>
-                        <TableCell align="right">{Number(material.material_qty_allocated).toLocaleString()}</TableCell>
-                        <TableCell>{material.qty_uom}</TableCell>
-                      </>
-                    )}
-                    <TableCell>{material.ppkek?.ppkek_number || '-'}</TableCell>
-                    <TableCell>{material.ppkek?.customs_document_type || '-'}</TableCell>
-                    <TableCell>{material.ppkek?.customs_registration_date || '-'}</TableCell>
-                  </TableRow>
-                ));
+                // Calculate PPKEK rows for this work order
+                const woPPKEKRowCount = materials.reduce(
+                  (sum, mat) => sum + Math.max(1, mat.ppkeks?.length || 0),
+                  0
+                );
+
+                return materials.map((material, matIdx) => {
+                  // Get PPKEKs for this material (or [null] if no PPKEKs)
+                  const ppkeks = material.ppkeks && material.ppkeks.length > 0 ? material.ppkeks : [null];
+                  
+                  return ppkeks.map((ppkek, ppkekIdx) => (
+                    <TableRow key={`${item.item_code}-${wo.work_order_number}-${material.material_item_code}-${ppkekIdx}`}>
+                      {woIdx === 0 && matIdx === 0 && ppkekIdx === 0 && (
+                        <>
+                          <TableCell rowSpan={totalPPKEKRows}>{item.item_code}</TableCell>
+                          <TableCell rowSpan={totalPPKEKRows}>{item.item_name}</TableCell>
+                          <TableCell align="right" rowSpan={totalPPKEKRows}>
+                            {Number(item.qty).toLocaleString()}
+                          </TableCell>
+                          <TableCell rowSpan={totalPPKEKRows}>{item.uom}</TableCell>
+                        </>
+                      )}
+                      {matIdx === 0 && ppkekIdx === 0 && (
+                        <>
+                          <TableCell rowSpan={woPPKEKRowCount}>{wo.work_order_number}</TableCell>
+                          <TableCell align="right" rowSpan={woPPKEKRowCount}>
+                            {Number(wo.qty_per_wo).toLocaleString()}
+                          </TableCell>
+                        </>
+                      )}
+                      {ppkekIdx === 0 && (
+                        <>
+                          <TableCell rowSpan={ppkeks.length}>{material.material_item_code}</TableCell>
+                          <TableCell rowSpan={ppkeks.length}>{material.material_item_name}</TableCell>
+                        </>
+                      )}
+                      <TableCell>{ppkek?.ppkek_number || '-'}</TableCell>
+                      <TableCell>{ppkek?.customs_document_type || '-'}</TableCell>
+                      <TableCell>{ppkek?.customs_registration_date || '-'}</TableCell>
+                      {renderShouldShowQtyColumns() && (
+                        <>
+                          <TableCell align="right">
+                            {ppkek && ppkek.qty_allocated !== undefined && ppkek.qty_allocated !== null
+                              ? Number(ppkek.qty_allocated).toLocaleString()
+                              : '-'}
+                          </TableCell>
+                          <TableCell>{ppkek?.qty_uom || '-'}</TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  ));
+                });
               });
             })}
           </TableBody>

@@ -369,7 +369,8 @@ Opening balance from closest snapshot BEFORE start_date (or 0), closing balance 
 -- ============================================================================
 -- REPORT #1: LAPORAN PEMASUKAN (Goods Receiving Report)
 -- ============================================================================
--- No changes needed - already real-time only (transaction-based)
+-- Real-time transaction-based view with company_type included for pagination queries
+-- Includes company_type to eliminate N+1 queries when needed by API
 
 DROP VIEW IF EXISTS vw_laporan_pemasukan CASCADE;
 
@@ -378,6 +379,7 @@ SELECT
     ig.id,
     ig.company_code,
     c.name as company_name,
+    c.company_type,
     ig.customs_document_type,
     ig.ppkek_number as cust_doc_registration_no,
     ig.customs_registration_date as reg_date,
@@ -410,12 +412,13 @@ WHERE ig.deleted_at IS NULL
   AND igi.deleted_at IS NULL
 ORDER BY ig.incoming_date DESC, ig.id, igi.id;
 
-COMMENT ON VIEW vw_laporan_pemasukan IS 'Report #1: Goods Receiving Report - Real-time view of incoming goods transactions';
+COMMENT ON VIEW vw_laporan_pemasukan IS 'Report #1: Goods Receiving Report - Real-time view of incoming goods transactions with company_type for API pagination';
 
 -- ============================================================================
 -- REPORT #2: LAPORAN PENGELUARAN (Goods Issuance Report)
 -- ============================================================================
--- No changes needed - already real-time only (transaction-based)
+-- Real-time transaction-based view with company_type included for pagination queries
+-- Includes company_type to eliminate N+1 queries when needed by API
 
 CREATE OR REPLACE VIEW vw_laporan_pengeluaran AS
 SELECT 
@@ -423,6 +426,7 @@ SELECT
     og.wms_id,
     og.company_code,
     c.name as company_name,
+    c.company_type,
     og.customs_document_type,
     og.ppkek_number as cust_doc_registration_no,
     og.customs_registration_date as reg_date,
@@ -455,7 +459,7 @@ WHERE og.deleted_at IS NULL
   AND ogi.deleted_at IS NULL
 ORDER BY og.outgoing_date DESC, og.id, ogi.id;
 
-COMMENT ON VIEW vw_laporan_pengeluaran IS 'Report #2: Goods Issuance Report - Real-time view of outgoing goods transactions';
+COMMENT ON VIEW vw_laporan_pengeluaran IS 'Report #2: Goods Issuance Report - Real-time view of outgoing goods transactions with company_type for API pagination';
 
 -- ============================================================================
 -- REPORT #2.5: LAPORAN STOCK OPNAME (Stock Opname Report)

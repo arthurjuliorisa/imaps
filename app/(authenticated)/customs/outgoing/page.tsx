@@ -36,6 +36,7 @@ interface OutgoingReportData {
   wmsId: string;
   companyCode: number;
   companyName: string;
+  companyType?: string;
   documentType: string;
   ppkekNumber: string;
   registrationDate: Date;
@@ -47,9 +48,9 @@ interface OutgoingReportData {
   itemCode: string;
   itemName: string;
   unit: string;
-  qty: number;
+  qty: string; // Changed from number to string for decimal precision
   currency: string;
-  amount: number;
+  amount: string; // Changed from number to string for decimal precision
 }
 
 const EXCEL_HEADERS = [
@@ -113,7 +114,8 @@ export default function OutgoingGoodsReportPage() {
       const response = await fetch(`/api/customs/outgoing?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
-      setData(result);
+      // Extract data array from new API response format
+      setData(result.data || []);
     } catch (error) {
       console.error('Error fetching outgoing report data:', error);
       toast.error('Failed to load outgoing goods report');
@@ -193,9 +195,9 @@ export default function OutgoingGoodsReportPage() {
       itemCode: row.itemCode,
       itemName: row.itemName,
       unit: row.unit,
-      qty: row.qty,
+      qty: typeof row.qty === 'string' ? parseFloat(row.qty) : row.qty,
       currency: row.currency,
-      amount: row.amount,
+      amount: typeof row.amount === 'string' ? parseFloat(row.amount) : row.amount,
     }));
 
     exportToExcelWithHeaders(

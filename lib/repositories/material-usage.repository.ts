@@ -224,19 +224,26 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
           }
 
           // Insert ALL new items fresh
-          const itemsData = data.items.map((item) => ({
-            material_usage_id: header.id,
-            material_usage_company: data.company_code,
-            material_usage_date: transactionDate,
-            item_type: item.item_type,
-            item_code: item.item_code,
-            item_name: item.item_name,
-            uom: item.uom,
-            qty: new Prisma.Decimal(item.qty),
-            component_demand_qty: item.component_demand_qty ? new Prisma.Decimal(item.component_demand_qty) : null,
-            ppkek_number: item.ppkek_number || null,
-            amount: item.amount ? new Prisma.Decimal(item.amount) : null,
-          }));
+          // NEW in v3.5.0: Iterate through traceability_data array for each item
+          // This creates one DB row per PPKEK entry (allowing multiple PPKEKs per item)
+          const itemsData: any[] = [];
+          for (const item of data.items) {
+            for (const tracEntry of item.traceability_data) {
+              itemsData.push({
+                material_usage_id: header.id,
+                material_usage_company: data.company_code,
+                material_usage_date: transactionDate,
+                item_type: item.item_type,
+                item_code: item.item_code,
+                item_name: item.item_name,
+                uom: item.uom,
+                qty: new Prisma.Decimal(tracEntry.qty),
+                component_demand_qty: item.component_demand_qty ? new Prisma.Decimal(item.component_demand_qty) : null,
+                ppkek_number: tracEntry.ppkek_number || null,
+                amount: item.amount ? new Prisma.Decimal(item.amount) : null,
+              });
+            }
+          }
 
           const createdItems = await tx.material_usage_items.createMany({
             data: itemsData,
@@ -270,21 +277,29 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
             totalItems: data.items.length,
             deletedCount: existingItems.length,
             createdCount: itemsData.length,
+            traceabilityEntries: itemsData.length,
           });
         } else {
           // Date changed: insert all new items
-          const itemsData = data.items.map((item) => ({
-            material_usage_id: header.id,
-            material_usage_company: data.company_code,
-            material_usage_date: transactionDate,
-            item_type: item.item_type,
-            item_code: item.item_code,
-            item_name: item.item_name,
-            uom: item.uom,
-            qty: new Prisma.Decimal(item.qty),
-            component_demand_qty: item.component_demand_qty ? new Prisma.Decimal(item.component_demand_qty) : null,
-            ppkek_number: item.ppkek_number || null,
-          }));
+          // NEW in v3.5.0: Iterate through traceability_data array for each item
+          const itemsData: any[] = [];
+          for (const item of data.items) {
+            for (const tracEntry of item.traceability_data) {
+              itemsData.push({
+                material_usage_id: header.id,
+                material_usage_company: data.company_code,
+                material_usage_date: transactionDate,
+                item_type: item.item_type,
+                item_code: item.item_code,
+                item_name: item.item_name,
+                uom: item.uom,
+                qty: new Prisma.Decimal(tracEntry.qty),
+                component_demand_qty: item.component_demand_qty ? new Prisma.Decimal(item.component_demand_qty) : null,
+                ppkek_number: tracEntry.ppkek_number || null,
+                amount: item.amount ? new Prisma.Decimal(item.amount) : null,
+              });
+            }
+          }
 
           await tx.material_usage_items.createMany({
             data: itemsData,
@@ -315,6 +330,7 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
 
           log.info('New items inserted (date change)', {
             insertedCount: itemsData.length,
+            traceabilityEntries: itemsData.length,
           });
         }
       });
@@ -334,50 +350,56 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
 
       // Step 4: Create traceability records for work order material consumption
       // This links materials (with PPKEK) to their work orders for customs compliance
+      // NEW in v3.5.0: Loop through traceability_data array for each item
       if (data.work_order_number && createdItemsMap.size > 0) {
         try {
-          for (const item of data.items) {
-            if (item.ppkek_number) {
-              // Use composite key for lookup
-              const itemIdKey = `${item.item_code}|${item.ppkek_number}`;
-              const itemId = createdItemsMap.get(itemIdKey);
+          let traceabilityCount = 0;
 
-              if (itemId) {
-                await prisma.work_order_material_consumption.upsert({
-                  where: {
-                    material_usage_wms_id_work_order_number_item_code_ppkek_number: {
+          for (const item of data.items) {
+            // Loop through traceability_data array (NEW in v3.5.0)
+            for (const tracEntry of item.traceability_data) {
+              // Only create traceability record if ppkek_number exists
+              if (tracEntry.ppkek_number) {
+                // Use composite key for lookup
+                const itemIdKey = `${item.item_code}|${tracEntry.ppkek_number}`;
+                const itemId = createdItemsMap.get(itemIdKey);
+
+                if (itemId) {
+                  await prisma.work_order_material_consumption.upsert({
+                    where: {
+                      material_usage_wms_id_work_order_number_item_code_ppkek_number: {
+                        material_usage_wms_id: data.wms_id,
+                        work_order_number: data.work_order_number,
+                        item_code: item.item_code,
+                        ppkek_number: tracEntry.ppkek_number,
+                      },
+                    },
+                    update: {
+                      material_usage_id: header.id,
+                      material_usage_item_id: itemId,
+                      qty_consumed: new Prisma.Decimal(tracEntry.qty),
+                    },
+                    create: {
+                      material_usage_id: header.id,
+                      material_usage_item_id: itemId,
                       material_usage_wms_id: data.wms_id,
                       work_order_number: data.work_order_number,
+                      company_code: data.company_code,
                       item_code: item.item_code,
-                      ppkek_number: item.ppkek_number,
+                      ppkek_number: tracEntry.ppkek_number,
+                      qty_consumed: new Prisma.Decimal(tracEntry.qty),
+                      trx_date: transactionDate,
                     },
-                  },
-                  update: {
-                    material_usage_id: header.id,
-                    material_usage_item_id: itemId,
-                    qty_consumed: new Prisma.Decimal(item.qty),
-                  },
-                  create: {
-                    material_usage_id: header.id,
-                    material_usage_item_id: itemId,
-                    material_usage_wms_id: data.wms_id,
-                    work_order_number: data.work_order_number,
-                    company_code: data.company_code,
-                    item_code: item.item_code,
-                    ppkek_number: item.ppkek_number,
-                    qty_consumed: new Prisma.Decimal(item.qty),
-                    trx_date: transactionDate,
-                  },
-                });
+                  });
+
+                  traceabilityCount++;
+                }
               }
             }
           }
 
-          const itemsWithPpkek = data.items.filter(
-            i => i.ppkek_number && createdItemsMap.has(`${i.item_code}|${i.ppkek_number}`)
-          ).length;
           log.info('Traceability records created', {
-            count: itemsWithPpkek,
+            count: traceabilityCount,
             workOrderNumber: data.work_order_number,
             materialUsageId: header.id,
           });

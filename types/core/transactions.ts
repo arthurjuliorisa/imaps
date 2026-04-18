@@ -160,14 +160,17 @@ export interface MaterialUsageHeader extends BaseHeader {
 
 /**
  * Material Usage Detail
- * Line items for material consumption
+ * Line items for material consumption (one per PPKEK entry)
  * Matches: material_usage_items table in Prisma schema
+ * 
+ * NOTE: With v3.5.0, a single item with multiple PPKEKs in traceability_data
+ * will create multiple detail rows in the database (one per PPKEK).
  */
 export interface MaterialUsageDetail extends BaseDetail {
   material_usage_id: number;
   material_usage_company: number;
   material_usage_date: Date;
-  ppkek_number?: string;
+  ppkek_number?: string | null;
   amount?: number | string | null;
   deleted_at?: Date;
 }
