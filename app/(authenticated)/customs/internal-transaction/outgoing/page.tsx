@@ -106,7 +106,8 @@ export default function InternalTransactionOutgoingPage() {
       const response = await fetch(`/api/customs/internal-transaction/outgoing?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
-      setData(result);
+      // Extract data array from new API response format
+      setData(result.data || []);
     } catch (error) {
       console.error('Error fetching internal transaction outgoing report data:', error);
       toast.error('Failed to load internal transaction outgoing report');
@@ -187,8 +188,8 @@ export default function InternalTransactionOutgoingPage() {
       itemCode: row.itemCode,
       itemName: row.itemName,
       unit: row.unit,
-      qty: row.qty,
-      amount: row.amount,
+      qty: typeof row.qty === 'string' ? parseFloat(row.qty) : row.qty,
+      amount: typeof row.amount === 'string' ? parseFloat(row.amount) : row.amount,
     }));
 
     exportToExcelWithHeaders(

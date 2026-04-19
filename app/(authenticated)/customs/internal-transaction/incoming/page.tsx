@@ -30,18 +30,21 @@ import { formatQty, formatAmount } from '@/lib/utils/format';
 
 interface InternalTransactionIncomingData {
   id: string;
+  wmsId: string | number;
   companyCode: number;
   companyName: string;
+  companyType?: string;
   documentNumber: string;
-  date: Date;
+  date: string | Date;
   shipperName: string;
   typeCode: string;
   itemCodeBahasa: string;
   itemCode: string;
   itemName: string;
   unit: string;
-  qty: number;
-  amount: number;
+  qty: string;
+  currency: string;
+  amount: string;
 }
 
 const EXCEL_HEADERS = [
@@ -101,7 +104,8 @@ export default function InternalTransactionIncomingPage() {
       const response = await fetch(`/api/customs/internal-transaction/incoming?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
-      setData(result);
+      // Extract data array from new API response format
+      setData(result.data || []);
     } catch (error) {
       console.error('Error fetching internal transaction incoming report data:', error);
       toast.error('Failed to load internal transaction incoming report');
@@ -176,8 +180,8 @@ export default function InternalTransactionIncomingPage() {
       itemCode: row.itemCode,
       itemName: row.itemName,
       unit: row.unit,
-      qty: row.qty,
-      amount: row.amount,
+      qty: typeof row.qty === 'string' ? parseFloat(row.qty) : row.qty,
+      amount: typeof row.amount === 'string' ? parseFloat(row.amount) : row.amount,
     }));
 
     exportToExcelWithHeaders(

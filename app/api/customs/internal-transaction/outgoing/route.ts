@@ -16,6 +16,15 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
+    // Extract and validate pagination parameters
+    const rawPage = parseInt(searchParams.get('page') || '1', 10);
+    const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
+    
+    // Validate pagination values (min 10, max 500 per page)
+    const page = Math.max(rawPage, 1);
+    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const offset = (page - 1) * limit;
+
     // Validate company code with detailed error messages
     const companyValidation = validateCompanyCode(session);
     if (!companyValidation.success) {
@@ -23,20 +32,16 @@ export async function GET(request: Request) {
     }
     const { companyCode } = companyValidation;
 
-    // Fetch company type to determine field mapping for SEZ companies
-    const company = await prisma.companies.findUnique({
-      where: { code: companyCode },
-      select: { company_type: true },
-    });
-    const companyType = company?.company_type || null;
-
-    // Query from vw_internal_outgoing view with date filtering
+    // Query from vw_internal_outgoing view with company_type and pagination
+    // Single efficient query with pagination support (company_type merged in view)
+    // Note: ROW_NUMBER() added to generate unique IDs even for multiple items in same transaction
     let query = `
       SELECT
         id,
         wms_id,
         company_code,
         company_name,
+        company_type,
         internal_evidence_number as document_number,
         transaction_date,
         section,
@@ -46,7 +51,14 @@ export async function GET(request: Request) {
         item_name,
         unit,
         quantity,
-        value_amount
+        value_amount,
+        ROW_NUMBER() OVER (PARTITION BY id ORDER BY item_code) as item_seq,
+        CASE 
+          WHEN id IN (SELECT id FROM material_usages WHERE company_code = $1 AND deleted_at IS NULL AND reversal IS NULL) THEN 'MU'
+          WHEN id IN (SELECT id FROM production_outputs WHERE company_code = $1 AND deleted_at IS NULL AND reversal = 'Y') THEN 'POR'
+          WHEN id IN (SELECT id FROM scrap_transactions WHERE company_code = $1 AND deleted_at IS NULL AND transaction_type = 'OUT') THEN 'ST'
+          ELSE 'UNKNOWN'
+        END as source_type
       FROM vw_internal_outgoing
       WHERE company_code = $1
     `;
@@ -71,16 +83,49 @@ export async function GET(request: Request) {
 
     query += ` ORDER BY transaction_date DESC, id`;
 
+    // Get total count for pagination
+    // Build count query without ROW_NUMBER to avoid syntax error
+    let countQuery = `SELECT COUNT(DISTINCT (id, item_code)) as count FROM vw_internal_outgoing WHERE company_code = $1`;
+    const countParamsList: any[] = [companyCode];
+    let countParamIndex = 2;
+
+    if (startDate && endDate) {
+      countQuery += ` AND (transaction_date::date >= $${countParamIndex}::date AND transaction_date::date <= $${countParamIndex + 1}::date)`;
+      countParamsList.push(startDate, endDate);
+      countParamIndex += 2;
+    } else if (startDate) {
+      countQuery += ` AND transaction_date::date >= $${countParamIndex}::date`;
+      countParamsList.push(startDate);
+      countParamIndex++;
+    } else if (endDate) {
+      countQuery += ` AND transaction_date::date <= $${countParamIndex}::date`;
+      countParamsList.push(endDate);
+      countParamIndex++;
+    }
+
+    const countResult = await prisma.$queryRawUnsafe<[{ count: string }]>(
+      countQuery,
+      ...countParamsList
+    );
+    const totalCount = parseInt(countResult[0]?.count || '0', 10);
+
+    // Add pagination to main query
+    query += ` LIMIT $${paramIndex}::integer OFFSET $${paramIndex + 1}::integer`;
+    params.push(limit, offset);
+
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
-    // Transform to expected format with SEZ-specific logic
-    const transformedData = result.map((row: any, index: number) => {
+    // Transform to expected format with SEZ-specific logic and unique ID
+    // ID format: ${source_type}-${id}-${item_code}-${item_seq}
+    // Using primary key 'id' + item_seq ensures uniqueness even for multiple items in same transaction
+    const transformedData = result.map((row: any) => {
+      const uniqueId = `${(row as any).source_type}-${row.id}-${row.item_code}-${(row as any).item_seq}`;
       const baseData = {
-        id: `${row.id}-${row.item_code}-${index}`,
+        id: uniqueId,
         wmsId: row.wms_id,
         companyCode: row.company_code,
         companyName: row.company_name,
-        companyType: companyType,
+        companyType: row.company_type,
         date: row.transaction_date,
         recipientName: row.section || '-',
         typeCode: row.type_code,
@@ -88,14 +133,15 @@ export async function GET(request: Request) {
         itemCode: row.item_code,
         itemName: row.item_name,
         unit: row.unit,
-        qty: Number(row.quantity || 0),
+        // Return as string to preserve decimal precision
+        qty: row.quantity?.toString() ?? '0',
         currency: 'USD',
-        amount: Number(row.value_amount || 0),
+        amount: row.value_amount?.toString() ?? '0',
       };
 
       // For SEZ companies: documentNumber uses wms_id, and add internalDocument from internal_evidence_number
       // For other companies: documentNumber uses internal_evidence_number as usual
-      if (companyType === 'SEZ') {
+      if (row.company_type === 'SEZ') {
         return {
           ...baseData,
           documentNumber: String(row.wms_id),
@@ -109,14 +155,31 @@ export async function GET(request: Request) {
       }
     });
 
-    return NextResponse.json(serializeBigInt(transformedData));
+    return NextResponse.json(
+      serializeBigInt({
+        success: true,
+        data: transformedData,
+        pagination: {
+          page,
+          limit,
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+          hasNextPage: page < Math.ceil(totalCount / limit),
+          hasPrevPage: page > 1,
+        },
+      })
+    );
   } catch (error) {
     console.error(
       '[API Error] Failed to fetch internal transaction outgoing:',
       error
     );
     return NextResponse.json(
-      { message: 'Error fetching internal transaction outgoing data' },
+      {
+        success: false,
+        message: 'Error fetching internal transaction outgoing data',
+        error: process.env.NODE_ENV === 'development' ? String(error) : undefined,
+      },
       { status: 500 }
     );
   }
