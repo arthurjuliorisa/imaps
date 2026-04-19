@@ -66,18 +66,10 @@ export default function RawMaterialMutationPage() {
       });
 
       const response = await fetch(`/api/customs/raw-material?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 503) {
-          toast.error(result.message || 'This feature is temporarily unavailable');
-        } else {
-          toast.error('Failed to load raw material mutation data');
-        }
-        setData([]);
-      } else {
-        setData(result.data || result);
-      }
+      // Extract data array from new API response format
+      setData(result.data || []);
     } catch (error) {
       console.error('Error fetching raw material mutation data:', error);
       toast.error('Failed to load raw material mutation data');
@@ -85,7 +77,7 @@ export default function RawMaterialMutationPage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, toast]);
 
   useEffect(() => {
     fetchData();
@@ -146,13 +138,13 @@ export default function RawMaterialMutationPage() {
       itemName: row.itemName,
       itemType: row.itemType || '-',
       unit: row.unit,
-      beginning: row.beginning,
-      in: row.in,
-      out: row.out,
-      adjustment: row.adjustment,
-      ending: row.ending,
-      stockOpname: row.stockOpname,
-      variant: row.variant,
+      beginning: typeof row.beginning === 'string' ? parseFloat(row.beginning) : row.beginning,
+      in: typeof row.in === 'string' ? parseFloat(row.in) : row.in,
+      out: typeof row.out === 'string' ? parseFloat(row.out) : row.out,
+      adjustment: typeof row.adjustment === 'string' ? parseFloat(row.adjustment) : row.adjustment,
+      ending: typeof row.ending === 'string' ? parseFloat(row.ending) : row.ending,
+      stockOpname: typeof row.stockOpname === 'string' ? parseFloat(row.stockOpname) : row.stockOpname,
+      variant: typeof row.variant === 'string' ? parseFloat(row.variant) : row.variant,
       remarks: row.remarks || '-',
     }));
 
@@ -172,11 +164,11 @@ export default function RawMaterialMutationPage() {
       itemName: row.itemName,
       itemType: row.itemType || '-',
       unit: row.unit,
-      beginning: row.beginning.toString(),
-      in: row.in.toString(),
-      out: row.out.toString(),
-      adjustment: row.adjustment.toString(),
-      ending: row.ending.toString(),
+      beginning: typeof row.beginning === 'string' ? row.beginning : row.beginning.toString(),
+      in: typeof row.in === 'string' ? row.in : row.in.toString(),
+      out: typeof row.out === 'string' ? row.out : row.out.toString(),
+      adjustment: typeof row.adjustment === 'string' ? row.adjustment : row.adjustment.toString(),
+      ending: typeof row.ending === 'string' ? row.ending : row.ending.toString(),
       remarks: row.remarks || '-',
     }));
 

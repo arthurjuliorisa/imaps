@@ -15,6 +15,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const rawPage = parseInt(searchParams.get('page') || '1', 10);
+    const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
 
     // Validate company code with detailed error messages
     const companyValidation = validateCompanyCode(session);
@@ -22,6 +24,49 @@ export async function GET(request: Request) {
       return companyValidation.response;
     }
     const { companyCode } = companyValidation;
+
+    // Pagination parameters
+    const page = Math.max(rawPage, 1);
+    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const offset = (page - 1) * limit;
+
+    // Use provided dates or fallback to defaults
+    let startDateParam: Date;
+    let endDateParam: Date;
+
+    if (startDate) {
+      startDateParam = new Date(startDate);
+    } else {
+      // Default: Jan 1 of current year (year-to-date)
+      const currentDate = new Date();
+      startDateParam = new Date(currentDate.getFullYear(), 0, 1);
+    }
+
+    if (endDate) {
+      endDateParam = new Date(endDate);
+    } else {
+      // Default: Today
+      endDateParam = new Date();
+    }
+
+    // Get total count for pagination
+    let countQuery = `
+      SELECT COUNT(DISTINCT ROW(item_code, unit_quantity)) as count
+      FROM fn_calculate_lpj_hasil_produksi(
+        ARRAY['FERT', 'HALB'],
+        $2::DATE,
+        $3::DATE
+      )
+      WHERE company_code = $1
+    `;
+    
+    const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
+      countQuery,
+      companyCode,
+      startDateParam,
+      endDateParam
+    );
+    const totalCount = Number(countResult[0]?.count ?? 0);
 
     // Query from function with custom date range support
     let query = `
@@ -50,63 +95,58 @@ export async function GET(request: Request) {
         $3::DATE
       )
       WHERE company_code = $1
+      ORDER BY item_code
+      LIMIT $4::integer OFFSET $5::integer
     `;
 
-    const params: any[] = [companyCode];
-
-    // Use provided dates or fallback to defaults
-    let startDateParam: Date;
-    let endDateParam: Date;
-
-    if (startDate) {
-      startDateParam = new Date(startDate);
-    } else {
-      // Default: Jan 1 of current year (year-to-date)
-      const currentDate = new Date();
-      startDateParam = new Date(currentDate.getFullYear(), 0, 1);
-    }
-
-    if (endDate) {
-      endDateParam = new Date(endDate);
-    } else {
-      // Default: Today
-      endDateParam = new Date();
-    }
-
-    params.push(startDateParam, endDateParam);
-
-    query += ` ORDER BY item_code`;
+    const params: any[] = [companyCode, startDateParam, endDateParam, limit, offset];
 
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
-    // Transform to expected format
-    const transformedData = result.map((row: any, index: number) => ({
-      id: `${row.item_code}-${row.snapshot_date}-${index}`,
-      rowNumber: row.no,
-      companyCode: row.company_code,
+    // Transform to expected format with decimal string preservation and data-based ID
+    const transformedData = result.map((row: any) => ({
+      id: `${Number(row.company_code)}-${row.item_code}-${row.unit}`,
+      rowNumber: Number(row.no ?? 0),
+      companyCode: Number(row.company_code ?? 0),
       companyName: row.company_name,
       itemCode: row.item_code,
       itemName: row.item_name,
       itemType: row.item_type,
       unit: row.unit || 'N/A',
       date: row.snapshot_date,
-      beginning: Number(row.beginning || 0),
-      in: Number(row.in || 0),
-      out: Number(row.out || 0),
-      adjustment: Number(row.adjustment || 0),
-      ending: Number(row.ending || 0),
-      stockOpname: Number(row.stockOpname || 0),
-      variant: Number(row.variant || 0),
-      valueAmount: Number(row.value_amount || 0),
+      beginning: row.beginning?.toString() ?? '0',
+      in: row.in?.toString() ?? '0',
+      out: row.out?.toString() ?? '0',
+      adjustment: row.adjustment?.toString() ?? '0',
+      ending: row.ending?.toString() ?? '0',
+      stockOpname: row.stockOpname?.toString() ?? '0',
+      variant: row.variant?.toString() ?? '0',
+      valueAmount: row.value_amount?.toString() ?? '0',
       currency: row.currency,
-      remarks: null,
+      remarks: row.remarks,
     }));
 
-    return NextResponse.json(serializeBigInt(transformedData));
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(totalCount / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    return NextResponse.json({
+      success: true,
+      data: transformedData,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages,
+        hasNextPage,
+        hasPrevPage,
+      },
+    });
   } catch (error) {
     console.error('[API Error] Failed to fetch production mutations:', error);
     return NextResponse.json(
-      { message: 'Error fetching production mutations' },
+      { success: false, message: 'Error fetching production mutations', error: String(error) },
       { status: 500 }
     );
   }

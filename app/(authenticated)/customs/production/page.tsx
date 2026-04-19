@@ -68,7 +68,7 @@ export default function ProductionMutationPage() {
       const response = await fetch(`/api/customs/production?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
-      setData(result);
+      setData(result.data || []);
     } catch (error) {
       console.error('Error fetching production mutation data:', error);
       toast.error('Failed to load production mutation data');
@@ -137,13 +137,13 @@ export default function ProductionMutationPage() {
       itemName: row.itemName,
       itemType: row.itemType || '-',
       unit: row.unit,
-      beginning: row.beginning,
-      in: row.in,
-      out: row.out,
-      adjustment: row.adjustment,
-      ending: row.ending,
-      stockOpname: row.stockOpname,
-      variant: row.variant,
+      beginning: typeof row.beginning === 'string' ? parseFloat(row.beginning) : row.beginning,
+      in: typeof row.in === 'string' ? parseFloat(row.in) : row.in,
+      out: typeof row.out === 'string' ? parseFloat(row.out) : row.out,
+      adjustment: typeof row.adjustment === 'string' ? parseFloat(row.adjustment) : row.adjustment,
+      ending: typeof row.ending === 'string' ? parseFloat(row.ending) : row.ending,
+      stockOpname: typeof row.stockOpname === 'string' ? parseFloat(row.stockOpname) : row.stockOpname,
+      variant: typeof row.variant === 'string' ? parseFloat(row.variant) : row.variant,
       remarks: row.remarks || '-',
     }));
 
@@ -163,11 +163,11 @@ export default function ProductionMutationPage() {
       itemName: row.itemName,
       itemType: row.itemType || '-',
       unit: row.unit,
-      beginning: row.beginning.toString(),
-      in: row.in.toString(),
-      out: row.out.toString(),
-      adjustment: row.adjustment.toString(),
-      ending: row.ending.toString(),
+      beginning: typeof row.beginning === 'string' ? row.beginning : row.beginning.toString(),
+      in: typeof row.in === 'string' ? row.in : row.in.toString(),
+      out: typeof row.out === 'string' ? row.out : row.out.toString(),
+      adjustment: typeof row.adjustment === 'string' ? row.adjustment : row.adjustment.toString(),
+      ending: typeof row.ending === 'string' ? row.ending : row.ending.toString(),
       remarks: row.remarks || '-',
     }));
 

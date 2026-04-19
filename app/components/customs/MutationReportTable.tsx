@@ -26,20 +26,21 @@ export interface MutationData {
   itemCode: string;
   itemName: string;
   unit: string;
-  beginning: number;
-  in: number;
-  out: number;
-  adjustment: number;
-  ending: number;
-  stockOpname: number;
-  variant: number;
+  beginning: string | number;
+  in: string | number;
+  out: string | number;
+  adjustment: string | number;
+  ending: string | number;
+  stockOpname: string | number;
+  variant: string | number;
   remarks: string | null;
   rowNumber?: number;
   companyCode?: number;
   companyName?: string;
   itemType?: string;
-  valueAmount?: number;
+  valueAmount?: string | number;
   currency?: string;
+  date?: string | Date;
 }
 
 interface MutationReportTableProps {
@@ -173,29 +174,29 @@ export function MutationReportTable({
                   <TableCell>
                     <Chip label={row.unit} size="small" />
                   </TableCell>
-                  <TableCell align="right">{formatQty(row.beginning ?? 0)}</TableCell>
+                  <TableCell align="right">{formatQty(Number(row.beginning ?? 0))}</TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" color="success.main" fontWeight={600}>
-                      {formatQty(row.in ?? 0)}
+                      {formatQty(Number(row.in ?? 0))}
                     </Typography>
                   </TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" color="error.main" fontWeight={600}>
-                      {formatQty(row.out ?? 0)}
+                      {formatQty(Number(row.out ?? 0))}
                     </Typography>
                   </TableCell>
-                  <TableCell align="right">{formatQty(row.adjustment ?? 0)}</TableCell>
+                  <TableCell align="right">{formatQty(Number(row.adjustment ?? 0))}</TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" fontWeight={700}>
-                      {formatQty(row.ending ?? 0)}
+                      {formatQty(Number(row.ending ?? 0))}
                     </Typography>
                   </TableCell>
-                  <TableCell align="right">{formatQty(row.stockOpname ?? 0)}</TableCell>
+                  <TableCell align="right">{formatQty(Number(row.stockOpname ?? 0))}</TableCell>
                   <TableCell align="right">
                     <Chip
-                      label={formatQty(row.variant ?? 0)}
+                      label={formatQty(Number(row.variant ?? 0))}
                       size="small"
-                      color={getVariantColor(row.variant ?? 0)}
+                      color={getVariantColor(Number(row.variant ?? 0))}
                       sx={{ fontWeight: 600 }}
                     />
                   </TableCell>
@@ -204,8 +205,8 @@ export function MutationReportTable({
                       <Typography variant="body2" fontWeight={600}>
                         {row.valueAmount !== undefined
                           ? row.currency
-                            ? `${row.currency} ${formatAmount(row.valueAmount)}`
-                            : formatAmount(row.valueAmount)
+                            ? `${row.currency} ${formatAmount(Number(row.valueAmount))}`
+                            : formatAmount(Number(row.valueAmount))
                           : '-'}
                       </Typography>
                     </TableCell>
