@@ -21,6 +21,13 @@ export async function GET(request: Request) {
     const status = searchParams.get('status') || '';
     const companyCodeParam = searchParams.get('companyCode');
     const exportData = searchParams.get('export') === 'true';
+    const rawPage = parseInt(searchParams.get('page') || '1', 10);
+    const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
+
+    // Pagination parameters
+    const page = Math.max(rawPage, 1);
+    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const offset = (page - 1) * limit;
 
     // Build where clause
     const where: any = {};
@@ -47,7 +54,7 @@ export async function GET(request: Request) {
 
       // Authorization check: prevent non-SUPER_ADMIN from accessing other companies
       if (!isSuperAdmin && requestedCompanyCode !== parseInt(userCompanyCode || '0', 10)) {
-        return NextResponse.json([], { status: 403 });
+        return NextResponse.json({ success: false, data: [], pagination: { page, limit, total: 0, totalPages: 0, hasNextPage: false, hasPrevPage: false } }, { status: 403 });
       }
 
       where.company_code = requestedCompanyCode;
@@ -57,7 +64,10 @@ export async function GET(request: Request) {
     }
     // SUPER_ADMIN with no company filter: see all company logs (no where clause)
 
-    // Get all data (client-side pagination will be handled by DataTable)
+    // Get total count for pagination
+    const totalCount = await prisma.activity_logs.count({ where });
+
+    // Fetch paginated logs
     const logs = await prisma.activity_logs.findMany({
       where,
       include: {
@@ -74,12 +84,29 @@ export async function GET(request: Request) {
       orderBy: {
         created_at: 'desc',
       },
+      take: limit,
+      skip: offset,
     });
 
-    // If export, return CSV
+    // If export, return CSV (fetch all records for export)
     if (exportData) {
+      const allLogs = await prisma.activity_logs.findMany({
+        where,
+        include: {
+          users: {
+            select: {
+              username: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: {
+          created_at: 'desc',
+        },
+      });
+
       const headers = ['Date & Time', 'Company Code', 'User', 'Email', 'Action', 'Description', 'Status', 'IP Address'];
-      const rows = logs.map(log => [
+      const rows = allLogs.map(log => [
         log.created_at.toISOString(),
         log.company_code?.toString() || '-',
         log.users?.username || 'System',
@@ -121,10 +148,29 @@ export async function GET(request: Request) {
       createdAt: log.created_at.toISOString(),
     }));
 
-    return NextResponse.json(data);
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(totalCount / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    return NextResponse.json({
+      success: true,
+      data,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages,
+        hasNextPage,
+        hasPrevPage,
+      },
+    });
   } catch (error) {
     console.error('[API Error] Failed to fetch activity logs:', error);
 
-    return NextResponse.json([], { status: 500 });
+    return NextResponse.json(
+      { success: false, data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0, hasNextPage: false, hasPrevPage: false }, error: String(error) },
+      { status: 500 }
+    );
   }
 }

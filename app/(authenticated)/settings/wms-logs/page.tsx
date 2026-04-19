@@ -72,7 +72,10 @@ export default function WMSTransmissionLogsPage() {
   const [selectedLog, setSelectedLog] = useState<WMSTransmissionLog | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState(dayjs().subtract(7, 'days').format('YYYY-MM-DD'));
-  const [dateTo, setDateTo] = useState(dayjs().format('YYYY-MM-DD')); 
+  const [dateTo, setDateTo] = useState(dayjs().format('YYYY-MM-DD'));
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
  
   const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
   const userCompanyCode = session?.user?.companyCode as string | undefined;
@@ -195,8 +198,12 @@ export default function WMSTransmissionLogsPage() {
   }, [isSuperAdmin, userCompanyCode]);
 
   useEffect(() => {
-    fetchLogs();
+    setPage(0);
   }, [actionFilter, errorTypeFilter, transmissionStatusFilter, companyCodeFilter, dateFrom, dateTo]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [actionFilter, errorTypeFilter, transmissionStatusFilter, companyCodeFilter, dateFrom, dateTo, page, rowsPerPage]);
 
   const fetchCompanies = async () => {
     try {
@@ -214,7 +221,8 @@ export default function WMSTransmissionLogsPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        limit: '100',
+        page: String(page + 1),
+        limit: String(rowsPerPage),
         ...(dateFrom && { date_from: dateFrom }),
         ...(dateTo && { date_to: dateTo + 'T23:59:59' }),
         ...(actionFilter !== 'ALL' && { action: actionFilter }),
@@ -228,18 +236,30 @@ export default function WMSTransmissionLogsPage() {
 
       if (result.success && Array.isArray(result.data)) {
         setLogs(result.data);
+        setTotalCount(result.pagination?.total || 0);
         setError(null);
       } else {
         setLogs([]);
+        setTotalCount(0);
         setError(result.error || 'Failed to fetch logs');
       }
     } catch (err) {
       console.error('Error fetching WMS transmission logs:', err);
       setLogs([]);
+      setTotalCount(0);
       setError('Failed to fetch WMS transmission logs');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
   };
 
   const handleRefresh = () => {
@@ -439,6 +459,14 @@ export default function WMSTransmissionLogsPage() {
         data={logs}
         loading={loading}
         searchable={false}
+        pagination={{
+          page,
+          rowsPerPage,
+          onPageChange: handlePageChange,
+          onRowsPerPageChange: handleRowsPerPageChange,
+          rowsPerPageOptions: [5, 10, 25, 50],
+          total: totalCount,
+        }}
       />
 
       {/* Detail Dialog */}

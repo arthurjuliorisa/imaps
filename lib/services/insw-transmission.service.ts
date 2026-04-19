@@ -1726,6 +1726,7 @@ export class INSWTransmissionService {
     transaction_type?: string;
     insw_status?: string;
     limit?: number;
+    offset?: number;
     date_from?: string;
     date_to?: string;
   }) {
@@ -1747,6 +1748,31 @@ export class INSWTransmissionService {
         created_at: 'desc',
       },
       take: filters.limit || 100,
+      skip: filters.offset || 0,
+    });
+  }
+
+  async countTransmissionLogs(filters: {
+    company_code: number;
+    transaction_type?: string;
+    insw_status?: string;
+    date_from?: string;
+    date_to?: string;
+  }) {
+    return await prisma.insw_tracking_log.count({
+      where: {
+        company_code: filters.company_code,
+        ...(filters.transaction_type && {
+          transaction_type: filters.transaction_type,
+        }),
+        ...(filters.insw_status && { insw_status: filters.insw_status }),
+        ...(filters.date_from && filters.date_to && {
+          sent_at: {
+            gte: new Date(filters.date_from),
+            lte: new Date(filters.date_to),
+          },
+        }),
+      },
     });
   }
 }

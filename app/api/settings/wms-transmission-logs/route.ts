@@ -16,14 +16,19 @@ export async function GET(request: NextRequest) {
     const isSuperAdmin = userRole === 'SUPER_ADMIN';
 
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '100');
-    const offset = parseInt(searchParams.get('offset') || '0');
+    const rawPage = parseInt(searchParams.get('page') || '1', 10);
+    const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
     const dateFrom = searchParams.get('date_from');
     const dateTo = searchParams.get('date_to');
     const actionFilter = searchParams.get('action');
     const errorTypeFilter = searchParams.get('error_type');
     const transmissionStatusFilter = searchParams.get('transmission_status');
     const companyCodeFilter = searchParams.get('company_code');
+
+    // Pagination parameters
+    const page = Math.max(rawPage, 1);
+    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const offset = (page - 1) * limit;
 
     // Build where clause
     const where: any = {};
@@ -78,14 +83,21 @@ export async function GET(request: NextRequest) {
       prisma.wms_transmission_logs.count({ where }),
     ]);
 
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(total / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
     return NextResponse.json({
       success: true,
       data: serializeBigInt(logs),
       pagination: {
-        total,
+        page,
         limit,
-        offset,
-        pages: Math.ceil(total / limit),
+        total,
+        totalPages,
+        hasNextPage,
+        hasPrevPage,
       },
     });
   } catch (error) {

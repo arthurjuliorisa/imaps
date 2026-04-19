@@ -115,14 +115,20 @@ export default function LogActivityPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [companyCodeFilter, setCompanyCodeFilter] = useState('ALL');
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   useEffect(() => {
     fetchCompanies();
   }, []);
 
   useEffect(() => {
-    fetchLogs();
+    setPage(0);
   }, [searchQuery, statusFilter, companyCodeFilter]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [searchQuery, statusFilter, companyCodeFilter, page, rowsPerPage]);
 
   const fetchCompanies = async () => {
     try {
@@ -141,16 +147,18 @@ export default function LogActivityPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({
+        page: String(page + 1),
+        limit: String(rowsPerPage),
         ...(searchQuery && { search: searchQuery }),
         ...(statusFilter !== 'ALL' && { status: statusFilter }),
         ...(companyCodeFilter !== 'ALL' && { companyCode: companyCodeFilter }),
       });
 
       const response = await fetch(`/api/settings/activity-logs?${params}`);
-      const data = await response.json();
+      const result = await response.json();
 
-      if (Array.isArray(data)) {
-        setLogs(data);
+      if (result.success && Array.isArray(result.data)) {
+        setLogs(result.data);
         setError(null);
       } else {
         setLogs([]);
@@ -163,6 +171,15 @@ export default function LogActivityPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
   };
 
   const handleRefresh = () => {
@@ -289,6 +306,13 @@ export default function LogActivityPage() {
         data={logs}
         loading={loading}
         searchable={false}
+        pagination={{
+          page,
+          rowsPerPage,
+          onPageChange: handlePageChange,
+          onRowsPerPageChange: handleRowsPerPageChange,
+          rowsPerPageOptions: [5, 10, 25, 50],
+        }}
       />
     </Box>
   );
