@@ -59,7 +59,8 @@ export default function WIPMutationPage() {
       const response = await fetch(`/api/customs/wip?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
-      setData(result);
+      // Extract data array from new API response format
+      setData(result.data || []);
     } catch (error) {
       console.error('Error fetching WIP mutation data:', error);
       toast.error('Failed to load WIP mutation data');

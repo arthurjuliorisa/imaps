@@ -114,8 +114,8 @@ export async function GET(request: Request) {
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
     // Transform to expected format with data-based ID and decimal precision preservation
-    const transformedData = result.map((row: any) => ({
-      id: `${Number(row.company_code)}-${row.item_code}-${row.unit}`,
+    const transformedData = result.map((row: any, index: number) => ({
+      id: `rawmat-${row.item_code}-${row.snapshot_date}-${index}`,
       rowNumber: Number(row.no ?? 0),
       companyCode: Number(row.company_code ?? 0),
       companyName: row.company_name,
@@ -134,7 +134,7 @@ export async function GET(request: Request) {
       variant: row.variant?.toString() ?? '0',
       valueAmount: row.value_amount?.toString() ?? '0',
       currency: row.currency || 'IDR',
-      remarks: row.remarks,
+      remarks: '-',
     }));
 
     return NextResponse.json(

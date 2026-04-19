@@ -16,6 +16,15 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
+    // Extract and validate pagination parameters
+    const rawPage = parseInt(searchParams.get('page') || '1', 10);
+    const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
+    
+    // Validate pagination values (min 10, max 500 per page)
+    const page = Math.max(rawPage, 1);
+    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const offset = (page - 1) * limit;
+
     // Validate company code with detailed error messages
     const companyValidation = validateCompanyCode(session);
     if (!companyValidation.success) {
@@ -23,7 +32,7 @@ export async function GET(request: Request) {
     }
     const { companyCode } = companyValidation;
 
-    // Query from function with custom date range support
+    // Query from function with custom date range support and pagination
     let query = `
       SELECT
         no,
@@ -53,50 +62,95 @@ export async function GET(request: Request) {
     `;
 
     const params: any[] = [companyCode];
+    let paramIndex = 2;
 
-    // Use dates from frontend request
-    if (startDate && endDate) {
-      params.push(new Date(startDate), new Date(endDate));
+    // Use provided dates or fallback to defaults
+    let startDateParam: Date;
+    let endDateParam: Date;
+
+    if (startDate) {
+      startDateParam = new Date(startDate);
     } else {
-      // Fallback: Default to Jan 1 - Today (year-to-date)
+      // Default: Jan 1 of current year (year-to-date)
       const currentDate = new Date();
-      const yearStart = new Date(currentDate.getFullYear(), 0, 1);
-      params.push(yearStart, currentDate);
+      startDateParam = new Date(currentDate.getFullYear(), 0, 1);
     }
+
+    if (endDate) {
+      endDateParam = new Date(endDate);
+    } else {
+      // Default: Today
+      endDateParam = new Date();
+    }
+
+    params.push(startDateParam, endDateParam);
+    paramIndex += 2;
 
     query += ` ORDER BY item_code`;
 
-    // console.log('[Scrap API] Query:', query);
-    // console.log('[Scrap API] Params:', params);
+    // Get total count for pagination
+    let countQuery = `
+      SELECT COUNT(DISTINCT ROW(item_code, unit_quantity)) as count
+      FROM fn_calculate_lpj_barang_sisa(
+        ARRAY['SCRAP'],
+        $2::DATE,
+        $3::DATE
+      )
+      WHERE company_code = $1
+    `;
+    
+    const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
+      countQuery,
+      companyCode,
+      startDateParam,
+      endDateParam
+    );
+    const totalCount = Number(countResult[0]?.count ?? 0);
+
+    // Add pagination to main query
+    query += ` LIMIT $${paramIndex}::integer OFFSET $${paramIndex + 1}::integer`;
+    params.push(limit, offset);
 
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
-    // console.log('[Scrap API] Result rows:', result?.length);
-
-    // Transform to expected format
+    // Transform to expected format with decimal precision preservation
     const transformedData = result.map((row: any, index: number) => ({
-      id: `${row.item_code}-${row.snapshot_date}-${index}`,
-      rowNumber: row.no,
-      companyCode: row.company_code,
+      id: `scrap-${row.item_code}-${row.snapshot_date}-${index}`,
+      rowNumber: Number(row.no ?? 0),
+      companyCode: Number(row.company_code ?? 0),
       companyName: row.company_name,
       itemCode: row.item_code,
       itemName: row.item_name,
       itemType: row.item_type,
       unit: row.unit || 'N/A',
       date: row.snapshot_date,
-      beginning: Number(row.beginning || 0),
-      in: Number(row.in || 0),
-      out: Number(row.out || 0),
-      adjustment: Number(row.adjustment || 0),
-      ending: Number(row.ending || 0),
-      stockOpname: Number(row.stockOpname || 0),
-      variant: Number(row.variant || 0),
-      valueAmount: Number(row.value_amount || 0),
-      currency: row.currency,
-      remarks: null,
+      // Return as strings to preserve decimal precision
+      beginning: row.beginning?.toString() ?? '0',
+      in: row.in?.toString() ?? '0',
+      out: row.out?.toString() ?? '0',
+      adjustment: row.adjustment?.toString() ?? '0',
+      ending: row.ending?.toString() ?? '0',
+      stockOpname: row.stockOpname?.toString() ?? '0',
+      variant: row.variant?.toString() ?? '0',
+      valueAmount: row.value_amount?.toString() ?? '0',
+      currency: row.currency || 'IDR',
+      remarks: '-',
     }));
 
-    return NextResponse.json(serializeBigInt(transformedData));
+    return NextResponse.json(
+      serializeBigInt({
+        success: true,
+        data: transformedData,
+        pagination: {
+          page,
+          limit,
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+          hasNextPage: page < Math.ceil(totalCount / limit),
+          hasPrevPage: page > 1,
+        },
+      })
+    );
   } catch (error) {
     console.error('[API Error] Failed to fetch scrap mutations:', error);
     if (error instanceof Error) {

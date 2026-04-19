@@ -15,15 +15,21 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const stockDate = searchParams.get('stockDate');
 
+    // Extract and validate pagination parameters
+    const rawPage = parseInt(searchParams.get('page') || '1', 10);
+    const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
+    
+    // Validate pagination values (min 10, max 500 per page)
+    const page = Math.max(rawPage, 1);
+    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const offset = (page - 1) * limit;
+
     // Validate company code with detailed error messages
     const companyValidation = validateCompanyCode(session);
     if (!companyValidation.success) {
       return companyValidation.response;
     }
     const { companyCode } = companyValidation;
-
-    // console.log('[WIP API] Company Code from session:', companyCode);
-    // console.log('[WIP API] Session user:', session.user?.email, 'Company:', session.user?.companyCode);
 
     // Query from vw_lpj_wip view (Laporan Posisi Barang Dalam Proses at specific date)
     // Returns all fields except company_code and updated_at
@@ -55,16 +61,30 @@ export async function GET(request: Request) {
 
     query += ` ORDER BY item_code`;
 
-    // console.log('[WIP API] Query:', query);
-    // console.log('[WIP API] Params:', params);
+    // Get total count for pagination
+    let countQuery = `
+      SELECT COUNT(*) as count FROM vw_lpj_wip WHERE company_code = $1`;
+
+    if (stockDate) {
+      countQuery += ` AND stock_date = $2::DATE`;
+    }
+
+    const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
+      countQuery,
+      companyCode,
+      ...( stockDate ? [stockDate] : [])
+    );
+    const totalCount = Number(countResult[0]?.count ?? 0);
+
+    // Add pagination to main query
+    query += ` LIMIT $${paramIndex}::integer OFFSET $${paramIndex + 1}::integer`;
+    params.push(limit, offset);
 
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
-    // console.log('[WIP API] Query result count:', result.length);
-
     // Transform to match vw_lpj_wip structure
     const transformedData = result.map((row: any, index: number) => ({
-      id: `${row.item_code}-${row.stock_date}-${index}`,
+      id: `wip-${row.item_code}-${row.stock_date}-${index}`,
       no: Number(row.no),
       companyName: row.company_name,
       itemCode: row.item_code,
@@ -77,7 +97,20 @@ export async function GET(request: Request) {
       createdAt: row.created_at,
     }));
 
-    return NextResponse.json(serializeBigInt(transformedData));
+    return NextResponse.json(
+      serializeBigInt({
+        success: true,
+        data: transformedData,
+        pagination: {
+          page,
+          limit,
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+          hasNextPage: page < Math.ceil(totalCount / limit),
+          hasPrevPage: page > 1,
+        },
+      })
+    );
   } catch (error) {
     console.error('[API Error] Failed to fetch Laporan Posisi Barang Dalam Proses records:', error);
     return NextResponse.json(

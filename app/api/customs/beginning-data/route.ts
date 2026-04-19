@@ -22,6 +22,8 @@ import { validateBeginningBalanceItem } from '@/lib/beginning-data-validation';
  * - itemName: Filter by item name (partial match, case-insensitive)
  * - startDate: Filter by balance date >= startDate
  * - endDate: Filter by balance date <= endDate
+ * - page: Page number (default: 1, min: 1)
+ * - limit: Items per page (default: 50, min: 10, max: 500)
  */
 export async function GET(request: Request) {
   try {
@@ -37,6 +39,15 @@ export async function GET(request: Request) {
     const itemName = searchParams.get('itemName');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+
+    // Extract and validate pagination parameters
+    const rawPage = parseInt(searchParams.get('page') || '1', 10);
+    const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
+    
+    // Validate pagination values (min 10, max 500 per page)
+    const page = Math.max(rawPage, 1);
+    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const skip = (page - 1) * limit;
 
     // Validate company code with detailed error messages
     const companyValidation = validateCompanyCode(session);
@@ -96,6 +107,9 @@ export async function GET(request: Request) {
       }
     }
 
+    // Get total count first
+    const totalCount = await prisma.beginning_balances.count({ where });
+
     const beginningBalances = await prisma.beginning_balances.findMany({
       where,
       include: {
@@ -109,6 +123,8 @@ export async function GET(request: Request) {
         { balance_date: 'desc' },
         { item_code: 'asc' },
       ],
+      skip,
+      take: limit,
     });
 
     // Fetch status separately via raw SQL (Prisma client may not have status field yet)
@@ -171,7 +187,18 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ data: transformedData, overallStatus });
+    return NextResponse.json({ 
+      data: transformedData, 
+      overallStatus,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasNextPage: page < Math.ceil(totalCount / limit),
+        hasPrevPage: page > 1,
+      },
+    });
   } catch (error) {
     console.error('[API Error] Failed to fetch beginning data:', error);
     console.error('[API Error] Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));

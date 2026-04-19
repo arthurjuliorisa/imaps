@@ -53,7 +53,7 @@ export default function ScrapMutationPage() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [data, setData] = useState<MutationData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
 
@@ -171,8 +171,8 @@ export default function ScrapMutationPage() {
         throw new Error('Failed to fetch data');
       }
       const result = await response.json();
-      // Backend returns array directly, not wrapped in {data: []}
-      setData(Array.isArray(result) ? result : []);
+      // Extract data array from new API response format
+      setData(result.data || []);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load data');
@@ -182,10 +182,15 @@ export default function ScrapMutationPage() {
     }
   }, [startDate, endDate, toast]);
 
-  // Load data on mount and when date range changes
+  // Load data on mount and when date range, pagination changes
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Reset page to 0 when date range changes
+  useEffect(() => {
+    setPage(0);
+  }, [startDate, endDate]);
 
   // Reset page to 0 when search query or item type filter changes
   useEffect(() => {

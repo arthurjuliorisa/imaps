@@ -68,7 +68,8 @@ export default function CapitalGoodsMutationPage() {
       const response = await fetch(`/api/customs/capital-goods?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
-      setData(result);
+      // Extract data array from new API response format
+      setData(result.data || []);
     } catch (error) {
       console.error('Error fetching capital goods mutation data:', error);
       toast.error('Failed to load capital goods mutation data');
