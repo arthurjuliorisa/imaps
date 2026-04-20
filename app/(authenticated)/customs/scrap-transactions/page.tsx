@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
 import { Box, Stack, Button, CircularProgress, Typography, TextField, InputAdornment, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
 import {
   Add as AddIcon,
@@ -26,8 +27,12 @@ import type { ScrapTransaction } from '@/types/transaction';
 
 export default function ScrapTransactionsPage() {
   const toast = useToast();
+  const { data: session } = useSession();
 
   const now = new Date();
+
+  // Check if user is admin
+  const isAdmin = (session?.user as any)?.role === 'ADMIN' || (session?.user as any)?.role === 'SUPER_ADMIN';
 
   const [startDate, setStartDate] = useState(now.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(now.toISOString().split('T')[0]);
@@ -51,7 +56,7 @@ export default function ScrapTransactionsPage() {
     {
       field: 'no',
       headerName: 'No',
-      width: 70,
+      width: 50,
       valueGetter: (value, row, column, apiRef) => {
         const rowIndex = apiRef.current.getRowIndexRelativeToVisibleRows(row.id);
         return paginationModel.page * paginationModel.pageSize + rowIndex + 1;
@@ -60,134 +65,134 @@ export default function ScrapTransactionsPage() {
     {
       field: 'companyName',
       headerName: 'Company Name',
-      width: 150,
+      flex: 1,
+      minWidth: 130,
     },
     {
       field: 'transactionType',
       headerName: 'Type',
-      width: 80,
+      width: 70,
     },
     {
       field: 'docType',
       headerName: 'Doc Type',
-      width: 100,
+      width: 90,
     },
     {
       field: 'ppkekNumber',
       headerName: 'Nomor Pendaftaran',
-      width: 140,
+      flex: 1,
+      minWidth: 120,
     },
     {
       field: 'regDate',
       headerName: 'Reg Date',
-      width: 120,
+      width: 100,
       valueFormatter: (value) => value ? formatDate(value) : '',
     },
     {
       field: 'docNumber',
       headerName: 'Doc Number',
-      width: 140,
+      flex: 1,
+      minWidth: 110,
     },
     {
       field: 'docDate',
       headerName: 'Doc Date',
-      width: 120,
+      width: 100,
       valueFormatter: (value) => value ? formatDate(value) : '',
     },
     {
       field: 'transactionDate',
       headerName: 'Transaction Date',
-      width: 150,
+      width: 120,
       valueFormatter: (value) => value ? formatDate(value) : '',
     },
     {
       field: 'recipientName',
       headerName: 'Recipient Name',
-      width: 150,
+      flex: 1,
+      minWidth: 120,
     },
     {
       field: 'itemType',
       headerName: 'Item Type',
-      width: 120,
+      width: 100,
     },
     {
       field: 'itemCode',
       headerName: 'Item Code',
-      width: 120,
+      width: 100,
     },
     {
       field: 'itemName',
       headerName: 'Item Name',
-      width: 200,
+      flex: 1,
+      minWidth: 150,
     },
     {
       field: 'unit',
       headerName: 'Unit',
-      width: 80,
+      width: 70,
     },
     {
       field: 'inQty',
       headerName: 'In',
-      width: 100,
+      width: 80,
       type: 'number',
       valueFormatter: (value: number) => value ? formatQty(value) : '0',
     },
     {
       field: 'outQty',
       headerName: 'Out',
-      width: 100,
+      width: 80,
       type: 'number',
       valueFormatter: (value: number) => value ? formatQty(value) : '0',
     },
     {
       field: 'currency',
       headerName: 'Currency',
-      width: 100,
+      width: 90,
     },
     {
       field: 'valueAmount',
       headerName: 'Value Amount',
-      width: 140,
+      width: 120,
       type: 'number',
       valueFormatter: (value: number) => value ? formatAmount(value) : '0',
     },
     {
-      field: 'remarks',
-      headerName: 'Remarks',
-      width: 200,
-    },
-    {
-      field: 'createdAt',
-      headerName: 'Created At',
-      width: 160,
-      valueFormatter: (value) => value ? formatDate(value) : '',
-    },
-    {
       field: 'actions',
       headerName: 'Actions',
-      width: 120,
+      width: 100,
       sortable: false,
       filterable: false,
+      align: 'center',
+      headerAlign: 'center',
       renderCell: (params: GridRenderCellParams) => (
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <Tooltip title="Edit">
-            <IconButton
-              size="small"
-              color="primary"
-              onClick={() => handleEdit(params.row)}
-            >
-              <EditIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Delete">
-            <IconButton
-              size="small"
-              color="error"
-              onClick={() => handleDeleteClick(params.row)}
-            >
-              <DeleteIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          {isAdmin && (
+            <>
+              <Tooltip title="Edit">
+                <IconButton
+                  size="small"
+                  color="primary"
+                  onClick={() => handleEdit(params.row)}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Delete">
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={() => handleDeleteClick(params.row)}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </>
+          )}
         </Box>
       ),
     },
@@ -299,8 +304,7 @@ export default function ScrapTransactionsPage() {
         row.itemCode?.toLowerCase().includes(query) ||
         row.itemName?.toLowerCase().includes(query) ||
         row.unit?.toLowerCase().includes(query) ||
-        row.currency?.toLowerCase().includes(query) ||
-        row.remarks?.toLowerCase().includes(query)
+        row.currency?.toLowerCase().includes(query)
       );
     });
   }, [data, searchQuery]);
@@ -325,8 +329,6 @@ export default function ScrapTransactionsPage() {
       'Out': row.outQty,
       'Currency': row.currency,
       'Value Amount': row.valueAmount,
-      'Remarks': row.remarks,
-      'Created At': formatDate(row.createdAt),
     }));
 
     exportToExcel(
@@ -356,7 +358,6 @@ export default function ScrapTransactionsPage() {
       outQty: (row.outQty || 0).toString(),
       currency: row.currency || '',
       valueAmount: (row.valueAmount || 0).toString(),
-      remarks: row.remarks,
     }));
 
     const pdfColumns = [
@@ -378,7 +379,6 @@ export default function ScrapTransactionsPage() {
       { header: 'Out', dataKey: 'outQty' },
       { header: 'Currency', dataKey: 'currency' },
       { header: 'Value', dataKey: 'valueAmount' },
-      { header: 'Remarks', dataKey: 'remarks' },
     ];
 
     exportToPDF(
