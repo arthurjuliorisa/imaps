@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import { Box, Button, Autocomplete, TextField, Chip, Typography } from '@mui/material';
 import {
   Add as AddIcon,
@@ -29,6 +30,7 @@ interface ItemType {
 
 export default function BeginningDataPage() {
   const toast = useToast();
+  const { data: session } = useSession();
   const [data, setData] = useState<BeginningStockData[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -45,10 +47,48 @@ export default function BeginningDataPage() {
   const [lockDialogOpen, setLockDialogOpen] = useState(false);
   const [transmitLoading, setTransmitLoading] = useState(false);
 
+  // Company Type Management
+  const [companyType, setCompanyType] = useState<'SEZ' | 'BZ' | null>(null);
+  const [companyTypeLoading, setCompanyTypeLoading] = useState(true);
+
   // Item Type Management
   const [selectedItemType, setSelectedItemType] = useState<string>('ALL');
   const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
   const [itemTypesLoading, setItemTypesLoading] = useState(true);
+
+  // Load company type on mount
+  useEffect(() => {
+    const fetchCompanyType = async () => {
+      setCompanyTypeLoading(true);
+      try {
+        const userCompanyCode = (session?.user as any)?.companyCode;
+        if (!userCompanyCode) {
+          throw new Error('No company code found in session');
+        }
+
+        const response = await fetch(`/api/master/companies?code=${userCompanyCode}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch company information');
+        }
+
+        const result = await response.json();
+        const companiesData = result.data || result;
+        if (companiesData && companiesData.length > 0) {
+          const company = companiesData[0];
+          setCompanyType((company.company_type as any) || null);
+        }
+      } catch (error) {
+        console.error('Error fetching company type:', error);
+        setCompanyType(null);
+      } finally {
+        setCompanyTypeLoading(false);
+      }
+    };
+
+    if (session?.user) {
+      fetchCompanyType();
+    }
+  }, [session?.user]);
 
   // Load item types on mount
   useEffect(() => {
@@ -390,33 +430,37 @@ export default function BeginningDataPage() {
       subtitle="Manage beginning balance data for stock mutations"
       actions={
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, flexWrap: 'wrap' }}>
-          {overallStatus === 'OPEN' && (
-            <Button
-              variant="outlined"
-              color="primary"
-              startIcon={<SendIcon />}
-              onClick={() => setTransmitModalOpen(true)}
-              sx={{
-                textTransform: 'none',
-                borderRadius: 2,
-              }}
-            >
-              Kirim ke INSW
-            </Button>
-          )}
-          {overallStatus === 'TRANSMITTED_TO_INSW' && (
-            <Button
-              variant="outlined"
-              color="warning"
-              startIcon={<LockIcon />}
-              onClick={() => setLockDialogOpen(true)}
-              sx={{
-                textTransform: 'none',
-                borderRadius: 2,
-              }}
-            >
-              Lock Saldo Awal
-            </Button>
+          {companyType === 'SEZ' && (
+            <>
+              {overallStatus === 'OPEN' && (
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  startIcon={<SendIcon />}
+                  onClick={() => setTransmitModalOpen(true)}
+                  sx={{
+                    textTransform: 'none',
+                    borderRadius: 2,
+                  }}
+                >
+                  Kirim ke INSW
+                </Button>
+              )}
+              {overallStatus === 'TRANSMITTED_TO_INSW' && (
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  startIcon={<LockIcon />}
+                  onClick={() => setLockDialogOpen(true)}
+                  sx={{
+                    textTransform: 'none',
+                    borderRadius: 2,
+                  }}
+                >
+                  Lock Saldo Awal
+                </Button>
+              )}
+            </>
           )}
           {overallStatus !== 'LOCKED' && (
             <>
