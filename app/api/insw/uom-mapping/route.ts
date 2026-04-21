@@ -76,8 +76,8 @@ export async function POST(request: Request) {
     }
 
     const result = await prisma.$queryRawUnsafe<any[]>(
-      `INSERT INTO insw_uom_mapping (wms_uom, insw_uom, description, is_active)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO insw_uom_mapping (wms_uom, insw_uom, description, is_active, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, NOW(), NOW())
        RETURNING id, wms_uom, insw_uom, description, is_active, created_at, updated_at`,
       normalizedWmsUom,
       normalizedInswUom,
