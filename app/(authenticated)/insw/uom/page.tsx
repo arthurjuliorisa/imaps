@@ -22,9 +22,10 @@ import {
   FormControlLabel,
   Switch,
 } from '@mui/material';
-import { Refresh, Add, Edit, Delete } from '@mui/icons-material';
+import { Refresh, Add, Edit, Delete, Download } from '@mui/icons-material';
 import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
+import dayjs from 'dayjs';
 
 interface INSWUOM {
   id: number;
@@ -46,6 +47,7 @@ export default function INSWUOMPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [selectedUOM, setSelectedUOM] = useState<INSWUOM | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [formData, setFormData] = useState({
     kode: '',
     uraian: '',
@@ -138,6 +140,46 @@ export default function INSWUOMPage() {
   const handleRefresh = () => {
     fetchData();
     toast.success('Data refreshed');
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    toast.info('Preparing export...');
+
+    try {
+      const params = new URLSearchParams({
+        format: 'xlsx',
+        ...(searchQuery && { search: searchQuery }),
+      });
+
+      const response = await fetch(`/api/insw/uom/export?${params}`);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Export failed');
+      }
+
+      // Get total rows from header
+      const totalRows = response.headers.get('X-Total-Rows') || 'unknown';
+
+      // Create blob and download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `insw-uom-${dayjs().format('YYYY-MM-DD')}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success(`Exported ${totalRows} record(s)`);
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error(error instanceof Error ? error.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleAdd = () => {
@@ -259,6 +301,15 @@ export default function INSWUOMPage() {
           <Tooltip title="Add New">
             <IconButton onClick={handleAdd} color="primary">
               <Add />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Export to Excel">
+            <IconButton 
+              onClick={handleExport} 
+              color="primary"
+              disabled={exporting}
+            >
+              <Download />
             </IconButton>
           </Tooltip>
           <Tooltip title="Refresh">

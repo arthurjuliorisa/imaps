@@ -20,7 +20,6 @@ export async function GET(request: Request) {
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
     const companyCodeParam = searchParams.get('companyCode');
-    const exportData = searchParams.get('export') === 'true';
     const rawPage = parseInt(searchParams.get('page') || '1', 10);
     const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
 
@@ -87,48 +86,6 @@ export async function GET(request: Request) {
       take: limit,
       skip: offset,
     });
-
-    // If export, return CSV (fetch all records for export)
-    if (exportData) {
-      const allLogs = await prisma.activity_logs.findMany({
-        where,
-        include: {
-          users: {
-            select: {
-              username: true,
-              email: true,
-            },
-          },
-        },
-        orderBy: {
-          created_at: 'desc',
-        },
-      });
-
-      const headers = ['Date & Time', 'Company Code', 'User', 'Email', 'Action', 'Description', 'Status', 'IP Address'];
-      const rows = allLogs.map(log => [
-        log.created_at.toISOString(),
-        log.company_code?.toString() || '-',
-        log.users?.username || 'System',
-        log.users?.email || '-',
-        log.action,
-        log.description,
-        log.status,
-        log.ip_address || '-',
-      ]);
-
-      const csv = [
-        headers.join(','),
-        ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
-      ].join('\n');
-
-      return new Response(csv, {
-        headers: {
-          'Content-Type': 'text/csv',
-          'Content-Disposition': `attachment; filename="activity-logs-${new Date().toISOString().split('T')[0]}.csv"`,
-        },
-      });
-    }
 
     // Transform data for frontend
     const data = logs.map(log => ({

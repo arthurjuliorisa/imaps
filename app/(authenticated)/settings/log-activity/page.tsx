@@ -189,30 +189,46 @@ export default function LogActivityPage() {
 
   const handleExport = async () => {
     try {
+      // Build export params
       const params = new URLSearchParams({
+        format: 'xlsx', // ✅ New: Use Excel format (can also use 'csv')
         ...(searchQuery && { search: searchQuery }),
         ...(statusFilter !== 'ALL' && { status: statusFilter }),
         ...(companyCodeFilter !== 'ALL' && { companyCode: companyCodeFilter }),
-        export: 'true',
       });
 
-      const response = await fetch(`/api/settings/activity-logs?${params}`);
-      if (!response.ok) throw new Error('Failed to export activity logs');
+      // ✅ Show info toast
+      toast.info('Preparing export... This may take a moment for large datasets.');
+
+      const response = await fetch(`/api/settings/activity-logs/export?${params}`);
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Failed to export activity logs');
+      }
+
+      // ✅ Get total rows from header for info
+      const totalRows = response.headers.get('X-Total-Rows');
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `activity-logs-${dayjs().format('YYYY-MM-DD')}.csv`;
+      a.download = `activity-logs-${dayjs().format('YYYY-MM-DD')}.xlsx`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      toast.success('Activity logs exported successfully');
+      // ✅ Show success toast with row count
+      const message = totalRows 
+        ? `Activity logs exported successfully (${Number(totalRows).toLocaleString()} rows)`
+        : 'Activity logs exported successfully';
+      toast.success(message);
     } catch (err) {
       console.error('Error exporting activity logs:', err);
-      toast.error('Failed to export activity logs');
+      const message = err instanceof Error ? err.message : 'Failed to export activity logs';
+      toast.error(message);
     }
   };
 
@@ -242,7 +258,7 @@ export default function LogActivityPage() {
               <Refresh />
             </IconButton>
           </Tooltip>
-          <Tooltip title="Export to CSV">
+          <Tooltip title="Export to Excel">
             <IconButton onClick={handleExport} color="primary">
               <Download />
             </IconButton>
