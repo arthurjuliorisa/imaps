@@ -742,7 +742,7 @@ BEGIN
         WHERE tablename = v_company_partition_name AND schemaname = 'public'
     ) THEN
         EXECUTE 'CREATE TABLE ' || v_company_partition_name || ' PARTITION OF incoming_goods FOR VALUES IN (' || p_company_code || ') PARTITION BY RANGE (incoming_date)';
-        EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO appuser';
+        -- EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO imapsuser';
     END IF;
     
     -- Check if quarterly partition exists, if not create it
@@ -751,7 +751,7 @@ BEGIN
         WHERE tablename = v_partition_name AND schemaname = 'public'
     ) THEN
         EXECUTE 'CREATE TABLE ' || v_partition_name || ' PARTITION OF ' || v_company_partition_name || ' FOR VALUES FROM (''' || v_quarter_start || ''') TO (''' || v_quarter_end || ''')';
-        EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO appuser';
+        -- EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO imapsuser';
         RAISE NOTICE 'Created partition: %', v_partition_name;
     END IF;
 END;
@@ -791,7 +791,7 @@ BEGIN
         WHERE tablename = v_company_partition_name AND schemaname = 'public'
     ) THEN
         EXECUTE 'CREATE TABLE ' || v_company_partition_name || ' PARTITION OF outgoing_goods FOR VALUES IN (' || p_company_code || ') PARTITION BY RANGE (outgoing_date)';
-        EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO appuser';
+        -- EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO imapsuser';
     END IF;
     
     -- Check if quarterly partition exists, if not create it
@@ -800,7 +800,7 @@ BEGIN
         WHERE tablename = v_partition_name AND schemaname = 'public'
     ) THEN
         EXECUTE 'CREATE TABLE ' || v_partition_name || ' PARTITION OF ' || v_company_partition_name || ' FOR VALUES FROM (''' || v_quarter_start || ''') TO (''' || v_quarter_end || ''')';
-        EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO appuser';
+        -- EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO imapsuser';
         RAISE NOTICE 'Created partition: %', v_partition_name;
     END IF;
 END;
@@ -840,7 +840,7 @@ BEGIN
         WHERE tablename = v_company_partition_name AND schemaname = 'public'
     ) THEN
         EXECUTE 'CREATE TABLE ' || v_company_partition_name || ' PARTITION OF material_usages FOR VALUES IN (' || p_company_code || ') PARTITION BY RANGE (transaction_date)';
-        EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO appuser';
+        -- EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO imapsuser';
     END IF;
     
     -- Check if quarterly partition exists, if not create it
@@ -849,7 +849,7 @@ BEGIN
         WHERE tablename = v_partition_name AND schemaname = 'public'
     ) THEN
         EXECUTE 'CREATE TABLE ' || v_partition_name || ' PARTITION OF ' || v_company_partition_name || ' FOR VALUES FROM (''' || v_quarter_start || ''') TO (''' || v_quarter_end || ''')';
-        EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO appuser';
+        -- EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO imapsuser';
         RAISE NOTICE 'Created partition: %', v_partition_name;
     END IF;
 END;
@@ -889,7 +889,7 @@ BEGIN
         WHERE tablename = v_company_partition_name AND schemaname = 'public'
     ) THEN
         EXECUTE 'CREATE TABLE ' || v_company_partition_name || ' PARTITION OF production_outputs FOR VALUES IN (' || p_company_code || ') PARTITION BY RANGE (transaction_date)';
-        EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO appuser';
+        -- EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO imapsuser';
     END IF;
     
     -- Check if quarterly partition exists, if not create it
@@ -898,7 +898,7 @@ BEGIN
         WHERE tablename = v_partition_name AND schemaname = 'public'
     ) THEN
         EXECUTE 'CREATE TABLE ' || v_partition_name || ' PARTITION OF ' || v_company_partition_name || ' FOR VALUES FROM (''' || v_quarter_start || ''') TO (''' || v_quarter_end || ''')';
-        EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO appuser';
+        -- EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO imapsuser';
         RAISE NOTICE 'Created partition: %', v_partition_name;
     END IF;
 END;
@@ -938,7 +938,7 @@ BEGIN
         WHERE tablename = v_company_partition_name AND schemaname = 'public'
     ) THEN
         EXECUTE 'CREATE TABLE ' || v_company_partition_name || ' PARTITION OF adjustments FOR VALUES IN (' || p_company_code || ') PARTITION BY RANGE (transaction_date)';
-        EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO appuser';
+        -- EXECUTE 'ALTER TABLE ' || v_company_partition_name || ' OWNER TO imapsuser';
     END IF;
     
     -- Check if quarterly partition exists, if not create it
@@ -947,7 +947,7 @@ BEGIN
         WHERE tablename = v_partition_name AND schemaname = 'public'
     ) THEN
         EXECUTE 'CREATE TABLE ' || v_partition_name || ' PARTITION OF ' || v_company_partition_name || ' FOR VALUES FROM (''' || v_quarter_start || ''') TO (''' || v_quarter_end || ''')';
-        EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO appuser';
+        -- EXECUTE 'ALTER TABLE ' || v_partition_name || ' OWNER TO imapsuser';
         RAISE NOTICE 'Created partition: %', v_partition_name;
     END IF;
 END;

@@ -499,8 +499,8 @@ $$;
 -- 5. GRANT PERMISSIONS
 -- =============================================================================
 
--- Grant execute permission to app user (adjust appuser to your actual user)
-GRANT EXECUTE ON FUNCTION get_item_opening_balance(INTEGER, VARCHAR, VARCHAR, VARCHAR, DATE) TO appuser;
-GRANT EXECUTE ON FUNCTION upsert_item_stock_snapshot(INTEGER, VARCHAR, VARCHAR, VARCHAR, VARCHAR, DATE) TO appuser;
-GRANT EXECUTE ON FUNCTION upsert_items_stock_snapshot(INTEGER, JSONB, DATE) TO appuser;
-GRANT EXECUTE ON FUNCTION recalculate_item_snapshots_from_date(INTEGER, VARCHAR, VARCHAR, VARCHAR, DATE) TO appuser;
+-- Grant execute permission to app user (adjust imapsuser to your actual user)
+GRANT EXECUTE ON FUNCTION get_item_opening_balance(INTEGER, VARCHAR, VARCHAR, VARCHAR, DATE) TO imapsuser;
+GRANT EXECUTE ON FUNCTION upsert_item_stock_snapshot(INTEGER, VARCHAR, VARCHAR, VARCHAR, VARCHAR, DATE) TO imapsuser;
+GRANT EXECUTE ON FUNCTION upsert_items_stock_snapshot(INTEGER, JSONB, DATE) TO imapsuser;
+GRANT EXECUTE ON FUNCTION recalculate_item_snapshots_from_date(INTEGER, VARCHAR, VARCHAR, VARCHAR, DATE) TO imapsuser;

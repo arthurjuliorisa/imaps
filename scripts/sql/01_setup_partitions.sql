@@ -20,19 +20,20 @@
 -- ============================================================================
 
 -- Set role to postgres for creating tables
-SET ROLE postgres;
+-- SET ROLE postgres;
 
+-- Ini dijalankan sekali di awal dedngan user postgres untuk membuat user dan database, langsung di terminal psql, tidak perlu di script ini
 -- ============================================================================
 -- GRANT INITIAL PRIVILEGES TO APPUSER
 -- ============================================================================
 
 -- Grant schema usage
-GRANT USAGE ON SCHEMA public TO appuser;
-GRANT CREATE ON SCHEMA public TO appuser;
+-- GRANT USAGE ON SCHEMA public TO imapsuser;
+-- GRANT CREATE ON SCHEMA public TO imapsuser;
 
 -- Grant privileges on existing tables
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO appuser;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO appuser;
+-- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO imapsuser;
+-- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO imapsuser;
 
 -- ============================================================================
 -- 1. INCOMING GOODS PARTITIONING
@@ -60,129 +61,129 @@ CREATE TABLE incoming_goods (
     deleted_at TIMESTAMPTZ(6)
 ) PARTITION BY LIST (company_code);
 
--- Change owner to appuser
-ALTER TABLE incoming_goods OWNER TO appuser;
+-- Change owner to imapsuser
+ALTER TABLE incoming_goods OWNER TO imapsuser;
 
 -- Create partitions for each company
 CREATE TABLE incoming_goods_1370 PARTITION OF incoming_goods
     FOR VALUES IN (1370)
     PARTITION BY RANGE (incoming_date);
 
-ALTER TABLE incoming_goods_1370 OWNER TO appuser;
+ALTER TABLE incoming_goods_1370 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1310 PARTITION OF incoming_goods
     FOR VALUES IN (1310)
     PARTITION BY RANGE (incoming_date);
 
-ALTER TABLE incoming_goods_1310 OWNER TO appuser;
+ALTER TABLE incoming_goods_1310 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1380 PARTITION OF incoming_goods
     FOR VALUES IN (1380)
     PARTITION BY RANGE (incoming_date);
 
-ALTER TABLE incoming_goods_1380 OWNER TO appuser;
+ALTER TABLE incoming_goods_1380 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2025)
 CREATE TABLE incoming_goods_1370_2025_q1 PARTITION OF incoming_goods_1370
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE incoming_goods_1370_2025_q1 OWNER TO appuser;
+ALTER TABLE incoming_goods_1370_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1370_2025_q2 PARTITION OF incoming_goods_1370
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE incoming_goods_1370_2025_q2 OWNER TO appuser;
+ALTER TABLE incoming_goods_1370_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1370_2025_q3 PARTITION OF incoming_goods_1370
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE incoming_goods_1370_2025_q3 OWNER TO appuser;
+ALTER TABLE incoming_goods_1370_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1370_2025_q4 PARTITION OF incoming_goods_1370
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE incoming_goods_1370_2025_q4 OWNER TO appuser;
+ALTER TABLE incoming_goods_1370_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2026)
 CREATE TABLE incoming_goods_1370_2026_q1 PARTITION OF incoming_goods_1370
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE incoming_goods_1370_2026_q1 OWNER TO appuser;
+ALTER TABLE incoming_goods_1370_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1370_2026_q2 PARTITION OF incoming_goods_1370
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE incoming_goods_1370_2026_q2 OWNER TO appuser;
+ALTER TABLE incoming_goods_1370_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1370_2026_q3 PARTITION OF incoming_goods_1370
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE incoming_goods_1370_2026_q3 OWNER TO appuser;
+ALTER TABLE incoming_goods_1370_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1370_2026_q4 PARTITION OF incoming_goods_1370
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE incoming_goods_1370_2026_q4 OWNER TO appuser;
+ALTER TABLE incoming_goods_1370_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2025)
 CREATE TABLE incoming_goods_1310_2025_q1 PARTITION OF incoming_goods_1310
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE incoming_goods_1310_2025_q1 OWNER TO appuser;
+ALTER TABLE incoming_goods_1310_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1310_2025_q2 PARTITION OF incoming_goods_1310
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE incoming_goods_1310_2025_q2 OWNER TO appuser;
+ALTER TABLE incoming_goods_1310_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1310_2025_q3 PARTITION OF incoming_goods_1310
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE incoming_goods_1310_2025_q3 OWNER TO appuser;
+ALTER TABLE incoming_goods_1310_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1310_2025_q4 PARTITION OF incoming_goods_1310
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE incoming_goods_1310_2025_q4 OWNER TO appuser;
+ALTER TABLE incoming_goods_1310_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2026)
 CREATE TABLE incoming_goods_1310_2026_q1 PARTITION OF incoming_goods_1310
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE incoming_goods_1310_2026_q1 OWNER TO appuser;
+ALTER TABLE incoming_goods_1310_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1310_2026_q2 PARTITION OF incoming_goods_1310
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE incoming_goods_1310_2026_q2 OWNER TO appuser;
+ALTER TABLE incoming_goods_1310_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1310_2026_q3 PARTITION OF incoming_goods_1310
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE incoming_goods_1310_2026_q3 OWNER TO appuser;
+ALTER TABLE incoming_goods_1310_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1310_2026_q4 PARTITION OF incoming_goods_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE incoming_goods_1310_2026_q4 OWNER TO appuser;
+ALTER TABLE incoming_goods_1310_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2025)
 CREATE TABLE incoming_goods_1380_2025_q1 PARTITION OF incoming_goods_1380
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE incoming_goods_1380_2025_q1 OWNER TO appuser;
+ALTER TABLE incoming_goods_1380_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1380_2025_q2 PARTITION OF incoming_goods_1380
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE incoming_goods_1380_2025_q2 OWNER TO appuser;
+ALTER TABLE incoming_goods_1380_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1380_2025_q3 PARTITION OF incoming_goods_1380
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE incoming_goods_1380_2025_q3 OWNER TO appuser;
+ALTER TABLE incoming_goods_1380_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1380_2025_q4 PARTITION OF incoming_goods_1380
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE incoming_goods_1380_2025_q4 OWNER TO appuser;
+ALTER TABLE incoming_goods_1380_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2026)
 CREATE TABLE incoming_goods_1380_2026_q1 PARTITION OF incoming_goods_1380
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE incoming_goods_1380_2026_q1 OWNER TO appuser;
+ALTER TABLE incoming_goods_1380_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1380_2026_q2 PARTITION OF incoming_goods_1380
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE incoming_goods_1380_2026_q2 OWNER TO appuser;
+ALTER TABLE incoming_goods_1380_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1380_2026_q3 PARTITION OF incoming_goods_1380
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE incoming_goods_1380_2026_q3 OWNER TO appuser;
+ALTER TABLE incoming_goods_1380_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE incoming_goods_1380_2026_q4 PARTITION OF incoming_goods_1380
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE incoming_goods_1380_2026_q4 OWNER TO appuser;
+ALTER TABLE incoming_goods_1380_2026_q4 OWNER TO imapsuser;
 
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX incoming_goods_company_code_wms_id_incoming_date_key ON incoming_goods (company_code, wms_id, incoming_date);
@@ -217,125 +218,125 @@ CREATE TABLE material_usages (
     deleted_at TIMESTAMPTZ(6)
 ) PARTITION BY LIST (company_code);
 
-ALTER TABLE material_usages OWNER TO appuser;
+ALTER TABLE material_usages OWNER TO imapsuser;
 
 -- Create partitions for each company
 CREATE TABLE material_usages_1370 PARTITION OF material_usages
     FOR VALUES IN (1370)
     PARTITION BY RANGE (transaction_date);
-ALTER TABLE material_usages_1370 OWNER TO appuser;
+ALTER TABLE material_usages_1370 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1310 PARTITION OF material_usages
     FOR VALUES IN (1310)
     PARTITION BY RANGE (transaction_date);
-ALTER TABLE material_usages_1310 OWNER TO appuser;
+ALTER TABLE material_usages_1310 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1380 PARTITION OF material_usages
     FOR VALUES IN (1380)
     PARTITION BY RANGE (transaction_date);
-ALTER TABLE material_usages_1380 OWNER TO appuser;
+ALTER TABLE material_usages_1380 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2025)
 CREATE TABLE material_usages_1370_2025_q1 PARTITION OF material_usages_1370
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE material_usages_1370_2025_q1 OWNER TO appuser;
+ALTER TABLE material_usages_1370_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1370_2025_q2 PARTITION OF material_usages_1370
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE material_usages_1370_2025_q2 OWNER TO appuser;
+ALTER TABLE material_usages_1370_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1370_2025_q3 PARTITION OF material_usages_1370
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE material_usages_1370_2025_q3 OWNER TO appuser;
+ALTER TABLE material_usages_1370_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1370_2025_q4 PARTITION OF material_usages_1370
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE material_usages_1370_2025_q4 OWNER TO appuser;
+ALTER TABLE material_usages_1370_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2026)
 CREATE TABLE material_usages_1370_2026_q1 PARTITION OF material_usages_1370
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE material_usages_1370_2026_q1 OWNER TO appuser;
+ALTER TABLE material_usages_1370_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1370_2026_q2 PARTITION OF material_usages_1370
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE material_usages_1370_2026_q2 OWNER TO appuser;
+ALTER TABLE material_usages_1370_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1370_2026_q3 PARTITION OF material_usages_1370
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE material_usages_1370_2026_q3 OWNER TO appuser;
+ALTER TABLE material_usages_1370_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1370_2026_q4 PARTITION OF material_usages_1370
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE material_usages_1370_2026_q4 OWNER TO appuser;
+ALTER TABLE material_usages_1370_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2025)
 CREATE TABLE material_usages_1310_2025_q1 PARTITION OF material_usages_1310
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE material_usages_1310_2025_q1 OWNER TO appuser;
+ALTER TABLE material_usages_1310_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1310_2025_q2 PARTITION OF material_usages_1310
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE material_usages_1310_2025_q2 OWNER TO appuser;
+ALTER TABLE material_usages_1310_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1310_2025_q3 PARTITION OF material_usages_1310
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE material_usages_1310_2025_q3 OWNER TO appuser;
+ALTER TABLE material_usages_1310_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1310_2025_q4 PARTITION OF material_usages_1310
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE material_usages_1310_2025_q4 OWNER TO appuser;
+ALTER TABLE material_usages_1310_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2026)
 CREATE TABLE material_usages_1310_2026_q1 PARTITION OF material_usages_1310
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE material_usages_1310_2026_q1 OWNER TO appuser;
+ALTER TABLE material_usages_1310_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1310_2026_q2 PARTITION OF material_usages_1310
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE material_usages_1310_2026_q2 OWNER TO appuser;
+ALTER TABLE material_usages_1310_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1310_2026_q3 PARTITION OF material_usages_1310
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE material_usages_1310_2026_q3 OWNER TO appuser;
+ALTER TABLE material_usages_1310_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1310_2026_q4 PARTITION OF material_usages_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE material_usages_1310_2026_q4 OWNER TO appuser;
+ALTER TABLE material_usages_1310_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2025)
 CREATE TABLE material_usages_1380_2025_q1 PARTITION OF material_usages_1380
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE material_usages_1380_2025_q1 OWNER TO appuser;
+ALTER TABLE material_usages_1380_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1380_2025_q2 PARTITION OF material_usages_1380
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE material_usages_1380_2025_q2 OWNER TO appuser;
+ALTER TABLE material_usages_1380_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1380_2025_q3 PARTITION OF material_usages_1380
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE material_usages_1380_2025_q3 OWNER TO appuser;
+ALTER TABLE material_usages_1380_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1380_2025_q4 PARTITION OF material_usages_1380
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE material_usages_1380_2025_q4 OWNER TO appuser;
+ALTER TABLE material_usages_1380_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2026)
 CREATE TABLE material_usages_1380_2026_q1 PARTITION OF material_usages_1380
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE material_usages_1380_2026_q1 OWNER TO appuser;
+ALTER TABLE material_usages_1380_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1380_2026_q2 PARTITION OF material_usages_1380
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE material_usages_1380_2026_q2 OWNER TO appuser;
+ALTER TABLE material_usages_1380_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1380_2026_q3 PARTITION OF material_usages_1380
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE material_usages_1380_2026_q3 OWNER TO appuser;
+ALTER TABLE material_usages_1380_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE material_usages_1380_2026_q4 PARTITION OF material_usages_1380
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE material_usages_1380_2026_q4 OWNER TO appuser;
+ALTER TABLE material_usages_1380_2026_q4 OWNER TO imapsuser;
 
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX material_usages_company_code_wms_id_transaction_date_key ON material_usages (company_code, wms_id, transaction_date);
@@ -369,125 +370,125 @@ CREATE TABLE wip_balances (
     deleted_at TIMESTAMPTZ(6)
 ) PARTITION BY LIST (company_code);
 
-ALTER TABLE wip_balances OWNER TO appuser;
+ALTER TABLE wip_balances OWNER TO imapsuser;
 
 -- Create partitions for each company
 CREATE TABLE wip_balances_1370 PARTITION OF wip_balances
     FOR VALUES IN (1370)
     PARTITION BY RANGE (stock_date);
-ALTER TABLE wip_balances_1370 OWNER TO appuser;
+ALTER TABLE wip_balances_1370 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1310 PARTITION OF wip_balances
     FOR VALUES IN (1310)
     PARTITION BY RANGE (stock_date);
-ALTER TABLE wip_balances_1310 OWNER TO appuser;
+ALTER TABLE wip_balances_1310 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1380 PARTITION OF wip_balances
     FOR VALUES IN (1380)
     PARTITION BY RANGE (stock_date);
-ALTER TABLE wip_balances_1380 OWNER TO appuser;
+ALTER TABLE wip_balances_1380 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2025)
 CREATE TABLE wip_balances_1370_2025_q1 PARTITION OF wip_balances_1370
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE wip_balances_1370_2025_q1 OWNER TO appuser;
+ALTER TABLE wip_balances_1370_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1370_2025_q2 PARTITION OF wip_balances_1370
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE wip_balances_1370_2025_q2 OWNER TO appuser;
+ALTER TABLE wip_balances_1370_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1370_2025_q3 PARTITION OF wip_balances_1370
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE wip_balances_1370_2025_q3 OWNER TO appuser;
+ALTER TABLE wip_balances_1370_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1370_2025_q4 PARTITION OF wip_balances_1370
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE wip_balances_1370_2025_q4 OWNER TO appuser;
+ALTER TABLE wip_balances_1370_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2026)
 CREATE TABLE wip_balances_1370_2026_q1 PARTITION OF wip_balances_1370
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE wip_balances_1370_2026_q1 OWNER TO appuser;
+ALTER TABLE wip_balances_1370_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1370_2026_q2 PARTITION OF wip_balances_1370
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE wip_balances_1370_2026_q2 OWNER TO appuser;
+ALTER TABLE wip_balances_1370_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1370_2026_q3 PARTITION OF wip_balances_1370
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE wip_balances_1370_2026_q3 OWNER TO appuser;
+ALTER TABLE wip_balances_1370_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1370_2026_q4 PARTITION OF wip_balances_1370
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE wip_balances_1370_2026_q4 OWNER TO appuser;
+ALTER TABLE wip_balances_1370_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2025)
 CREATE TABLE wip_balances_1310_2025_q1 PARTITION OF wip_balances_1310
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE wip_balances_1310_2025_q1 OWNER TO appuser;
+ALTER TABLE wip_balances_1310_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1310_2025_q2 PARTITION OF wip_balances_1310
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE wip_balances_1310_2025_q2 OWNER TO appuser;
+ALTER TABLE wip_balances_1310_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1310_2025_q3 PARTITION OF wip_balances_1310
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE wip_balances_1310_2025_q3 OWNER TO appuser;
+ALTER TABLE wip_balances_1310_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1310_2025_q4 PARTITION OF wip_balances_1310
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE wip_balances_1310_2025_q4 OWNER TO appuser;
+ALTER TABLE wip_balances_1310_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2026)
 CREATE TABLE wip_balances_1310_2026_q1 PARTITION OF wip_balances_1310
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE wip_balances_1310_2026_q1 OWNER TO appuser;
+ALTER TABLE wip_balances_1310_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1310_2026_q2 PARTITION OF wip_balances_1310
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE wip_balances_1310_2026_q2 OWNER TO appuser;
+ALTER TABLE wip_balances_1310_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1310_2026_q3 PARTITION OF wip_balances_1310
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE wip_balances_1310_2026_q3 OWNER TO appuser;
+ALTER TABLE wip_balances_1310_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1310_2026_q4 PARTITION OF wip_balances_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE wip_balances_1310_2026_q4 OWNER TO appuser;
+ALTER TABLE wip_balances_1310_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2025)
 CREATE TABLE wip_balances_1380_2025_q1 PARTITION OF wip_balances_1380
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE wip_balances_1380_2025_q1 OWNER TO appuser;
+ALTER TABLE wip_balances_1380_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1380_2025_q2 PARTITION OF wip_balances_1380
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE wip_balances_1380_2025_q2 OWNER TO appuser;
+ALTER TABLE wip_balances_1380_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1380_2025_q3 PARTITION OF wip_balances_1380
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE wip_balances_1380_2025_q3 OWNER TO appuser;
+ALTER TABLE wip_balances_1380_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1380_2025_q4 PARTITION OF wip_balances_1380
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE wip_balances_1380_2025_q4 OWNER TO appuser;
+ALTER TABLE wip_balances_1380_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2026)
 CREATE TABLE wip_balances_1380_2026_q1 PARTITION OF wip_balances_1380
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE wip_balances_1380_2026_q1 OWNER TO appuser;
+ALTER TABLE wip_balances_1380_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1380_2026_q2 PARTITION OF wip_balances_1380
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE wip_balances_1380_2026_q2 OWNER TO appuser;
+ALTER TABLE wip_balances_1380_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1380_2026_q3 PARTITION OF wip_balances_1380
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE wip_balances_1380_2026_q3 OWNER TO appuser;
+ALTER TABLE wip_balances_1380_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE wip_balances_1380_2026_q4 PARTITION OF wip_balances_1380
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE wip_balances_1380_2026_q4 OWNER TO appuser;
+ALTER TABLE wip_balances_1380_2026_q4 OWNER TO imapsuser;
 
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX wip_balances_company_code_wms_id_stock_date_key ON wip_balances (company_code, wms_id, stock_date);
@@ -518,125 +519,125 @@ CREATE TABLE production_outputs (
     deleted_at TIMESTAMPTZ(6)
 ) PARTITION BY LIST (company_code);
 
-ALTER TABLE production_outputs OWNER TO appuser;
+ALTER TABLE production_outputs OWNER TO imapsuser;
 
 -- Create partitions for each company
 CREATE TABLE production_outputs_1370 PARTITION OF production_outputs
     FOR VALUES IN (1370)
     PARTITION BY RANGE (transaction_date);
-ALTER TABLE production_outputs_1370 OWNER TO appuser;
+ALTER TABLE production_outputs_1370 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1310 PARTITION OF production_outputs
     FOR VALUES IN (1310)
     PARTITION BY RANGE (transaction_date);
-ALTER TABLE production_outputs_1310 OWNER TO appuser;
+ALTER TABLE production_outputs_1310 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1380 PARTITION OF production_outputs
     FOR VALUES IN (1380)
     PARTITION BY RANGE (transaction_date);
-ALTER TABLE production_outputs_1380 OWNER TO appuser;
+ALTER TABLE production_outputs_1380 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2025)
 CREATE TABLE production_outputs_1370_2025_q1 PARTITION OF production_outputs_1370
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE production_outputs_1370_2025_q1 OWNER TO appuser;
+ALTER TABLE production_outputs_1370_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1370_2025_q2 PARTITION OF production_outputs_1370
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE production_outputs_1370_2025_q2 OWNER TO appuser;
+ALTER TABLE production_outputs_1370_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1370_2025_q3 PARTITION OF production_outputs_1370
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE production_outputs_1370_2025_q3 OWNER TO appuser;
+ALTER TABLE production_outputs_1370_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1370_2025_q4 PARTITION OF production_outputs_1370
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE production_outputs_1370_2025_q4 OWNER TO appuser;
+ALTER TABLE production_outputs_1370_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2026)
 CREATE TABLE production_outputs_1370_2026_q1 PARTITION OF production_outputs_1370
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE production_outputs_1370_2026_q1 OWNER TO appuser;
+ALTER TABLE production_outputs_1370_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1370_2026_q2 PARTITION OF production_outputs_1370
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE production_outputs_1370_2026_q2 OWNER TO appuser;
+ALTER TABLE production_outputs_1370_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1370_2026_q3 PARTITION OF production_outputs_1370
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE production_outputs_1370_2026_q3 OWNER TO appuser;
+ALTER TABLE production_outputs_1370_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1370_2026_q4 PARTITION OF production_outputs_1370
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE production_outputs_1370_2026_q4 OWNER TO appuser;
+ALTER TABLE production_outputs_1370_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2025)
 CREATE TABLE production_outputs_1310_2025_q1 PARTITION OF production_outputs_1310
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE production_outputs_1310_2025_q1 OWNER TO appuser;
+ALTER TABLE production_outputs_1310_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1310_2025_q2 PARTITION OF production_outputs_1310
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE production_outputs_1310_2025_q2 OWNER TO appuser;
+ALTER TABLE production_outputs_1310_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1310_2025_q3 PARTITION OF production_outputs_1310
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE production_outputs_1310_2025_q3 OWNER TO appuser;
+ALTER TABLE production_outputs_1310_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1310_2025_q4 PARTITION OF production_outputs_1310
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE production_outputs_1310_2025_q4 OWNER TO appuser;
+ALTER TABLE production_outputs_1310_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2026)
 CREATE TABLE production_outputs_1310_2026_q1 PARTITION OF production_outputs_1310
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE production_outputs_1310_2026_q1 OWNER TO appuser;
+ALTER TABLE production_outputs_1310_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1310_2026_q2 PARTITION OF production_outputs_1310
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE production_outputs_1310_2026_q2 OWNER TO appuser;
+ALTER TABLE production_outputs_1310_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1310_2026_q3 PARTITION OF production_outputs_1310
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE production_outputs_1310_2026_q3 OWNER TO appuser;
+ALTER TABLE production_outputs_1310_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1310_2026_q4 PARTITION OF production_outputs_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE production_outputs_1310_2026_q4 OWNER TO appuser;
+ALTER TABLE production_outputs_1310_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2025)
 CREATE TABLE production_outputs_1380_2025_q1 PARTITION OF production_outputs_1380
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE production_outputs_1380_2025_q1 OWNER TO appuser;
+ALTER TABLE production_outputs_1380_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1380_2025_q2 PARTITION OF production_outputs_1380
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE production_outputs_1380_2025_q2 OWNER TO appuser;
+ALTER TABLE production_outputs_1380_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1380_2025_q3 PARTITION OF production_outputs_1380
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE production_outputs_1380_2025_q3 OWNER TO appuser;
+ALTER TABLE production_outputs_1380_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1380_2025_q4 PARTITION OF production_outputs_1380
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE production_outputs_1380_2025_q4 OWNER TO appuser;
+ALTER TABLE production_outputs_1380_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2026)
 CREATE TABLE production_outputs_1380_2026_q1 PARTITION OF production_outputs_1380
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE production_outputs_1380_2026_q1 OWNER TO appuser;
+ALTER TABLE production_outputs_1380_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1380_2026_q2 PARTITION OF production_outputs_1380
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE production_outputs_1380_2026_q2 OWNER TO appuser;
+ALTER TABLE production_outputs_1380_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1380_2026_q3 PARTITION OF production_outputs_1380
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE production_outputs_1380_2026_q3 OWNER TO appuser;
+ALTER TABLE production_outputs_1380_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE production_outputs_1380_2026_q4 PARTITION OF production_outputs_1380
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE production_outputs_1380_2026_q4 OWNER TO appuser;
+ALTER TABLE production_outputs_1380_2026_q4 OWNER TO imapsuser;
 
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX production_outputs_company_code_wms_id_transaction_date_key ON production_outputs (company_code, wms_id, transaction_date);
@@ -671,125 +672,125 @@ CREATE TABLE outgoing_goods (
     deleted_at TIMESTAMPTZ(6)
 ) PARTITION BY LIST (company_code);
 
-ALTER TABLE outgoing_goods OWNER TO appuser;
+ALTER TABLE outgoing_goods OWNER TO imapsuser;
 
 -- Create partitions for each company
 CREATE TABLE outgoing_goods_1370 PARTITION OF outgoing_goods
     FOR VALUES IN (1370)
     PARTITION BY RANGE (outgoing_date);
-ALTER TABLE outgoing_goods_1370 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1370 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1310 PARTITION OF outgoing_goods
     FOR VALUES IN (1310)
     PARTITION BY RANGE (outgoing_date);
-ALTER TABLE outgoing_goods_1310 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1310 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1380 PARTITION OF outgoing_goods
     FOR VALUES IN (1380)
     PARTITION BY RANGE (outgoing_date);
-ALTER TABLE outgoing_goods_1380 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1380 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2025)
 CREATE TABLE outgoing_goods_1370_2025_q1 PARTITION OF outgoing_goods_1370
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE outgoing_goods_1370_2025_q1 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1370_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1370_2025_q2 PARTITION OF outgoing_goods_1370
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE outgoing_goods_1370_2025_q2 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1370_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1370_2025_q3 PARTITION OF outgoing_goods_1370
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE outgoing_goods_1370_2025_q3 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1370_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1370_2025_q4 PARTITION OF outgoing_goods_1370
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE outgoing_goods_1370_2025_q4 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1370_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2026)
 CREATE TABLE outgoing_goods_1370_2026_q1 PARTITION OF outgoing_goods_1370
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE outgoing_goods_1370_2026_q1 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1370_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1370_2026_q2 PARTITION OF outgoing_goods_1370
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE outgoing_goods_1370_2026_q2 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1370_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1370_2026_q3 PARTITION OF outgoing_goods_1370
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE outgoing_goods_1370_2026_q3 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1370_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1370_2026_q4 PARTITION OF outgoing_goods_1370
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE outgoing_goods_1370_2026_q4 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1370_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2025)
 CREATE TABLE outgoing_goods_1310_2025_q1 PARTITION OF outgoing_goods_1310
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE outgoing_goods_1310_2025_q1 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1310_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1310_2025_q2 PARTITION OF outgoing_goods_1310
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE outgoing_goods_1310_2025_q2 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1310_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1310_2025_q3 PARTITION OF outgoing_goods_1310
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE outgoing_goods_1310_2025_q3 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1310_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1310_2025_q4 PARTITION OF outgoing_goods_1310
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE outgoing_goods_1310_2025_q4 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1310_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2026)
 CREATE TABLE outgoing_goods_1310_2026_q1 PARTITION OF outgoing_goods_1310
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE outgoing_goods_1310_2026_q1 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1310_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1310_2026_q2 PARTITION OF outgoing_goods_1310
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE outgoing_goods_1310_2026_q2 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1310_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1310_2026_q3 PARTITION OF outgoing_goods_1310
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE outgoing_goods_1310_2026_q3 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1310_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1310_2026_q4 PARTITION OF outgoing_goods_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE outgoing_goods_1310_2026_q4 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1310_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2025)
 CREATE TABLE outgoing_goods_1380_2025_q1 PARTITION OF outgoing_goods_1380
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE outgoing_goods_1380_2025_q1 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1380_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1380_2025_q2 PARTITION OF outgoing_goods_1380
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE outgoing_goods_1380_2025_q2 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1380_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1380_2025_q3 PARTITION OF outgoing_goods_1380
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE outgoing_goods_1380_2025_q3 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1380_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1380_2025_q4 PARTITION OF outgoing_goods_1380
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE outgoing_goods_1380_2025_q4 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1380_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2026)
 CREATE TABLE outgoing_goods_1380_2026_q1 PARTITION OF outgoing_goods_1380
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE outgoing_goods_1380_2026_q1 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1380_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1380_2026_q2 PARTITION OF outgoing_goods_1380
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE outgoing_goods_1380_2026_q2 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1380_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1380_2026_q3 PARTITION OF outgoing_goods_1380
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE outgoing_goods_1380_2026_q3 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1380_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE outgoing_goods_1380_2026_q4 PARTITION OF outgoing_goods_1380
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE outgoing_goods_1380_2026_q4 OWNER TO appuser;
+ALTER TABLE outgoing_goods_1380_2026_q4 OWNER TO imapsuser;
 
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX outgoing_goods_company_code_wms_id_outgoing_date_key ON outgoing_goods (company_code, wms_id, outgoing_date);
@@ -821,125 +822,125 @@ CREATE TABLE adjustments (
     deleted_at TIMESTAMPTZ(6)
 ) PARTITION BY LIST (company_code);
 
-ALTER TABLE adjustments OWNER TO appuser;
+ALTER TABLE adjustments OWNER TO imapsuser;
 
 -- Create partitions for each company
 CREATE TABLE adjustments_1370 PARTITION OF adjustments
     FOR VALUES IN (1370)
     PARTITION BY RANGE (transaction_date);
-ALTER TABLE adjustments_1370 OWNER TO appuser;
+ALTER TABLE adjustments_1370 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1310 PARTITION OF adjustments
     FOR VALUES IN (1310)
     PARTITION BY RANGE (transaction_date);
-ALTER TABLE adjustments_1310 OWNER TO appuser;
+ALTER TABLE adjustments_1310 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1380 PARTITION OF adjustments
     FOR VALUES IN (1380)
     PARTITION BY RANGE (transaction_date);
-ALTER TABLE adjustments_1380 OWNER TO appuser;
+ALTER TABLE adjustments_1380 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2025)
 CREATE TABLE adjustments_1370_2025_q1 PARTITION OF adjustments_1370
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE adjustments_1370_2025_q1 OWNER TO appuser;
+ALTER TABLE adjustments_1370_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1370_2025_q2 PARTITION OF adjustments_1370
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE adjustments_1370_2025_q2 OWNER TO appuser;
+ALTER TABLE adjustments_1370_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1370_2025_q3 PARTITION OF adjustments_1370
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE adjustments_1370_2025_q3 OWNER TO appuser;
+ALTER TABLE adjustments_1370_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1370_2025_q4 PARTITION OF adjustments_1370
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE adjustments_1370_2025_q4 OWNER TO appuser;
+ALTER TABLE adjustments_1370_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1370 (2026)
 CREATE TABLE adjustments_1370_2026_q1 PARTITION OF adjustments_1370
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE adjustments_1370_2026_q1 OWNER TO appuser;
+ALTER TABLE adjustments_1370_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1370_2026_q2 PARTITION OF adjustments_1370
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE adjustments_1370_2026_q2 OWNER TO appuser;
+ALTER TABLE adjustments_1370_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1370_2026_q3 PARTITION OF adjustments_1370
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE adjustments_1370_2026_q3 OWNER TO appuser;
+ALTER TABLE adjustments_1370_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1370_2026_q4 PARTITION OF adjustments_1370
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE adjustments_1370_2026_q4 OWNER TO appuser;
+ALTER TABLE adjustments_1370_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2025)
 CREATE TABLE adjustments_1310_2025_q1 PARTITION OF adjustments_1310
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE adjustments_1310_2025_q1 OWNER TO appuser;
+ALTER TABLE adjustments_1310_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1310_2025_q2 PARTITION OF adjustments_1310
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE adjustments_1310_2025_q2 OWNER TO appuser;
+ALTER TABLE adjustments_1310_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1310_2025_q3 PARTITION OF adjustments_1310
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE adjustments_1310_2025_q3 OWNER TO appuser;
+ALTER TABLE adjustments_1310_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1310_2025_q4 PARTITION OF adjustments_1310
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE adjustments_1310_2025_q4 OWNER TO appuser;
+ALTER TABLE adjustments_1310_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1310 (2026)
 CREATE TABLE adjustments_1310_2026_q1 PARTITION OF adjustments_1310
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE adjustments_1310_2026_q1 OWNER TO appuser;
+ALTER TABLE adjustments_1310_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1310_2026_q2 PARTITION OF adjustments_1310
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE adjustments_1310_2026_q2 OWNER TO appuser;
+ALTER TABLE adjustments_1310_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1310_2026_q3 PARTITION OF adjustments_1310
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE adjustments_1310_2026_q3 OWNER TO appuser;
+ALTER TABLE adjustments_1310_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1310_2026_q4 PARTITION OF adjustments_1310
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE adjustments_1310_2026_q4 OWNER TO appuser;
+ALTER TABLE adjustments_1310_2026_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2025)
 CREATE TABLE adjustments_1380_2025_q1 PARTITION OF adjustments_1380
     FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-ALTER TABLE adjustments_1380_2025_q1 OWNER TO appuser;
+ALTER TABLE adjustments_1380_2025_q1 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1380_2025_q2 PARTITION OF adjustments_1380
     FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-ALTER TABLE adjustments_1380_2025_q2 OWNER TO appuser;
+ALTER TABLE adjustments_1380_2025_q2 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1380_2025_q3 PARTITION OF adjustments_1380
     FOR VALUES FROM ('2025-07-01') TO ('2025-10-01');
-ALTER TABLE adjustments_1380_2025_q3 OWNER TO appuser;
+ALTER TABLE adjustments_1380_2025_q3 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1380_2025_q4 PARTITION OF adjustments_1380
     FOR VALUES FROM ('2025-10-01') TO ('2026-01-01');
-ALTER TABLE adjustments_1380_2025_q4 OWNER TO appuser;
+ALTER TABLE adjustments_1380_2025_q4 OWNER TO imapsuser;
 
 -- Create date range partitions for company 1380 (2026)
 CREATE TABLE adjustments_1380_2026_q1 PARTITION OF adjustments_1380
     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-ALTER TABLE adjustments_1380_2026_q1 OWNER TO appuser;
+ALTER TABLE adjustments_1380_2026_q1 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1380_2026_q2 PARTITION OF adjustments_1380
     FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-ALTER TABLE adjustments_1380_2026_q2 OWNER TO appuser;
+ALTER TABLE adjustments_1380_2026_q2 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1380_2026_q3 PARTITION OF adjustments_1380
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-ALTER TABLE adjustments_1380_2026_q3 OWNER TO appuser;
+ALTER TABLE adjustments_1380_2026_q3 OWNER TO imapsuser;
 
 CREATE TABLE adjustments_1380_2026_q4 PARTITION OF adjustments_1380
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-ALTER TABLE adjustments_1380_2026_q4 OWNER TO appuser;
+ALTER TABLE adjustments_1380_2026_q4 OWNER TO imapsuser;
 
 -- Create indexes with Prisma naming convention
 CREATE UNIQUE INDEX adjustments_company_code_wms_id_transaction_date_key ON adjustments (company_code, wms_id, transaction_date);
@@ -978,20 +979,20 @@ CREATE TABLE stock_daily_snapshot (
     PRIMARY KEY (id, snapshot_date)
 ) PARTITION BY RANGE (snapshot_date);
 
-ALTER TABLE stock_daily_snapshot OWNER TO appuser;
+ALTER TABLE stock_daily_snapshot OWNER TO imapsuser;
 
 -- Create yearly partitions for historical data
 CREATE TABLE stock_daily_snapshot_2024 PARTITION OF stock_daily_snapshot
     FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
-ALTER TABLE stock_daily_snapshot_2024 OWNER TO appuser;
+ALTER TABLE stock_daily_snapshot_2024 OWNER TO imapsuser;
 
 CREATE TABLE stock_daily_snapshot_2025 PARTITION OF stock_daily_snapshot
     FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
-ALTER TABLE stock_daily_snapshot_2025 OWNER TO appuser;
+ALTER TABLE stock_daily_snapshot_2025 OWNER TO imapsuser;
 
 CREATE TABLE stock_daily_snapshot_2026 PARTITION OF stock_daily_snapshot
     FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
-ALTER TABLE stock_daily_snapshot_2026 OWNER TO appuser;
+ALTER TABLE stock_daily_snapshot_2026 OWNER TO imapsuser;
 
 -- Create indexes with Prisma naming convention
 -- UNIQUE INDEX for ON CONFLICT support with UOM
@@ -1013,17 +1014,17 @@ CREATE INDEX stock_snapshot_date_idx
 -- ============================================================================
 
 -- Grant all privileges on all tables (including partitions)
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO appuser;
+-- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO imapsuser;
 
 -- Grant all privileges on all sequences
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO appuser;
+-- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO imapsuser;
 
 -- Grant default privileges for future objects
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO appuser;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO appuser;
+-- ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO imapsuser;
+-- ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO imapsuser;
 
 -- Reset role
-RESET ROLE;
+-- RESET ROLE;
 
 -- ============================================================================
 -- NOTES ON PARTITION MAINTENANCE
@@ -1034,11 +1035,11 @@ RESET ROLE;
 -- Example for Q1 2026:
 -- CREATE TABLE incoming_goods_1370_2026_q1 PARTITION OF incoming_goods_1370
 --     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
--- ALTER TABLE incoming_goods_1370_2026_q1 OWNER TO appuser;
+-- ALTER TABLE incoming_goods_1370_2026_q1 OWNER TO imapsuser;
 -- 
 -- CREATE TABLE material_usages_1370_2026_q1 PARTITION OF material_usages_1370
 --     FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
--- ALTER TABLE material_usages_1370_2026_q1 OWNER TO appuser;
+-- ALTER TABLE material_usages_1370_2026_q1 OWNER TO imapsuser;
 -- 
 -- (Repeat for all partitioned tables and companies)
 
