@@ -36,6 +36,9 @@ module.exports = {
         // NextAuth
         NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
         NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+        AUTH_TRUST_HOST: process.env.AUTH_TRUST_HOST,
+        ALLOWED_HOSTS: process.env.ALLOWED_HOSTS,
+        ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
         
         // API & Security
         ADMIN_SECRET: process.env.ADMIN_SECRET,

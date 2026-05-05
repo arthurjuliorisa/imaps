@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "dev:turbo": "next dev --turbopack",
-    "build": "next build",
+    "build": "node scripts/run-next-build.js",
+    "build:webpack": "next build --webpack",
     "build:local": "prisma generate && prisma db push --force-reset --accept-data-loss && tsx scripts/deploy-sql.ts && npm run seed && next build --webpack",
     "vercel-build": "bash scripts/vercel-build.sh",
     "start": "next start",

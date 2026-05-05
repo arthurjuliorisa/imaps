@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { isAllowedRequestHost, getRequestHost } from './lib/security/request-origin';
 
 /**
  * Protected routes that require menu access permission
@@ -114,6 +115,11 @@ export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const requestStartTime = Date.now();
 
+  if (!isAllowedRequestHost(request)) {
+    console.warn(`[Middleware] Invalid host header: ${getRequestHost(request) || 'missing'}`);
+    return NextResponse.json({ message: 'Invalid host' }, { status: 400 });
+  }
+
   // Skip middleware for non-protected routes
   const isProtectedRoute = PROTECTED_ROUTES.some((route) => pathname.startsWith(route));
 
@@ -122,7 +128,15 @@ export default async function proxy(request: NextRequest) {
   }
 
   // Check if user is authenticated
-  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const secureCookie =
+    process.env.NODE_ENV === 'production' ||
+    request.headers.get('x-forwarded-proto') === 'https';
+
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+    secureCookie,
+  });
 
   if (!token) {
     console.warn(`[Middleware] Unauthenticated access attempt to ${pathname}`);
@@ -180,15 +194,26 @@ export default async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - login (login page)
-     * - access-denied (access denied page)
-     * - dashboard (dashboard is accessible to all authenticated users)
+     * Keep the proxy narrowly scoped so build/runtime cost stays close to the
+     * original setup while still covering auth entry points and protected pages.
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|login|access-denied|dashboard|logo.png).*)',
+    '/login',
+    '/api/auth/:path*',
+    '/master/companies/:path*',
+    '/master/item-types/:path*',
+    '/master/scrap-items/:path*',
+    '/customs/incoming/:path*',
+    '/customs/outgoing/:path*',
+    '/customs/wip/:path*',
+    '/customs/raw-material/:path*',
+    '/customs/production/:path*',
+    '/customs/scrap/:path*',
+    '/customs/capital-goods/:path*',
+    '/customs/scrap-transactions/:path*',
+    '/customs/capital-goods-transactions/:path*',
+    '/customs/beginning-data/:path*',
+    '/settings/users/:path*',
+    '/settings/access-menu/:path*',
+    '/settings/log-activity/:path*',
   ],
 };

@@ -23,6 +23,34 @@ import { Visibility, VisibilityOff, PersonOutline, LockOutlined, Language, Admin
 import { signIn, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 
+function getSafeCallbackUrl(): string {
+  if (typeof window === 'undefined') {
+    return '/dashboard';
+  }
+
+  const callbackUrl = new URLSearchParams(window.location.search).get('callbackUrl');
+
+  if (!callbackUrl) {
+    return '/dashboard';
+  }
+
+  if (callbackUrl.startsWith('/')) {
+    return callbackUrl.startsWith('//') ? '/dashboard' : callbackUrl;
+  }
+
+  try {
+    const targetUrl = new URL(callbackUrl);
+
+    if (targetUrl.origin === window.location.origin) {
+      return `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
+    }
+  } catch {
+    // Ignore malformed callback URLs and use the default dashboard route.
+  }
+
+  return '/dashboard';
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { status } = useSession();
@@ -62,7 +90,7 @@ export default function LoginPage() {
         setError(language === 'id' ? 'Email atau password salah' : 'Invalid email or password');
         setLoading(false);
       } else if (result?.ok) {
-        router.replace('/dashboard');
+        router.replace(getSafeCallbackUrl());
       } else {
         setError(language === 'id' ? 'Autentikasi gagal. Silakan coba lagi.' : 'Authentication failed. Please try again.');
         setLoading(false);

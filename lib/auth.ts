@@ -3,6 +3,7 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import { compare } from 'bcryptjs';
 import { prisma } from './prisma';
 import { logActivity } from './log-activity';
+import { isAllowedOrigin } from './security/request-origin';
 
 // Validate NEXTAUTH_SECRET on startup
 function validateNextAuthSecret(): string {
@@ -72,6 +73,24 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith('/')) {
+        return `${baseUrl}${url}`;
+      }
+
+      try {
+        const targetUrl = new URL(url);
+        const base = new URL(baseUrl);
+
+        if (targetUrl.origin === base.origin || isAllowedOrigin(targetUrl.origin)) {
+          return url;
+        }
+      } catch {
+        // Fall back to the current auth base URL for malformed callback URLs.
+      }
+
+      return baseUrl;
+    },
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
