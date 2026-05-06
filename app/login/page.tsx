@@ -65,7 +65,7 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (status === 'authenticated') {
-      router.replace('/dashboard');
+      router.replace(getSafeCallbackUrl());
     }
   }, [status, router]);
 

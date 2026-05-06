@@ -26,6 +26,34 @@ const PROTECTED_ROUTES = [
   '/settings/log-activity',
 ];
 
+const isAuthDebugEnabled = process.env.AUTH_DEBUG === 'true';
+
+function getForwardedProto(request: NextRequest): string | null {
+  return request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase() || null;
+}
+
+function shouldUseSecureCookie(request: NextRequest): boolean {
+  const forwardedProto = getForwardedProto(request);
+
+  return (
+    forwardedProto === 'https' ||
+    process.env.NEXTAUTH_URL?.startsWith('https://') === true
+  );
+}
+
+function authDebug(message: string, details?: Record<string, unknown>) {
+  if (!isAuthDebugEnabled) {
+    return;
+  }
+
+  if (details) {
+    console.log(`[Auth Debug] ${message}`, details);
+    return;
+  }
+
+  console.log(`[Auth Debug] ${message}`);
+}
+
 /**
  * Fetch user's accessible menu paths with retry logic and better error handling
  * @param request - NextRequest object
@@ -114,11 +142,25 @@ async function fetchUserMenuPaths(
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const requestStartTime = Date.now();
+  const forwardedProto = getForwardedProto(request);
+  const secureCookie = shouldUseSecureCookie(request);
 
   if (!isAllowedRequestHost(request)) {
     console.warn(`[Middleware] Invalid host header: ${getRequestHost(request) || 'missing'}`);
     return NextResponse.json({ message: 'Invalid host' }, { status: 400 });
   }
+
+  authDebug('request', {
+    pathname,
+    url: request.url,
+    host: request.headers.get('host'),
+    forwardedHost: request.headers.get('x-forwarded-host'),
+    forwardedProto,
+    forwardedPort: request.headers.get('x-forwarded-port'),
+    secureCookie,
+    hasSessionCookie: Boolean(request.cookies.get('next-auth.session-token')),
+    hasSecureSessionCookie: Boolean(request.cookies.get('__Secure-next-auth.session-token')),
+  });
 
   // Skip middleware for non-protected routes
   const isProtectedRoute = PROTECTED_ROUTES.some((route) => pathname.startsWith(route));
@@ -128,10 +170,6 @@ export default async function proxy(request: NextRequest) {
   }
 
   // Check if user is authenticated
-  const secureCookie =
-    process.env.NODE_ENV === 'production' ||
-    request.headers.get('x-forwarded-proto') === 'https';
-
   const token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
@@ -143,8 +181,21 @@ export default async function proxy(request: NextRequest) {
     // Redirect to login if not authenticated
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('callbackUrl', pathname);
+    authDebug('redirect unauthenticated request', {
+      pathname,
+      redirectTarget: `${loginUrl.pathname}${loginUrl.search}`,
+      secureCookie,
+      tokenExists: false,
+    });
     return NextResponse.redirect(loginUrl);
   }
+
+  authDebug('token resolved', {
+    pathname,
+    secureCookie,
+    tokenExists: true,
+    role: token.role || null,
+  });
 
   const userEmail = token.email || 'unknown';
   const userRole = token.role || 'unknown';
@@ -184,6 +235,11 @@ export default async function proxy(request: NextRequest) {
       `[Middleware] ACCESS DENIED for ${userEmail} (${userRole}) to ${pathname} (${totalDuration}ms) - User has access to ${accessiblePaths.size} paths: ${Array.from(accessiblePaths).join(', ')}`
     );
     // Redirect to access denied page
+    authDebug('redirect unauthorized request', {
+      pathname,
+      redirectTarget: '/access-denied',
+      accessiblePathCount: accessiblePaths.size,
+    });
     return NextResponse.redirect(new URL('/access-denied', request.url));
   }
 
