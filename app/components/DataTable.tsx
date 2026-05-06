@@ -49,6 +49,14 @@ interface DataTableProps {
   searchPlaceholder?: string;
   loading?: boolean;
   emptyMessage?: string;
+  pagination?: {
+    page: number;
+    rowsPerPage: number;
+    onPageChange: (newPage: number) => void;
+    onRowsPerPageChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+    rowsPerPageOptions?: number[];
+    total?: number;
+  };
 }
 
 export function DataTable({
@@ -61,6 +69,7 @@ export function DataTable({
   searchPlaceholder = 'Search...',
   loading = false,
   emptyMessage = 'No data available',
+  pagination,
 }: DataTableProps) {
   const theme = useTheme();
   const [page, setPage] = useState(0);
@@ -73,10 +82,18 @@ export function DataTable({
   }, [searchTerm]);
 
   const handleChangePage = (event: unknown, newPage: number) => {
+    if (pagination) {
+      pagination.onPageChange(newPage);
+      return;
+    }
     setPage(newPage);
   };
 
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (pagination) {
+      pagination.onRowsPerPageChange(event);
+      return;
+    }
     setRowsPerPage(+event.target.value);
     setPage(0);
   };
@@ -90,6 +107,12 @@ export function DataTable({
         )
       )
     : data;
+  const currentPage = pagination?.page ?? page;
+  const currentRowsPerPage = pagination?.rowsPerPage ?? rowsPerPage;
+  const tableData = pagination
+    ? filteredData
+    : filteredData.slice(currentPage * currentRowsPerPage, currentPage * currentRowsPerPage + currentRowsPerPage);
+  const totalRows = pagination?.total ?? filteredData.length;
 
   return (
     <Paper
@@ -181,7 +204,7 @@ export function DataTable({
           <TableBody>
             {loading ? (
               // Loading skeleton
-              Array.from(new Array(rowsPerPage)).map((_, index) => (
+              Array.from(new Array(currentRowsPerPage)).map((_, index) => (
                 <TableRow key={`skeleton-${index}`}>
                   <TableCell align="center">
                     <Skeleton variant="text" width={30} />
@@ -228,9 +251,7 @@ export function DataTable({
               </TableRow>
             ) : (
               // Data rows
-              filteredData
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((row, index) => (
+              tableData.map((row, index) => (
                   <TableRow
                     hover
                     key={row.id || index}
@@ -249,7 +270,7 @@ export function DataTable({
                         color: theme.palette.text.secondary,
                       }}
                     >
-                      {page * rowsPerPage + index + 1}
+                      {currentPage * currentRowsPerPage + index + 1}
                     </TableCell>
                     {columns.map((column) => {
                       const value = row[column.id];
@@ -326,11 +347,11 @@ export function DataTable({
         </Table>
       </TableContainer>
       <TablePagination
-        rowsPerPageOptions={[10, 25, 50, 100]}
+        rowsPerPageOptions={pagination?.rowsPerPageOptions ?? [10, 25, 50, 100]}
         component="div"
-        count={filteredData.length}
-        rowsPerPage={rowsPerPage}
-        page={page}
+        count={totalRows}
+        rowsPerPage={currentRowsPerPage}
+        page={currentPage}
         onPageChange={handleChangePage}
         onRowsPerPageChange={handleChangeRowsPerPage}
         sx={{

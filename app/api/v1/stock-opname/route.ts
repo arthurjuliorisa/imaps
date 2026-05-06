@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
 
   let wmsId: string | undefined;
   let companyCode: number | undefined;
+  let body: unknown;
 
   try {
     // 1. Middleware: Authentication
@@ -53,11 +54,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Parse request body
-    let body;
     try {
       body = await request.json();
-      wmsId = body.wms_id;
-      companyCode = body.company_code;
+      if (body && typeof body === 'object') {
+        const payload = body as { wms_id?: unknown; company_code?: unknown };
+        wmsId = typeof payload.wms_id === 'string' ? payload.wms_id : undefined;
+        companyCode = typeof payload.company_code === 'number' ? payload.company_code : undefined;
+      }
     } catch (e) {
       log.warn('Failed to parse JSON body');
       return NextResponse.json(

@@ -211,7 +211,11 @@ export class TraceabilityRepository {
 
         // Get unique material codes from traceability records
         const materialCodes = Array.from(
-          new Set(traceabilityRecords.map((r) => r.material_item_code).filter(Boolean))
+          new Set(
+            traceabilityRecords
+              .map((r) => r.material_item_code)
+              .filter((code): code is string => typeof code === 'string' && code.trim().length > 0)
+          )
         );
 
         // Group materials by material_item_code and collect all PPKEKs with their quantities

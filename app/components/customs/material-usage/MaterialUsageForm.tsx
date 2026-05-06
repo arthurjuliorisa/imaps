@@ -61,8 +61,8 @@ export function MaterialUsageForm() {
             item_name: item.item_name,
             item_type: item.item_type,
             uom: item.uom,
-            qty: item.qty,
-            ppkek_number: item.ppkek_number,
+            qty: item.traceability_data[0]?.qty ?? 0,
+            ppkek_number: item.traceability_data[0]?.ppkek_number ?? null,
           })),
         }),
       });

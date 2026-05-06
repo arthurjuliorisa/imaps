@@ -41,8 +41,12 @@ export function MaterialUsageItemsTable({ control }: MaterialUsageItemsTableProp
       item_name: '',
       item_type: 'ROH',
       uom: '',
-      qty: 0,
-      ppkek_number: '',
+      traceability_data: [
+        {
+          qty: 0,
+          ppkek_number: '',
+        },
+      ],
     });
   };
 
@@ -137,7 +141,7 @@ export function MaterialUsageItemsTable({ control }: MaterialUsageItemsTableProp
 
                   <TableCell>
                     <Controller
-                      name={`items.${index}.qty`}
+                      name={`items.${index}.traceability_data.0.qty`}
                       control={control}
                       rules={{
                         required: 'Quantity is required',
@@ -163,11 +167,12 @@ export function MaterialUsageItemsTable({ control }: MaterialUsageItemsTableProp
 
                   <TableCell>
                     <Controller
-                      name={`items.${index}.ppkek_number`}
+                      name={`items.${index}.traceability_data.0.ppkek_number`}
                       control={control}
                       render={({ field: controllerField, fieldState: { error } }) => (
                         <TextField
                           {...controllerField}
+                          value={controllerField.value ?? ''}
                           size="small"
                           fullWidth
                           error={!!error}
