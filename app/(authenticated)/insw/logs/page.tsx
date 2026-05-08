@@ -51,6 +51,7 @@ interface INSWLog {
   sent_at: string | null;
   retry_count: number;
   created_at: string;
+  metadata: { endpoint_url?: string } | null;
 }
 
 interface ChartDataPoint {
@@ -704,6 +705,15 @@ export default function INSWLogsPage() {
                   </Typography>
                   <Typography variant="body1">
                     {selectedLog.wms_id || 'N/A'}
+                  </Typography>
+                </Box>
+
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Endpoint URL
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    {selectedLog.metadata?.endpoint_url ?? '-'}
                   </Typography>
                 </Box>
 

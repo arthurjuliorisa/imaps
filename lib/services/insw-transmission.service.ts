@@ -6,18 +6,35 @@ import {
   INSWTransmitResult,
   INSWTransmitResponse,
 } from '@/lib/types/insw-transmission.types';
+import { INSW_ENDPOINTS } from '@/lib/types/insw-api.types';
 import { logger } from '@/lib/utils/logger';
 
 export class INSWTransmissionService {
   private inswService: INSWIntegrationService;
+  private useTestMode: boolean;
   private log = logger.child({ service: 'INSWTransmissionService' });
 
   constructor(useTestMode: boolean = true) {
+    this.useTestMode = useTestMode;
     this.inswService = new INSWIntegrationService(
       process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
       process.env.INSW_UNIQUE_KEY_TEST || '',
       useTestMode
     );
+  }
+
+  private getEndpointUrl(transactionType: string): string {
+    if (transactionType === 'saldo_awal') {
+      return this.useTestMode
+        ? INSW_ENDPOINTS.saldoAwal.temp
+        : INSW_ENDPOINTS.saldoAwal.real;
+    }
+    if (transactionType === 'insw_cleanup') {
+      return INSW_ENDPOINTS.transaksi.temp;
+    }
+    return this.useTestMode
+      ? INSW_ENDPOINTS.transaksi.temp
+      : INSW_ENDPOINTS.transaksi.real;
   }
 
   /**
@@ -1079,6 +1096,7 @@ export class INSWTransmissionService {
     metadata?: any;
   }) {
     try {
+      const endpointUrl = this.getEndpointUrl(data.transaction_type);
       await prisma.insw_tracking_log.create({
         data: {
           transaction_type: data.transaction_type,
@@ -1092,7 +1110,10 @@ export class INSWTransmissionService {
           insw_error: data.insw_error || null,
           sent_at: new Date(),
           retry_count: 0,
-          metadata: data.metadata || null,
+          metadata: {
+            ...(data.metadata || {}),
+            endpoint_url: endpointUrl,
+          },
         },
       });
     } catch (error) {
