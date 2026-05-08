@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { checkAuth } from '@/lib/api-auth';
 import { validateBeginningBalanceItemsBatch } from '@/lib/beginning-data-validation';
+import { BEGINNING_BALANCE_UPLOAD_MAX_ROWS } from '@/lib/constants/beginning-balance-upload';
 
 /**
  * POST /api/customs/beginning-data/validate
@@ -54,6 +55,13 @@ export async function POST(request: Request) {
         success: true,
         validationResults: {},
       });
+    }
+
+    if (records.length > BEGINNING_BALANCE_UPLOAD_MAX_ROWS) {
+      return NextResponse.json(
+        { message: `Batch size exceeds maximum limit of ${BEGINNING_BALANCE_UPLOAD_MAX_ROWS.toLocaleString()} records` },
+        { status: 400 }
+      );
     }
 
     // Get company code from session

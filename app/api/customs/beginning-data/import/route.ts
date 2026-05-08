@@ -9,6 +9,18 @@ import {
   getTodayUTC,
 } from '@/lib/api-utils';
 import { validateBeginningBalanceItemsBatch } from '@/lib/beginning-data-validation';
+import {
+  BEGINNING_BALANCE_UPLOAD_DB_BATCH_SIZE,
+  BEGINNING_BALANCE_UPLOAD_MAX_ROWS,
+} from '@/lib/constants/beginning-balance-upload';
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
 
 /**
  * Parse MM/DD/YYYY format to Date
@@ -83,9 +95,9 @@ export async function POST(request: Request) {
     }
 
     // Limit batch size
-    if (records.length > 1000) {
+    if (records.length > BEGINNING_BALANCE_UPLOAD_MAX_ROWS) {
       return NextResponse.json(
-        { message: 'Batch size exceeds maximum limit of 1000 records' },
+        { message: `Batch size exceeds maximum limit of ${BEGINNING_BALANCE_UPLOAD_MAX_ROWS.toLocaleString()} records` },
         { status: 400 }
       );
     }
@@ -337,35 +349,55 @@ export async function POST(request: Request) {
           remarks: record.remarks,
         }));
 
-        await tx.beginning_balances.createMany({
-          data: insertData,
-        });
+        for (const batch of chunkArray(insertData, BEGINNING_BALANCE_UPLOAD_DB_BATCH_SIZE)) {
+          await tx.beginning_balances.createMany({
+            data: batch,
+          });
+        }
 
         // Create ppkek associations - fetch created records and link ppkeks
         const createdWithIds = await tx.beginning_balances.findMany({
           where: {
             company_code: companyCodeInt,
             item_code: { in: validRecords.map(r => r.itemCode) },
+            uom: { in: validRecords.map(r => r.uom) },
             balance_date: { in: Array.from(uniqueBalanceDates).map(t => new Date(t)) }
           },
-          select: { id: true, item_code: true, balance_date: true },
+          select: { id: true, item_code: true, uom: true, balance_date: true },
         });
+
+        const createdRecordMap = new Map(
+          createdWithIds.map(record => [
+            `${record.item_code}|${record.uom}|${record.balance_date.getTime()}`,
+            record.id,
+          ])
+        );
+
+        const ppkekInsertData: Array<{
+          beginning_balance_id: number;
+          ppkek_number: string;
+        }> = [];
 
         for (const record of validRecords) {
           if (record.ppkekNumbers.length > 0) {
-            const createdRecord = createdWithIds.find(
-              cr => cr.item_code === record.itemCode && 
-              cr.balance_date.getTime() === record.balanceDate.getTime()
+            const createdRecordId = createdRecordMap.get(
+              `${record.itemCode}|${record.uom}|${record.balanceDate.getTime()}`
             );
-            if (createdRecord) {
-              await tx.beginning_balance_ppkeks.createMany({
-                data: record.ppkekNumbers.map(ppkek => ({
-                  beginning_balance_id: createdRecord.id,
+            if (createdRecordId) {
+              ppkekInsertData.push(
+                ...record.ppkekNumbers.map(ppkek => ({
+                  beginning_balance_id: createdRecordId,
                   ppkek_number: ppkek,
-                })),
-              });
+                }))
+              );
             }
           }
+        }
+
+        for (const batch of chunkArray(ppkekInsertData, BEGINNING_BALANCE_UPLOAD_DB_BATCH_SIZE)) {
+          await tx.beginning_balance_ppkeks.createMany({
+            data: batch,
+          });
         }
 
         successCount = validRecords.length;
@@ -379,7 +411,7 @@ export async function POST(request: Request) {
         }
       }, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        timeout: 30000, // 30 second timeout for bulk operations
+        timeout: 60000, // Allow larger 10,000-row bulk operations to complete
       });
     } catch (error: any) {
       console.error('[API Error] Transaction failed during import:', error);
@@ -436,8 +468,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Execute item-level snapshot calculation for each unique item and date combination
-    try {
+    // Execute item-level snapshot calculation for each unique item and date combination.
+    // This is intentionally non-blocking for large imports so the HTTP request is not
+    // held open by thousands of snapshot function calls.
+    void (async () => {
       // Create a map of item to (itemName, UOM) for quick lookup
       const itemDetailsMap = new Map<string, { itemName: string; uom: string }>();
       for (const record of validRecords) {
@@ -473,10 +507,11 @@ export async function POST(request: Request) {
           // Snapshot calculation errors don't prevent data import
         }
       }
-    } catch (error) {
+    })().catch((error) => {
       // Non-blocking: snapshot calculation is best-effort
       // Data import succeeded even if snapshots couldn't be calculated
-    }
+      console.error('[API Warning] Beginning balance snapshot calculation failed:', error);
+    });
 
     // Log activity
     await logActivity({
@@ -515,4 +550,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

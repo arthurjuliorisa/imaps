@@ -231,11 +231,16 @@ export async function validateBeginningBalanceItemsBatch(
   // Check 1: Detect duplicates within the batch itself
   // Track all occurrences of each key
   const keyOccurrences = new Map<string, number>();
+  const codeUomOccurrences = new Map<string, number>();
 
   for (let i = 0; i < normalizedItems.length; i++) {
     const key = createKey(normalizedItems[i]);
     const count = keyOccurrences.get(key) || 0;
     keyOccurrences.set(key, count + 1);
+
+    const codeUomKey = `${normalizedItems[i].itemCode}|${normalizedItems[i].uom}`;
+    const codeUomCount = codeUomOccurrences.get(codeUomKey) || 0;
+    codeUomOccurrences.set(codeUomKey, codeUomCount + 1);
   }
 
   // Identify keys that appear more than once (duplicates)
@@ -246,7 +251,16 @@ export async function validateBeginningBalanceItemsBatch(
     }
   }
 
-  // Get all unique normalized item codes for database queries
+  const batchDuplicateCodeUomKeys = new Set<string>();
+  for (const [key, count] of codeUomOccurrences.entries()) {
+    if (count > 1) {
+      batchDuplicateCodeUomKeys.add(key);
+    }
+  }
+
+  // Get all unique normalized item codes and UOMs for database queries.
+  // This keeps validation bounded to the upload payload instead of loading
+  // every beginning balance for the company.
   const uniqueItemCodes = [...new Set(normalizedItems.map(item => item.itemCode))];
   const uniqueUoms = [...new Set(normalizedItems.map(item => item.uom))];
 
@@ -257,6 +271,8 @@ export async function validateBeginningBalanceItemsBatch(
       prisma.beginning_balances.findMany({
         where: {
           company_code: companyCode,
+          item_code: { in: uniqueItemCodes },
+          uom: { in: uniqueUoms },
           deleted_at: null,
         },
         select: {
@@ -323,6 +339,11 @@ export async function validateBeginningBalanceItemsBatch(
       errors.push({
         itemCode: normalizedItem.itemCode,
         reason: `Duplikat lengkap dalam batch`,
+      });
+    } else if (batchDuplicateCodeUomKeys.has(`${normalizedItem.itemCode}|${normalizedItem.uom}`)) {
+      errors.push({
+        itemCode: normalizedItem.itemCode,
+        reason: `Duplikat item code dan UOM dalam batch`,
       });
     } else {
       // Only check database if no batch duplicates

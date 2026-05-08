@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { checkAuth } from '@/lib/api-auth';
 import ExcelJS from 'exceljs';
+import { BEGINNING_BALANCE_UPLOAD_MAX_ROWS } from '@/lib/constants/beginning-balance-upload';
 
 /**
  * GET /api/customs/beginning-data/template
@@ -166,7 +167,7 @@ export async function GET() {
       ['  - Format hints (Row 2) are for reference only and will be ignored during import'],
       ['  - Empty rows will be skipped during import'],
       ['  - If errors occur, you will receive a detailed error report with row numbers'],
-      ['  - Maximum 1000 records per import'],
+      [`  - Maximum ${BEGINNING_BALANCE_UPLOAD_MAX_ROWS.toLocaleString()} records per import`],
       [],
       ['What Happens After Import:'],
       ['  1. The system validates all entries'],

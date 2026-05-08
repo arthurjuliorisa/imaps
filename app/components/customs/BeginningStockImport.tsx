@@ -27,6 +27,10 @@ import ExcelJS from 'exceljs';
 import dayjs from 'dayjs';
 import { useToast } from '../ToastProvider';
 import { formatQty } from '@/lib/utils/format';
+import {
+  BEGINNING_BALANCE_UPLOAD_MAX_ROWS,
+  BEGINNING_BALANCE_UPLOAD_PREVIEW_ROWS,
+} from '@/lib/constants/beginning-balance-upload';
 
 interface ImportedRecord {
   itemType: string;
@@ -267,6 +271,13 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
         return;
       }
 
+      if (jsonData.length > BEGINNING_BALANCE_UPLOAD_MAX_ROWS) {
+        setParseError(`The Excel file contains ${jsonData.length.toLocaleString()} records. Maximum allowed is ${BEGINNING_BALANCE_UPLOAD_MAX_ROWS.toLocaleString()} records per import.`);
+        setRecords([]);
+        setLoading(false);
+        return;
+      }
+
       // Process and validate records using fetched item types
       const processedRecords: ImportedRecord[] = jsonData.map((row: any) => {
         const validation = validateRecord(row, itemTypesList);
@@ -376,7 +387,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
           // Row number from backend (1-based) needs to match our records array (0-based)
           // But actually, we need to match by item code since rows might not align
           // The backend returns row numbers based on the request array
-          const recordIndex = validationError.row - 1; // Convert to 0-based index
+          const recordIndex = validationError.row - 3; // Backend rows start at Excel row 3
           if (recordIndex >= 0 && recordIndex < records.length) {
             const record = records[recordIndex];
             backendErrors.push({
@@ -583,6 +594,13 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                   )}
                 </Typography>
               </Alert>
+              {records.length > BEGINNING_BALANCE_UPLOAD_PREVIEW_ROWS && (
+                <Alert severity="info" icon={false} sx={{ mt: 1, py: 0.75 }}>
+                  <Typography variant="caption">
+                    Showing first {BEGINNING_BALANCE_UPLOAD_PREVIEW_ROWS.toLocaleString()} records for preview. All {records.length.toLocaleString()} valid records will be imported.
+                  </Typography>
+                </Alert>
+              )}
 
               {backendValidationErrors.length > 0 && (
                 <Alert severity="error" sx={{ mt: 1, py: 1 }}>
@@ -736,7 +754,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                 </TableRow>
               </TableHead>
               <TableBody>
-                {records.map((record, index) => (
+                {records.slice(0, BEGINNING_BALANCE_UPLOAD_PREVIEW_ROWS).map((record, index) => (
                   <TableRow
                     key={index}
                     sx={{
