@@ -65,6 +65,13 @@ interface BeginningStockTableProps {
   onDelete: (item: BeginningStockData) => void;
   onSearch?: (searchTerm: string) => void;
   onDateFilter?: (date: string | null) => void;
+  pagination?: {
+    page: number;
+    rowsPerPage: number;
+    total: number;
+    onPageChange: (newPage: number) => void;
+    onRowsPerPageChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  };
 }
 
 export function BeginningStockTable({
@@ -75,6 +82,7 @@ export function BeginningStockTable({
   onDelete,
   onSearch,
   onDateFilter,
+  pagination,
 }: BeginningStockTableProps) {
   const theme = useTheme();
   const [page, setPage] = useState(0);
@@ -105,10 +113,18 @@ export function BeginningStockTable({
   }, [debouncedSearchTerm]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
+    if (pagination) {
+      pagination.onPageChange(newPage);
+      return;
+    }
     setPage(newPage);
   };
 
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (pagination) {
+      pagination.onRowsPerPageChange(event);
+      return;
+    }
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
@@ -136,7 +152,11 @@ export function BeginningStockTable({
     setSelectedItemInfo(null);
   };
 
-  const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const currentPage = pagination?.page ?? page;
+  const currentRowsPerPage = pagination?.rowsPerPage ?? rowsPerPage;
+  const paginatedData = pagination
+    ? data
+    : data.slice(currentPage * currentRowsPerPage, currentPage * currentRowsPerPage + currentRowsPerPage);
 
   if (loading) {
     return (
@@ -245,7 +265,7 @@ export function BeginningStockTable({
                     },
                   }}
                 >
-                  <TableCell>{page * rowsPerPage + index + 1}</TableCell>
+                  <TableCell>{currentPage * currentRowsPerPage + index + 1}</TableCell>
                   <TableCell>
                     <Typography variant="body2" fontWeight={600}>
                       {row.itemCode}
@@ -358,9 +378,9 @@ export function BeginningStockTable({
       <TablePagination
         rowsPerPageOptions={[5, 10, 25, 50]}
         component="div"
-        count={data.length}
-        rowsPerPage={rowsPerPage}
-        page={page}
+        count={pagination?.total ?? data.length}
+        rowsPerPage={currentRowsPerPage}
+        page={currentPage}
         onPageChange={handleChangePage}
         onRowsPerPageChange={handleChangeRowsPerPage}
       />

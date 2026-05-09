@@ -15,14 +15,16 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const search = searchParams.get('search')?.trim();
+    const itemType = searchParams.get('itemType')?.trim();
 
     // Extract and validate pagination parameters
     const rawPage = parseInt(searchParams.get('page') || '1', 10);
     const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
     
-    // Validate pagination values (min 10, max 500 per page)
+    // Validate pagination values (min 5, max 500 per page)
     const page = Math.max(rawPage, 1);
-    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const limit = Math.min(Math.max(rawLimit, 5), 500);
     const offset = (page - 1) * limit;
 
     // Validate company code with detailed error messages
@@ -81,11 +83,30 @@ export async function GET(request: Request) {
       paramIndex++;
     }
 
+    if (itemType) {
+      query += ` AND type_code = $${paramIndex}`;
+      params.push(itemType);
+      paramIndex++;
+    }
+
+    if (search) {
+      query += ` AND (
+        company_name ILIKE $${paramIndex}
+        OR COALESCE(internal_evidence_number, '') ILIKE $${paramIndex}
+        OR COALESCE(type_code, '') ILIKE $${paramIndex}
+        OR COALESCE(item_code, '') ILIKE $${paramIndex}
+        OR COALESCE(item_name, '') ILIKE $${paramIndex}
+        OR COALESCE(unit, '') ILIKE $${paramIndex}
+      )`;
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+
     query += ` ORDER BY transaction_date DESC, id`;
 
     // Get total count for pagination
     // Build count query without ROW_NUMBER to avoid syntax error
-    let countQuery = `SELECT COUNT(DISTINCT (id, item_code)) as count FROM vw_internal_incoming WHERE company_code = $1`;
+    let countQuery = `SELECT COUNT(*) as count FROM vw_internal_incoming WHERE company_code = $1`;
     const countParamsList: any[] = [companyCode];
     let countParamIndex = 2;
 
@@ -103,11 +124,29 @@ export async function GET(request: Request) {
       countParamIndex++;
     }
 
+    if (itemType) {
+      countQuery += ` AND type_code = $${countParamIndex}`;
+      countParamsList.push(itemType);
+      countParamIndex++;
+    }
+
+    if (search) {
+      countQuery += ` AND (
+        company_name ILIKE $${countParamIndex}
+        OR COALESCE(internal_evidence_number, '') ILIKE $${countParamIndex}
+        OR COALESCE(type_code, '') ILIKE $${countParamIndex}
+        OR COALESCE(item_code, '') ILIKE $${countParamIndex}
+        OR COALESCE(item_name, '') ILIKE $${countParamIndex}
+        OR COALESCE(unit, '') ILIKE $${countParamIndex}
+      )`;
+      countParamsList.push(`%${search}%`);
+    }
+
     const countResult = await prisma.$queryRawUnsafe<[{ count: string }]>(
       countQuery,
       ...countParamsList
     );
-    const totalCount = parseInt(countResult[0]?.count || '0', 10);
+    const totalCount = Number(countResult[0]?.count ?? 0);
 
     // Add pagination to main query
     query += ` LIMIT $${paramIndex}::integer OFFSET $${paramIndex + 1}::integer`;

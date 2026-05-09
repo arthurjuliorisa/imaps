@@ -56,6 +56,7 @@ export default function ProductionMutationPage() {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
+  const [totalCount, setTotalCount] = useState(0);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -63,29 +64,35 @@ export default function ProductionMutationPage() {
       const params = new URLSearchParams({
         startDate,
         endDate,
+        page: String(page + 1),
+        limit: String(rowsPerPage),
       });
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (itemTypeFilter) params.append('itemType', itemTypeFilter);
 
       const response = await fetch(`/api/customs/production?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
       setData(result.data || []);
+      setTotalCount(result.pagination?.total || 0);
     } catch (error) {
       console.error('Error fetching production mutation data:', error);
       toast.error('Failed to load production mutation data');
       setData([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, toast]);
+  }, [startDate, endDate, page, rowsPerPage, searchQuery, itemTypeFilter, toast]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Reset page to 0 when search query or item type filter changes
+  // Reset page to 0 when date range, search query, or item type filter changes
   useEffect(() => {
     setPage(0);
-  }, [searchQuery, itemTypeFilter]);
+  }, [startDate, endDate, searchQuery, itemTypeFilter]);
 
   // Get unique item types from data
   const uniqueItemTypes = useMemo(() => {
@@ -255,6 +262,7 @@ export default function ProductionMutationPage() {
         hideRemarks={false}
         hideActions={true}
         hideValueAmount={true}
+        totalCount={totalCount}
       />
     </ReportLayout>
   );

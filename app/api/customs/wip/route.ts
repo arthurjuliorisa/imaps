@@ -14,14 +14,16 @@ export async function GET(request: Request) {
     const { session } = authCheck as { authenticated: true; session: any };
     const { searchParams } = new URL(request.url);
     const stockDate = searchParams.get('stockDate');
+    const search = searchParams.get('search')?.trim();
+    const itemType = searchParams.get('itemType')?.trim();
 
     // Extract and validate pagination parameters
     const rawPage = parseInt(searchParams.get('page') || '1', 10);
     const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
     
-    // Validate pagination values (min 10, max 500 per page)
+    // Validate pagination values (min 5, max 500 per page)
     const page = Math.max(rawPage, 1);
-    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const limit = Math.min(Math.max(rawLimit, 5), 500);
     const offset = (page - 1) * limit;
 
     // Validate company code with detailed error messages
@@ -59,20 +61,58 @@ export async function GET(request: Request) {
       paramIndex++;
     }
 
+    if (itemType) {
+      query += ` AND item_type = $${paramIndex}`;
+      params.push(itemType);
+      paramIndex++;
+    }
+
+    if (search) {
+      query += ` AND (
+        company_name ILIKE $${paramIndex}
+        OR item_code ILIKE $${paramIndex}
+        OR item_name ILIKE $${paramIndex}
+        OR item_type ILIKE $${paramIndex}
+        OR unit_quantity ILIKE $${paramIndex}
+        OR COALESCE(remarks, '') ILIKE $${paramIndex}
+      )`;
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+
     query += ` ORDER BY item_code`;
 
     // Get total count for pagination
     let countQuery = `
       SELECT COUNT(*) as count FROM vw_lpj_wip WHERE company_code = $1`;
 
+    const countParams = params.slice(0, paramIndex - 1);
+    let countParamIndex = 2;
+
     if (stockDate) {
-      countQuery += ` AND stock_date = $2::DATE`;
+      countQuery += ` AND stock_date = $${countParamIndex}::DATE`;
+      countParamIndex++;
+    }
+
+    if (itemType) {
+      countQuery += ` AND item_type = $${countParamIndex}`;
+      countParamIndex++;
+    }
+
+    if (search) {
+      countQuery += ` AND (
+        company_name ILIKE $${countParamIndex}
+        OR item_code ILIKE $${countParamIndex}
+        OR item_name ILIKE $${countParamIndex}
+        OR item_type ILIKE $${countParamIndex}
+        OR unit_quantity ILIKE $${countParamIndex}
+        OR COALESCE(remarks, '') ILIKE $${countParamIndex}
+      )`;
     }
 
     const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
       countQuery,
-      companyCode,
-      ...( stockDate ? [stockDate] : [])
+      ...countParams
     );
     const totalCount = Number(countResult[0]?.count ?? 0);
 

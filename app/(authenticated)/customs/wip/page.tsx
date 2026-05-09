@@ -46,6 +46,7 @@ export default function WIPMutationPage() {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
+  const [totalCount, setTotalCount] = useState(0);
 
   const fetchData = useCallback(async () => {
     if (!selectedDate) return;
@@ -54,21 +55,27 @@ export default function WIPMutationPage() {
     try {
       const params = new URLSearchParams({
         stockDate: selectedDate,
+        page: String(page + 1),
+        limit: String(rowsPerPage),
       });
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (itemTypeFilter) params.append('itemType', itemTypeFilter);
 
       const response = await fetch(`/api/customs/wip?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
       // Extract data array from new API response format
       setData(result.data || []);
+      setTotalCount(result.pagination?.total || 0);
     } catch (error) {
       console.error('Error fetching WIP mutation data:', error);
       toast.error('Failed to load WIP mutation data');
       setData([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
-  }, [selectedDate, toast]);
+  }, [selectedDate, page, rowsPerPage, searchQuery, itemTypeFilter, toast]);
 
   // Fetch latest stock date on component mount
   useEffect(() => {
@@ -101,10 +108,10 @@ export default function WIPMutationPage() {
     }
   }, [selectedDate, fetchData, initialLoading]);
 
-  // Reset page to 0 when search query or item type filter changes
+  // Reset page to 0 when search query, date, or item type filter changes
   useEffect(() => {
     setPage(0);
-  }, [searchQuery, itemTypeFilter]);
+  }, [selectedDate, searchQuery, itemTypeFilter]);
 
   // Get unique item types from data
   const uniqueItemTypes = useMemo(() => {
@@ -268,6 +275,7 @@ export default function WIPMutationPage() {
         rowsPerPage={rowsPerPage}
         onPageChange={handleChangePage}
         onRowsPerPageChange={handleChangeRowsPerPage}
+        totalCount={totalCount}
         loading={loading}
       />
     </ReportLayout>

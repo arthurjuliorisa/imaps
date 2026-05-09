@@ -20,6 +20,9 @@ export default function StockOpnamePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StockOpnameStatus | ''>('');
   const [year, setYear] = useState(now.getFullYear().toString());
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -30,6 +33,8 @@ export default function StockOpnamePage() {
       const params = new URLSearchParams({
         date_from: startDate,
         date_to: endDate,
+        page: String(page + 1),
+        limit: String(rowsPerPage),
       });
 
       if (statusFilter) {
@@ -45,18 +50,20 @@ export default function StockOpnamePage() {
 
       const result = await response.json();
       setData(result.data || []);
+      setTotalCount(result.total || result.pagination?.total || 0);
     } catch (error) {
       console.error('Error fetching stock opname data:', error);
       toast.error('Failed to load stock opname data');
       setData([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
-  }, [year, statusFilter, searchQuery]);
+  }, [year, statusFilter, searchQuery, page, rowsPerPage]);
 
   useEffect(() => {
     fetchData();
-  }, [year, statusFilter, searchQuery]);
+  }, [fetchData]);
 
   const handleDelete = async (id: number) => {
     try {
@@ -81,6 +88,7 @@ export default function StockOpnamePage() {
     setSearchQuery('');
     setStatusFilter('');
     setYear(new Date().getFullYear().toString());
+    setPage(0);
   };
 
   const sortedData = useMemo(() => {
@@ -88,6 +96,26 @@ export default function StockOpnamePage() {
       return b.sto_number.localeCompare(a.sto_number);
     });
   }, [data]);
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setPage(0);
+  };
+
+  const handleStatusChange = (value: StockOpnameStatus | '') => {
+    setStatusFilter(value);
+    setPage(0);
+  };
+
+  const handleYearChange = (value: string) => {
+    setYear(value);
+    setPage(0);
+  };
+
+  const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
 
   return (
     <ReportLayout
@@ -106,11 +134,11 @@ export default function StockOpnamePage() {
       <Box sx={{ p: 3 }}>
         <FilterSection
           searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+          onSearchChange={handleSearchChange}
           statusFilter={statusFilter}
-          onStatusChange={setStatusFilter}
+          onStatusChange={handleStatusChange}
           year={year}
-          onYearChange={setYear}
+          onYearChange={handleYearChange}
           onReset={handleResetFilters}
         />
 
@@ -118,6 +146,13 @@ export default function StockOpnamePage() {
           data={sortedData}
           loading={loading}
           onDelete={handleDelete}
+          pagination={{
+            page,
+            rowsPerPage,
+            total: totalCount,
+            onPageChange: setPage,
+            onRowsPerPageChange: handleRowsPerPageChange,
+          }}
         />
       </Box>
 

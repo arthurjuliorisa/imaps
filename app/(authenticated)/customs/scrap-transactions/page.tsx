@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { Box, Stack, Button, CircularProgress, Typography, TextField, InputAdornment, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
 import {
@@ -43,6 +43,7 @@ export default function ScrapTransactionsPage() {
     page: 0,
     pageSize: 10,
   });
+  const [rowCount, setRowCount] = useState(0);
   const [addInDialogOpen, setAddInDialogOpen] = useState(false);
   const [addOutDialogOpen, setAddOutDialogOpen] = useState(false);
   const [importIncomingDialogOpen, setImportIncomingDialogOpen] = useState(false);
@@ -201,9 +202,15 @@ export default function ScrapTransactionsPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `/api/customs/scrap-transactions?startDate=${startDate}&endDate=${endDate}`
-      );
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
+        page: String(paginationModel.page + 1),
+        pageSize: String(paginationModel.pageSize),
+        ...(searchQuery.trim() && { search: searchQuery.trim() }),
+      });
+
+      const response = await fetch(`/api/customs/scrap-transactions?${params}`);
 
       if (!response.ok) {
         throw new Error('Failed to fetch data');
@@ -211,14 +218,16 @@ export default function ScrapTransactionsPage() {
 
       const result = await response.json();
       setData(result.data || []);
+      setRowCount(result.pagination?.totalRecords || 0);
     } catch (error) {
       console.error('Error fetching scrap transactions:', error);
       toast.error('Failed to load scrap transaction data');
       setData([]);
+      setRowCount(0);
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, toast]);
+  }, [startDate, endDate, paginationModel.page, paginationModel.pageSize, searchQuery, toast]);
 
   useEffect(() => {
     fetchData();
@@ -285,32 +294,23 @@ export default function ScrapTransactionsPage() {
     setSelectedTransaction(null);
   };
 
-  // Filter data based on search query
-  const filteredData = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return data;
-    }
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value);
+    setPaginationModel((prev) => ({ ...prev, page: 0 }));
+  };
 
-    const query = searchQuery.toLowerCase();
-    return data.filter((row) => {
-      return (
-        row.companyName?.toLowerCase().includes(query) ||
-        row.transactionType?.toLowerCase().includes(query) ||
-        row.docType?.toLowerCase().includes(query) ||
-        row.ppkekNumber?.toLowerCase().includes(query) ||
-        row.docNumber?.toLowerCase().includes(query) ||
-        row.recipientName?.toLowerCase().includes(query) ||
-        row.itemType?.toLowerCase().includes(query) ||
-        row.itemCode?.toLowerCase().includes(query) ||
-        row.itemName?.toLowerCase().includes(query) ||
-        row.unit?.toLowerCase().includes(query) ||
-        row.currency?.toLowerCase().includes(query)
-      );
-    });
-  }, [data, searchQuery]);
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value);
+    setPaginationModel((prev) => ({ ...prev, page: 0 }));
+  };
+
+  const handleEndDateChange = (value: string) => {
+    setEndDate(value);
+    setPaginationModel((prev) => ({ ...prev, page: 0 }));
+  };
 
   const handleExportExcel = () => {
-    const exportData = filteredData.map((row, index) => ({
+    const exportData = data.map((row, index) => ({
       No: index + 1,
       'Company Name': row.companyName,
       'Type': row.transactionType,
@@ -339,7 +339,7 @@ export default function ScrapTransactionsPage() {
   };
 
   const handleExportPDF = () => {
-    const exportData = filteredData.map((row, index) => ({
+    const exportData = data.map((row, index) => ({
       no: index + 1,
       companyName: row.companyName,
       transactionType: row.transactionType,
@@ -399,8 +399,8 @@ export default function ScrapTransactionsPage() {
           <DateRangeFilter
             startDate={startDate}
             endDate={endDate}
-            onStartDateChange={setStartDate}
-            onEndDateChange={setEndDate}
+            onStartDateChange={handleStartDateChange}
+            onEndDateChange={handleEndDateChange}
           />
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
             <Stack direction="row" spacing={2}>
@@ -444,7 +444,7 @@ export default function ScrapTransactionsPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={filteredData.length === 0 || loading}
+              disabled={data.length === 0 || loading}
             />
           </Box>
         </Stack>
@@ -455,7 +455,7 @@ export default function ScrapTransactionsPage() {
           <TextField
             placeholder="Search transactions..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleSearchChange}
             size="small"
             InputProps={{
               startAdornment: (
@@ -468,10 +468,12 @@ export default function ScrapTransactionsPage() {
           />
         </Box>
         <DataGrid
-          rows={filteredData}
+          rows={data}
           columns={columns}
           paginationModel={paginationModel}
           onPaginationModelChange={setPaginationModel}
+          paginationMode="server"
+          rowCount={rowCount}
           pageSizeOptions={[10, 20, 50, 100]}
           loading={loading}
           disableRowSelectionOnClick

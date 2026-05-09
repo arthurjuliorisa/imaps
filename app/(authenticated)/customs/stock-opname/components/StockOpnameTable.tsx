@@ -31,9 +31,16 @@ interface StockOpnameTableProps {
   data: StockOpname[];
   loading: boolean;
   onDelete: (id: number) => void;
+  pagination?: {
+    page: number;
+    rowsPerPage: number;
+    total: number;
+    onPageChange: (newPage: number) => void;
+    onRowsPerPageChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  };
 }
 
-export function StockOpnameTable({ data, loading, onDelete }: StockOpnameTableProps) {
+export function StockOpnameTable({ data, loading, onDelete, pagination }: StockOpnameTableProps) {
   const theme = useTheme();
   const router = useRouter();
   const toast = useToast();
@@ -46,10 +53,18 @@ export function StockOpnameTable({ data, loading, onDelete }: StockOpnameTablePr
   const [companyNames, setCompanyNames] = useState<Record<string, string>>({});
 
   const handleChangePage = (_event: unknown, newPage: number) => {
+    if (pagination) {
+      pagination.onPageChange(newPage);
+      return;
+    }
     setPage(newPage);
   };
 
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (pagination) {
+      pagination.onRowsPerPageChange(event);
+      return;
+    }
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
@@ -124,7 +139,11 @@ export function StockOpnameTable({ data, loading, onDelete }: StockOpnameTablePr
     }
   }, [data]);
 
-  const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const currentPage = pagination?.page ?? page;
+  const currentRowsPerPage = pagination?.rowsPerPage ?? rowsPerPage;
+  const paginatedData = pagination
+    ? data
+    : data.slice(currentPage * currentRowsPerPage, currentPage * currentRowsPerPage + currentRowsPerPage);
 
   return (
     <>
@@ -170,7 +189,7 @@ export function StockOpnameTable({ data, loading, onDelete }: StockOpnameTablePr
                     },
                   }}
                 >
-                  <TableCell>{page * rowsPerPage + index + 1}</TableCell>
+                  <TableCell>{currentPage * currentRowsPerPage + index + 1}</TableCell>
                   <TableCell>
                     <Typography variant="body2" fontWeight={600}>
                       {row.company_code}
@@ -229,9 +248,9 @@ export function StockOpnameTable({ data, loading, onDelete }: StockOpnameTablePr
       <TablePagination
         rowsPerPageOptions={[5, 10, 25, 50]}
         component="div"
-        count={data.length}
-        rowsPerPage={rowsPerPage}
-        page={page}
+        count={pagination?.total ?? data.length}
+        rowsPerPage={currentRowsPerPage}
+        page={currentPage}
         onPageChange={handleChangePage}
         onRowsPerPageChange={handleChangeRowsPerPage}
       />

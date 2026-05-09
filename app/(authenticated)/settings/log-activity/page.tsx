@@ -117,6 +117,7 @@ export default function LogActivityPage() {
   const [companyCodeFilter, setCompanyCodeFilter] = useState('ALL');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
     fetchCompanies();
@@ -159,14 +160,17 @@ export default function LogActivityPage() {
 
       if (result.success && Array.isArray(result.data)) {
         setLogs(result.data);
+        setTotalCount(result.pagination?.total || 0);
         setError(null);
       } else {
         setLogs([]);
+        setTotalCount(0);
         setError(null);
       }
     } catch (err) {
       console.error('Error fetching activity logs:', err);
       setLogs([]);
+      setTotalCount(0);
       setError(null);
     } finally {
       setLoading(false);
@@ -328,6 +332,7 @@ export default function LogActivityPage() {
           onPageChange: handlePageChange,
           onRowsPerPageChange: handleRowsPerPageChange,
           rowsPerPageOptions: [5, 10, 25, 50],
+          total: totalCount,
         }}
       />
     </Box>

@@ -102,6 +102,7 @@ export default function OutgoingGoodsReportPage() {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
+  const [totalCount, setTotalCount] = useState(0);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -109,30 +110,36 @@ export default function OutgoingGoodsReportPage() {
       const params = new URLSearchParams({
         startDate,
         endDate,
+        page: String(page + 1),
+        limit: String(rowsPerPage),
       });
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (itemTypeFilter) params.append('itemType', itemTypeFilter);
 
       const response = await fetch(`/api/customs/outgoing?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
       const result = await response.json();
       // Extract data array from new API response format
       setData(result.data || []);
+      setTotalCount(result.pagination?.total || 0);
     } catch (error) {
       console.error('Error fetching outgoing report data:', error);
       toast.error('Failed to load outgoing goods report');
       setData([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, toast]);
+  }, [startDate, endDate, page, rowsPerPage, searchQuery, itemTypeFilter, toast]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Reset page to 0 when search query or item type filter changes
+  // Reset page to 0 when date range, search query, or item type filter changes
   useEffect(() => {
     setPage(0);
-  }, [searchQuery, itemTypeFilter]);
+  }, [startDate, endDate, searchQuery, itemTypeFilter]);
 
   // Get unique item types from data
   const uniqueItemTypes = useMemo(() => {
@@ -232,7 +239,7 @@ export default function OutgoingGoodsReportPage() {
     );
   };
 
-  const paginatedData = filteredData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const paginatedData = filteredData;
 
   return (
     <ReportLayout
@@ -411,7 +418,7 @@ export default function OutgoingGoodsReportPage() {
       <TablePagination
         rowsPerPageOptions={[5, 10, 25, 50]}
         component="div"
-        count={filteredData.length}
+        count={totalCount}
         rowsPerPage={rowsPerPage}
         page={page}
         onPageChange={handleChangePage}

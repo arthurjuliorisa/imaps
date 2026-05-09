@@ -47,8 +47,11 @@ export async function GET(request: Request) {
 
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
+    const search = searchParams.get('search')?.trim();
+    const rawPage = parseInt(searchParams.get('page') || '1', 10);
+    const rawPageSize = parseInt(searchParams.get('pageSize') || '50', 10);
+    const page = Number.isFinite(rawPage) ? rawPage : 1;
+    const pageSize = Number.isFinite(rawPageSize) ? Math.min(rawPageSize, 100) : 50;
 
     // Validate company code
     const companyValidation = validateCompanyCode(session);
@@ -58,9 +61,9 @@ export async function GET(request: Request) {
     const { companyCode } = companyValidation;
 
     // Validate pagination parameters
-    if (page < 1 || pageSize < 1 || pageSize > 1000) {
+    if (page < 1 || pageSize < 1 || pageSize > 100) {
       return NextResponse.json(
-        { message: 'Invalid pagination parameters. Page must be >= 1, pageSize must be between 1 and 1000.' },
+        { message: 'Invalid pagination parameters. Page must be >= 1, pageSize must be between 1 and 100.' },
         { status: 400 }
       );
     }
@@ -70,8 +73,41 @@ export async function GET(request: Request) {
     // Build date filter conditions
     let dateFilterIncoming = '';
     let dateFilterOutgoing = '';
+    let searchFilterIncoming = '';
+    let searchFilterOutgoing = '';
     const params: any[] = [companyCode];
     let paramIndex = 2;
+
+    if (search) {
+      searchFilterIncoming = ` AND (
+        c.name ILIKE $${paramIndex}
+        OR 'IN' ILIKE $${paramIndex}
+        OR COALESCE(ig.customs_document_type::varchar, '') ILIKE $${paramIndex}
+        OR COALESCE(ig.ppkek_number, '') ILIKE $${paramIndex}
+        OR COALESCE(ig.incoming_evidence_number, '') ILIKE $${paramIndex}
+        OR COALESCE(ig.shipper_name, '') ILIKE $${paramIndex}
+        OR COALESCE(igi.item_type, '') ILIKE $${paramIndex}
+        OR COALESCE(igi.item_code, '') ILIKE $${paramIndex}
+        OR COALESCE(igi.item_name, '') ILIKE $${paramIndex}
+        OR COALESCE(igi.uom, '') ILIKE $${paramIndex}
+        OR COALESCE(igi.currency, '') ILIKE $${paramIndex}
+      )`;
+      searchFilterOutgoing = ` AND (
+        c.name ILIKE $${paramIndex}
+        OR 'OUT' ILIKE $${paramIndex}
+        OR COALESCE(og.customs_document_type::varchar, '') ILIKE $${paramIndex}
+        OR COALESCE(og.ppkek_number, '') ILIKE $${paramIndex}
+        OR COALESCE(og.outgoing_evidence_number, '') ILIKE $${paramIndex}
+        OR COALESCE(og.recipient_name, '') ILIKE $${paramIndex}
+        OR COALESCE(ogi.item_type, '') ILIKE $${paramIndex}
+        OR COALESCE(ogi.item_code, '') ILIKE $${paramIndex}
+        OR COALESCE(ogi.item_name, '') ILIKE $${paramIndex}
+        OR COALESCE(ogi.uom, '') ILIKE $${paramIndex}
+        OR COALESCE(ogi.currency, '') ILIKE $${paramIndex}
+      )`;
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
 
     if (startDate) {
       const startDateObj = new Date(startDate);
@@ -98,10 +134,12 @@ export async function GET(request: Request) {
         JOIN incoming_good_items igi ON ig.company_code = igi.incoming_good_company
           AND ig.id = igi.incoming_good_id
           AND ig.incoming_date = igi.incoming_good_date
+        JOIN companies c ON ig.company_code = c.code
         WHERE ig.company_code = $1
           AND ig.deleted_at IS NULL
           AND igi.deleted_at IS NULL
           AND igi.item_type IN ('HIBE-M', 'HIBE-E', 'HIBE-T')
+          ${searchFilterIncoming}
           ${dateFilterIncoming}
 
         UNION ALL
@@ -112,10 +150,12 @@ export async function GET(request: Request) {
         JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
           AND og.id = ogi.outgoing_good_id
           AND og.outgoing_date = ogi.outgoing_good_date
+        JOIN companies c ON og.company_code = c.code
         WHERE og.company_code = $1
           AND og.deleted_at IS NULL
           AND ogi.deleted_at IS NULL
           AND ogi.item_type IN ('HIBE-M', 'HIBE-E', 'HIBE-T')
+          ${searchFilterOutgoing}
           ${dateFilterOutgoing}
       ) combined
     `;
@@ -163,6 +203,7 @@ export async function GET(request: Request) {
           AND ig.deleted_at IS NULL
           AND igi.deleted_at IS NULL
           AND igi.item_type IN ('HIBE-M', 'HIBE-E', 'HIBE-T')
+          ${searchFilterIncoming}
           ${dateFilterIncoming}
 
         UNION ALL
@@ -201,6 +242,7 @@ export async function GET(request: Request) {
           AND og.deleted_at IS NULL
           AND ogi.deleted_at IS NULL
           AND ogi.item_type IN ('HIBE-M', 'HIBE-E', 'HIBE-T')
+          ${searchFilterOutgoing}
           ${dateFilterOutgoing}
       ) combined
       ORDER BY combined.sort_date DESC, combined.id

@@ -15,6 +15,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const search = searchParams.get('search')?.trim();
+    const itemType = searchParams.get('itemType')?.trim();
     const rawPage = parseInt(searchParams.get('page') || '1', 10);
     const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
 
@@ -27,7 +29,7 @@ export async function GET(request: Request) {
 
     // Pagination parameters
     const page = Math.max(rawPage, 1);
-    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const limit = Math.min(Math.max(rawLimit, 5), 500);
     const offset = (page - 1) * limit;
 
     // Use provided dates or fallback to defaults
@@ -59,12 +61,31 @@ export async function GET(request: Request) {
       )
       WHERE company_code = $1
     `;
+
+    const countParams: any[] = [companyCode, startDateParam, endDateParam];
+    let countParamIndex = 4;
+
+    if (itemType) {
+      countQuery += ` AND item_type = $${countParamIndex}`;
+      countParams.push(itemType);
+      countParamIndex++;
+    }
+
+    if (search) {
+      countQuery += ` AND (
+        company_name ILIKE $${countParamIndex}
+        OR item_code ILIKE $${countParamIndex}
+        OR item_name ILIKE $${countParamIndex}
+        OR item_type ILIKE $${countParamIndex}
+        OR unit_quantity ILIKE $${countParamIndex}
+        OR COALESCE(currency, '') ILIKE $${countParamIndex}
+      )`;
+      countParams.push(`%${search}%`);
+    }
     
     const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
       countQuery,
-      companyCode,
-      startDateParam,
-      endDateParam
+      ...countParams
     );
     const totalCount = Number(countResult[0]?.count ?? 0);
 
@@ -95,11 +116,23 @@ export async function GET(request: Request) {
         $3::DATE
       )
       WHERE company_code = $1
+      ${itemType ? 'AND item_type = $4' : ''}
+      ${search ? `AND (
+        company_name ILIKE $${itemType ? 5 : 4}
+        OR item_code ILIKE $${itemType ? 5 : 4}
+        OR item_name ILIKE $${itemType ? 5 : 4}
+        OR item_type ILIKE $${itemType ? 5 : 4}
+        OR unit_quantity ILIKE $${itemType ? 5 : 4}
+        OR COALESCE(currency, '') ILIKE $${itemType ? 5 : 4}
+      )` : ''}
       ORDER BY item_code
-      LIMIT $4::integer OFFSET $5::integer
+      LIMIT $${4 + (itemType ? 1 : 0) + (search ? 1 : 0)}::integer OFFSET $${5 + (itemType ? 1 : 0) + (search ? 1 : 0)}::integer
     `;
 
-    const params: any[] = [companyCode, startDateParam, endDateParam, limit, offset];
+    const params: any[] = [companyCode, startDateParam, endDateParam];
+    if (itemType) params.push(itemType);
+    if (search) params.push(`%${search}%`);
+    params.push(limit, offset);
 
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 

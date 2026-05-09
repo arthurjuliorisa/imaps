@@ -15,14 +15,16 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const search = searchParams.get('search')?.trim();
+    const itemType = searchParams.get('itemType')?.trim();
 
     // Extract and validate pagination parameters
     const rawPage = parseInt(searchParams.get('page') || '1', 10);
     const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
     
-    // Validate pagination values (min 10, max 500 per page)
+    // Validate pagination values (min 5, max 500 per page)
     const page = Math.max(rawPage, 1);
-    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const limit = Math.min(Math.max(rawLimit, 5), 500);
     const offset = (page - 1) * limit;
 
     // Validate company code with detailed error messages
@@ -86,6 +88,24 @@ export async function GET(request: Request) {
     params.push(startDateParam, endDateParam);
     paramIndex += 2;
 
+    if (itemType) {
+      query += ` AND item_type = $${paramIndex}`;
+      params.push(itemType);
+      paramIndex++;
+    }
+
+    if (search) {
+      query += ` AND (
+        company_name ILIKE $${paramIndex}
+        OR item_code ILIKE $${paramIndex}
+        OR item_name ILIKE $${paramIndex}
+        OR item_type ILIKE $${paramIndex}
+        OR unit_quantity ILIKE $${paramIndex}
+      )`;
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+
     query += ` ORDER BY item_code`;
 
     // Get total count for pagination
@@ -98,12 +118,30 @@ export async function GET(request: Request) {
       )
       WHERE company_code = $1
     `;
+
+    const countParams: any[] = [companyCode, startDateParam, endDateParam];
+    let countParamIndex = 4;
+
+    if (itemType) {
+      countQuery += ` AND item_type = $${countParamIndex}`;
+      countParams.push(itemType);
+      countParamIndex++;
+    }
+
+    if (search) {
+      countQuery += ` AND (
+        company_name ILIKE $${countParamIndex}
+        OR item_code ILIKE $${countParamIndex}
+        OR item_name ILIKE $${countParamIndex}
+        OR item_type ILIKE $${countParamIndex}
+        OR unit_quantity ILIKE $${countParamIndex}
+      )`;
+      countParams.push(`%${search}%`);
+    }
     
     const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
       countQuery,
-      companyCode,
-      startDateParam,
-      endDateParam
+      ...countParams
     );
     const totalCount = Number(countResult[0]?.count ?? 0);
 

@@ -40,6 +40,9 @@ export default function BeginningDataPage() {
   const [formMode, setFormMode] = useState<'add' | 'edit'>('add');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
 
   // INSW transmission status
   const [overallStatus, setOverallStatus] = useState<'OPEN' | 'TRANSMITTED_TO_INSW' | 'LOCKED'>('OPEN');
@@ -123,6 +126,8 @@ export default function BeginningDataPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.append('page', String(page + 1));
+      params.append('limit', String(rowsPerPage));
       // Only filter by itemType if not "All"
       if (selectedItemType && selectedItemType !== 'ALL') {
         params.append('itemType', selectedItemType);
@@ -152,6 +157,7 @@ export default function BeginningDataPage() {
       if (result.overallStatus) {
         setOverallStatus(result.overallStatus);
       }
+      setTotalCount(result.pagination?.total || rawData.length || 0);
 
       // Transform API response to match BeginningStockData interface
       const transformed = rawData.map((item: any) => ({
@@ -176,10 +182,11 @@ export default function BeginningDataPage() {
       console.error('Error fetching data:', error);
       toast.error('Failed to load data');
       setData([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
-  }, [selectedItemType, searchTerm, filterDate]);
+  }, [selectedItemType, searchTerm, filterDate, page, rowsPerPage]);
 
   // Load data when item type or filters change
   useEffect(() => {
@@ -194,6 +201,7 @@ export default function BeginningDataPage() {
       setSelectedItemType(newValue.code);
       setSearchTerm('');
       setFilterDate(null);
+      setPage(0);
     }
   };
 
@@ -238,6 +246,25 @@ export default function BeginningDataPage() {
       console.error('Error deleting data:', error);
       toast.error('Failed to delete beginning stock data. Please try again.');
     }
+  };
+
+  const handleTableSearch = (term: string) => {
+    setSearchTerm(term);
+    setPage(0);
+  };
+
+  const handleDateFilter = (date: string | null) => {
+    setFilterDate(date);
+    setPage(0);
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
   };
 
   // Handle form submission (both add and edit)
@@ -559,15 +586,22 @@ export default function BeginningDataPage() {
         {renderOverallStatusChip()}
       </Box>
 
-      <BeginningStockTable
-        data={data}
-        loading={loading}
-        isLocked={overallStatus === 'LOCKED'}
-        onEdit={handleEdit}
-        onDelete={handleDeleteClick}
-        onSearch={setSearchTerm}
-        onDateFilter={setFilterDate}
-      />
+        <BeginningStockTable
+          data={data}
+          loading={loading}
+          isLocked={overallStatus === 'LOCKED'}
+          onEdit={handleEdit}
+          onDelete={handleDeleteClick}
+          onSearch={handleTableSearch}
+          onDateFilter={handleDateFilter}
+          pagination={{
+            page,
+            rowsPerPage,
+            total: totalCount,
+            onPageChange: handlePageChange,
+            onRowsPerPageChange: handleRowsPerPageChange,
+          }}
+        />
 
       {/* Add/Edit Form Dialog */}
       <BeginningStockForm

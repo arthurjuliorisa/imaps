@@ -49,8 +49,11 @@ export async function GET(request: Request) {
 
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
+    const search = searchParams.get('search')?.trim();
+    const rawPage = parseInt(searchParams.get('page') || '1', 10);
+    const rawPageSize = parseInt(searchParams.get('pageSize') || '50', 10);
+    const page = Number.isFinite(rawPage) ? rawPage : 1;
+    const pageSize = Number.isFinite(rawPageSize) ? Math.min(rawPageSize, 100) : 50;
 
     // Validate company code
     const companyValidation = validateCompanyCode(session);
@@ -60,9 +63,9 @@ export async function GET(request: Request) {
     const { companyCode } = companyValidation;
 
     // Validate pagination parameters
-    if (page < 1 || pageSize < 1 || pageSize > 1000) {
+    if (page < 1 || pageSize < 1 || pageSize > 100) {
       return NextResponse.json(
-        { message: 'Invalid pagination parameters. Page must be >= 1, pageSize must be between 1 and 1000.' },
+        { message: 'Invalid pagination parameters. Page must be >= 1, pageSize must be between 1 and 100.' },
         { status: 400 }
       );
     }
@@ -72,8 +75,41 @@ export async function GET(request: Request) {
     // Build date filter conditions
     let dateFilterScrap = '';
     let dateFilterOutgoing = '';
+    let searchFilterScrap = '';
+    let searchFilterOutgoing = '';
     const params: any[] = [companyCode];
     let paramIndex = 2;
+
+    if (search) {
+      searchFilterScrap = ` AND (
+        c.name ILIKE $${paramIndex}
+        OR 'IN' ILIKE $${paramIndex}
+        OR COALESCE(st.customs_document_type::text, '') ILIKE $${paramIndex}
+        OR COALESCE(st.ppkek_number, '') ILIKE $${paramIndex}
+        OR COALESCE(st.document_number, '') ILIKE $${paramIndex}
+        OR COALESCE(st.source, 'Scrap Collection') ILIKE $${paramIndex}
+        OR COALESCE(sti.item_type, '') ILIKE $${paramIndex}
+        OR COALESCE(sti.item_code, '') ILIKE $${paramIndex}
+        OR COALESCE(sti.item_name, '') ILIKE $${paramIndex}
+        OR COALESCE(sti.uom, '') ILIKE $${paramIndex}
+        OR COALESCE(sti.currency, '') ILIKE $${paramIndex}
+      )`;
+      searchFilterOutgoing = ` AND (
+        c.name ILIKE $${paramIndex}
+        OR 'OUT' ILIKE $${paramIndex}
+        OR COALESCE(og.customs_document_type::text, '') ILIKE $${paramIndex}
+        OR COALESCE(og.ppkek_number, '') ILIKE $${paramIndex}
+        OR COALESCE(og.outgoing_evidence_number, '') ILIKE $${paramIndex}
+        OR COALESCE(og.recipient_name, '') ILIKE $${paramIndex}
+        OR COALESCE(ogi.item_type, '') ILIKE $${paramIndex}
+        OR COALESCE(ogi.item_code, '') ILIKE $${paramIndex}
+        OR COALESCE(ogi.item_name, '') ILIKE $${paramIndex}
+        OR COALESCE(ogi.uom, '') ILIKE $${paramIndex}
+        OR COALESCE(ogi.currency, '') ILIKE $${paramIndex}
+      )`;
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
 
     if (startDate) {
       const startDateObj = new Date(startDate);
@@ -100,10 +136,12 @@ export async function GET(request: Request) {
         JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
           AND st.id = sti.scrap_transaction_id
           AND st.transaction_date = sti.scrap_transaction_date
+        JOIN companies c ON st.company_code = c.code
         WHERE st.company_code = $1
           AND st.transaction_type = 'IN'
           AND st.deleted_at IS NULL
           AND sti.deleted_at IS NULL
+          ${searchFilterScrap}
           ${dateFilterScrap}
         
         UNION ALL
@@ -114,10 +152,12 @@ export async function GET(request: Request) {
         JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
           AND og.id = ogi.outgoing_good_id
           AND og.outgoing_date = ogi.outgoing_good_date
+        JOIN companies c ON og.company_code = c.code
         WHERE og.company_code = $1
           AND ogi.item_type = 'SCRAP'
           AND og.deleted_at IS NULL
           AND ogi.deleted_at IS NULL
+          ${searchFilterOutgoing}
           ${dateFilterOutgoing}
       ) combined
     `;
@@ -169,6 +209,7 @@ export async function GET(request: Request) {
           AND st.transaction_type = 'IN'
           AND st.deleted_at IS NULL
           AND sti.deleted_at IS NULL
+          ${searchFilterScrap}
           ${dateFilterScrap}
         
         UNION ALL
@@ -211,6 +252,7 @@ export async function GET(request: Request) {
           AND ogi.item_type = 'SCRAP'
           AND og.deleted_at IS NULL
           AND ogi.deleted_at IS NULL
+          ${searchFilterOutgoing}
           ${dateFilterOutgoing}
       ) combined
       ORDER BY sort_date DESC, record_id DESC

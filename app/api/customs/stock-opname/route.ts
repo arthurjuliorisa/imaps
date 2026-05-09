@@ -26,8 +26,10 @@ export async function GET(request: Request) {
     const { companyCode } = companyValidation;
 
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const rawPage = parseInt(searchParams.get('page') || '1', 10);
+    const rawLimit = parseInt(searchParams.get('limit') || '10', 10);
+    const page = Math.max(rawPage, 1);
+    const limit = Math.min(Math.max(rawLimit, 1), 100);
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
     const dateFrom = searchParams.get('date_from') || '';

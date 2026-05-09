@@ -49,6 +49,7 @@ interface MutationReportTableProps {
   rowsPerPage: number;
   onPageChange: (event: unknown, newPage: number) => void;
   onRowsPerPageChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  totalCount?: number;
   onEdit?: (item: MutationData) => void;
   onView?: (item: MutationData) => void;
   loading?: boolean;
@@ -64,6 +65,7 @@ export function MutationReportTable({
   rowsPerPage,
   onPageChange,
   onRowsPerPageChange,
+  totalCount,
   onEdit,
   onView,
   loading = false,
@@ -73,7 +75,10 @@ export function MutationReportTable({
   hideRowNumber = true,
 }: MutationReportTableProps) {
   const theme = useTheme();
-  const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const isServerPaginated = totalCount !== undefined;
+  const paginatedData = isServerPaginated
+    ? data
+    : data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   const getVariantColor = (variant: number): 'success' | 'error' | 'default' => {
     if (variant > 0) return 'success';
@@ -254,7 +259,7 @@ export function MutationReportTable({
       <TablePagination
         rowsPerPageOptions={[5, 10, 25, 50]}
         component="div"
-        count={data.length}
+        count={totalCount ?? data.length}
         rowsPerPage={rowsPerPage}
         page={page}
         onPageChange={onPageChange}

@@ -56,6 +56,7 @@ export default function ScrapMutationPage() {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
+  const [totalCount, setTotalCount] = useState(0);
 
   // Get unique item types from data
   const uniqueItemTypes = useMemo(() => {
@@ -164,23 +165,32 @@ export default function ScrapMutationPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `/api/customs/scrap?startDate=${startDate}&endDate=${endDate}`
-      );
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
+        page: String(page + 1),
+        limit: String(rowsPerPage),
+      });
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (itemTypeFilter) params.append('itemType', itemTypeFilter);
+
+      const response = await fetch(`/api/customs/scrap?${params}`);
       if (!response.ok) {
         throw new Error('Failed to fetch data');
       }
       const result = await response.json();
       // Extract data array from new API response format
       setData(result.data || []);
+      setTotalCount(result.pagination?.total || 0);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load data');
       setData([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, toast]);
+  }, [startDate, endDate, page, rowsPerPage, searchQuery, itemTypeFilter, toast]);
 
   // Load data on mount and when date range, pagination changes
   useEffect(() => {
@@ -262,6 +272,7 @@ export default function ScrapMutationPage() {
         hideRemarks={false}
         hideActions={true}
         hideValueAmount={true}
+        totalCount={totalCount}
       />
     </ReportLayout>
   );

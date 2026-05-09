@@ -82,9 +82,10 @@ export default function UsersPage() {
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(10);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
+  const [totalCount, setTotalCount] = useState(0);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companiesLoading, setCompaniesLoading] = useState(false);
   const [companyError, setCompanyError] = useState(false);
@@ -92,7 +93,7 @@ export default function UsersPage() {
   useEffect(() => {
     fetchUsers();
     fetchCompanies();
-  }, [page, searchQuery]);
+  }, [page, rowsPerPage, searchQuery]);
 
   const fetchCompanies = async () => {
     setCompaniesLoading(true);
@@ -113,8 +114,8 @@ export default function UsersPage() {
     setDataLoading(true);
     try {
       const params = new URLSearchParams({
-        page: page.toString(),
-        pageSize: pageSize.toString(),
+        page: (page + 1).toString(),
+        limit: rowsPerPage.toString(),
         ...(searchQuery && { search: searchQuery }),
       });
 
@@ -122,12 +123,28 @@ export default function UsersPage() {
       if (!response.ok) throw new Error('Failed to fetch users');
       const data = await response.json();
       setUsers(Array.isArray(data) ? data : (data.data || data.users || []));
+      setTotalCount(data.pagination?.total || data.totalCount || 0);
     } catch (err) {
       console.error('Error fetching users:', err);
       toast.error('Failed to load users');
+      setTotalCount(0);
     } finally {
       setDataLoading(false);
     }
+  };
+
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value);
+    setPage(0);
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
   };
 
   const handleAdd = () => {
@@ -304,13 +321,32 @@ export default function UsersPage() {
         </Alert>
       )}
 
+      <TextField
+        label="Search"
+        value={searchQuery}
+        onChange={handleSearchChange}
+        placeholder="Search by username or email..."
+        size="small"
+        fullWidth
+        sx={{ maxWidth: 400, mb: 3 }}
+      />
+
       <DataTable
         columns={columns}
         data={users}
         loading={dataLoading}
+        searchable={false}
         extraActions={extraActions}
         onEdit={handleEdit}
         onDelete={handleDelete}
+        pagination={{
+          page,
+          rowsPerPage,
+          onPageChange: handlePageChange,
+          onRowsPerPageChange: handleRowsPerPageChange,
+          rowsPerPageOptions: [5, 10, 25, 50],
+          total: totalCount,
+        }}
       />
 
       <Dialog

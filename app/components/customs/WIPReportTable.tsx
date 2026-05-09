@@ -39,6 +39,7 @@ interface WIPReportTableProps {
   rowsPerPage: number;
   onPageChange: (event: unknown, newPage: number) => void;
   onRowsPerPageChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  totalCount?: number;
   loading?: boolean;
 }
 
@@ -48,10 +49,14 @@ export function WIPReportTable({
   rowsPerPage,
   onPageChange,
   onRowsPerPageChange,
+  totalCount,
   loading = false,
 }: WIPReportTableProps) {
   const theme = useTheme();
-  const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const isServerPaginated = totalCount !== undefined;
+  const paginatedData = isServerPaginated
+    ? data
+    : data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   const formatDate = (date: Date | string | null | undefined): string => {
     if (!date) return '-';
@@ -170,7 +175,7 @@ export function WIPReportTable({
       <TablePagination
         rowsPerPageOptions={[5, 10, 25, 50]}
         component="div"
-        count={data.length}
+        count={totalCount ?? data.length}
         rowsPerPage={rowsPerPage}
         page={page}
         onPageChange={onPageChange}

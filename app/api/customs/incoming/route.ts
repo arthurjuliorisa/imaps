@@ -15,14 +15,16 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const search = searchParams.get('search')?.trim();
+    const itemType = searchParams.get('itemType')?.trim();
 
     // Extract and validate pagination parameters
     const rawPage = parseInt(searchParams.get('page') || '1', 10);
     const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
     
-    // Validate pagination values (min 10, max 500 per page)
+    // Validate pagination values (min 5, max 500 per page)
     const page = Math.max(rawPage, 1);
-    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const limit = Math.min(Math.max(rawLimit, 5), 500);
     const offset = (page - 1) * limit;
 
     // Validate company code with detailed error messages
@@ -83,11 +85,37 @@ export async function GET(request: Request) {
       paramIndex++;
     }
 
+    if (itemType) {
+      query += ` AND type_code = $${paramIndex}`;
+      params.push(itemType);
+      paramIndex++;
+    }
+
+    if (search) {
+      query += ` AND (
+        company_name ILIKE $${paramIndex}
+        OR COALESCE(customs_document_type::text, '') ILIKE $${paramIndex}
+        OR COALESCE(cust_doc_registration_no, '') ILIKE $${paramIndex}
+        OR COALESCE(doc_number, '') ILIKE $${paramIndex}
+        OR COALESCE(shipper_name, '') ILIKE $${paramIndex}
+        OR COALESCE(type_code, '') ILIKE $${paramIndex}
+        OR COALESCE(item_code, '') ILIKE $${paramIndex}
+        OR COALESCE(item_name, '') ILIKE $${paramIndex}
+        OR COALESCE(unit, '') ILIKE $${paramIndex}
+        OR COALESCE(currency, '') ILIKE $${paramIndex}
+      )`;
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+
     query += ` ORDER BY doc_date DESC, id DESC`;
 
     // Get total count for pagination (without LIMIT/OFFSET)
-    // Build count query by replacing SELECT with COUNT(*)
-    const baseCountQuery = query.replace(/SELECT.*?FROM/, 'SELECT COUNT(DISTINCT id, item_code) as count FROM');
+    // Build count query by replacing the multiline SELECT list with COUNT(*).
+    const baseCountQuery = query.replace(
+      /^\s*SELECT[\s\S]*?\sFROM\s+vw_laporan_pemasukan/i,
+      'SELECT COUNT(*) as count FROM vw_laporan_pemasukan'
+    );
     const countQueryClean = baseCountQuery.split('ORDER BY')[0]; // Remove ORDER BY for count
     
     // Use only the params up to the current paramIndex (excluding LIMIT/OFFSET placeholders)
@@ -96,7 +124,7 @@ export async function GET(request: Request) {
       countQueryClean,
       ...countParams
     );
-    const totalCount = parseInt(countResult[0]?.count || '0', 10);
+    const totalCount = Number(countResult[0]?.count ?? 0);
 
     // Add pagination to main query
     query += ` LIMIT $${paramIndex}::integer OFFSET $${paramIndex + 1}::integer`;
