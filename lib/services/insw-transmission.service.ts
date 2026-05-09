@@ -16,9 +16,12 @@ export class INSWTransmissionService {
 
   constructor(useTestMode: boolean = true) {
     this.useTestMode = useTestMode;
+    const uniqueKey = useTestMode
+      ? process.env.INSW_UNIQUE_KEY_TEST || ''
+      : process.env.INSW_UNIQUE_KEY_REAL || '';
     this.inswService = new INSWIntegrationService(
       process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-      process.env.INSW_UNIQUE_KEY_TEST || '',
+      uniqueKey,
       useTestMode
     );
   }

@@ -252,7 +252,7 @@ export async function PATCH(request: NextRequest) {
     const result = await service.processUpdate(validationResult.data, 'system-wms');
 
     if (result.status === 'Confirmed') {
-      const inswTransmission = new INSWTransmissionService();
+      const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
       inswTransmission.transmitStockOpname(
         Number(result.company_code),
         Number(result.id),

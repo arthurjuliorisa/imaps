@@ -30,10 +30,11 @@ export async function POST(request: Request) {
       );
     }
 
+    const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
     const service = new INSWIntegrationService(
       process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-      process.env.INSW_UNIQUE_KEY_TEST || '',
-      process.env.INSW_USE_TEST_MODE === 'true'
+      useTestMode ? process.env.INSW_UNIQUE_KEY_TEST || '' : process.env.INSW_UNIQUE_KEY_REAL || '',
+      useTestMode
     );
 
     const payload = await service.convertPemasukanToINSW(companyCode, ids);

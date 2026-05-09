@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     if (wmsIds && Array.isArray(wmsIds) && wmsIds.length > 0) {
       const service = new INSWIntegrationService(
         process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-        process.env.INSW_UNIQUE_KEY_TEST || '',
+        process.env.INSW_USE_TEST_MODE === 'true' ? process.env.INSW_UNIQUE_KEY_TEST || '' : process.env.INSW_UNIQUE_KEY_REAL || '',
         process.env.INSW_USE_TEST_MODE === 'true'
       );
 
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     if (ids && Array.isArray(ids) && ids.length > 0) {
       const service = new INSWIntegrationService(
         process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-        process.env.INSW_UNIQUE_KEY_TEST || '',
+        process.env.INSW_USE_TEST_MODE === 'true' ? process.env.INSW_UNIQUE_KEY_TEST || '' : process.env.INSW_UNIQUE_KEY_REAL || '',
         process.env.INSW_USE_TEST_MODE === 'true'
       );
 

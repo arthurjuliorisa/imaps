@@ -305,10 +305,11 @@ export async function POST(request: Request) {
 
         // Only transmit if SEZ company
         if (company?.company_type === 'SEZ') {
+          const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
           const inswService = new INSWIntegrationService(
             process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-            process.env.INSW_UNIQUE_KEY_TEST || '',
-            process.env.INSW_USE_TEST_MODE === 'true'
+            useTestMode ? process.env.INSW_UNIQUE_KEY_TEST || '' : process.env.INSW_UNIQUE_KEY_REAL || '',
+            useTestMode
           );
 
           const payload = await inswService.convertCapitalGoodsOutToINSWByWmsIds(
