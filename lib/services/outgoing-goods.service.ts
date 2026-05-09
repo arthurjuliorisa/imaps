@@ -4,6 +4,7 @@ import { INSWTransmissionService } from '@/lib/services/insw-transmission.servic
 import {
   validateOutgoingGoodRequest,
   validateOutgoingGoodsDates,
+  checkOutgoingGoodsDuplicateAllocations,
   validateItemTypes,
   validateOutgoingGoodsItemTypeConsistency,
   type OutgoingGoodRequestInput,
@@ -96,7 +97,17 @@ export class OutgoingGoodsService {
         return { success: false, errors: dateErrors as ErrorDetail[] };
       }
 
-      // 3. Validate item types
+      // 3. Check for duplicate item_code + uom + work_order_number allocations
+      const duplicateAllocationErrors = checkOutgoingGoodsDuplicateAllocations(data);
+      if (duplicateAllocationErrors.length > 0) {
+        requestLogger.warn(
+          'Duplicate outgoing goods allocations found',
+          { errors: duplicateAllocationErrors }
+        );
+        return { success: false, errors: duplicateAllocationErrors as ErrorDetail[] };
+      }
+
+      // 4. Validate item types
       const itemTypeErrors = await validateItemTypes(data);
       if (itemTypeErrors.length > 0) {
         requestLogger.warn(
@@ -106,7 +117,7 @@ export class OutgoingGoodsService {
         return { success: false, errors: itemTypeErrors as ErrorDetail[] };
       }
 
-      // 4. Validate item_type consistency
+      // 5. Validate item_type consistency
       const itemTypeConsistencyErrors = await validateOutgoingGoodsItemTypeConsistency(data);
       if (itemTypeConsistencyErrors.length > 0) {
         requestLogger.warn(
@@ -116,7 +127,7 @@ export class OutgoingGoodsService {
         return { success: false, errors: itemTypeConsistencyErrors as ErrorDetail[] };
       }
 
-      // 5. Validate production traceability for FERT/HALB items
+      // 6. Validate production traceability for FERT/HALB items
       // const traceabilityErrors = validateProductionTraceability(data);
       // if (traceabilityErrors.length > 0) {
       //   requestLogger.warn(
@@ -126,11 +137,11 @@ export class OutgoingGoodsService {
       //   return { success: false, errors: traceabilityErrors as ErrorDetail[] };
       // }
 
-      // 6. Detect if this is a revision (same wms_id already exists)
+      // 7. Detect if this is a revision (same wms_id already exists)
       const revisionInfo = await this.detectRevision(data);
       requestLogger.info('Revision detection', { isRevision: revisionInfo.isRevision, wmsId: data.wms_id });
 
-      // 7. Business validations - verify work_order_allocations exist
+      // 8. Business validations - verify work_order_allocations exist
       const allocationValidationErrors = await this.validateWorkOrderAllocations(data);
       if (allocationValidationErrors.length > 0) {
         requestLogger.warn(
@@ -140,10 +151,10 @@ export class OutgoingGoodsService {
         return { success: false, errors: allocationValidationErrors };
       }
 
-      // 8. Check stock and collect warnings (pass revision info)
+      // 9. Check stock and collect warnings (pass revision info)
       const stockCheckResult = await this.checkStockAndCollectWarnings(data, revisionInfo);
 
-      // 9. Queue async database insert + INSW auto-transmit
+      // 10. Queue async database insert + INSW auto-transmit
       const repository = new OutgoingGoodsRepository();
       repository.insertOutgoingGoodsAsync(data)
         .then(async () => {
@@ -174,7 +185,7 @@ export class OutgoingGoodsService {
           requestLogger.error('Failed to insert outgoing goods', { error, wmsId: data.wms_id });
         });
 
-      // 10. Return success response immediately (without waiting for DB insert)
+      // 11. Return success response immediately (without waiting for DB insert)
       const response: SuccessResponse = {
         status: 'success',
         message: 'Transaction validated and queued for processing',

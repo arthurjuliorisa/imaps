@@ -446,6 +446,48 @@ export function validateOutgoingGoodsDates(data: OutgoingGoodRequestInput): Vali
 }
 
 /**
+ * Check for duplicate outgoing goods work order allocations in the request.
+ * Combination: (item_code, uom, work_order_number)
+ *
+ * WMS must aggregate rows by item_code + uom + work_order_number before
+ * sending to iMAPS. iMAPS rejects duplicates instead of silently merging them.
+ *
+ * @param data - Validated request data
+ * @returns Array of validation errors (empty if no duplicates)
+ */
+export function checkOutgoingGoodsDuplicateAllocations(
+  data: OutgoingGoodRequestInput
+): ValidationErrorDetail[] {
+  const errors: ValidationErrorDetail[] = [];
+  const seen = new Map<string, number>();
+
+  data.items.forEach((item, itemIndex) => {
+    for (const allocation of item.work_order_allocations || []) {
+      if (!allocation.work_order_number) {
+        continue;
+      }
+
+      const key = `${item.item_code}|${item.uom}|${allocation.work_order_number}`;
+
+      if (seen.has(key)) {
+        errors.push({
+          location: 'item',
+          field: 'work_order_allocations',
+          code: 'DUPLICATE_ALLOCATION',
+          message: `Duplicate outgoing goods allocation detected. item_code=${item.item_code}, uom=${item.uom}, work_order_number=${allocation.work_order_number} appears multiple times. Please aggregate quantity in the payload before sending.`,
+          item_index: itemIndex,
+          item_code: item.item_code,
+        });
+      } else {
+        seen.set(key, itemIndex);
+      }
+    }
+  });
+
+  return errors;
+}
+
+/**
  * Validate work order allocations for FERT and HALB items
  * - work_order_allocations is REQUIRED for FERT and HALB items (per API v3.3.0)
  * - Each work_order_number must exist in Production Output
