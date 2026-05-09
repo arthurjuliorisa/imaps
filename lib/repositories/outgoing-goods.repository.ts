@@ -31,7 +31,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
    * 3. For each allocation, resolves PPKEK to incoming goods
    * 4. Returns enriched traceability data ready for database insertion
    * 
-   * @param tx - Prisma transaction context
+   * @param db - Prisma client or transaction context
    * @param productionWmsId - Production output WMS ID
    * @param itemCode - FG item code
    * @param qtyFG - Quantity of FG exported
@@ -42,7 +42,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
    * @returns Array of enriched allocations or null if calculation failed
    */
   private async enrichTraceability(
-    tx: any, // Prisma transaction context
+    db: any,
     productionWmsId: string,
     itemCode: string,
     qtyFG: Prisma.Decimal,
@@ -61,7 +61,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
       // ====================================================================
       // STEP 1: Resolve production WMS ID to work order number
       // ====================================================================
-      const workOrderFG = await tx.work_order_fg_production.findFirst({
+      const workOrderFG = await db.work_order_fg_production.findFirst({
         where: {
           production_wms_id: productionWmsId,
           item_code: itemCode,
@@ -112,7 +112,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
         // Try to resolve PPKEK from material usage first
         if (allocation) {
           // Get the PPKEK from material usage
-          const materialUsageWithPPKEK = await tx.$queryRaw<any[]>`
+          const materialUsageWithPPKEK = await db.$queryRaw<any[]>`
             SELECT mui.ppkek_number
             FROM material_usage_items mui
             JOIN material_usages mu ON 
@@ -184,6 +184,217 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
       logger_sub.error('Error enriching traceability', { error });
       return null;
     }
+  }
+
+  /**
+   * Build BOM/traceability data after the core outgoing goods transaction commits,
+   * then persist traceability rows in a separate short transaction.
+   */
+  private async processTraceabilityAfterCoreCommit(
+    data: OutgoingGoodRequestInput,
+    outgoingDate: Date,
+    currentItemsList: any[],
+    repositoryLogger: any
+  ): Promise<number> {
+    const itemCodeToCurrentItem = new Map(currentItemsList.map((item) => [item.item_code, item]));
+    const traceabilityWrites: Array<{
+      deleteWhere: any;
+      createData: any[];
+      createSingle?: boolean;
+    }> = [];
+
+    for (const originalItem of data.items) {
+      const currentItem = itemCodeToCurrentItem.get(originalItem.item_code);
+      if (!currentItem) continue;
+
+      // Only create traceability for FERT and HALB items
+      if (!['FERT', 'HALB'].includes(originalItem.item_type.toUpperCase())) {
+        continue;
+      }
+
+      if (originalItem.work_order_allocations && originalItem.work_order_allocations.length > 0) {
+        for (const allocation of originalItem.work_order_allocations) {
+          let productionWmsId: string | null = null;
+          let sourceType: 'production' | 'incoming' = 'production';
+
+          if (allocation.work_order_number) {
+            const workOrderProduction = await prisma.work_order_fg_production.findFirst({
+              where: {
+                work_order_number: allocation.work_order_number,
+                item_code: originalItem.item_code,
+                company_code: data.company_code,
+              },
+              select: {
+                production_wms_id: true,
+              },
+            });
+
+            if (!workOrderProduction) {
+              repositoryLogger.warn('Work order production not found, skipping allocation', {
+                workOrderNumber: allocation.work_order_number,
+                itemCode: originalItem.item_code,
+              });
+              continue;
+            }
+
+            productionWmsId = workOrderProduction.production_wms_id;
+            sourceType = 'production';
+          } else if (allocation.ppkek_number) {
+            repositoryLogger.debug('Processing allocation from incoming HALB', {
+              ppkekNumber: allocation.ppkek_number,
+              itemCode: originalItem.item_code,
+              qty: allocation.qty,
+            });
+            sourceType = 'incoming';
+          } else {
+            repositoryLogger.warn('Allocation has neither work_order_number nor ppkek_number, skipping', {
+              itemCode: originalItem.item_code,
+            });
+            continue;
+          }
+
+          let enrichedAllocations: any[] | null = null;
+          if (sourceType === 'production' && productionWmsId) {
+            enrichedAllocations = await this.enrichTraceability(
+              prisma,
+              productionWmsId,
+              originalItem.item_code,
+              new Prisma.Decimal(allocation.qty.toString()),
+              data.company_code,
+              outgoingDate,
+              data.wms_id
+            );
+          } else if (sourceType === 'incoming' && allocation.ppkek_number) {
+            const incomingResolve = await resolvePPKEKToIncoming(
+              allocation.ppkek_number,
+              originalItem.item_code,
+              data.company_code,
+              outgoingDate
+            );
+
+            if (incomingResolve) {
+              enrichedAllocations = [{
+                work_order_number: null,
+                material_item_code: null,
+                material_item_name: null,
+                material_qty_allocated: null,
+                consumption_ratio: null,
+                ppkek_number_incoming: incomingResolve.ppkek_number,
+                incoming_goods_id: incomingResolve.incoming_goods_id,
+                customs_registration_date: incomingResolve.customs_registration_date,
+                customs_document_type: incomingResolve.customs_document_type,
+                incoming_date: incomingResolve.incoming_date,
+              }];
+            }
+          }
+
+          if (sourceType === 'production' && productionWmsId) {
+            const deleteWhere = {
+              outgoing_wms_id: data.wms_id,
+              production_wms_id: productionWmsId,
+              item_code: originalItem.item_code,
+              outgoing_good_item_id: currentItem.id,
+            };
+
+            if (enrichedAllocations && enrichedAllocations.length > 0) {
+              traceabilityWrites.push({
+                deleteWhere,
+                createData: enrichedAllocations.map((enrichment) => ({
+                  outgoing_good_item_id: currentItem.id,
+                  outgoing_wms_id: data.wms_id,
+                  production_wms_id: productionWmsId,
+                  company_code: data.company_code,
+                  item_code: originalItem.item_code,
+                  trx_date: outgoingDate,
+                  allocated_qty: new Prisma.Decimal(allocation.qty.toString()),
+                  work_order_number: enrichment.work_order_number,
+                  material_item_code: enrichment.material_item_code,
+                  material_item_name: enrichment.material_item_name,
+                  material_qty_allocated: enrichment.material_qty_allocated,
+                  consumption_ratio: enrichment.consumption_ratio,
+                  ppkek_number_incoming: enrichment.ppkek_number_incoming,
+                  incoming_goods_id: enrichment.incoming_goods_id,
+                  customs_registration_date: enrichment.customs_registration_date,
+                  customs_document_type: enrichment.customs_document_type,
+                  incoming_date: enrichment.incoming_date,
+                })),
+              });
+            } else {
+              traceabilityWrites.push({
+                deleteWhere,
+                createSingle: true,
+                createData: [{
+                  outgoing_good_item_id: currentItem.id,
+                  outgoing_wms_id: data.wms_id,
+                  production_wms_id: productionWmsId,
+                  company_code: data.company_code,
+                  item_code: originalItem.item_code,
+                  trx_date: outgoingDate,
+                  allocated_qty: new Prisma.Decimal(allocation.qty.toString()),
+                }],
+              });
+            }
+          } else if (sourceType === 'incoming' && enrichedAllocations && enrichedAllocations.length > 0) {
+            traceabilityWrites.push({
+              deleteWhere: {
+                outgoing_wms_id: data.wms_id,
+                item_code: originalItem.item_code,
+                outgoing_good_item_id: currentItem.id,
+                ppkek_number_incoming: {
+                  not: null,
+                },
+              },
+              createData: enrichedAllocations.map((enrichment) => ({
+                outgoing_good_item_id: currentItem.id,
+                outgoing_wms_id: data.wms_id,
+                production_wms_id: `INCOMING_${enrichment.incoming_goods_id}`,
+                company_code: data.company_code,
+                item_code: originalItem.item_code,
+                trx_date: outgoingDate,
+                allocated_qty: new Prisma.Decimal(allocation.qty.toString()),
+                incoming_goods_id: enrichment.incoming_goods_id,
+                ppkek_number_incoming: enrichment.ppkek_number_incoming,
+                customs_registration_date: enrichment.customs_registration_date,
+                customs_document_type: enrichment.customs_document_type,
+                incoming_date: enrichment.incoming_date,
+              })),
+            });
+          }
+        }
+      } else {
+        repositoryLogger.warn('No work_order_allocations provided for FERT/HALB item, skipping traceability', {
+          itemCode: originalItem.item_code,
+        });
+      }
+    }
+
+    if (traceabilityWrites.length === 0) {
+      return 0;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      for (const write of traceabilityWrites) {
+        await tx.outgoing_fg_production_traceability.deleteMany({
+          where: write.deleteWhere,
+        });
+
+        if (write.createSingle) {
+          await tx.outgoing_fg_production_traceability.create({
+            data: write.createData[0],
+          });
+        } else if (write.createData.length > 0) {
+          await tx.outgoing_fg_production_traceability.createMany({
+            data: write.createData,
+          });
+        }
+      }
+    });
+
+    repositoryLogger.info('Outgoing FG production traceability updated', {
+      traceabilityCount: traceabilityWrites.length,
+    });
+
+    return traceabilityWrites.length;
   }
 
   
@@ -541,243 +752,37 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
           });
         }
 
-        // 3. Insert/update outgoing_fg_production_traceability for FERT and HALB items
-        //    WITH BOM enrichment (work order, materials, PPKEK resolution)
-        //
-        // Data Flow:
-        // - If work_order_allocations provided: Use them to resolve work order -> production_wms_id
-        //   Each allocation has specific qty for that work order
-        const traceabilityInserts: Promise<any>[] = [];
-
-        // Process each outgoing item
-        for (const originalItem of data.items) {
-          const currentItem = itemCodeToCurrentItem.get(originalItem.item_code);
-          if (!currentItem) continue;
-
-          // Only create traceability for FERT and HALB items
-          if (!['FERT', 'HALB'].includes(originalItem.item_type.toUpperCase())) {
-            continue;
-          }
-
-          // Determine work order allocation source and process accordingly
-          // PRIORITY 1: work_order_allocations (new API v3.3.0)
-          if (originalItem.work_order_allocations && originalItem.work_order_allocations.length > 0) {
-            // Process each work order allocation
-            for (const allocation of originalItem.work_order_allocations) {
-              let productionWmsId: string | null = null;
-              let sourceType: 'production' | 'incoming' = 'production';
-
-              // Step 1: Resolve allocation source (production WO or incoming PPKEK)
-              if (allocation.work_order_number) {
-                // Case 1: Production FERT/HALB from work order
-                const workOrderProduction = await tx.work_order_fg_production.findFirst({
-                  where: {
-                    work_order_number: allocation.work_order_number,
-                    item_code: originalItem.item_code,
-                    company_code: data.company_code,
-                  },
-                  select: {
-                    production_wms_id: true,
-                  },
-                });
-
-                if (!workOrderProduction) {
-                  repositoryLogger.warn('Work order production not found, skipping allocation', {
-                    workOrderNumber: allocation.work_order_number,
-                    itemCode: originalItem.item_code,
-                  });
-                  continue;
-                }
-                productionWmsId = workOrderProduction.production_wms_id;
-                sourceType = 'production';
-              } else if (allocation.ppkek_number) {
-                // Case 2: Incoming HALB from PPKEK (direct incoming goods traceability)
-                // For incoming HALB, we store traceability directly without production WO
-                repositoryLogger.debug('Processing allocation from incoming HALB', {
-                  ppkekNumber: allocation.ppkek_number,
-                  itemCode: originalItem.item_code,
-                  qty: allocation.qty,
-                });
-                sourceType = 'incoming';
-              } else {
-                // Should not reach here due to XOR validation, but guard against it
-                repositoryLogger.warn('Allocation has neither work_order_number nor ppkek_number, skipping', {
-                  itemCode: originalItem.item_code,
-                });
-                continue;
-              }
-
-              // Step 2: Enrich with BOM calculation using ALLOCATION QTY (not total qty)
-              let enrichedAllocations: any[] | null = null;
-              if (sourceType === 'production' && productionWmsId) {
-                // Production FERT/HALB: enrich with BOM calculation
-                enrichedAllocations = await this.enrichTraceability(
-                  tx,
-                  productionWmsId,
-                  originalItem.item_code,
-                  new Prisma.Decimal(allocation.qty.toString()), // Use allocation qty for this WO
-                  data.company_code,
-                  outgoingDate,
-                  data.wms_id
-                );
-              } else if (sourceType === 'incoming' && allocation.ppkek_number) {
-                // Incoming HALB: create direct traceability without BOM enrichment
-                // The ppkek_number itself IS the incoming traceability
-                const incomingResolve = await resolvePPKEKToIncoming(
-                  allocation.ppkek_number,
-                  originalItem.item_code,
-                  data.company_code,
-                  outgoingDate
-                );
-                if (incomingResolve) {
-                  enrichedAllocations = [{
-                    work_order_number: null,
-                    material_item_code: null,
-                    material_item_name: null,
-                    material_qty_allocated: null,
-                    consumption_ratio: null,
-                    ppkek_number_incoming: incomingResolve.ppkek_number,
-                    incoming_goods_id: incomingResolve.incoming_goods_id,
-                    customs_registration_date: incomingResolve.customs_registration_date,
-                    customs_document_type: incomingResolve.customs_document_type,
-                    incoming_date: incomingResolve.incoming_date,
-                  }];
-                }
-              }
-
-              // Step 3: Create traceability records for the allocation
-              if (sourceType === 'production' && productionWmsId) {
-                // Production FERT/HALB traceability
-                if (enrichedAllocations && enrichedAllocations.length > 0) {
-                  // Delete existing traceability records for this allocation
-                  traceabilityInserts.push(
-                    tx.outgoing_fg_production_traceability.deleteMany({
-                      where: {
-                        outgoing_wms_id: data.wms_id,
-                        production_wms_id: productionWmsId,
-                        item_code: originalItem.item_code,
-                        outgoing_good_item_id: currentItem.id,
-                      },
-                    })
-                  );
-
-                  // Create new traceability records for all enriched materials
-                  const traceabilityCreateData = enrichedAllocations.map((enrichment) => ({
-                    outgoing_good_item_id: currentItem.id,
-                    outgoing_wms_id: data.wms_id,
-                    production_wms_id: productionWmsId,
-                    company_code: data.company_code,
-                    item_code: originalItem.item_code,
-                    trx_date: outgoingDate,
-                    allocated_qty: new Prisma.Decimal(allocation.qty.toString()),
-                    work_order_number: enrichment.work_order_number,
-                    material_item_code: enrichment.material_item_code,
-                    material_item_name: enrichment.material_item_name,
-                    material_qty_allocated: enrichment.material_qty_allocated,
-                    consumption_ratio: enrichment.consumption_ratio,
-                    ppkek_number_incoming: enrichment.ppkek_number_incoming,
-                    incoming_goods_id: enrichment.incoming_goods_id,
-                    customs_registration_date: enrichment.customs_registration_date,
-                    customs_document_type: enrichment.customs_document_type,
-                    incoming_date: enrichment.incoming_date,
-                  }));
-
-                  traceabilityInserts.push(
-                    tx.outgoing_fg_production_traceability.createMany({
-                      data: traceabilityCreateData,
-                    })
-                  );
-                } else {
-                  // Fallback: simple record without BOM enrichment (identify_product != 'Y')
-                  // Delete existing records first
-                  traceabilityInserts.push(
-                    tx.outgoing_fg_production_traceability.deleteMany({
-                      where: {
-                        outgoing_wms_id: data.wms_id,
-                        production_wms_id: productionWmsId,
-                        item_code: originalItem.item_code,
-                        outgoing_good_item_id: currentItem.id,
-                      },
-                    })
-                  );
-
-                  // Create new record
-                  traceabilityInserts.push(
-                    tx.outgoing_fg_production_traceability.create({
-                      data: {
-                        outgoing_good_item_id: currentItem.id,
-                        outgoing_wms_id: data.wms_id,
-                        production_wms_id: productionWmsId,
-                        company_code: data.company_code,
-                        item_code: originalItem.item_code,
-                        trx_date: outgoingDate,
-                        allocated_qty: new Prisma.Decimal(allocation.qty.toString()),
-                      },
-                    })
-                  );
-                }
-              } else if (sourceType === 'incoming' && enrichedAllocations && enrichedAllocations.length > 0) {
-                // Incoming HALB traceability (direct from incoming goods)
-                // Delete existing records and create new ones
-                traceabilityInserts.push(
-                  tx.outgoing_fg_production_traceability.deleteMany({
-                    where: {
-                      outgoing_wms_id: data.wms_id,
-                      item_code: originalItem.item_code,
-                      outgoing_good_item_id: currentItem.id,
-                      ppkek_number_incoming: {
-                        not: null,
-                      },
-                    },
-                  })
-                );
-
-                // Create new records for incoming-based traceability
-                const incomingTraceData = enrichedAllocations.map((enrichment) => ({
-                  outgoing_good_item_id: currentItem.id,
-                  outgoing_wms_id: data.wms_id,
-                  production_wms_id: `INCOMING_${enrichment.incoming_goods_id}`,
-                  company_code: data.company_code,
-                  item_code: originalItem.item_code,
-                  trx_date: outgoingDate,
-                  allocated_qty: new Prisma.Decimal(allocation.qty.toString()),
-                  incoming_goods_id: enrichment.incoming_goods_id,
-                  ppkek_number_incoming: enrichment.ppkek_number_incoming,
-                  customs_registration_date: enrichment.customs_registration_date,
-                  customs_document_type: enrichment.customs_document_type,
-                  incoming_date: enrichment.incoming_date,
-                }));
-
-                traceabilityInserts.push(
-                  tx.outgoing_fg_production_traceability.createMany({
-                    data: incomingTraceData,
-                  })
-                );
-              }
-            }
-          } else {
-            // No allocations provided - nothing to process
-            repositoryLogger.warn('No work_order_allocations provided for FERT/HALB item, skipping traceability', {
-              itemCode: originalItem.item_code,
-            });
-          }
-        }
-
-        if (traceabilityInserts.length > 0) {
-          await Promise.all(traceabilityInserts);
-          repositoryLogger.info('Outgoing FG production traceability updated', {
-            traceabilityCount: traceabilityInserts.length,
-          });
-        }
-
         return {
           outgoingGoodId: outgoingGood.id,
           itemCount: data.items.length,
-          traceabilityCount: traceabilityInserts.length,
+          currentItemsList,
         };
       });
 
-      repositoryLogger.info('Outgoing goods transaction completed successfully', result);
+      repositoryLogger.info('Outgoing goods core transaction completed successfully', {
+        outgoingGoodId: result.outgoingGoodId,
+        itemCount: result.itemCount,
+      });
+
+      try {
+        const traceabilityCount = await this.processTraceabilityAfterCoreCommit(
+          data,
+          outgoingDate,
+          result.currentItemsList,
+          repositoryLogger
+        );
+
+        repositoryLogger.info('Outgoing goods traceability processing completed', {
+          outgoingGoodId: result.outgoingGoodId,
+          traceabilityCount,
+        });
+      } catch (traceabilityError) {
+        repositoryLogger.error('Outgoing goods traceability processing failed after core commit', {
+          error: traceabilityError,
+          outgoingGoodId: result.outgoingGoodId,
+          wmsId: data.wms_id,
+        });
+      }
 
       // =========================================================================
       // STEP 4 & 5: Snapshot Updates (DIRECT, NO QUEUE, NON-BLOCKING)
