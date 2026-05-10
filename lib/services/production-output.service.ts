@@ -10,6 +10,12 @@ import { transformZodErrors } from '@/lib/utils/error-transformer';
 import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/api-response';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { prisma } from '@/lib/db/prisma';
+import {
+  createWmsProcessingLogSafe,
+  markWmsProcessingFailedSafe,
+  markWmsProcessingStartedSafe,
+  markWmsProcessingSuccessSafe,
+} from '@/lib/services/wms-processing-audit.service';
 
 /**
  * Production Output Service
@@ -130,10 +136,29 @@ export class ProductionOutputService {
         companyCode: data.company_code,
       });
 
+      const processingLogId = await createWmsProcessingLogSafe({
+        endpoint: '/api/v1/production-output',
+        httpMethod: 'POST',
+        wmsId: data.wms_id,
+        companyCode: data.company_code,
+        requestId,
+        payload,
+        transmittedItemCount: data.items.length,
+        validatedItemCount: data.items.length,
+        queuedItemCount: data.items.length,
+      });
+
       // Step 5: Queue for immediate async insert (non-blocking) + auto-transmit to INSW
+      void markWmsProcessingStartedSafe(processingLogId);
       this.repository
         .create(data)
         .then(async (result) => {
+          // Phase 1 audit limitation: repository does not return exact insert/update split yet.
+          await markWmsProcessingSuccessSafe(processingLogId, {
+            insertedItemCount: data.items.length,
+            failedItemCount: 0,
+          });
+
           log.info('Production output saved successfully', {
             wmsId: data.wms_id,
             productionOutputId: result.header.id,
@@ -190,7 +215,13 @@ export class ProductionOutputService {
             });
           }
         })
-        .catch((err: any) => {
+        .catch(async (err: any) => {
+          await markWmsProcessingFailedSafe(processingLogId, {
+            error: err,
+            failedItemCount: data.items.length,
+            errorTarget: 'production_outputs/production_output_items',
+          });
+
           log.error('Production output insert failed', {
             wmsId: data.wms_id,
             error: err.message,

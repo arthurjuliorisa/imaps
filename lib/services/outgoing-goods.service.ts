@@ -11,6 +11,12 @@ import {
   type ValidationErrorDetail,
 } from '@/lib/validators/schemas/outgoing-goods.schema';
 import { OutgoingGoodsRepository } from '@/lib/repositories/outgoing-goods.repository';
+import {
+  createWmsProcessingLogSafe,
+  markWmsProcessingFailedSafe,
+  markWmsProcessingStartedSafe,
+  markWmsProcessingSuccessSafe,
+} from '@/lib/services/wms-processing-audit.service';
 
 export interface SuccessResponse {
   status: 'success';
@@ -154,10 +160,28 @@ export class OutgoingGoodsService {
       // 9. Check stock and collect warnings (pass revision info)
       const stockCheckResult = await this.checkStockAndCollectWarnings(data, revisionInfo);
 
+      const processingLogId = await createWmsProcessingLogSafe({
+        endpoint: '/api/v1/outgoing-goods',
+        httpMethod: 'POST',
+        wmsId: data.wms_id,
+        companyCode: data.company_code,
+        payload,
+        transmittedItemCount: data.items.length,
+        validatedItemCount: data.items.length,
+        queuedItemCount: data.items.length,
+      });
+
       // 10. Queue async database insert + INSW auto-transmit
       const repository = new OutgoingGoodsRepository();
+      void markWmsProcessingStartedSafe(processingLogId);
       repository.insertOutgoingGoodsAsync(data)
         .then(async () => {
+          // Phase 1 audit limitation: repository does not return exact insert/update split yet.
+          await markWmsProcessingSuccessSafe(processingLogId, {
+            insertedItemCount: data.items.length,
+            failedItemCount: 0,
+          });
+
           try {
             // Check company type
             const company = await prisma.companies.findUnique({
@@ -181,7 +205,13 @@ export class OutgoingGoodsService {
             requestLogger.error('INSW auto-transmit error for outgoing goods', { wmsId: data.wms_id, error: inswErr.message });
           }
         })
-        .catch((error) => {
+        .catch(async (error) => {
+          await markWmsProcessingFailedSafe(processingLogId, {
+            error,
+            failedItemCount: data.items.length,
+            errorTarget: 'outgoing_goods/outgoing_good_items',
+          });
+
           requestLogger.error('Failed to insert outgoing goods', { error, wmsId: data.wms_id });
         });
 

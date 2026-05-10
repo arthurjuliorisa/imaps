@@ -11,6 +11,12 @@ import { transformZodErrors } from '@/lib/utils/error-transformer';
 import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/api-response';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { prisma } from '@/lib/db/prisma';
+import {
+  createWmsProcessingLogSafe,
+  markWmsProcessingFailedSafe,
+  markWmsProcessingStartedSafe,
+  markWmsProcessingSuccessSafe,
+} from '@/lib/services/wms-processing-audit.service';
 
 /**
  * Adjustments Service
@@ -165,10 +171,29 @@ export class AdjustmentsService {
         companyCode: data.company_code,
       });
 
+      const processingLogId = await createWmsProcessingLogSafe({
+        endpoint: '/api/v1/adjustments',
+        httpMethod: 'POST',
+        wmsId: data.wms_id,
+        companyCode: data.company_code,
+        requestId,
+        payload,
+        transmittedItemCount: data.items.length,
+        validatedItemCount: data.items.length,
+        queuedItemCount: data.items.length,
+      });
+
       // Step 7: Queue for immediate async insert (non-blocking)
+      void markWmsProcessingStartedSafe(processingLogId);
       this.repository
         .create(data)
-        .then((result) => {
+        .then(async (result) => {
+          // Phase 1 audit limitation: repository does not return exact insert/update split yet.
+          await markWmsProcessingSuccessSafe(processingLogId, {
+            insertedItemCount: data.items.length,
+            failedItemCount: 0,
+          });
+
           log.info('Adjustment saved successfully', {
             wmsId: data.wms_id,
             adjustmentId: result.header.id,
@@ -202,7 +227,13 @@ export class AdjustmentsService {
             }
           })();
         })
-        .catch((err: any) => {
+        .catch(async (err: any) => {
+          await markWmsProcessingFailedSafe(processingLogId, {
+            error: err,
+            failedItemCount: data.items.length,
+            errorTarget: 'adjustments/adjustment_items',
+          });
+
           log.error('Adjustment insert failed', {
             wmsId: data.wms_id,
             error: err.message,

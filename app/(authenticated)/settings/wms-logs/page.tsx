@@ -46,6 +46,16 @@ interface WMSTransmissionLog {
   error_type: string | null;
   summary: string;
   item_count: number | null;
+  backend_processing_status: string | null;
+  backend_processing_started_at: string | null;
+  backend_processing_finished_at: string | null;
+  transmitted_item_count: number | null;
+  validated_item_count: number | null;
+  queued_item_count: number | null;
+  inserted_item_count: number | null;
+  updated_item_count: number | null;
+  failed_item_count: number | null;
+  backend_error_message: string | null;
   created_at: string;
   expires_at: string;
 }
@@ -123,6 +133,29 @@ export default function WMSTransmissionLogsPage() {
       },
     },
     {
+      id: 'backend_processing_status',
+      label: 'Backend Status',
+      minWidth: 170,
+      format: (value: string | null) => {
+        if (!value) return <Typography variant="body2">-</Typography>;
+        let color: 'success' | 'error' | 'warning' | 'info' | 'default' = 'default';
+        if (value === 'PROCESSED_SUCCESS') color = 'success';
+        else if (value === 'PROCESSING_FAILED') color = 'error';
+        else if (value === 'PROCESSED_PARTIAL') color = 'warning';
+        else if (value === 'PROCESSING' || value === 'QUEUED') color = 'info';
+
+        return (
+          <Chip
+            label={value}
+            color={color}
+            size="small"
+            variant="outlined"
+            sx={{ fontWeight: 'bold' }}
+          />
+        );
+      },
+    },
+    {
       id: 'wms_id',
       label: 'WMS ID',
       minWidth: 150,
@@ -163,7 +196,36 @@ export default function WMSTransmissionLogsPage() {
       id: 'item_count',
       label: 'Items',
       minWidth: 80,
-      format: (value: any) => value || '-',
+      format: (value: any, row: any) => row.transmitted_item_count ?? value ?? '-',
+    },
+    {
+      id: 'queued_item_count',
+      label: 'Queued',
+      minWidth: 90,
+      format: (value: any) => value ?? '-',
+    },
+    {
+      id: 'inserted_item_count',
+      label: 'Inserted/Updated',
+      minWidth: 140,
+      format: (value: any, row: any) => {
+        const inserted = row.inserted_item_count ?? 0;
+        const updated = row.updated_item_count ?? 0;
+        if (row.inserted_item_count === null && row.updated_item_count === null) return '-';
+        return `${inserted}/${updated}`;
+      },
+    },
+    {
+      id: 'failed_item_count',
+      label: 'Failed',
+      minWidth: 80,
+      format: (value: any) => value ?? '-',
+    },
+    {
+      id: 'backend_processing_finished_at',
+      label: 'Processed At',
+      minWidth: 160,
+      format: (value: any) => value ? dayjs(value).format('MM/DD/YYYY HH:mm:ss') : '-',
     },
     {
       id: 'expires_at',
@@ -560,6 +622,46 @@ export default function WMSTransmissionLogsPage() {
                   </Typography>
                   <Typography variant="body1">
                     {selectedLog.item_count || 'N/A'}
+                  </Typography>
+                </Box>
+
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Backend Processing Status
+                  </Typography>
+                  <Typography variant="body1">
+                    {selectedLog.backend_processing_status || 'N/A'}
+                  </Typography>
+                </Box>
+
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Backend Counts
+                  </Typography>
+                  <Typography variant="body2">
+                    Transmitted: {selectedLog.transmitted_item_count ?? selectedLog.item_count ?? 'N/A'} | Validated: {selectedLog.validated_item_count ?? 'N/A'} | Queued: {selectedLog.queued_item_count ?? 'N/A'} | Inserted: {selectedLog.inserted_item_count ?? 'N/A'} | Updated: {selectedLog.updated_item_count ?? 'N/A'} | Failed: {selectedLog.failed_item_count ?? 'N/A'}
+                  </Typography>
+                </Box>
+
+                {selectedLog.backend_error_message && (
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      Backend Error Message
+                    </Typography>
+                    <Typography variant="body2" color="error">
+                      {selectedLog.backend_error_message}
+                    </Typography>
+                  </Box>
+                )}
+
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Backend Processed At
+                  </Typography>
+                  <Typography variant="body1">
+                    {selectedLog.backend_processing_finished_at
+                      ? dayjs(selectedLog.backend_processing_finished_at).format('MMMM D, YYYY HH:mm:ss')
+                      : 'N/A'}
                   </Typography>
                 </Box>
 

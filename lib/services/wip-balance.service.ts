@@ -28,6 +28,13 @@ import type {
   ErrorDetail,
 } from '../types/api-response';
 import { logger } from '../utils/logger';
+import {
+  createWmsProcessingLogSafe,
+  markWmsProcessingFailedSafe,
+  markWmsProcessingPartialSafe,
+  markWmsProcessingStartedSafe,
+  markWmsProcessingSuccessSafe,
+} from '@/lib/services/wms-processing-audit.service';
 
 export class WIPBalanceService {
   private repository: WipBalanceRepository;
@@ -207,8 +214,19 @@ export class WIPBalanceService {
 
       // 3. Queue valid records for async database insert
       if (successRecords.length > 0) {
+        const processingLogId = await createWmsProcessingLogSafe({
+          endpoint: '/api/v1/wip-balance',
+          httpMethod: 'POST',
+          wmsId: successRecords[0]?.wms_id || null,
+          companyCode: successRecords[0]?.company_code || null,
+          payload,
+          transmittedItemCount: batch.records.length,
+          validatedItemCount: successRecords.length,
+          queuedItemCount: successRecords.length,
+        });
+
         // Fire and forget - don't wait for database insert
-        this.queueForDatabaseInsert(successRecords, requestLogger);
+        this.queueForDatabaseInsert(successRecords, requestLogger, processingLogId);
       }
 
       // 4. Return appropriate response
@@ -342,7 +360,8 @@ export class WIPBalanceService {
    */
   private async queueForDatabaseInsert(
     records: WipBalanceRecordValidated[],
-    requestLogger: any
+    requestLogger: any,
+    processingLogId?: bigint | null
   ): Promise<void> {
     try {
       // Convert records to database format
@@ -359,11 +378,45 @@ export class WIPBalanceService {
       }));
 
       // Queue for async insert (don't await)
-      this.repository.batchUpsert(dbRecords).catch((error) => {
-        requestLogger.error('Database insert failed:', { error });
-        // Don't re-throw - validation already succeeded
-      });
+      void markWmsProcessingStartedSafe(processingLogId);
+      this.repository.batchUpsert(dbRecords)
+        .then(async (result) => {
+          if (result.failed_count === 0) {
+            await markWmsProcessingSuccessSafe(processingLogId, {
+              insertedItemCount: result.success_count,
+              failedItemCount: 0,
+            });
+          } else if (result.success_count > 0) {
+            await markWmsProcessingPartialSafe(processingLogId, {
+              insertedItemCount: result.success_count,
+              failedItemCount: result.failed_count,
+              errorCode: 'PARTIAL_BACKEND_FAILURE',
+              errorMessage: `${result.failed_count} WIP balance record(s) failed during backend upsert`,
+              errorTarget: 'wip_balances',
+            });
+          } else {
+            await markWmsProcessingFailedSafe(processingLogId, {
+              error: new Error('All WIP balance records failed during backend upsert'),
+              failedItemCount: result.failed_count,
+              errorTarget: 'wip_balances',
+            });
+          }
+        })
+        .catch(async (error) => {
+          await markWmsProcessingFailedSafe(processingLogId, {
+            error,
+            failedItemCount: records.length,
+            errorTarget: 'wip_balances',
+          });
+          requestLogger.error('Database insert failed:', { error });
+          // Don't re-throw - validation already succeeded
+        });
     } catch (error) {
+      await markWmsProcessingFailedSafe(processingLogId, {
+        error,
+        failedItemCount: records.length,
+        errorTarget: 'wip_balances',
+      });
       requestLogger.error('Error queuing records for insert:', { error });
       // Don't re-throw - validation already succeeded
     }

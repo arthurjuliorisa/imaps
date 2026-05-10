@@ -3,6 +3,21 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 
+const WMS_ACTION_ENDPOINT_MAP: Record<string, string> = {
+  WMS_PROCESS_INCOMING_GOODS: '/api/v1/incoming-goods',
+  WMS_PROCESS_MATERIAL_USAGE: '/api/v1/material-usage',
+  WMS_PROCESS_WIP_BALANCE: '/api/v1/wip-balance',
+  WMS_PROCESS_PRODUCTION_OUTPUT: '/api/v1/production-output',
+  WMS_PROCESS_OUTGOING_GOODS: '/api/v1/outgoing-goods',
+  WMS_PROCESS_ADJUSTMENTS: '/api/v1/adjustments',
+  WMS_CREATE_STOCK_OPNAME: '/api/v1/stock-opname',
+  WMS_UPDATE_STOCK_OPNAME: '/api/v1/stock-opname',
+};
+
+function processingKey(endpoint: string | null | undefined, companyCode: number | null | undefined, wmsId: string | null | undefined) {
+  return `${endpoint || ''}|${companyCode || ''}|${wmsId || ''}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const authCheck = await checkAuth();
@@ -83,6 +98,46 @@ export async function GET(request: NextRequest) {
       prisma.wms_transmission_logs.count({ where }),
     ]);
 
+    const wmsIds = [...new Set(logs.map((log) => log.wms_id).filter((wmsId): wmsId is string => !!wmsId))];
+    const endpoints = [...new Set(logs.map((log) => WMS_ACTION_ENDPOINT_MAP[log.action]).filter((endpoint): endpoint is string => !!endpoint))];
+
+    const processingLogs = wmsIds.length > 0 && endpoints.length > 0
+      ? await prisma.wms_processing_logs.findMany({
+          where: {
+            wms_id: { in: wmsIds },
+            endpoint: { in: endpoints },
+          },
+          orderBy: { created_at: 'desc' },
+        })
+      : [];
+
+    const processingByKey = new Map<string, any>();
+    for (const processingLog of processingLogs) {
+      const key = processingKey(processingLog.endpoint, processingLog.company_code, processingLog.wms_id);
+      if (!processingByKey.has(key)) {
+        processingByKey.set(key, processingLog);
+      }
+    }
+
+    const logsWithProcessing = logs.map((log) => {
+      const endpoint = WMS_ACTION_ENDPOINT_MAP[log.action] || null;
+      const processingLog = processingByKey.get(processingKey(endpoint, log.company_code, log.wms_id));
+
+      return {
+        ...log,
+        backend_processing_status: processingLog?.backend_processing_status || null,
+        backend_processing_started_at: processingLog?.backend_processing_started_at || null,
+        backend_processing_finished_at: processingLog?.backend_processing_finished_at || null,
+        transmitted_item_count: processingLog?.transmitted_item_count ?? null,
+        validated_item_count: processingLog?.validated_item_count ?? null,
+        queued_item_count: processingLog?.queued_item_count ?? null,
+        inserted_item_count: processingLog?.inserted_item_count ?? null,
+        updated_item_count: processingLog?.updated_item_count ?? null,
+        failed_item_count: processingLog?.failed_item_count ?? null,
+        backend_error_message: processingLog?.error_message || null,
+      };
+    });
+
     // Calculate pagination metadata
     const totalPages = Math.ceil(total / limit);
     const hasNextPage = page < totalPages;
@@ -90,7 +145,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: serializeBigInt(logs),
+      data: serializeBigInt(logsWithProcessing),
       pagination: {
         page,
         limit,

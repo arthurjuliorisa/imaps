@@ -5,6 +5,13 @@ import type { ErrorDetail, SuccessResponse } from '../types/api-response';
 import { logger } from '../utils/logger';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { prisma } from '@/lib/db/prisma';
+import {
+  createWmsProcessingLogSafe,
+  getWmsPayloadItemCount,
+  markWmsProcessingFailedSafe,
+  markWmsProcessingStartedSafe,
+  markWmsProcessingSuccessSafe,
+} from '@/lib/services/wms-processing-audit.service';
 
 export class IncomingGoodsService {
   private repository: IncomingGoodsRepository;
@@ -23,6 +30,7 @@ export class IncomingGoodsService {
       service: 'IncomingGoodsService',
       method: 'processIncomingGoods',
     });
+    let processingLogId: bigint | null = null;
 
     try {
       // 1. Validate payload
@@ -102,8 +110,25 @@ export class IncomingGoodsService {
         return { success: false, errors: businessErrors };
       }
 
+      processingLogId = await createWmsProcessingLogSafe({
+        endpoint: '/api/v1/incoming-goods',
+        httpMethod: 'POST',
+        wmsId: data.wms_id,
+        companyCode: data.company_code,
+        payload,
+        transmittedItemCount: data.items.length,
+        validatedItemCount: data.items.length,
+        queuedItemCount: data.items.length,
+      });
+
       // 7. Save to database
+      await markWmsProcessingStartedSafe(processingLogId);
       const result = await this.repository.createOrUpdate(data);
+      // Phase 1 audit limitation: repository returns processed item count but not exact insert/update split.
+      await markWmsProcessingSuccessSafe(processingLogId, {
+        insertedItemCount: result.items_count,
+        failedItemCount: 0,
+      });
 
       requestLogger.info(
         'Incoming goods processed successfully',
@@ -153,6 +178,11 @@ export class IncomingGoodsService {
         },
       };
     } catch (error) {
+      await markWmsProcessingFailedSafe(processingLogId, {
+        error,
+        failedItemCount: getWmsPayloadItemCount(payload),
+        errorTarget: 'incoming_goods/incoming_good_items',
+      });
       requestLogger.error('Failed to process incoming goods', { error });
       throw error;
     }

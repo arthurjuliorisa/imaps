@@ -7,6 +7,13 @@ import { logger } from '@/lib/utils/logger';
 import { logActivity } from '@/lib/log-activity';
 import { prisma } from '@/lib/prisma';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
+import {
+  createWmsProcessingLogSafe,
+  getWmsPayloadItemCount,
+  markWmsProcessingFailedSafe,
+  markWmsProcessingStartedSafe,
+  markWmsProcessingSuccessSafe,
+} from '@/lib/services/wms-processing-audit.service';
 
 /**
  * POST /api/v1/stock-opname
@@ -19,6 +26,7 @@ export async function POST(request: NextRequest) {
   let wmsId: string | undefined;
   let companyCode: number | undefined;
   let body: unknown;
+  let processingLogId: bigint | null = null;
 
   try {
     // 1. Middleware: Authentication
@@ -118,8 +126,24 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Process via service
+    processingLogId = await createWmsProcessingLogSafe({
+      endpoint: '/api/v1/stock-opname',
+      httpMethod: 'POST',
+      wmsId,
+      companyCode,
+      requestId,
+      payload: body,
+      transmittedItemCount: getWmsPayloadItemCount(body),
+      validatedItemCount: getWmsPayloadItemCount(body),
+      queuedItemCount: getWmsPayloadItemCount(body),
+    });
+    await markWmsProcessingStartedSafe(processingLogId);
     const service = createWmsStockOpnameService(prisma);
     const result = await service.processCreate(validationResult.data, 'system-wms');
+    await markWmsProcessingSuccessSafe(processingLogId, {
+      insertedItemCount: result.items?.length ?? getWmsPayloadItemCount(body),
+      failedItemCount: 0,
+    });
 
     // 6. Success response
     log.info('Stock opname created successfully', { wmsId: result.wms_id, itemCount: result.items.length });
@@ -142,6 +166,11 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log.error('Unhandled error in POST /api/v1/stock-opname', { error: errorMessage, wmsId, companyCode });
+    await markWmsProcessingFailedSafe(processingLogId, {
+      error,
+      failedItemCount: getWmsPayloadItemCount(body),
+      errorTarget: 'wms_stock_opnames/wms_stock_opname_items',
+    });
 
     await logActivity({
       action: 'WMS_CREATE_STOCK_OPNAME',
@@ -182,6 +211,7 @@ export async function PATCH(request: NextRequest) {
 
   let wmsId: string | undefined;
   let body: any;
+  let processingLogId: bigint | null = null;
 
   try {
     // 1. Middleware: Authentication
@@ -248,8 +278,24 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 5. Process via service
+    processingLogId = await createWmsProcessingLogSafe({
+      endpoint: '/api/v1/stock-opname',
+      httpMethod: 'PATCH',
+      wmsId,
+      companyCode: body?.company_code,
+      requestId,
+      payload: body,
+      transmittedItemCount: getWmsPayloadItemCount(body),
+      validatedItemCount: getWmsPayloadItemCount(body),
+      queuedItemCount: getWmsPayloadItemCount(body),
+    });
+    await markWmsProcessingStartedSafe(processingLogId);
     const service = createWmsStockOpnameService(prisma);
     const result = await service.processUpdate(validationResult.data, 'system-wms');
+    await markWmsProcessingSuccessSafe(processingLogId, {
+      insertedItemCount: result.items?.length ?? getWmsPayloadItemCount(body),
+      failedItemCount: 0,
+    });
 
     if (result.status === 'Confirmed') {
       const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
@@ -285,6 +331,11 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log.error('Unhandled error in PATCH /api/v1/stock-opname', { error: errorMessage, wmsId });
+    await markWmsProcessingFailedSafe(processingLogId, {
+      error,
+      failedItemCount: getWmsPayloadItemCount(body),
+      errorTarget: 'wms_stock_opnames/wms_stock_opname_items',
+    });
 
     await logActivity({
       action: 'WMS_UPDATE_STOCK_OPNAME',

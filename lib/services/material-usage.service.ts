@@ -10,6 +10,12 @@ import {
 import { MaterialUsageRepository } from '@/lib/repositories/material-usage.repository';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { prisma } from '@/lib/db/prisma';
+import {
+  createWmsProcessingLogSafe,
+  markWmsProcessingFailedSafe,
+  markWmsProcessingStartedSafe,
+  markWmsProcessingSuccessSafe,
+} from '@/lib/services/wms-processing-audit.service';
 
 /**
  * Material Usage Service
@@ -167,10 +173,29 @@ export class MaterialUsageService {
         itemsCount: data.items.length,
       });
 
+      const processingLogId = await createWmsProcessingLogSafe({
+        endpoint: '/api/v1/material-usage',
+        httpMethod: 'POST',
+        wmsId: data.wms_id,
+        companyCode: data.company_code,
+        requestId,
+        payload,
+        transmittedItemCount: data.items.length,
+        validatedItemCount: data.items.length,
+        queuedItemCount: data.items.length,
+      });
+
       // Step 6: Queue for immediate async insert (non-blocking) + auto-transmit to INSW
+      void markWmsProcessingStartedSafe(processingLogId);
       this.repository
         .batchUpsert(data)
         .then(async () => {
+          // Phase 1 audit limitation: repository does not return exact insert/update split yet.
+          await markWmsProcessingSuccessSafe(processingLogId, {
+            insertedItemCount: data.items.length,
+            failedItemCount: 0,
+          });
+
           log.info('Material usage saved successfully', {
             wmsId: data.wms_id,
             itemsCount: data.items.length,
@@ -239,7 +264,13 @@ export class MaterialUsageService {
             });
           }
         })
-        .catch((err: any) => {
+        .catch(async (err: any) => {
+          await markWmsProcessingFailedSafe(processingLogId, {
+            error: err,
+            failedItemCount: data.items.length,
+            errorTarget: 'material_usages/material_usage_items',
+          });
+
           log.error('Material usage insert failed', {
             wmsId: data.wms_id,
             error: err.message,
