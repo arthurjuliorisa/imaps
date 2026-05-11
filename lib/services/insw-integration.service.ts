@@ -1,5 +1,4 @@
 import { format } from 'date-fns';
-import { EnvHttpProxyAgent, type Dispatcher } from 'undici';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/utils/logger';
 import {
@@ -30,7 +29,7 @@ export class INSWIntegrationService {
   private repository: INSWIntegrationRepository;
   private apiHeaders: INSWApiHeaders;
   private useTestMode: boolean;
-  private proxyAgent: EnvHttpProxyAgent | null;
+  private proxyAgentPromise: Promise<unknown> | null;
   private log = logger.child({ service: 'INSWIntegrationService' });
 
   constructor(
@@ -44,7 +43,7 @@ export class INSWIntegrationService {
       'x-unique-key': uniqueKey,
     };
     this.useTestMode = useTestMode;
-    this.proxyAgent = this.hasProxyEnv() ? new EnvHttpProxyAgent() : null;
+    this.proxyAgentPromise = null;
   }
 
   private hasProxyEnv(): boolean {
@@ -105,10 +104,14 @@ export class INSWIntegrationService {
     endpoint: string,
     init: RequestInit
   ): Promise<Response> {
-    const fetchInit: RequestInit & { dispatcher?: Dispatcher } = {
-      ...init,
-      ...(this.proxyAgent ? { dispatcher: this.proxyAgent } : {}),
-    };
+    const fetchInit: RequestInit & { dispatcher?: unknown } = { ...init };
+
+    if (this.hasProxyEnv()) {
+      this.proxyAgentPromise ??= import('undici').then(({ EnvHttpProxyAgent }) => (
+        new EnvHttpProxyAgent()
+      ));
+      fetchInit.dispatcher = await this.proxyAgentPromise;
+    }
 
     try {
       return await fetch(endpoint, fetchInit);
