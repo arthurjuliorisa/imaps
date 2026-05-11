@@ -67,6 +67,156 @@ interface CustomTooltipProps {
   isDark: boolean;
 }
 
+const LARGE_PAYLOAD_ITEM_THRESHOLD = 100;
+
+const PAYLOAD_ROW_ARRAY_KEYS = [
+  'barangTransaksi',
+  'items',
+  'details',
+  'detail',
+  'rows',
+  'records',
+  'results',
+];
+
+const MAX_PAYLOAD_COUNT_SCAN_DEPTH = 8;
+
+function countNestedArrayItemsByKey(
+  value: any,
+  targetKey: string,
+  depth = 0,
+  seen = new WeakSet<object>()
+): { count: number; found: boolean } {
+  if (!value || depth > MAX_PAYLOAD_COUNT_SCAN_DEPTH) {
+    return { count: 0, found: false };
+  }
+
+  if (typeof value === 'object') {
+    if (seen.has(value)) {
+      return { count: 0, found: false };
+    }
+    seen.add(value);
+  }
+
+  if (Array.isArray(value)) {
+    let count = 0;
+    let found = false;
+
+    for (const item of value) {
+      const nested = countNestedArrayItemsByKey(item, targetKey, depth + 1, seen);
+      count += nested.count;
+      found = found || nested.found;
+
+      if (count > LARGE_PAYLOAD_ITEM_THRESHOLD) {
+        return { count, found };
+      }
+    }
+
+    return { count, found };
+  }
+
+  if (typeof value !== 'object') {
+    return { count: 0, found: false };
+  }
+
+  const targetValue = value[targetKey];
+  if (Array.isArray(targetValue)) {
+    return { count: targetValue.length, found: true };
+  }
+
+  let count = 0;
+  let found = false;
+
+  for (const childValue of Object.values(value)) {
+    const nested = countNestedArrayItemsByKey(childValue, targetKey, depth + 1, seen);
+    count += nested.count;
+    found = found || nested.found;
+
+    if (count > LARGE_PAYLOAD_ITEM_THRESHOLD) {
+      return { count, found };
+    }
+  }
+
+  return { count, found };
+}
+
+function findLargeArrayCount(
+  value: any,
+  depth = 0,
+  seen = new WeakSet<object>()
+): number | null {
+  if (!value || depth > MAX_PAYLOAD_COUNT_SCAN_DEPTH) return null;
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+
+    try {
+      return findLargeArrayCount(JSON.parse(trimmed), depth + 1, seen);
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof value !== 'object') return null;
+
+  if (seen.has(value)) return null;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    if (value.length > LARGE_PAYLOAD_ITEM_THRESHOLD) return value.length;
+
+    for (const item of value) {
+      const nestedCount = findLargeArrayCount(item, depth + 1, seen);
+      if (nestedCount !== null) return nestedCount;
+    }
+
+    return null;
+  }
+
+  for (const key of PAYLOAD_ROW_ARRAY_KEYS) {
+    const rowArray = value[key];
+    if (Array.isArray(rowArray) && rowArray.length > LARGE_PAYLOAD_ITEM_THRESHOLD) {
+      return rowArray.length;
+    }
+  }
+
+  for (const childValue of Object.values(value)) {
+    const nestedCount = findLargeArrayCount(childValue, depth + 1, seen);
+    if (nestedCount !== null) return nestedCount;
+  }
+
+  return null;
+}
+
+function getPayloadItemCount(payload: any): number | null {
+  if (!payload) return null;
+
+  const parsedPayload = typeof payload === 'string' ? (() => {
+    const trimmed = payload.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return payload;
+
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return payload;
+    }
+  })() : payload;
+
+  const barangTransaksiCount = countNestedArrayItemsByKey(parsedPayload, 'barangTransaksi');
+  if (barangTransaksiCount.found) return barangTransaksiCount.count;
+
+  const largeArrayCount = findLargeArrayCount(parsedPayload);
+  if (largeArrayCount !== null) return largeArrayCount;
+
+  return null;
+}
+
+function isLargePayload(payload: any): boolean {
+  const itemCount = getPayloadItemCount(payload);
+  return itemCount !== null && itemCount > LARGE_PAYLOAD_ITEM_THRESHOLD;
+}
+
 function CustomChartTooltip({ active, payload, label, isDark }: CustomTooltipProps) {
   if (!active || !payload || payload.length === 0) {
     return null;
@@ -378,6 +528,70 @@ export default function INSWLogsPage() {
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(null), 2000);
     });
+  };
+
+  const downloadJsonPayload = (payload: any, filename: string) => {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const renderPayloadContent = (
+    payload: any,
+    payloadType: 'request' | 'response',
+    logId: string
+  ) => {
+    if (isLargePayload(payload)) {
+      const filename = `insw-${payloadType}-payload-${logId}.json`;
+
+      return (
+        <Box
+          sx={{
+            bgcolor: 'warning.light',
+            color: 'warning.contrastText',
+            p: 2,
+            borderRadius: 1,
+          }}
+        >
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Payload is too large, if you need to review it, please download the json file instead.
+          </Typography>
+          <Button
+            variant="contained"
+            color="warning"
+            size="small"
+            startIcon={<GetApp />}
+            onClick={() => downloadJsonPayload(payload, filename)}
+          >
+            Download JSON Payload
+          </Button>
+        </Box>
+      );
+    }
+
+    return (
+      <Box
+        sx={{
+          bgcolor: 'grey.100',
+          p: 2,
+          borderRadius: 1,
+          maxHeight: 300,
+          overflow: 'auto',
+        }}
+      >
+        <pre style={{ margin: 0, fontSize: '0.75rem' }}>
+          {JSON.stringify(payload, null, 2)}
+        </pre>
+      </Box>
+    );
   };
 
   const checkAdjustments = async (logId: string): Promise<boolean> => {
@@ -744,29 +958,19 @@ export default function INSWLogsPage() {
                     <Typography variant="subtitle2" color="text.secondary">
                       Request Payload
                     </Typography>
-                    <Tooltip title={copiedKey === 'payload' ? 'Tersalin!' : 'Salin'}>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleCopy('payload', selectedLog.insw_request_payload)}
-                        sx={{ color: copiedKey === 'payload' ? 'success.main' : 'text.secondary' }}
-                      >
-                        {copiedKey === 'payload' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
-                      </IconButton>
-                    </Tooltip>
+                    {!isLargePayload(selectedLog.insw_request_payload) && (
+                      <Tooltip title={copiedKey === 'payload' ? 'Tersalin!' : 'Salin'}>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleCopy('payload', selectedLog.insw_request_payload)}
+                          sx={{ color: copiedKey === 'payload' ? 'success.main' : 'text.secondary' }}
+                        >
+                          {copiedKey === 'payload' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </Box>
-                  <Box
-                    sx={{
-                      bgcolor: 'grey.100',
-                      p: 2,
-                      borderRadius: 1,
-                      maxHeight: 300,
-                      overflow: 'auto',
-                    }}
-                  >
-                    <pre style={{ margin: 0, fontSize: '0.75rem' }}>
-                      {JSON.stringify(selectedLog.insw_request_payload, null, 2)}
-                    </pre>
-                  </Box>
+                  {renderPayloadContent(selectedLog.insw_request_payload, 'request', selectedLog.id)}
                 </Box>
 
                 {selectedLog.insw_response && (
@@ -775,29 +979,19 @@ export default function INSWLogsPage() {
                       <Typography variant="subtitle2" color="text.secondary">
                         INSW Response
                       </Typography>
-                      <Tooltip title={copiedKey === 'response' ? 'Tersalin!' : 'Salin'}>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleCopy('response', selectedLog.insw_response)}
-                          sx={{ color: copiedKey === 'response' ? 'success.main' : 'text.secondary' }}
-                        >
-                          {copiedKey === 'response' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
-                        </IconButton>
-                      </Tooltip>
+                      {!isLargePayload(selectedLog.insw_response) && (
+                        <Tooltip title={copiedKey === 'response' ? 'Tersalin!' : 'Salin'}>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleCopy('response', selectedLog.insw_response)}
+                            sx={{ color: copiedKey === 'response' ? 'success.main' : 'text.secondary' }}
+                          >
+                            {copiedKey === 'response' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                          </IconButton>
+                        </Tooltip>
+                      )}
                     </Box>
-                    <Box
-                      sx={{
-                        bgcolor: 'grey.100',
-                        p: 2,
-                        borderRadius: 1,
-                        maxHeight: 300,
-                        overflow: 'auto',
-                      }}
-                    >
-                      <pre style={{ margin: 0, fontSize: '0.75rem' }}>
-                        {JSON.stringify(selectedLog.insw_response, null, 2)}
-                      </pre>
-                    </Box>
+                    {renderPayloadContent(selectedLog.insw_response, 'response', selectedLog.id)}
                   </Box>
                 )}
 
