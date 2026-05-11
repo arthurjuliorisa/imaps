@@ -30,6 +30,7 @@ export class INSWIntegrationService {
   private apiHeaders: INSWApiHeaders;
   private useTestMode: boolean;
   private proxyAgentPromise: Promise<unknown> | null;
+  private proxyAgentUrl: string | null;
   private undiciFetchPromise: Promise<typeof fetch> | null;
   private log = logger.child({ service: 'INSWIntegrationService' });
 
@@ -45,6 +46,7 @@ export class INSWIntegrationService {
     };
     this.useTestMode = useTestMode;
     this.proxyAgentPromise = null;
+    this.proxyAgentUrl = null;
     this.undiciFetchPromise = null;
   }
 
@@ -79,14 +81,16 @@ export class INSWIntegrationService {
   private getSafeProxyInfo(endpoint: string): {
     targetHost: string;
     proxyConfigured: boolean;
+    proxyBypassedByNoProxy: boolean;
     proxyHost?: string;
     proxyPort?: string;
   } {
     const targetHost = new URL(endpoint).hostname;
     const proxyUrl = this.getProxyUrlForEndpoint(endpoint);
+    const proxyBypassedByNoProxy = this.shouldBypassProxy(endpoint);
 
     if (!proxyUrl) {
-      return { targetHost, proxyConfigured: false };
+      return { targetHost, proxyConfigured: false, proxyBypassedByNoProxy };
     }
 
     try {
@@ -94,12 +98,58 @@ export class INSWIntegrationService {
       return {
         targetHost,
         proxyConfigured: true,
+        proxyBypassedByNoProxy,
         proxyHost: parsedProxyUrl.hostname,
         proxyPort: parsedProxyUrl.port,
       };
     } catch {
-      return { targetHost, proxyConfigured: true };
+      return { targetHost, proxyConfigured: true, proxyBypassedByNoProxy };
     }
+  }
+
+  private getNoProxyEnv(): string {
+    return process.env.NO_PROXY || process.env.no_proxy || '';
+  }
+
+  private shouldBypassProxy(endpoint: string): boolean {
+    const noProxy = this.getNoProxyEnv().trim();
+    if (!noProxy) return false;
+    if (noProxy === '*') return true;
+
+    const url = new URL(endpoint);
+    const hostname = url.hostname.toLowerCase();
+    const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+
+    return noProxy
+      .split(/[,\s]+/)
+      .filter(Boolean)
+      .some((entry) => this.noProxyEntryMatches(entry, hostname, port));
+  }
+
+  private noProxyEntryMatches(entry: string, hostname: string, port: number): boolean {
+    const normalizedEntry = entry.trim().toLowerCase();
+    const portMatch = normalizedEntry.match(/^(.+):(\d+)$/);
+    const entryHost = (portMatch ? portMatch[1] : normalizedEntry).replace(/^\*+/, '');
+    const entryPort = portMatch ? Number(portMatch[2]) : 0;
+
+    if (entryPort && entryPort !== port) return false;
+    if (entryHost === '*') return true;
+    if (entryHost.startsWith('.')) {
+      return hostname === entryHost.slice(1) || hostname.endsWith(entryHost);
+    }
+
+    return hostname === entryHost || hostname.endsWith(`.${entryHost}`);
+  }
+
+  private async getProxyAgent(proxyUrl: string): Promise<unknown> {
+    if (!this.proxyAgentPromise || this.proxyAgentUrl !== proxyUrl) {
+      this.proxyAgentUrl = proxyUrl;
+      this.proxyAgentPromise = import('undici').then(({ ProxyAgent }) => (
+        new ProxyAgent(proxyUrl)
+      ));
+    }
+
+    return this.proxyAgentPromise;
   }
 
   private async fetchINSW(
@@ -108,21 +158,30 @@ export class INSWIntegrationService {
   ): Promise<Response> {
     const fetchInit: RequestInit & { dispatcher?: unknown } = { ...init };
     let fetchImpl = fetch;
+    const proxyUrl = this.shouldBypassProxy(endpoint)
+      ? undefined
+      : this.getProxyUrlForEndpoint(endpoint);
 
-    if (this.hasProxyEnv()) {
+    if (proxyUrl) {
       const undiciModulePromise = import('undici');
-      this.proxyAgentPromise ??= undiciModulePromise.then(({ EnvHttpProxyAgent }) => (
-        new EnvHttpProxyAgent()
-      ));
       this.undiciFetchPromise ??= undiciModulePromise.then(({ fetch: undiciFetch }) => (
         undiciFetch as unknown as typeof fetch
       ));
-      fetchInit.dispatcher = await this.proxyAgentPromise;
+      fetchInit.dispatcher = await this.getProxyAgent(proxyUrl);
       fetchImpl = await this.undiciFetchPromise;
     }
 
     try {
-      return await fetchImpl(endpoint, fetchInit);
+      const response = await fetchImpl(endpoint, fetchInit);
+      if (!response.ok) {
+        this.log.warn('INSW fetch returned non-success status', {
+          httpStatus: response.status,
+          httpStatusText: response.statusText,
+          ...this.getSafeProxyInfo(endpoint),
+        });
+      }
+
+      return response;
     } catch (error) {
       const err = error as Error & {
         cause?: {
