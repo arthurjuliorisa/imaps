@@ -68,6 +68,12 @@ module.exports = {
         INSW_UNIQUE_KEY_TEST: process.env.INSW_UNIQUE_KEY_TEST,
         INSW_UNIQUE_KEY_REAL: process.env.INSW_UNIQUE_KEY_REAL,
         INSW_USE_TEST_MODE: process.env.INSW_USE_TEST_MODE || 'false',
+
+        // Proxy Configuration
+        NODE_USE_ENV_PROXY: process.env.NODE_USE_ENV_PROXY || '1',
+        HTTP_PROXY: process.env.HTTP_PROXY,
+        HTTPS_PROXY: process.env.HTTPS_PROXY,
+        NO_PROXY: process.env.NO_PROXY,
         
         // Additional
         ALLOW_FUTURE_DATES: process.env.ALLOW_FUTURE_DATES || 'false',
