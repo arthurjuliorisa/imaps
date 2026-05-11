@@ -30,6 +30,7 @@ export class INSWIntegrationService {
   private apiHeaders: INSWApiHeaders;
   private useTestMode: boolean;
   private proxyAgentPromise: Promise<unknown> | null;
+  private undiciFetchPromise: Promise<typeof fetch> | null;
   private log = logger.child({ service: 'INSWIntegrationService' });
 
   constructor(
@@ -44,6 +45,7 @@ export class INSWIntegrationService {
     };
     this.useTestMode = useTestMode;
     this.proxyAgentPromise = null;
+    this.undiciFetchPromise = null;
   }
 
   private hasProxyEnv(): boolean {
@@ -105,16 +107,22 @@ export class INSWIntegrationService {
     init: RequestInit
   ): Promise<Response> {
     const fetchInit: RequestInit & { dispatcher?: unknown } = { ...init };
+    let fetchImpl = fetch;
 
     if (this.hasProxyEnv()) {
-      this.proxyAgentPromise ??= import('undici').then(({ EnvHttpProxyAgent }) => (
+      const undiciModulePromise = import('undici');
+      this.proxyAgentPromise ??= undiciModulePromise.then(({ EnvHttpProxyAgent }) => (
         new EnvHttpProxyAgent()
       ));
+      this.undiciFetchPromise ??= undiciModulePromise.then(({ fetch: undiciFetch }) => (
+        undiciFetch as unknown as typeof fetch
+      ));
       fetchInit.dispatcher = await this.proxyAgentPromise;
+      fetchImpl = await this.undiciFetchPromise;
     }
 
     try {
-      return await fetch(endpoint, fetchInit);
+      return await fetchImpl(endpoint, fetchInit);
     } catch (error) {
       const err = error as Error & {
         cause?: {
