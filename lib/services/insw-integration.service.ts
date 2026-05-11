@@ -1,5 +1,7 @@
 import { format } from 'date-fns';
+import { EnvHttpProxyAgent, type Dispatcher } from 'undici';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/utils/logger';
 import {
   INSWApiHeaders,
   INSWTransaksiPayload,
@@ -28,6 +30,8 @@ export class INSWIntegrationService {
   private repository: INSWIntegrationRepository;
   private apiHeaders: INSWApiHeaders;
   private useTestMode: boolean;
+  private proxyAgent: EnvHttpProxyAgent | null;
+  private log = logger.child({ service: 'INSWIntegrationService' });
 
   constructor(
     apiKey: string,
@@ -40,6 +44,92 @@ export class INSWIntegrationService {
       'x-unique-key': uniqueKey,
     };
     this.useTestMode = useTestMode;
+    this.proxyAgent = this.hasProxyEnv() ? new EnvHttpProxyAgent() : null;
+  }
+
+  private hasProxyEnv(): boolean {
+    return Boolean(
+      process.env.HTTPS_PROXY ||
+      process.env.https_proxy ||
+      process.env.HTTP_PROXY ||
+      process.env.http_proxy
+    );
+  }
+
+  private getProxyUrlForEndpoint(endpoint: string): string | undefined {
+    const protocol = new URL(endpoint).protocol;
+    if (protocol === 'https:') {
+      return (
+        process.env.HTTPS_PROXY ||
+        process.env.https_proxy ||
+        process.env.HTTP_PROXY ||
+        process.env.http_proxy
+      );
+    }
+
+    return (
+      process.env.HTTP_PROXY ||
+      process.env.http_proxy ||
+      process.env.HTTPS_PROXY ||
+      process.env.https_proxy
+    );
+  }
+
+  private getSafeProxyInfo(endpoint: string): {
+    targetHost: string;
+    proxyConfigured: boolean;
+    proxyHost?: string;
+    proxyPort?: string;
+  } {
+    const targetHost = new URL(endpoint).hostname;
+    const proxyUrl = this.getProxyUrlForEndpoint(endpoint);
+
+    if (!proxyUrl) {
+      return { targetHost, proxyConfigured: false };
+    }
+
+    try {
+      const parsedProxyUrl = new URL(proxyUrl);
+      return {
+        targetHost,
+        proxyConfigured: true,
+        proxyHost: parsedProxyUrl.hostname,
+        proxyPort: parsedProxyUrl.port,
+      };
+    } catch {
+      return { targetHost, proxyConfigured: true };
+    }
+  }
+
+  private async fetchINSW(
+    endpoint: string,
+    init: RequestInit
+  ): Promise<Response> {
+    const fetchInit: RequestInit & { dispatcher?: Dispatcher } = {
+      ...init,
+      ...(this.proxyAgent ? { dispatcher: this.proxyAgent } : {}),
+    };
+
+    try {
+      return await fetch(endpoint, fetchInit);
+    } catch (error) {
+      const err = error as Error & {
+        cause?: {
+          code?: string;
+          message?: string;
+        };
+      };
+
+      this.log.error('INSW fetch failed', {
+        errorName: err.name,
+        errorMessage: err.message,
+        causeCode: err.cause?.code,
+        causeMessage: err.cause?.message,
+        ...this.getSafeProxyInfo(endpoint),
+      });
+
+      throw error;
+    }
   }
 
   private formatINSWDate(date: Date): string {
@@ -996,7 +1086,7 @@ export class INSWIntegrationService {
       ? INSW_ENDPOINTS.saldoAwal.temp
       : INSW_ENDPOINTS.saldoAwal.real;
 
-    const response = await fetch(endpoint, {
+    const response = await this.fetchINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1015,7 +1105,7 @@ export class INSWIntegrationService {
       ? INSW_ENDPOINTS.transaksi.temp
       : INSW_ENDPOINTS.transaksi.real;
 
-    const response = await fetch(endpoint, {
+    const response = await this.fetchINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1034,7 +1124,7 @@ export class INSWIntegrationService {
       ? INSW_ENDPOINTS.transaksi.temp
       : INSW_ENDPOINTS.transaksi.real;
 
-    const response = await fetch(endpoint, {
+    const response = await this.fetchINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1053,7 +1143,7 @@ export class INSWIntegrationService {
       ? INSW_ENDPOINTS.transaksi.temp
       : INSW_ENDPOINTS.transaksi.real;
 
-    const response = await fetch(endpoint, {
+    const response = await this.fetchINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1072,7 +1162,7 @@ export class INSWIntegrationService {
       ? INSW_ENDPOINTS.transaksi.temp
       : INSW_ENDPOINTS.transaksi.real;
 
-    const response = await fetch(endpoint, {
+    const response = await this.fetchINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1091,7 +1181,7 @@ export class INSWIntegrationService {
       ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.PEMASUKAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
       : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.PEMASUKAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
 
-    const response = await fetch(endpoint, {
+    const response = await this.fetchINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1109,7 +1199,7 @@ export class INSWIntegrationService {
       ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.PENGELUARAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
       : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.PENGELUARAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
 
-    const response = await fetch(endpoint, {
+    const response = await this.fetchINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1127,7 +1217,7 @@ export class INSWIntegrationService {
       ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.STOCK_OPNAME}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
       : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.STOCK_OPNAME}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
 
-    const response = await fetch(endpoint, {
+    const response = await this.fetchINSW(endpoint, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -1145,7 +1235,7 @@ export class INSWIntegrationService {
       ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.ADJUSTMENT}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
       : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.ADJUSTMENT}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
 
-    const response = await fetch(endpoint, {
+    const response = await this.fetchINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1163,7 +1253,7 @@ export class INSWIntegrationService {
 
     const endpoint = `${INSW_ENDPOINTS.transaksi.temp}?npwp=${npwp}`;
 
-    const response = await fetch(endpoint, {
+    const response = await this.fetchINSW(endpoint, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -1179,7 +1269,7 @@ export class INSWIntegrationService {
       throw new Error('Final registration only available in test mode');
     }
 
-    const response = await fetch(INSW_ENDPOINTS.registrasi.temp, {
+    const response = await this.fetchINSW(INSW_ENDPOINTS.registrasi.temp, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
