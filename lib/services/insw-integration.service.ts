@@ -202,6 +202,79 @@ export class INSWIntegrationService {
     }
   }
 
+  private async readINSWResponse(response: Response): Promise<INSWApiResponse> {
+    const contentType = response.headers.get('content-type') || '';
+    const rawResponse = await response.text();
+
+    if (contentType.toLowerCase().includes('json')) {
+      try {
+        const parsed = JSON.parse(rawResponse || 'null');
+
+        if (response.ok) {
+          return parsed;
+        }
+
+        return {
+          ...(parsed && typeof parsed === 'object' ? parsed : { data: parsed }),
+          status: parsed?.status === true,
+          message: parsed?.message || response.statusText || 'INSW request failed',
+          httpStatus: response.status,
+          httpStatusText: response.statusText,
+          contentType,
+        } as INSWApiResponse;
+      } catch {
+        // Fall through to raw response handling below.
+      }
+    }
+
+    if (response.ok) {
+      return JSON.parse(rawResponse || 'null');
+    }
+
+    return {
+      code: String(response.status),
+      status: false,
+      message: response.statusText || 'INSW request failed',
+      data: null,
+      httpStatus: response.status,
+      httpStatusText: response.statusText,
+      contentType,
+      rawResponse,
+    } as INSWApiResponse;
+  }
+
+  private buildINSWErrorResponse(error: unknown): INSWApiResponse {
+    const err = error as Error & {
+      cause?: {
+        code?: string;
+        message?: string;
+      };
+    };
+
+    return {
+      code: err.cause?.code || 'NETWORK_ERROR',
+      status: false,
+      message: err.message || 'INSW request failed',
+      data: null,
+      errorType: 'NETWORK_ERROR',
+      name: err.name,
+      causeCode: err.cause?.code,
+      causeMessage: err.cause?.message,
+    } as INSWApiResponse;
+  }
+
+  private async postINSW(
+    endpoint: string,
+    init: RequestInit
+  ): Promise<INSWApiResponse> {
+    try {
+      const response = await this.fetchINSW(endpoint, init);
+      return await this.readINSWResponse(response);
+    } catch (error) {
+      return this.buildINSWErrorResponse(error);
+    }
+  }
+
   private formatINSWDate(date: Date): string {
     return format(date, 'dd-MM-yyyy HH:mm:ss.SSS');
   }
@@ -1156,7 +1229,7 @@ export class INSWIntegrationService {
       ? INSW_ENDPOINTS.saldoAwal.temp
       : INSW_ENDPOINTS.saldoAwal.real;
 
-    const response = await this.fetchINSW(endpoint, {
+    return this.postINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1164,8 +1237,6 @@ export class INSWIntegrationService {
       },
       body: JSON.stringify(payload),
     });
-
-    return response.json();
   }
 
   async postPemasukan(
@@ -1175,7 +1246,7 @@ export class INSWIntegrationService {
       ? INSW_ENDPOINTS.transaksi.temp
       : INSW_ENDPOINTS.transaksi.real;
 
-    const response = await this.fetchINSW(endpoint, {
+    return this.postINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1183,8 +1254,6 @@ export class INSWIntegrationService {
       },
       body: JSON.stringify(payload),
     });
-
-    return response.json();
   }
 
   async postPengeluaran(
@@ -1194,7 +1263,7 @@ export class INSWIntegrationService {
       ? INSW_ENDPOINTS.transaksi.temp
       : INSW_ENDPOINTS.transaksi.real;
 
-    const response = await this.fetchINSW(endpoint, {
+    return this.postINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1202,8 +1271,6 @@ export class INSWIntegrationService {
       },
       body: JSON.stringify(payload),
     });
-
-    return response.json();
   }
 
   async postStockOpname(
@@ -1213,7 +1280,7 @@ export class INSWIntegrationService {
       ? INSW_ENDPOINTS.transaksi.temp
       : INSW_ENDPOINTS.transaksi.real;
 
-    const response = await this.fetchINSW(endpoint, {
+    return this.postINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1221,8 +1288,6 @@ export class INSWIntegrationService {
       },
       body: JSON.stringify(payload),
     });
-
-    return response.json();
   }
 
   async postAdjustment(
@@ -1232,7 +1297,7 @@ export class INSWIntegrationService {
       ? INSW_ENDPOINTS.transaksi.temp
       : INSW_ENDPOINTS.transaksi.real;
 
-    const response = await this.fetchINSW(endpoint, {
+    return this.postINSW(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1240,8 +1305,6 @@ export class INSWIntegrationService {
       },
       body: JSON.stringify(payload),
     });
-
-    return response.json();
   }
 
   async getPemasukan(
@@ -1323,15 +1386,13 @@ export class INSWIntegrationService {
 
     const endpoint = `${INSW_ENDPOINTS.transaksi.temp}?npwp=${npwp}`;
 
-    const response = await this.fetchINSW(endpoint, {
+    return this.postINSW(endpoint, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
         ...this.apiHeaders,
       },
     });
-
-    return response.json();
   }
 
   async registrasiFinal(): Promise<INSWApiResponse> {
@@ -1339,14 +1400,12 @@ export class INSWIntegrationService {
       throw new Error('Final registration only available in test mode');
     }
 
-    const response = await this.fetchINSW(INSW_ENDPOINTS.registrasi.temp, {
+    return this.postINSW(INSW_ENDPOINTS.registrasi.temp, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         ...this.apiHeaders,
       },
     });
-
-    return response.json();
   }
 }
