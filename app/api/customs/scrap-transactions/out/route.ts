@@ -48,7 +48,7 @@ const OutgoingScrapSchema = z.object({
       0, 0, 0, 0
     ));
   }),
-  customsDocumentType: z.enum(['BC25', 'BC27', 'BC41']),
+  customsDocumentType: z.enum(['BC25', 'BC27', 'BC27OUT', 'BC41', 'BC261']),
   transactionNumber: z.string().optional().nullable(),
   incomingPpkekNumbers: z.array(z.string()).optional().nullable(),
 });
@@ -77,7 +77,7 @@ function generateInvoiceNumber(): string {
 /**
  * Map document type to enum value if not already prefixed with BC
  */
-function mapDocumentTypeToEnum(docType: string | null | undefined): 'BC25' | 'BC27' | 'BC41' {
+function mapDocumentTypeToEnum(docType: string | null | undefined): 'BC25' | 'BC27' | 'BC27OUT' | 'BC41' | 'BC261' {
   if (!docType) return 'BC27'; // Default
   
   const cleanType = docType.trim().toUpperCase();
@@ -85,12 +85,16 @@ function mapDocumentTypeToEnum(docType: string | null | undefined): 'BC25' | 'BC
   // Direct matches
   if (cleanType === 'BC25') return 'BC25';
   if (cleanType === 'BC27') return 'BC27';
+  if (cleanType === 'BC27OUT') return 'BC27OUT';
   if (cleanType === 'BC41') return 'BC41';
+  if (cleanType === 'BC261') return 'BC261';
   
   // Number-only matches
   if (cleanType === '25') return 'BC25';
   if (cleanType === '27') return 'BC27';
+  if (cleanType === '27OUT') return 'BC27OUT';
   if (cleanType === '41') return 'BC41';
+  if (cleanType === '261') return 'BC261';
   
   // Default fallback
   return 'BC27';

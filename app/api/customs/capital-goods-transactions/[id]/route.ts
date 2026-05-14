@@ -5,6 +5,7 @@ import { validateCompanyCode } from '@/lib/company-validation';
 import { checkStockAvailability } from '@/lib/utils/stock-checker';
 import { logActivity } from '@/lib/log-activity';
 import { Prisma } from '@prisma/client';
+import { OUTGOING_CUSTOMS_TYPES } from '@/lib/validators/constants/customs-document-types';
 
 /**
  * PUT /api/customs/capital-goods-transactions/[id]
@@ -66,6 +67,13 @@ export async function PUT(
       registrationDate,
       documentType,
     } = body;
+
+    if (documentType && !OUTGOING_CUSTOMS_TYPES.includes(documentType)) {
+      return NextResponse.json(
+        { message: `Document Type must be one of: ${OUTGOING_CUSTOMS_TYPES.join(', ')}` },
+        { status: 400 }
+      );
+    }
 
     // Validate qty is provided and is positive
     if (!qty || qty <= 0) {

@@ -20,12 +20,14 @@
  * Values:
  * - BC23: Import Declaration
  * - BC27: Other Bonded Zone Release (Incoming & Outgoing)
+ * - BC27IN: Other Bonded Zone Release (Incoming)
+ * - BC27OUT: Other Bonded Zone Release (Outgoing)
  * - BC40: Local Purchase from Non-Bonded Zone
  * - BC30: Export Declaration
  * - BC25: Local Sales to Non-Bonded Zone
  * - BC41: Local Sales to Non-Bonded Zone from Local Purchase (BC40)
- * - BC261: Subcontracting - Incoming
- * - BC262: Subcontracting - Outgoing
+ * - BC261: Subcontracting - Outgoing
+ * - BC262: Subcontracting - Incoming
  * - PPKEKTLDDP: PPKEK incoming for TLDDP
  * - PPKEKLDIN: PPKEK incoming for LDP
  * - PPKEKLDPOUT: PPKEK outgoing for LDP
@@ -33,12 +35,14 @@
 export const ALL_CUSTOMS_TYPES = [
   'BC23',       // Import Declaration
   'BC27',       // Other Bonded Zone Release (Incoming & Outgoing)
+  'BC27IN',     // Other Bonded Zone Release (Incoming)
+  'BC27OUT',    // Other Bonded Zone Release (Outgoing)
   'BC40',       // Local Purchase from Non-Bonded Zone
   'BC30',       // Export Declaration
   'BC25',       // Local Sales to Non-Bonded Zone
   'BC41',       // Local Sales to Non-Bonded Zone from Local Purchase (BC40)
-  'BC261',      // Subcontracting - Incoming
-  'BC262',      // Subcontracting - Outgoing
+  'BC261',      // Subcontracting - Outgoing
+  'BC262',      // Subcontracting - Incoming
   'PPKEKTLDDP', // PPKEK incoming for TLDDP
   'PPKEKLDIN',  // PPKEK incoming for LDP
   'PPKEKLDPOUT' // PPKEK outgoing for LDP
@@ -56,16 +60,18 @@ export type CustomsDocumentTypeValue = (typeof ALL_CUSTOMS_TYPES)[number];
  * Based on business requirements:
  * - BC23: Import Declaration (primary incoming type)
  * - BC27: Other Bonded Zone Release (inter-zone transfer)
+ * - BC27IN: Other Bonded Zone Release (incoming inter-zone transfer)
  * - BC40: Local Purchase from Non-Bonded Zone (local sourcing)
- * - BC261: Subcontracting - Incoming (return from subcontractor)
+ * - BC262: Subcontracting - Incoming
  * - PPKEKTLDDP: PPKEK incoming for TLDDP
  * - PPKEKLDIN: PPKEK incoming for LDP
  */
 export const INCOMING_CUSTOMS_TYPES = [
   'BC23',       // Import Declaration
   'BC27',       // Other Bonded Zone Release (Incoming)
+  'BC27IN',     // Other Bonded Zone Release (Incoming)
   'BC40',       // Local Purchase from Non-Bonded Zone
-  'BC261',      // Subcontracting - Incoming
+  'BC262',      // Subcontracting - Incoming
   'PPKEKTLDDP', // PPKEK incoming for TLDDP
   'PPKEKLDIN'   // PPKEK incoming for LDP
 ] as const;
@@ -83,16 +89,18 @@ export type IncomingCustomsDocumentType = (typeof INCOMING_CUSTOMS_TYPES)[number
  * - BC30: Export Declaration (primary outgoing type)
  * - BC25: Local Sales to Non-Bonded Zone
  * - BC27: Other Bonded Zone Release (inter-zone transfer)
+ * - BC27OUT: Other Bonded Zone Release (outgoing inter-zone transfer)
  * - BC41: Local Sales from Local Purchase (BC40)
- * - BC262: Subcontracting - Outgoing (send to subcontractor)
+ * - BC261: Subcontracting - Outgoing
  * - PPKEKLDPOUT: PPKEK outgoing for LDP
  */
 export const OUTGOING_CUSTOMS_TYPES = [
   'BC30',       // Export Declaration
   'BC25',       // Local Sales to Non-Bonded Zone
   'BC27',       // Other Bonded Zone Release (Outgoing)
+  'BC27OUT',    // Other Bonded Zone Release (Outgoing)
   'BC41',       // Local Sales to Non-Bonded Zone from Local Purchase (BC40)
-  'BC262',      // Subcontracting - Outgoing
+  'BC261',      // Subcontracting - Outgoing
   'PPKEKLDPOUT' // PPKEK outgoing for LDP
 ] as const;
 
@@ -108,14 +116,16 @@ export type OutgoingCustomsDocumentType = (typeof OUTGOING_CUSTOMS_TYPES)[number
  * Based on business requirements:
  * - BC25: Local Sales (scrap disposal locally)
  * - BC27: Other Bonded Zone Release (scrap to bonded zone)
+ * - BC27OUT: Other Bonded Zone Release (scrap to bonded zone)
  * - BC41: Local Sales from Local Purchase
- * - BC262: Subcontracting - Outgoing (return scrap to subcontractor)
+ * - BC261: Subcontracting - Outgoing
  */
 export const SCRAP_CUSTOMS_TYPES = [
   'BC25',       // Local Sales
   'BC27',       // Other Bonded Zone Release
+  'BC27OUT',    // Other Bonded Zone Release
   'BC41',       // Local Sales from Local Purchase
-  'BC262'       // Subcontracting - Outgoing
+  'BC261'       // Subcontracting - Outgoing
 ] as const;
 
 export type ScrapCustomsDocumentType = (typeof SCRAP_CUSTOMS_TYPES)[number];
@@ -178,12 +188,14 @@ export function isValidScrapCustomsType(value: unknown): value is ScrapCustomsDo
 export const CUSTOMS_TYPE_DESCRIPTIONS: Record<CustomsDocumentTypeValue, string> = {
   BC23: 'Import Declaration',
   BC27: 'Other Bonded Zone Release',
+  BC27IN: 'Other Bonded Zone Release - Incoming',
+  BC27OUT: 'Other Bonded Zone Release - Outgoing',
   BC40: 'Local Purchase from Non-Bonded Zone',
   BC30: 'Export Declaration',
   BC25: 'Local Sales to Non-Bonded Zone',
   BC41: 'Local Sales from Local Purchase (BC40)',
-  BC261: 'Subcontracting - Incoming',
-  BC262: 'Subcontracting - Outgoing',
+  BC261: 'Subcontracting - Outgoing',
+  BC262: 'Subcontracting - Incoming',
   PPKEKTLDDP: 'PPKEK incoming for TLDDP',
   PPKEKLDIN: 'PPKEK incoming for LDP',
   PPKEKLDPOUT: 'PPKEK outgoing for LDP'

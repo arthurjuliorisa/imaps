@@ -5,12 +5,14 @@
 export type CustomsDocumentType = 
   | 'BC23'        // Import Declaration (Incoming)
   | 'BC27'        // Other Bonded Zone Release (Incoming & Outgoing)
+  | 'BC27IN'      // Other Bonded Zone Release (Incoming)
+  | 'BC27OUT'     // Other Bonded Zone Release (Outgoing)
   | 'BC40'        // Local Purchase from Non-Bonded Zone (Incoming)
   | 'BC30'        // Export Declaration (Outgoing)
   | 'BC25'        // Local Sales to Non-Bonded Zone (Outgoing)
   | 'BC41'        // Local Sales from Local Purchase (Outgoing) - NEW
-  | 'BC261'       // Subcontracting - Incoming
-  | 'BC262'       // Subcontracting - Outgoing
+  | 'BC261'       // Subcontracting - Outgoing
+  | 'BC262'       // Subcontracting - Incoming
   | 'PPKEKTLDDP'  // PPKEK for TLDDP Program - NEW
   | 'PPKEKLDIN'   // PPKEK LDP Incoming - NEW
   | 'PPKEKLDPOUT'; // PPKEK LDP Outgoing - NEW

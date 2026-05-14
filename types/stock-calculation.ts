@@ -19,18 +19,20 @@ export type ItemTypeCode = 'RM' | 'WIP' | 'FG' | 'SCRAP' | 'WASTE';
 /**
  * Customs Document Types
  * All supported customs document types in the system
- * Must match CustomsDocumentType enum in Prisma schema (13 items)
+ * Must match CustomsDocumentType enum in Prisma schema
  */
 export type CustomsDocumentType =
   | 'BC23'        // Import Declaration (Incoming)
   | 'BC27'        // Other Bonded Zone Release (Incoming & Outgoing)
+  | 'BC27IN'      // Other Bonded Zone Release (Incoming)
+  | 'BC27OUT'     // Other Bonded Zone Release (Outgoing)
   | 'BC28'        // Material Return to Supplier
   | 'BC40'        // Local Purchase from Non-Bonded Zone (Incoming)
   | 'BC30'        // Export Declaration (Outgoing)
   | 'BC25'        // Local Sales to Non-Bonded Zone (Outgoing)
   | 'BC41'        // Local Sales from Local Purchase (Outgoing)
-  | 'BC261'       // Subcontracting - Incoming
-  | 'BC262'       // Subcontracting - Outgoing
+  | 'BC261'       // Subcontracting - Outgoing
+  | 'BC262'       // Subcontracting - Incoming
   | 'PPKEKTLDDP'  // PPKEK for TLDDP Program
   | 'PPKEKLDIN'   // PPKEK LDP Incoming
   | 'PPKEKLDPOUT' // PPKEK LDP Outgoing

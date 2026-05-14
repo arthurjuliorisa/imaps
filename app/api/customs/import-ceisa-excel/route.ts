@@ -86,11 +86,13 @@ async function validateScrapItems(
 const VALID_CUSTOMS_DOCUMENT_TYPES = [
   'BC23',  // Import Declaration
   'BC27',  // Other Bonded Zone Release (Incoming & Outgoing)
+  'BC27IN',  // Other Bonded Zone Release (Incoming)
+  'BC27OUT', // Other Bonded Zone Release (Outgoing)
   'BC40',  // Local Purchase from Non-Bonded Zone
   'BC30',  // Export Declaration
   'BC25',  // Local Sales to Non-Bonded Zone
-  'BC261', // Subcontracting - Incoming
-  'BC262', // Subcontracting - Outgoing
+  'BC261', // Subcontracting - Outgoing
+  'BC262', // Subcontracting - Incoming
   'PPKEKTLDDP',  // PPKEK incoming for TLDDP
   'PPKEKLDIN',   // PPKEK incoming for LDP
   'PPKEKLDPOUT', // PPKEK outgoing for LDP

@@ -298,6 +298,8 @@ export class INSWIntegrationService {
     const mapping: Record<string, string> = {
       BC23: '0407023',
       BC27: '0407027',
+      BC27IN: '0407027',
+      BC27OUT: '0407027',
       BC40: '0407040',
       BC30: '0407030',
       BC25: '0407025',
@@ -306,7 +308,7 @@ export class INSWIntegrationService {
       BC262: '0407262',
       PPKEKTLDDP: '0407613',
       PPKEKLDIN: '0407611',
-      PPKEKLDPOUT: '0407631',
+      PPKEKLDPOUT: '0407631'
     };
 
     return mapping[customsDocType] || null;

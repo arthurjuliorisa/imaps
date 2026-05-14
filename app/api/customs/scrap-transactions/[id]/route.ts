@@ -5,6 +5,7 @@ import { validateCompanyCode } from '@/lib/company-validation';
 import { checkStockAvailability, checkScrapInBalance } from '@/lib/utils/stock-checker';
 import { logActivity } from '@/lib/log-activity';
 import { Prisma } from '@prisma/client';
+import { SCRAP_CUSTOMS_TYPES } from '@/lib/validators/constants/customs-document-types';
 
 
 
@@ -80,6 +81,13 @@ export async function PUT(
       transactionNumber,
       incomingPpkekNumbers,
     } = body;
+
+    if (customsDocumentType && !SCRAP_CUSTOMS_TYPES.includes(customsDocumentType)) {
+      return NextResponse.json(
+        { message: `Customs document type must be one of: ${SCRAP_CUSTOMS_TYPES.join(', ')}` },
+        { status: 400 }
+      );
+    }
 
     // Validate qty is provided and is positive
     if (!qty || qty <= 0) {

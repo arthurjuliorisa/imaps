@@ -55,7 +55,7 @@ interface EditScrapTransactionDialogProps {
 }
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
-const CUSTOMS_DOCUMENT_TYPES = ['BC25', 'BC27', 'BC41'];
+const CUSTOMS_DOCUMENT_TYPES = ['BC25', 'BC27', 'BC27OUT', 'BC41', 'BC261'];
 
 export function EditScrapTransactionDialog({
   open,

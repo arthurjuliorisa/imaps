@@ -51,7 +51,7 @@ const OutgoingCapitalGoodsSchema = z.object({
       0, 0, 0, 0
     ));
   }),
-  documentType: z.enum(['BC25', 'BC27', 'BC41']).optional().nullable(),
+  documentType: z.enum(['BC25', 'BC27', 'BC27OUT', 'BC41', 'BC261']).optional().nullable(),
   incomingPpkekNumbers: z.array(z.string()).optional().nullable(),
   outgoingEvidenceNumber: z.string().max(255, 'Evidence number cannot exceed 255 characters').optional().nullable(),
 });

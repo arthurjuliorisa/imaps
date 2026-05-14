@@ -89,7 +89,11 @@ const steps = [
 const CUSTOMS_DOC_TYPES: CustomsDocumentType[] = [
   CustomsDocumentType.BC23,
   CustomsDocumentType.BC27,
-  CustomsDocumentType.BC40
+  CustomsDocumentType.BC27IN,
+  CustomsDocumentType.BC40,
+  CustomsDocumentType.BC262,
+  CustomsDocumentType.PPKEKTLDDP,
+  CustomsDocumentType.PPKEKLDIN
 ];
 const ITEM_TYPES: ItemTypeCode[] = [
   ItemTypeCode.ROH,

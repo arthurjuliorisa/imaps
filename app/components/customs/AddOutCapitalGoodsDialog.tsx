@@ -62,7 +62,7 @@ interface AddOutCapitalGoodsDialogProps {
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
 const ITEM_TYPES = ['HIBE-M', 'HIBE-E', 'HIBE-T'];
-const DOCUMENT_TYPES = ['BC25', 'BC27', 'BC41'];
+const DOCUMENT_TYPES = ['BC25', 'BC27', 'BC27OUT', 'BC41', 'BC261'];
 
 export function AddOutCapitalGoodsDialog({
   open,
@@ -498,7 +498,7 @@ export function AddOutCapitalGoodsDialog({
                   }}
                   required
                   error={!!errors.documentType}
-                  helperText={errors.documentType || 'Customs document type (BC25, BC27, BC41)'}
+                  helperText={errors.documentType || 'Customs document type (BC25, BC27, BC27OUT, BC41, BC261)'}
                 >
                   {DOCUMENT_TYPES.map((type) => (
                     <MenuItem key={type} value={type}>

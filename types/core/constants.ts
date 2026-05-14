@@ -55,7 +55,9 @@ export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
 export const INCOMING_DOC_TYPE_LABELS: Record<string, string> = {
   [CustomsDocumentType.BC23]: 'BC23 - Import Declaration (New Import)',
   [CustomsDocumentType.BC27]: 'BC27 - Import Declaration (Return from Export)',
-  [CustomsDocumentType.BC40]: 'BC40 - Transfer In from Bonded Zone'
+  [CustomsDocumentType.BC27IN]: 'BC27IN - Other Bonded Zone Release Incoming',
+  [CustomsDocumentType.BC40]: 'BC40 - Transfer In from Bonded Zone',
+  [CustomsDocumentType.BC262]: 'BC262 - Subcontracting Incoming'
 };
 
 /**
@@ -65,7 +67,8 @@ export const OUTGOING_DOC_TYPE_LABELS: Record<string, string> = {
   [CustomsDocumentType.BC30]: 'BC30 - Export Declaration (Sales Export)',
   [CustomsDocumentType.BC25]: 'BC25 - Conversion to Free Zone',
   [CustomsDocumentType.BC27]: 'BC27 - Export Declaration (Return to Supplier)',
-  [CustomsDocumentType.BC262]: 'BC262 - Subcontracting Outgoing'
+  [CustomsDocumentType.BC27OUT]: 'BC27OUT - Other Bonded Zone Release Outgoing',
+  [CustomsDocumentType.BC261]: 'BC261 - Subcontracting Outgoing'
 };
 
 /**
