@@ -49,6 +49,24 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
     try {
       const transactionDate = new Date(data.transaction_date);
 
+      data.items.forEach((item) => {
+        item.traceability_data.forEach((tracEntry) => {
+          if (!tracEntry.ppkek_number) {
+            log.warn('Accepted with missing traceability reference. Stock movement is processed, but BOM / PPKEK / WO traceability may be incomplete.', {
+              endpoint: 'POST /api/v1/material-usage',
+              wms_id: data.wms_id,
+              company_code: data.company_code,
+              item_code: item.item_code,
+              item_type: item.item_type,
+              work_order_number: data.work_order_number,
+              ppkek_number: tracEntry.ppkek_number,
+              qty: tracEntry.qty,
+              reason: 'MISSING_PPKEK',
+            });
+          }
+        });
+      });
+
       // =========================================================================
       // STEP 1: Find existing by wms_id (ANY date) to detect date change
       // =========================================================================

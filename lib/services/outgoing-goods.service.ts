@@ -141,7 +141,7 @@ export class OutgoingGoodsService {
       const revisionInfo = await this.detectRevision(data);
       requestLogger.info('Revision detection', { isRevision: revisionInfo.isRevision, wmsId: data.wms_id });
 
-      // 8. Business validations - verify work_order_allocations exist
+      // 8. Business validations - log unresolved traceability references without blocking stock movement
       const allocationValidationErrors = await this.validateWorkOrderAllocations(data);
       if (allocationValidationErrors.length > 0) {
         requestLogger.warn(
@@ -268,40 +268,28 @@ export class OutgoingGoodsService {
   private async validateWorkOrderAllocations(data: OutgoingGoodRequestInput): Promise<ErrorDetail[]> {
     const errors: ErrorDetail[] = [];
 
-    // Validate each item's work_order_allocations
+    // Log each item's work_order_allocations gaps without blocking
     for (let itemIndex = 0; itemIndex < data.items.length; itemIndex++) {
       const item = data.items[itemIndex];
 
       if (!item.work_order_allocations || item.work_order_allocations.length === 0) {
-        // FERT items REQUIRE allocations (strict validation)
-        if (item.item_type.toUpperCase() === 'FERT') {
-          errors.push({
-            location: 'item',
-            field: 'work_order_allocations',
-            code: 'REQUIRED',
-            message: 'Work order allocations are required for FERT items',
-            item_index: itemIndex,
-            item_code: item.item_code,
-          });
-        } else {
-          // Non-FERT items: allocations optional
-          // Log for audit trail (e.g., beginning_balance or purchased items)
-          logger.info('Item outgoing without allocation (assumed beginning_balance or purchased)', {
-            wms_id: data.wms_id,
-            item_code: item.item_code,
-            item_type: item.item_type,
-            qty: item.qty,
-          });
-        }
+        logger.warn('Accepted with missing traceability allocation. Stock movement is processed, but BOM / PPKEK / WO traceability may be incomplete.', {
+          endpoint: 'POST /api/v1/outgoing-goods',
+          wms_id: data.wms_id,
+          company_code: data.company_code,
+          item_code: item.item_code,
+          item_type: item.item_type,
+          qty: item.qty,
+        });
         continue;
       }
 
-      // If allocations provided: validate them strictly
+      // If allocations provided: log missing/unresolved references without blocking
       for (let allocIndex = 0; allocIndex < item.work_order_allocations.length; allocIndex++) {
         const allocation = item.work_order_allocations[allocIndex];
 
         if (allocation.work_order_number) {
-          // Validate work order exists (for FERT and HALB from production)
+          // Check work order existence for warning/logging only
           const workOrder = await prisma.work_order_fg_production.findFirst({
             where: {
               work_order_number: allocation.work_order_number,
@@ -311,17 +299,20 @@ export class OutgoingGoodsService {
           });
 
           if (!workOrder) {
-            errors.push({
-              location: 'item',
-              field: 'work_order_allocations',
-              code: 'NOT_FOUND',
-              message: `Work order not found: ${allocation.work_order_number}`,
-              item_index: itemIndex,
+            logger.warn('Accepted with unresolved traceability reference. Stock movement is processed, but BOM / PPKEK / WO traceability may be incomplete.', {
+              endpoint: 'POST /api/v1/outgoing-goods',
+              wms_id: data.wms_id,
+              company_code: data.company_code,
               item_code: item.item_code,
+              item_type: item.item_type,
+              work_order_number: allocation.work_order_number,
+              ppkek_number: allocation.ppkek_number,
+              qty: allocation.qty,
+              reason: 'WORK_ORDER_NOT_FOUND',
             });
           }
         } else if (allocation.ppkek_number) {
-          // Validate PPKEK exists in incoming_goods
+          // Check PPKEK existence for warning/logging only
           const incoming = await prisma.incoming_goods.findFirst({
             where: {
               ppkek_number: allocation.ppkek_number,
@@ -330,28 +321,30 @@ export class OutgoingGoodsService {
           });
 
           if (!incoming) {
-            // PPKEK not found in incoming_goods
-            // Could be from beginning_balance (historical PPKEK)
-            // Log warning but only error if it's FERT (which requires strict validation)
-            if (item.item_type.toUpperCase() === 'FERT') {
-              errors.push({
-                location: 'item',
-                field: 'work_order_allocations',
-                code: 'NOT_FOUND',
-                message: `PPKEK not found: ${allocation.ppkek_number}`,
-                item_index: itemIndex,
-                item_code: item.item_code,
-              });
-            } else {
-              // Non-FERT: just log warning (could be beginning_balance)
-              logger.warn('PPKEK not found in incoming_goods (may be from beginning_balance)', {
-                wms_id: data.wms_id,
-                item_code: item.item_code,
-                ppkek_number: allocation.ppkek_number,
-                note: 'Historical PPKEK from previous period - proceeding with caution',
-              });
-            }
+            logger.warn('Accepted with unresolved traceability reference. Stock movement is processed, but BOM / PPKEK / WO traceability may be incomplete.', {
+              endpoint: 'POST /api/v1/outgoing-goods',
+              wms_id: data.wms_id,
+              company_code: data.company_code,
+              item_code: item.item_code,
+              item_type: item.item_type,
+              work_order_number: allocation.work_order_number,
+              ppkek_number: allocation.ppkek_number,
+              qty: allocation.qty,
+              reason: 'PPKEK_NOT_FOUND',
+            });
           }
+        } else {
+          logger.warn('Accepted with missing traceability reference. Stock movement is processed, but BOM / PPKEK / WO traceability may be incomplete.', {
+            endpoint: 'POST /api/v1/outgoing-goods',
+            wms_id: data.wms_id,
+            company_code: data.company_code,
+            item_code: item.item_code,
+            item_type: item.item_type,
+            work_order_number: allocation.work_order_number,
+            ppkek_number: allocation.ppkek_number,
+            qty: allocation.qty,
+            reason: 'MISSING_WORK_ORDER_AND_PPKEK',
+          });
         }
       }
     }

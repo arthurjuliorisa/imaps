@@ -101,7 +101,7 @@ const companyCodeSchema = z
  * Single item schema for outgoing goods
  * 
  * Field Mapping (API v3.3.0):
- * - work_order_allocations: PREFERRED (required for FERT/HALB)
+ * - work_order_allocations: REQUIRED for traceability quantity allocation
  * - production_output_wms_ids: DEPRECATED (for backward compatibility)
  */
 export const outgoingGoodItemSchema = z
@@ -129,14 +129,12 @@ export const outgoingGoodItemSchema = z
         z.object({
           work_order_number: z
             .string()
-            .min(1, 'Work order number cannot be empty')
             .max(50, 'Work order number must not exceed 50 characters')
             .trim()
             .optional()
             .nullable(),
           ppkek_number: z
             .string()
-            .min(1, 'PPKEK number cannot be empty')
             .max(50, 'PPKEK number must not exceed 50 characters')
             .trim()
             .optional()
@@ -146,21 +144,8 @@ export const outgoingGoodItemSchema = z
             .positive('Work order allocation quantity must be greater than 0')
             .finite('Work order allocation quantity must be a finite number'),
         })
-        .refine(
-          (allocation: any) => {
-            // XOR validation: exactly one of work_order_number or ppkek_number must be present
-            const hasWorkOrder = allocation.work_order_number ? true : false;
-            const hasPPKEK = allocation.ppkek_number ? true : false;
-            return hasWorkOrder !== hasPPKEK; // True only if exactly one is present
-          },
-          {
-            message: 'Allocation must have either work_order_number OR ppkek_number, not both or neither',
-            path: [],
-          }
-        )
       )
-      .optional()
-      .nullable(),
+      .min(1, 'Work order allocations must contain at least 1 entry'),
     
     hs_code: z
       .string()
@@ -203,8 +188,7 @@ export const outgoingGoodItemSchema = z
         // Allow small floating point difference (0.01 tolerance for decimals)
         return Math.abs(totalAllocated - item.qty) < 0.01;
       }
-      // If no allocations provided, validation passes (backward compat with production_output_wms_ids)
-      return true;
+      return false;
     },
     {
       message: 'Sum of work_order_allocations qty must equal item qty (tolerance: 0.01)',
@@ -488,10 +472,11 @@ export function checkOutgoingGoodsDuplicateAllocations(
 }
 
 /**
- * Validate work order allocations for FERT and HALB items
- * - work_order_allocations is REQUIRED for FERT and HALB items (per API v3.3.0)
- * - Each work_order_number must exist in Production Output
- * - Each work_order_number must have Material Usage records
+ * Check work order allocations for FERT and HALB items.
+ *
+ * Reference existence is intentionally non-blocking. Missing or unresolved
+ * work order / PPKEK references are accepted so stock movement can proceed;
+ * service/repository logging provides the audit warning path.
  *
  * @param data - Validated request data
  * @param companyCode - Company code for database queries
@@ -501,81 +486,9 @@ export async function validateWorkOrderAllocations(
   data: OutgoingGoodRequestInput,
   companyCode: number
 ): Promise<ValidationErrorDetail[]> {
-  const errors: ValidationErrorDetail[] = [];
-
-  for (let itemIndex = 0; itemIndex < data.items.length; itemIndex++) {
-    const item = data.items[itemIndex];
-    const isFERTorHALB = ['FERT', 'HALB'].includes(item.item_type.toUpperCase());
-
-    // Requirement 1: FERT/HALB must have work_order_allocations
-    if (isFERTorHALB) {
-      const hasAllocations = item.work_order_allocations && item.work_order_allocations.length > 0;
-
-      if (!hasAllocations) {
-        errors.push({
-          location: 'item',
-          field: 'work_order_allocations',
-          code: 'MISSING_REQUIRED',
-          message: 'Work order allocations required for finished goods',
-          item_index: itemIndex,
-          item_code: item.item_code,
-        });
-        continue;
-      }
-
-      // Validate each work order allocation
-      for (const allocation of item.work_order_allocations || []) {
-        if (allocation.work_order_number) {
-          // Check work order exists in Production Output
-          const workOrder = await prisma.work_order_fg_production.findFirst({
-            where: {
-              work_order_number: allocation.work_order_number,
-              item_code: item.item_code,
-              company_code: companyCode,
-            },
-            select: {
-              work_order_number: true,
-            },
-          });
-
-          if (!workOrder) {
-            errors.push({
-              location: 'item',
-              field: 'work_order_allocations',
-              code: 'WORK_ORDER_NOT_FOUND',
-              message: `Work order ${allocation.work_order_number} not found for item ${item.item_code}`,
-              item_index: itemIndex,
-              item_code: item.item_code,
-            });
-          }
-        } else if (allocation.ppkek_number) {
-          // Check PPKEK exists in Incoming Goods
-          const incomingGoods = await prisma.incoming_goods.findFirst({
-            where: {
-              ppkek_number: allocation.ppkek_number,
-              company_code: companyCode,
-            },
-            select: {
-              ppkek_number: true,
-            },
-          });
-
-          if (!incomingGoods) {
-            errors.push({
-              location: 'item',
-              field: 'work_order_allocations',
-              code: 'PPKEK_NOT_FOUND',
-              message: `PPKEK ${allocation.ppkek_number} not found for incoming goods`,
-              item_index: itemIndex,
-              item_code: item.item_code,
-            });
-          }
-        }
-      }
-    }
-  }
-
-  return errors;
+  void data;
+  void companyCode;
+  return [];
 }
 
 
