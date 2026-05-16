@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/utils/logger';
+import { Prisma } from '@prisma/client';
 
 /**
  * Traceability Data Structure - 4-Level Hierarchy
@@ -76,6 +77,42 @@ export interface TraceabilityItem {
  * Handles fetching and enriching traceability data from multiple sources
  */
 export class TraceabilityRepository {
+  /**
+   * Calculate the quantity shown in the modal for a material PPKEK row.
+   *
+   * `work_order_material_consumption.qty_consumed` is full WO material
+   * consumption. For partial outgoing/export transactions, the modal should
+   * prefer the already-calculated outgoing proportional allocation from
+   * `outgoing_fg_production_traceability.material_qty_allocated`.
+   */
+  private calculateDisplayedAllocatedQty(
+    traceRecord: { material_qty_allocated: Prisma.Decimal | null },
+    ppkekQtyConsumed: Prisma.Decimal,
+    totalMaterialQtyConsumed: Prisma.Decimal,
+    ppkekCount: number
+  ): number {
+    if (!traceRecord.material_qty_allocated) {
+      return Number(ppkekQtyConsumed.toString());
+    }
+
+    const materialAllocatedQty = new Prisma.Decimal(traceRecord.material_qty_allocated.toString());
+
+    if (ppkekCount <= 1) {
+      return Number(materialAllocatedQty.toString());
+    }
+
+    if (totalMaterialQtyConsumed.isZero()) {
+      return Number(ppkekQtyConsumed.toString());
+    }
+
+    return Number(
+      materialAllocatedQty
+        .mul(ppkekQtyConsumed)
+        .div(totalMaterialQtyConsumed)
+        .toString()
+    );
+  }
+
   /**
    * Get traceability for a single outgoing item
    * 
@@ -268,27 +305,55 @@ export class TraceabilityRepository {
             orderBy: [{ ppkek_number: 'asc' }],
           });
 
-          // Process each consumption record to get PPKEK details
+          const consumptionByPPKEK = new Map<string, Prisma.Decimal>();
+
           for (const consumption of consumptionRecords) {
             if (!consumption.ppkek_number) continue;
 
+            const existingQty = consumptionByPPKEK.get(consumption.ppkek_number) || new Prisma.Decimal(0);
+            const consumedQty = consumption.qty_consumed
+              ? new Prisma.Decimal(consumption.qty_consumed.toString())
+              : new Prisma.Decimal(0);
+
+            consumptionByPPKEK.set(consumption.ppkek_number, existingQty.add(consumedQty));
+          }
+
+          const totalMaterialQtyConsumed = Array.from(consumptionByPPKEK.values()).reduce(
+            (sum, qty) => sum.add(qty),
+            new Prisma.Decimal(0)
+          );
+
+          // Process each PPKEK to get customs details and displayed allocation.
+          for (const [ppkekNumber, ppkekQtyConsumed] of consumptionByPPKEK.entries()) {
+            const exactTraceRecord = traceabilityRecords.find(
+              (r) =>
+                r.material_item_code === materialCode &&
+                r.ppkek_number_incoming === ppkekNumber
+            );
+
+            const fallbackTraceRecord = traceabilityRecords.find(
+              (r) => r.material_item_code === materialCode
+            );
+
+            const traceRecordForQty = exactTraceRecord || fallbackTraceRecord;
+
             // Check if PPKEK already added
             const ppkekExists = materialEntry.ppkeksWithQty.some(
-              (p) => p.ppkek_number === consumption.ppkek_number
+              (p) => p.ppkek_number === ppkekNumber
             );
 
             if (!ppkekExists) {
               // Query incoming_goods to get customs details
               const incomingGood = await prisma.incoming_goods.findFirst({
                 where: {
-                  ppkek_number: consumption.ppkek_number,
+                  ppkek_number: ppkekNumber,
                   company_code: companyCode,
                 },
                 orderBy: { incoming_date: 'desc' },
               });
 
               materialEntry.ppkeksWithQty.push({
-                ppkek_number: consumption.ppkek_number,
+                ppkek_number: ppkekNumber,
                 customs_registration_date: incomingGood?.customs_registration_date
                   ? new Date(incomingGood.customs_registration_date).toISOString().split('T')[0]
                   : '',
@@ -296,9 +361,14 @@ export class TraceabilityRepository {
                 incoming_date: incomingGood?.incoming_date
                   ? new Date(incomingGood.incoming_date).toISOString().split('T')[0]
                   : '',
-                qty_allocated: consumption.qty_consumed 
-                  ? Number(consumption.qty_consumed.toString())
-                  : 0,
+                qty_allocated: traceRecordForQty
+                  ? this.calculateDisplayedAllocatedQty(
+                      traceRecordForQty,
+                      ppkekQtyConsumed,
+                      totalMaterialQtyConsumed,
+                      consumptionByPPKEK.size
+                    )
+                  : Number(ppkekQtyConsumed.toString()),
                 qty_uom: materialEntry.qtyUom,
               });
             }
