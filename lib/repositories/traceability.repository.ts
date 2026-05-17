@@ -86,19 +86,19 @@ export class TraceabilityRepository {
    * `outgoing_fg_production_traceability.material_qty_allocated`.
    */
   private calculateDisplayedAllocatedQty(
-    traceRecord: { material_qty_allocated: Prisma.Decimal | null },
+    materialAllocatedQty: Prisma.Decimal | null | undefined,
     ppkekQtyConsumed: Prisma.Decimal,
     totalMaterialQtyConsumed: Prisma.Decimal,
     ppkekCount: number
   ): number {
-    if (!traceRecord.material_qty_allocated) {
+    if (!materialAllocatedQty) {
       return Number(ppkekQtyConsumed.toString());
     }
 
-    const materialAllocatedQty = new Prisma.Decimal(traceRecord.material_qty_allocated.toString());
+    const outgoingAllocatedQty = new Prisma.Decimal(materialAllocatedQty.toString());
 
     if (ppkekCount <= 1) {
-      return Number(materialAllocatedQty.toString());
+      return Number(outgoingAllocatedQty.toString());
     }
 
     if (totalMaterialQtyConsumed.isZero()) {
@@ -106,7 +106,7 @@ export class TraceabilityRepository {
     }
 
     return Number(
-      materialAllocatedQty
+      outgoingAllocatedQty
         .mul(ppkekQtyConsumed)
         .div(totalMaterialQtyConsumed)
         .toString()
@@ -289,10 +289,18 @@ export class TraceabilityRepository {
           }
         }
 
-        // Second pass: Get PPKEK data from work_order_material_consumption (source of truth)
+        // Second pass: Get PPKEK data from work_order_material_consumption.
         for (const materialCode of materialCodes) {
           const materialEntry = materialMap.get(materialCode);
           if (!materialEntry) continue;
+
+          const materialTraceRecords = traceabilityRecords.filter(
+            (r) => r.material_item_code === materialCode
+          );
+
+          const materialTraceRecordWithAllocation = materialTraceRecords.find(
+            (r) => r.material_qty_allocated !== null
+          );
 
           // Query work_order_material_consumption for all PPKEK records for this material
           const consumptionRecords = await prisma.work_order_material_consumption.findMany({
@@ -305,9 +313,22 @@ export class TraceabilityRepository {
             orderBy: [{ ppkek_number: 'asc' }],
           });
 
+          const latestConsumptionDate = consumptionRecords.reduce<Date | null>((latest, record) => {
+            if (!latest || record.trx_date > latest) {
+              return record.trx_date;
+            }
+            return latest;
+          }, null);
+
+          const relevantConsumptionRecords = latestConsumptionDate
+            ? consumptionRecords.filter(
+                (record) => record.trx_date.getTime() === latestConsumptionDate.getTime()
+              )
+            : consumptionRecords;
+
           const consumptionByPPKEK = new Map<string, Prisma.Decimal>();
 
-          for (const consumption of consumptionRecords) {
+          for (const consumption of relevantConsumptionRecords) {
             if (!consumption.ppkek_number) continue;
 
             const existingQty = consumptionByPPKEK.get(consumption.ppkek_number) || new Prisma.Decimal(0);
@@ -325,17 +346,15 @@ export class TraceabilityRepository {
 
           // Process each PPKEK to get customs details and displayed allocation.
           for (const [ppkekNumber, ppkekQtyConsumed] of consumptionByPPKEK.entries()) {
-            const exactTraceRecord = traceabilityRecords.find(
+            const exactTraceRecordWithAllocation = materialTraceRecords.find(
               (r) =>
-                r.material_item_code === materialCode &&
-                r.ppkek_number_incoming === ppkekNumber
+                r.ppkek_number_incoming === ppkekNumber &&
+                r.material_qty_allocated !== null
             );
 
-            const fallbackTraceRecord = traceabilityRecords.find(
-              (r) => r.material_item_code === materialCode
-            );
-
-            const traceRecordForQty = exactTraceRecord || fallbackTraceRecord;
+            const materialAllocatedQty =
+              exactTraceRecordWithAllocation?.material_qty_allocated ||
+              materialTraceRecordWithAllocation?.material_qty_allocated;
 
             // Check if PPKEK already added
             const ppkekExists = materialEntry.ppkeksWithQty.some(
@@ -361,14 +380,12 @@ export class TraceabilityRepository {
                 incoming_date: incomingGood?.incoming_date
                   ? new Date(incomingGood.incoming_date).toISOString().split('T')[0]
                   : '',
-                qty_allocated: traceRecordForQty
-                  ? this.calculateDisplayedAllocatedQty(
-                      traceRecordForQty,
-                      ppkekQtyConsumed,
-                      totalMaterialQtyConsumed,
-                      consumptionByPPKEK.size
-                    )
-                  : Number(ppkekQtyConsumed.toString()),
+                qty_allocated: this.calculateDisplayedAllocatedQty(
+                  materialAllocatedQty,
+                  ppkekQtyConsumed,
+                  totalMaterialQtyConsumed,
+                  consumptionByPPKEK.size
+                ),
                 qty_uom: materialEntry.qtyUom,
               });
             }

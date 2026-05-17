@@ -187,10 +187,10 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
   }
 
   /**
-   * Build BOM/traceability data after the core outgoing goods transaction commits,
-   * then persist traceability rows in a separate short transaction.
+   * Build and persist BOM/traceability data inside the outgoing transaction.
    */
   private async processTraceabilityAfterCoreCommit(
+    db: any,
     data: OutgoingGoodRequestInput,
     outgoingDate: Date,
     currentItemsList: any[],
@@ -218,7 +218,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
           let sourceType: 'production' | 'incoming' = 'production';
 
           if (allocation.work_order_number) {
-            const workOrderProduction = await prisma.work_order_fg_production.findFirst({
+            const workOrderProduction = await db.work_order_fg_production.findFirst({
               where: {
                 work_order_number: allocation.work_order_number,
                 item_code: originalItem.item_code,
@@ -256,7 +256,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
           let enrichedAllocations: any[] | null = null;
           if (sourceType === 'production' && productionWmsId) {
             enrichedAllocations = await this.enrichTraceability(
-              prisma,
+              db,
               productionWmsId,
               originalItem.item_code,
               new Prisma.Decimal(allocation.qty.toString()),
@@ -372,23 +372,21 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
       return 0;
     }
 
-    await prisma.$transaction(async (tx) => {
-      for (const write of traceabilityWrites) {
-        await tx.outgoing_fg_production_traceability.deleteMany({
-          where: write.deleteWhere,
-        });
+    for (const write of traceabilityWrites) {
+      await db.outgoing_fg_production_traceability.deleteMany({
+        where: write.deleteWhere,
+      });
 
-        if (write.createSingle) {
-          await tx.outgoing_fg_production_traceability.create({
-            data: write.createData[0],
-          });
-        } else if (write.createData.length > 0) {
-          await tx.outgoing_fg_production_traceability.createMany({
-            data: write.createData,
-          });
-        }
+      if (write.createSingle) {
+        await db.outgoing_fg_production_traceability.create({
+          data: write.createData[0],
+        });
+      } else if (write.createData.length > 0) {
+        await db.outgoing_fg_production_traceability.createMany({
+          data: write.createData,
+        });
       }
-    });
+    }
 
     repositoryLogger.info('Outgoing FG production traceability updated', {
       traceabilityCount: traceabilityWrites.length,
@@ -553,6 +551,42 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
         });
 
         repositoryLogger.info('Outgoing goods header upserted', { outgoingGoodId: outgoingGood.id });
+
+        const existingOutgoingItemIds = await tx.outgoing_good_items.findMany({
+          where: {
+            outgoing_good_id: outgoingGood.id,
+            outgoing_good_company: data.company_code,
+            outgoing_good_date: outgoingDate,
+          },
+          select: { id: true },
+        });
+
+        const existingOutgoingItemIdList = existingOutgoingItemIds.map((item) => item.id);
+
+        // Re-submit/idempotency cleanup: remove only traceability/allocation
+        // rows owned by this outgoing transaction before rebuilding from the
+        // latest accepted payload. Never delete by work_order_number alone.
+        await tx.outgoing_fg_production_traceability.deleteMany({
+          where: {
+            OR: [
+              {
+                outgoing_wms_id: data.wms_id,
+                company_code: data.company_code,
+              },
+              ...(existingOutgoingItemIdList.length > 0
+                ? [{ outgoing_good_item_id: { in: existingOutgoingItemIdList } }]
+                : []),
+            ],
+          },
+        });
+
+        if (existingOutgoingItemIdList.length > 0) {
+          await tx.outgoing_work_order_allocations.deleteMany({
+            where: {
+              outgoing_good_item_id: { in: existingOutgoingItemIdList },
+            },
+          });
+        }
 
         // For update case (same date), intelligently manage items:
         // - Only soft-delete items that are no longer in payload
@@ -752,10 +786,24 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
           });
         }
 
+        const traceabilityCount = await this.processTraceabilityAfterCoreCommit(
+          tx,
+          data,
+          outgoingDate,
+          currentItemsList,
+          repositoryLogger
+        );
+
+        repositoryLogger.info('Outgoing goods traceability processing completed', {
+          outgoingGoodId: outgoingGood.id,
+          traceabilityCount,
+        });
+
         return {
           outgoingGoodId: outgoingGood.id,
           itemCount: data.items.length,
           currentItemsList,
+          traceabilityCount,
         };
       });
 
@@ -763,26 +811,6 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
         outgoingGoodId: result.outgoingGoodId,
         itemCount: result.itemCount,
       });
-
-      try {
-        const traceabilityCount = await this.processTraceabilityAfterCoreCommit(
-          data,
-          outgoingDate,
-          result.currentItemsList,
-          repositoryLogger
-        );
-
-        repositoryLogger.info('Outgoing goods traceability processing completed', {
-          outgoingGoodId: result.outgoingGoodId,
-          traceabilityCount,
-        });
-      } catch (traceabilityError) {
-        repositoryLogger.error('Outgoing goods traceability processing failed after core commit', {
-          error: traceabilityError,
-          outgoingGoodId: result.outgoingGoodId,
-          wmsId: data.wms_id,
-        });
-      }
 
       // =========================================================================
       // STEP 4 & 5: Snapshot Updates (DIRECT, NO QUEUE, NON-BLOCKING)

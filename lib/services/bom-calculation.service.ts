@@ -26,6 +26,13 @@ export interface BOMCalculationResult {
   error_message?: string;
 }
 
+type ConsolidatedMaterial = {
+  item_code: string;
+  item_name: string;
+  component_demand_qty: Prisma.Decimal;
+  ppkek_number: string | null;
+};
+
 /**
  * BOM Calculation Service
  * 
@@ -163,13 +170,14 @@ export class BOMCalculationService {
         latestDateStr, // Use this string for SQL query
       });
 
-      // Now get all materials from this latest transmission date only
-      // Note: May include multiple wms_ids if they share same transaction_date
+      // Now get all materials from this latest transmission date only.
+      // Note: May include multiple wms_ids if they share same transaction_date.
       const materialUsagesRaw = await prisma.$queryRaw<any[]>`
         SELECT 
           mui.id,
           mui.item_code,
           mui.item_name,
+          mui.qty,
           mui.component_demand_qty,
           mui.ppkek_number,
           mu.work_order_number,
@@ -216,16 +224,50 @@ export class BOMCalculationService {
       // ========================================================================
       // STEP 4: Consolidate Materials with Same Item Code
       // ========================================================================
-      // If same material appears multiple times in the transmission (from different BOM lines or wms_ids),
-      // consolidate by summing component_demand_qty
-      const consolidatedMaterials = new Map<string, any>();
+      // Prefer PPKEK consumption totals from work_order_material_consumption.
+      // component_demand_qty can be repeated on each PPKEK material usage row,
+      // so blindly summing it can inflate the material allocation for outgoing
+      // traceability. qty_consumed is the per-PPKEK material issue basis.
+      const consumptionTotalsRaw = await prisma.$queryRaw<any[]>`
+        SELECT
+          womc.item_code,
+          SUM(womc.qty_consumed) AS qty_consumed
+        FROM work_order_material_consumption womc
+        JOIN material_usages mu ON
+          womc.material_usage_wms_id = mu.wms_id
+          AND womc.company_code = mu.company_code
+          AND womc.work_order_number = mu.work_order_number
+        WHERE womc.work_order_number = ${workOrderNumber}
+          AND womc.company_code = ${companyCode}
+          AND womc.trx_date = ${latestDateStr}::date
+          AND mu.transaction_date = ${latestDateStr}::date
+          AND mu.deleted_at IS NULL
+        GROUP BY womc.item_code
+      `;
+
+      const consumptionTotalByItemCode = new Map<string, Prisma.Decimal>();
+      for (const row of consumptionTotalsRaw || []) {
+        if (!row.item_code || row.qty_consumed === null || row.qty_consumed === undefined) {
+          continue;
+        }
+
+        consumptionTotalByItemCode.set(
+          row.item_code,
+          new Prisma.Decimal(row.qty_consumed.toString())
+        );
+      }
+
+      const consolidatedMaterials = new Map<string, ConsolidatedMaterial>();
 
       for (const material of latestTransmissionItems) {
         const key = material.item_code;
         
         if (consolidatedMaterials.has(key)) {
-          // Material already exists, sum component_demand_qty
+          // Material already exists. Sum component demand as the legacy
+          // fallback, then replace it below with PPKEK consumption totals when
+          // work_order_material_consumption is available.
           const existing = consolidatedMaterials.get(key);
+          if (!existing) continue;
           const currentQty = new Prisma.Decimal(existing.component_demand_qty.toString());
           const addQty = new Prisma.Decimal(material.component_demand_qty.toString());
           existing.component_demand_qty = currentQty.plus(addQty);
@@ -242,7 +284,7 @@ export class BOMCalculationService {
             item_code: material.item_code,
             item_name: material.item_name,
             component_demand_qty: new Prisma.Decimal(material.component_demand_qty.toString()),
-            ppkek_number: material.ppkek_number,
+            ppkek_number: material.ppkek_number || null,
           });
           
           calculationLogger.debug('Added new material to consolidation map', {
@@ -251,6 +293,20 @@ export class BOMCalculationService {
             fromWmsId: material.wms_id,
           });
         }
+      }
+
+      for (const [itemCode, qtyConsumed] of consumptionTotalByItemCode.entries()) {
+        const material = consolidatedMaterials.get(itemCode);
+        if (!material) {
+          continue;
+        }
+
+        material.component_demand_qty = qtyConsumed;
+
+        calculationLogger.debug('Using work order material consumption total for allocation basis', {
+          materialItemCode: itemCode,
+          qtyConsumed: qtyConsumed.toString(),
+        });
       }
 
       calculationLogger.debug('Material consolidation complete', {
