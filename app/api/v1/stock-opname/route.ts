@@ -128,6 +128,7 @@ export async function POST(request: NextRequest) {
       action: 'WMS_CREATE_STOCK_OPNAME',
       description: `Successfully created stock opname for WMS ID: ${result.wms_id}`,
       status: 'success',
+      wms_payload: body,
       metadata: { wms_id: result.wms_id, company_code: result.company_code, item_count: result.items.length },
     });
 
@@ -271,7 +272,8 @@ export async function PATCH(request: NextRequest) {
       action: 'WMS_UPDATE_STOCK_OPNAME',
       description: `Successfully updated stock opname to status: ${result.status}`,
       status: 'success',
-      metadata: { wms_id: result.wms_id, new_status: result.status },
+      wms_payload: body,
+      metadata: { wms_id: result.wms_id, company_code: result.company_code, new_status: result.status },
     });
 
     return NextResponse.json(

@@ -11,6 +11,7 @@ import { transformZodErrors } from '@/lib/utils/error-transformer';
 import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/api-response';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { prisma } from '@/lib/db/prisma';
+import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 
 /**
  * Adjustments Service
@@ -206,6 +207,15 @@ export class AdjustmentsService {
           log.error('Adjustment insert failed', {
             wmsId: data.wms_id,
             error: err.message,
+          });
+          void logWmsAsyncFailure({
+            action: 'WMS_PROCESS_ADJUSTMENTS',
+            transactionType: 'adjustments',
+            companyCode: data.company_code,
+            wmsId: data.wms_id,
+            error: err,
+            phase: 'db_persistence',
+            payload: data,
           });
         });
 

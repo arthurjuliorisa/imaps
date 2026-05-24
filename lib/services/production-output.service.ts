@@ -10,6 +10,7 @@ import { transformZodErrors } from '@/lib/utils/error-transformer';
 import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/api-response';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { prisma } from '@/lib/db/prisma';
+import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 
 /**
  * Production Output Service
@@ -194,6 +195,15 @@ export class ProductionOutputService {
           log.error('Production output insert failed', {
             wmsId: data.wms_id,
             error: err.message,
+          });
+          void logWmsAsyncFailure({
+            action: 'WMS_PROCESS_PRODUCTION_OUTPUT',
+            transactionType: 'production_output',
+            companyCode: data.company_code,
+            wmsId: data.wms_id,
+            error: err,
+            phase: 'db_persistence',
+            payload: data,
           });
         });
 

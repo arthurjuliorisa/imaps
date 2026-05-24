@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -21,8 +21,10 @@ import {
   useTheme,
   Tab,
   Tabs,
+  TextField,
+  InputAdornment,
 } from '@mui/material';
-import { Close } from '@mui/icons-material';
+import { Close, Search } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
 
 // ============================================================================
@@ -73,6 +75,129 @@ interface TraceabilityModalProps {
   companyCode: number;
 }
 
+function includesSearch(value: unknown, search: string): boolean {
+  return String(value ?? '').toLowerCase().includes(search);
+}
+
+function filterProductionTraceability(
+  items: TraceabilityItem[],
+  search: string
+): TraceabilityItem[] {
+  if (!search) {
+    return items;
+  }
+
+  return items
+    .map((item) => {
+      const itemUomMatches = includesSearch(item.uom, search);
+      const workOrders = item.work_orders || [];
+
+      if (workOrders.length === 0) {
+        return itemUomMatches ? item : null;
+      }
+
+      const filteredWorkOrders = workOrders
+        .map((wo) => {
+          const workOrderMatches =
+            itemUomMatches || includesSearch(wo.work_order_number, search);
+          const materials = wo.materials || [];
+
+          if (materials.length === 0) {
+            return workOrderMatches ? wo : null;
+          }
+
+          const filteredMaterials = materials
+            .map((material) => {
+              const materialMatches =
+                workOrderMatches ||
+                includesSearch(material.material_item_code, search) ||
+                includesSearch(material.material_item_name, search);
+              const ppkeks = material.ppkeks || [];
+
+              if (ppkeks.length === 0) {
+                return materialMatches ? material : null;
+              }
+
+              const filteredPPKEKs = materialMatches
+                ? ppkeks
+                : ppkeks.filter(
+                    (ppkek) =>
+                      includesSearch(ppkek.ppkek_number, search) ||
+                      includesSearch(ppkek.customs_document_type, search) ||
+                      includesSearch(ppkek.qty_uom, search)
+                  );
+
+              if (filteredPPKEKs.length === 0) {
+                return null;
+              }
+
+              return {
+                ...material,
+                ppkeks: filteredPPKEKs,
+              };
+            })
+            .filter((material): material is TraceabilityMaterial => Boolean(material));
+
+          if (filteredMaterials.length === 0) {
+            return null;
+          }
+
+          return {
+            ...wo,
+            materials: filteredMaterials,
+          };
+        })
+        .filter((wo): wo is TraceabilityWorkOrder => Boolean(wo));
+
+      if (filteredWorkOrders.length === 0) {
+        return null;
+      }
+
+      return {
+        ...item,
+        work_orders: filteredWorkOrders,
+      };
+    })
+    .filter((item): item is TraceabilityItem => Boolean(item));
+}
+
+function filterIncomingTraceability(
+  items: TraceabilityItem[],
+  search: string
+): TraceabilityItem[] {
+  if (!search) {
+    return items;
+  }
+
+  return items
+    .map((item) => {
+      const itemUomMatches = includesSearch(item.uom, search);
+      const ppkeks = item.incoming_ppkek_numbers || [];
+
+      if (ppkeks.length === 0) {
+        return itemUomMatches ? item : null;
+      }
+
+      const filteredPPKEKs = itemUomMatches
+        ? ppkeks
+        : ppkeks.filter(
+            (ppkek) =>
+              includesSearch(ppkek.ppkek_number, search) ||
+              includesSearch(ppkek.customs_document_type, search)
+          );
+
+      if (filteredPPKEKs.length === 0) {
+        return null;
+      }
+
+      return {
+        ...item,
+        incoming_ppkek_numbers: filteredPPKEKs,
+      };
+    })
+    .filter((item): item is TraceabilityItem => Boolean(item));
+}
+
 /**
  * TraceabilityModal Component - Refactored for proper 4-level hierarchy
  * 
@@ -93,6 +218,8 @@ export function TraceabilityModal({
   const [error, setError] = useState<string | null>(null);
   const [tabValue, setTabValue] = useState<'production' | 'incoming'>('production');
   const [companyType, setCompanyType] = useState<string>('');
+  const [traceabilitySearch, setTraceabilitySearch] = useState('');
+  const normalizedSearch = traceabilitySearch.trim().toLowerCase();
 
   /**
    * Determine if Qty Allocated and UOM columns should be shown
@@ -158,15 +285,31 @@ export function TraceabilityModal({
     fetchTraceability();
   }, [open, outgoingItemIds, companyCode, toast]);
 
+  useEffect(() => {
+    if (!open) {
+      setTraceabilitySearch('');
+    }
+  }, [open]);
+
   // ============================================================================
   // RENDER: PRODUCTION-BASED TABLE
   // ============================================================================
 
   const productionItems = data.filter((item) => item.source_type === 'production');
+  const filteredProductionItems = useMemo(
+    () => filterProductionTraceability(productionItems, normalizedSearch),
+    [productionItems, normalizedSearch]
+  );
 
   const renderProductionTable = () => {
-    if (productionItems.length === 0) {
-      return <Alert severity="info">No production-based traceability data found.</Alert>;
+    if (filteredProductionItems.length === 0) {
+      return (
+        <Alert severity="info">
+          {normalizedSearch
+            ? 'No matching traceability data found.'
+            : 'No production-based traceability data found.'}
+        </Alert>
+      );
     }
 
     return (
@@ -194,7 +337,7 @@ export function TraceabilityModal({
             </TableRow>
           </TableHead>
           <TableBody>
-            {productionItems.map((item) => {
+            {filteredProductionItems.map((item) => {
               const workOrders = item.work_orders || [];
               
               // Calculate total PPKEK rows across all work orders
@@ -305,10 +448,20 @@ export function TraceabilityModal({
   // ============================================================================
 
   const incomingItems = data.filter((item) => item.source_type === 'incoming');
+  const filteredIncomingItems = useMemo(
+    () => filterIncomingTraceability(incomingItems, normalizedSearch),
+    [incomingItems, normalizedSearch]
+  );
 
   const renderIncomingTable = () => {
-    if (incomingItems.length === 0) {
-      return <Alert severity="info">No incoming-based traceability data found.</Alert>;
+    if (filteredIncomingItems.length === 0) {
+      return (
+        <Alert severity="info">
+          {normalizedSearch
+            ? 'No matching traceability data found.'
+            : 'No incoming-based traceability data found.'}
+        </Alert>
+      );
     }
 
     return (
@@ -328,7 +481,7 @@ export function TraceabilityModal({
             </TableRow>
           </TableHead>
           <TableBody>
-            {incomingItems.map((item) => {
+            {filteredIncomingItems.map((item) => {
               const ppkeks = item.incoming_ppkek_numbers || [];
 
               if (ppkeks.length === 0) {
@@ -413,14 +566,30 @@ export function TraceabilityModal({
 
         {!loading && data.length > 0 && (
           <>
+            <TextField
+              fullWidth
+              size="small"
+              value={traceabilitySearch}
+              onChange={(event) => setTraceabilitySearch(event.target.value)}
+              placeholder="Search material, work order, reg number, doc type, UOM..."
+              sx={{ mb: 2 }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+
             {productionItems.length > 0 && incomingItems.length > 0 && (
               <Tabs
                 value={tabValue}
                 onChange={(_, newValue) => setTabValue(newValue)}
                 sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
               >
-                <Tab label={`Production-Based (${productionItems.length})`} value="production" />
-                <Tab label={`Incoming-Based (${incomingItems.length})`} value="incoming" />
+                <Tab label={`Production-Based (${filteredProductionItems.length})`} value="production" />
+                <Tab label={`Incoming-Based (${filteredIncomingItems.length})`} value="incoming" />
               </Tabs>
             )}
 

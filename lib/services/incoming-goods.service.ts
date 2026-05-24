@@ -5,6 +5,7 @@ import type { ErrorDetail, SuccessResponse } from '../types/api-response';
 import { logger } from '../utils/logger';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { prisma } from '@/lib/db/prisma';
+import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 
 export class IncomingGoodsService {
   private repository: IncomingGoodsRepository;
@@ -102,53 +103,65 @@ export class IncomingGoodsService {
         return { success: false, errors: businessErrors };
       }
 
-      // 7. Save to database
-      const result = await this.repository.createOrUpdate(data);
-
-      requestLogger.info(
-        'Incoming goods processed successfully',
-        {
-          wmsId: result.wms_id,
-          incomingGoodId: result.id,
-          itemsCount: result.items_count,
-        }
-      );
-
-      // 8. Auto-transmit to INSW (fire-and-forget, non-blocking)
-      // Only transmit if company type is SEZ
-      (async () => {
-        try {
-          // Check company type
-          const company = await prisma.companies.findUnique({
-            where: { code: data.company_code },
-            select: { company_type: true },
-          });
-
-          // Only transmit if SEZ company
-          if (company?.company_type === 'SEZ') {
-            const inswService = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
-            const transmissionResult = await inswService.transmitIncomingGoods(data.company_code, [result.id]);
-            if (transmissionResult.status === 'success') {
-              requestLogger.info('Incoming goods transmitted to INSW', { wmsId: data.wms_id });
-            } else {
-              requestLogger.warn('Incoming goods INSW transmission failed', { wmsId: data.wms_id });
+      // 7. Queue for immediate async insert (non-blocking) + auto-transmit to INSW
+      this.repository.createOrUpdate(data)
+        .then(async (result) => {
+          requestLogger.info(
+            'Incoming goods saved successfully',
+            {
+              wmsId: result.wms_id,
+              incomingGoodId: result.id,
+              itemsCount: result.items_count,
             }
-          } else {
-            requestLogger.info('Incoming goods NOT transmitted to INSW (non-SEZ company)', { wmsId: data.wms_id, companyType: company?.company_type });
-          }
-        } catch (err: any) {
-          requestLogger.error('INSW auto-transmit error', { wmsId: data.wms_id, error: err.message });
-        }
-      })();
+          );
 
-      // 9. Return success response immediately
+          try {
+            // Check company type
+            const company = await prisma.companies.findUnique({
+              where: { code: data.company_code },
+              select: { company_type: true },
+            });
+
+            // Only transmit if SEZ company
+            if (company?.company_type === 'SEZ') {
+              const inswService = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+              const transmissionResult = await inswService.transmitIncomingGoods(data.company_code, [result.id]);
+              if (transmissionResult.status === 'success') {
+                requestLogger.info('Incoming goods transmitted to INSW', { wmsId: data.wms_id });
+              } else {
+                requestLogger.warn('Incoming goods INSW transmission failed', { wmsId: data.wms_id });
+              }
+            } else {
+              requestLogger.info('Incoming goods NOT transmitted to INSW (non-SEZ company)', { wmsId: data.wms_id, companyType: company?.company_type });
+            }
+          } catch (err: any) {
+            requestLogger.error('INSW auto-transmit error', { wmsId: data.wms_id, error: err.message });
+          }
+        })
+        .catch((err: any) => {
+          requestLogger.error('Incoming goods insert failed', {
+            wmsId: data.wms_id,
+            error: err.message,
+          });
+          void logWmsAsyncFailure({
+            action: 'WMS_PROCESS_INCOMING_GOODS',
+            transactionType: 'incoming_goods',
+            companyCode: data.company_code,
+            wmsId: data.wms_id,
+            error: err,
+            phase: 'db_persistence',
+            payload: data,
+          });
+        });
+
+      // 8. Return success response immediately (insert happens async)
       return {
         success: true,
         data: {
           status: 'success',
           message: 'Transaction validated and queued for processing',
-          wms_id: result.wms_id,
-          queued_items_count: result.items_count,
+          wms_id: data.wms_id,
+          queued_items_count: data.items.length,
           validated_at: new Date().toISOString(),
         },
       };

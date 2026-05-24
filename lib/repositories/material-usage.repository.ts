@@ -199,6 +199,16 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
 
         log.info('Header upserted', { materialUsageId: header.id });
 
+        // Re-submit/idempotency cleanup: dependency rows must reflect the
+        // latest accepted payload only. Scope by the source material usage WMS
+        // transaction and company; never delete by work_order_number alone.
+        await tx.work_order_material_consumption.deleteMany({
+          where: {
+            material_usage_wms_id: data.wms_id,
+            company_code: data.company_code,
+          },
+        });
+
         // For update case (same date), use idempotent replace strategy
         // =====================================================================
         // FIX: Delete ALL old items + insert ALL new items for same-date
@@ -351,6 +361,65 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
             traceabilityEntries: itemsData.length,
           });
         }
+
+        // Step 4: Create traceability records for work order material consumption
+        // This links materials (with PPKEK) to their work orders for customs compliance.
+        // It lives in the same transaction as header/items so stale PPKEK split
+        // or stale old-WO rows cannot survive a same-WMS re-submit.
+        if (data.work_order_number && createdItemsMap.size > 0) {
+          let traceabilityCount = 0;
+
+          for (const item of data.items) {
+            for (const tracEntry of item.traceability_data) {
+              if (!tracEntry.ppkek_number) {
+                continue;
+              }
+
+              const itemIdKey = `${item.item_code}|${tracEntry.ppkek_number}`;
+              const itemId = createdItemsMap.get(itemIdKey);
+
+              if (!itemId) {
+                continue;
+              }
+
+              await tx.work_order_material_consumption.upsert({
+                where: {
+                  material_usage_wms_id_work_order_number_item_code_ppkek_number: {
+                    material_usage_wms_id: data.wms_id,
+                    work_order_number: data.work_order_number,
+                    item_code: item.item_code,
+                    ppkek_number: tracEntry.ppkek_number,
+                  },
+                },
+                update: {
+                  material_usage_id: header.id,
+                  material_usage_item_id: itemId,
+                  qty_consumed: new Prisma.Decimal(tracEntry.qty),
+                  trx_date: transactionDate,
+                },
+                create: {
+                  material_usage_id: header.id,
+                  material_usage_item_id: itemId,
+                  material_usage_wms_id: data.wms_id,
+                  work_order_number: data.work_order_number,
+                  company_code: data.company_code,
+                  item_code: item.item_code,
+                  ppkek_number: tracEntry.ppkek_number,
+                  qty_consumed: new Prisma.Decimal(tracEntry.qty),
+                  trx_date: transactionDate,
+                },
+              });
+
+              traceabilityCount++;
+            }
+          }
+
+          log.info('Traceability records created', {
+            count: traceabilityCount,
+            workOrderNumber: data.work_order_number,
+            materialUsageId: header.id,
+          });
+        }
       });
 
       log.info('Items managed successfully', {
@@ -365,70 +434,6 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
         item_name: item.item_name,
         uom: item.uom,
       }));
-
-      // Step 4: Create traceability records for work order material consumption
-      // This links materials (with PPKEK) to their work orders for customs compliance
-      // NEW in v3.5.0: Loop through traceability_data array for each item
-      if (data.work_order_number && createdItemsMap.size > 0) {
-        try {
-          let traceabilityCount = 0;
-
-          for (const item of data.items) {
-            // Loop through traceability_data array (NEW in v3.5.0)
-            for (const tracEntry of item.traceability_data) {
-              // Only create traceability record if ppkek_number exists
-              if (tracEntry.ppkek_number) {
-                // Use composite key for lookup
-                const itemIdKey = `${item.item_code}|${tracEntry.ppkek_number}`;
-                const itemId = createdItemsMap.get(itemIdKey);
-
-                if (itemId) {
-                  await prisma.work_order_material_consumption.upsert({
-                    where: {
-                      material_usage_wms_id_work_order_number_item_code_ppkek_number: {
-                        material_usage_wms_id: data.wms_id,
-                        work_order_number: data.work_order_number,
-                        item_code: item.item_code,
-                        ppkek_number: tracEntry.ppkek_number,
-                      },
-                    },
-                    update: {
-                      material_usage_id: header.id,
-                      material_usage_item_id: itemId,
-                      qty_consumed: new Prisma.Decimal(tracEntry.qty),
-                    },
-                    create: {
-                      material_usage_id: header.id,
-                      material_usage_item_id: itemId,
-                      material_usage_wms_id: data.wms_id,
-                      work_order_number: data.work_order_number,
-                      company_code: data.company_code,
-                      item_code: item.item_code,
-                      ppkek_number: tracEntry.ppkek_number,
-                      qty_consumed: new Prisma.Decimal(tracEntry.qty),
-                      trx_date: transactionDate,
-                    },
-                  });
-
-                  traceabilityCount++;
-                }
-              }
-            }
-          }
-
-          log.info('Traceability records created', {
-            count: traceabilityCount,
-            workOrderNumber: data.work_order_number,
-            materialUsageId: header.id,
-          });
-        } catch (err) {
-          log.warn('Failed to create traceability records', {
-            error: (err as any).message,
-            workOrderNumber: data.work_order_number,
-            materialUsageId: header.id,
-          });
-        }
-      }
 
       // Step 5: Calculate item-level snapshots and cascade recalculation
       try {

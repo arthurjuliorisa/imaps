@@ -28,6 +28,7 @@ import type {
   ErrorDetail,
 } from '../types/api-response';
 import { logger } from '../utils/logger';
+import { logWmsAsyncFailure } from '../utils/wms-async-failure-log';
 
 export class WIPBalanceService {
   private repository: WipBalanceRepository;
@@ -361,6 +362,17 @@ export class WIPBalanceService {
       // Queue for async insert (don't await)
       this.repository.batchUpsert(dbRecords).catch((error) => {
         requestLogger.error('Database insert failed:', { error });
+        for (const record of records) {
+          void logWmsAsyncFailure({
+            action: 'WMS_PROCESS_WIP_BALANCE',
+            transactionType: 'wip_balance',
+            companyCode: record.company_code,
+            wmsId: record.wms_id,
+            error,
+            phase: 'db_persistence',
+            payload: record,
+          });
+        }
         // Don't re-throw - validation already succeeded
       });
     } catch (error) {

@@ -92,7 +92,7 @@ export async function GET(request: Request) {
         OR COALESCE(sti.item_code, '') ILIKE $${paramIndex}
         OR COALESCE(sti.item_name, '') ILIKE $${paramIndex}
         OR COALESCE(sti.uom, '') ILIKE $${paramIndex}
-        OR COALESCE(sti.currency, '') ILIKE $${paramIndex}
+        OR COALESCE(sti.currency::text, '') ILIKE $${paramIndex}
       )`;
       searchFilterOutgoing = ` AND (
         c.name ILIKE $${paramIndex}
@@ -105,7 +105,7 @@ export async function GET(request: Request) {
         OR COALESCE(ogi.item_code, '') ILIKE $${paramIndex}
         OR COALESCE(ogi.item_name, '') ILIKE $${paramIndex}
         OR COALESCE(ogi.uom, '') ILIKE $${paramIndex}
-        OR COALESCE(ogi.currency, '') ILIKE $${paramIndex}
+        OR COALESCE(ogi.currency::text, '') ILIKE $${paramIndex}
       )`;
       params.push(`%${search}%`);
       paramIndex++;

@@ -96,7 +96,10 @@ export const incomingGoodItemSchema = z.object({
     .string()
     .min(1, 'Item type is required')
     .max(10, 'Item type must not exceed 10 characters')
-    .trim(),
+    .trim()
+    .refine((value) => value.toUpperCase() !== 'SCRAP', {
+      message: 'Item type SCRAP is not allowed for incoming goods',
+    }),
   
   item_code: z
     .string()

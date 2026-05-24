@@ -117,7 +117,7 @@ export async function GET(request: Request) {
         OR COALESCE(item_code, '') ILIKE $${paramIndex}
         OR COALESCE(item_name, '') ILIKE $${paramIndex}
         OR COALESCE(unit, '') ILIKE $${paramIndex}
-        OR COALESCE(currency, '') ILIKE $${paramIndex}
+        OR COALESCE(currency::text, '') ILIKE $${paramIndex}
       )`;
       params.push(`%${search}%`);
       paramIndex++;

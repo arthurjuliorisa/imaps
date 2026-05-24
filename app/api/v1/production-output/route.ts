@@ -133,6 +133,7 @@ export async function POST(request: NextRequest) {
       action: 'WMS_PROCESS_PRODUCTION_OUTPUT',
       description: `Successfully processed production output for WMS ID: ${result.data.wms_id}`,
       status: 'success',
+      wms_payload: body,
       metadata: {
         wms_id: result.data.wms_id,
         company_code: body?.company_code,

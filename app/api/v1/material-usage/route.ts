@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
         action: 'WMS_PROCESS_MATERIAL_USAGE',
         description: `Successfully processed material usage for WMS ID: ${response.wms_id}`,
         status: 'success',
+        wms_payload: body,
         metadata: {
           wms_id: response.wms_id,
           company_code: body?.company_code,

@@ -10,6 +10,7 @@ import {
 import { MaterialUsageRepository } from '@/lib/repositories/material-usage.repository';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { prisma } from '@/lib/db/prisma';
+import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 
 /**
  * Material Usage Service
@@ -243,6 +244,15 @@ export class MaterialUsageService {
           log.error('Material usage insert failed', {
             wmsId: data.wms_id,
             error: err.message,
+          });
+          void logWmsAsyncFailure({
+            action: 'WMS_PROCESS_MATERIAL_USAGE',
+            transactionType: 'material_usage',
+            companyCode: data.company_code,
+            wmsId: data.wms_id,
+            error: err,
+            phase: 'db_persistence',
+            payload: data,
           });
         });
 

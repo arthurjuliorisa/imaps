@@ -11,6 +11,7 @@ import {
   type ValidationErrorDetail,
 } from '@/lib/validators/schemas/outgoing-goods.schema';
 import { OutgoingGoodsRepository } from '@/lib/repositories/outgoing-goods.repository';
+import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 
 export interface SuccessResponse {
   status: 'success';
@@ -183,6 +184,15 @@ export class OutgoingGoodsService {
         })
         .catch((error) => {
           requestLogger.error('Failed to insert outgoing goods', { error, wmsId: data.wms_id });
+          void logWmsAsyncFailure({
+            action: 'WMS_PROCESS_OUTGOING_GOODS',
+            transactionType: 'outgoing_goods',
+            companyCode: data.company_code,
+            wmsId: data.wms_id,
+            error,
+            phase: 'db_persistence',
+            payload: data,
+          });
         });
 
       // 11. Return success response immediately (without waiting for DB insert)

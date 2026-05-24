@@ -27,8 +27,9 @@ import {
   TableHead,
   TableRow,
   Paper,
+  CircularProgress,
 } from '@mui/material';
-import { Refresh, Visibility, ContentCopy, Check, GetApp } from '@mui/icons-material';
+import { Refresh, Visibility, ContentCopy, Check, GetApp, Replay as ReplayIcon } from '@mui/icons-material';
 import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import { useSession } from 'next-auth/react';
@@ -40,7 +41,7 @@ interface WMSTransmissionLog {
   action: string;
   wms_id: string | null;
   company_code: number | null;
-  transmission_status: 'SUCCESS' | 'FAILED' | 'ERROR' | 'UNKNOWN';
+  transmission_status: 'SUCCESS' | 'FAILED' | 'ERROR' | 'UNKNOWN' | 'RETRYING';
   wms_request_payload: any;
   imaps_error_response: any;
   error_type: string | null;
@@ -76,9 +77,37 @@ export default function WMSTransmissionLogsPage() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [confirmRetryOpen, setConfirmRetryOpen] = useState(false);
+  const [pendingRetryLog, setPendingRetryLog] = useState<WMSTransmissionLog | null>(null);
+  const [retryingDialog, setRetryingDialog] = useState(false);
  
   const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
   const userCompanyCode = session?.user?.companyCode as string | undefined;
+
+  const retryableActions = new Set([
+    'WMS_PROCESS_INCOMING_GOODS',
+    'WMS_PROCESS_OUTGOING_GOODS',
+    'WMS_PROCESS_MATERIAL_USAGE',
+    'WMS_PROCESS_PRODUCTION_OUTPUT',
+    'WMS_PROCESS_ADJUSTMENTS',
+    'WMS_PROCESS_WIP_BALANCE',
+  ]);
+  const retryableErrorTypes = new Set(['ASYNC_PROCESSING_ERROR', 'ASYNC_RETRY_ERROR']);
+
+  const isFailedRetryableLog = (log: WMSTransmissionLog) =>
+    (log.transmission_status === 'FAILED' || log.transmission_status === 'ERROR') &&
+    retryableActions.has(log.action) &&
+    !!log.error_type &&
+    retryableErrorTypes.has(log.error_type);
+
+  const getRetryTooltip = (log: WMSTransmissionLog) => {
+    if (!isFailedRetryableLog(log)) return 'Retry is only available for failed async WMS processing logs';
+    if (!log.wms_request_payload) return 'Retry unavailable because original payload was not stored for this log.';
+    return 'Retry WMS processing';
+  };
+
+  const canRetryLog = (log: WMSTransmissionLog) => isFailedRetryableLog(log) && !!log.wms_request_payload;
 
   const columns: Column[] = [
     {
@@ -109,7 +138,7 @@ export default function WMSTransmissionLogsPage() {
         if (value === 'SUCCESS') color = 'success';
         else if (value === 'FAILED') color = 'error';
         else if (value === 'ERROR') color = 'error';
-        else if (value === 'UNKNOWN') color = 'warning';
+        else if (value === 'UNKNOWN' || value === 'RETRYING') color = 'warning';
 
         return (
           <Chip
@@ -174,17 +203,39 @@ export default function WMSTransmissionLogsPage() {
     {
       id: 'actions',
       label: 'Actions',
-      minWidth: 100,
+      minWidth: 140,
       format: (value: any, row: any) => (
-        <Tooltip title="View Details">
-          <IconButton
-            size="small"
-            color="primary"
-            onClick={() => handleViewDetails(row as WMSTransmissionLog)}
-          >
-            <Visibility fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <Stack direction="row" spacing={0.5}>
+          <Tooltip title="View Details">
+            <IconButton
+              size="small"
+              color="primary"
+              onClick={() => handleViewDetails(row as WMSTransmissionLog)}
+            >
+              <Visibility fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          {isFailedRetryableLog(row as WMSTransmissionLog) && (
+            <Tooltip title={getRetryTooltip(row as WMSTransmissionLog)}>
+              <span>
+                <IconButton
+                  size="small"
+                  color="warning"
+                  onClick={() => {
+                    setPendingRetryLog(row as WMSTransmissionLog);
+                    setConfirmRetryOpen(true);
+                  }}
+                  disabled={!canRetryLog(row as WMSTransmissionLog) || retryingId === String((row as WMSTransmissionLog).id)}
+                >
+                  {retryingId === String((row as WMSTransmissionLog).id)
+                    ? <CircularProgress size={16} />
+                    : <ReplayIcon fontSize="small" />
+                  }
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
+        </Stack>
       ),
     },
   ];
@@ -284,6 +335,28 @@ export default function WMSTransmissionLogsPage() {
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(null), 2000);
     });
+  };
+
+  const handleRetry = async (log: WMSTransmissionLog) => {
+    setRetryingId(String(log.id));
+    try {
+      const response = await fetch(`/api/settings/wms-transmission-logs/${log.id}/retry`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to retry WMS processing');
+      }
+
+      toast.success(result.message || 'WMS payload reprocessed successfully');
+      await fetchLogs();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to retry WMS processing');
+      await fetchLogs();
+    } finally {
+      setRetryingId(null);
+    }
   };
 
   const getActionOptions = () => {
@@ -419,6 +492,7 @@ export default function WMSTransmissionLogsPage() {
               <MenuItem value="SUCCESS">Success</MenuItem>
               <MenuItem value="FAILED">Failed</MenuItem>
               <MenuItem value="ERROR">Error</MenuItem>
+              <MenuItem value="RETRYING">Retrying</MenuItem>
             </TextField>
             <TextField
               select
@@ -538,6 +612,8 @@ export default function WMSTransmissionLogsPage() {
                         ? 'success'
                         : selectedLog.transmission_status === 'FAILED' || selectedLog.transmission_status === 'ERROR'
                         ? 'error'
+                        : selectedLog.transmission_status === 'RETRYING'
+                        ? 'warning'
                         : 'default'
                     }
                     variant="outlined"
@@ -563,7 +639,7 @@ export default function WMSTransmissionLogsPage() {
                   </Typography>
                 </Box>
 
-                {selectedLog.transmission_status !== 'SUCCESS' && selectedLog.wms_request_payload && (
+                {selectedLog.wms_request_payload && (
                   <Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
                       <Typography variant="subtitle2" color="text.secondary">
@@ -650,9 +726,66 @@ export default function WMSTransmissionLogsPage() {
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ justifyContent: 'space-between' }}>
+          <Box>
+            {selectedLog && isFailedRetryableLog(selectedLog) && (
+              <Tooltip title={getRetryTooltip(selectedLog)}>
+                <span>
+                  <Button
+                    onClick={() => {
+                      setPendingRetryLog(selectedLog);
+                      setConfirmRetryOpen(true);
+                    }}
+                    color="warning"
+                    variant="contained"
+                    disabled={!canRetryLog(selectedLog) || retryingDialog}
+                    startIcon={retryingDialog ? <CircularProgress size={16} /> : <ReplayIcon />}
+                  >
+                    Retry Processing
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
+          </Box>
           <Button onClick={handleCloseDetailDialog} variant="contained">
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={confirmRetryOpen} onClose={() => setConfirmRetryOpen(false)}>
+        <DialogTitle>Confirm WMS Retry</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Retry internal WMS processing for this stored payload? This replays the original WMS payload through the current transaction logic.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setConfirmRetryOpen(false);
+              setPendingRetryLog(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={async () => {
+              if (!pendingRetryLog) return;
+              const isFromDialog = selectedLog && selectedLog.id === pendingRetryLog.id;
+              setConfirmRetryOpen(false);
+              if (isFromDialog) setRetryingDialog(true);
+              await handleRetry(pendingRetryLog);
+              if (isFromDialog) {
+                setRetryingDialog(false);
+                setDetailDialogOpen(false);
+              }
+              setPendingRetryLog(null);
+            }}
+            color="warning"
+            variant="contained"
+          >
+            Retry
           </Button>
         </DialogActions>
       </Dialog>

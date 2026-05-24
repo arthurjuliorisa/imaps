@@ -21,6 +21,19 @@ import { WIPBalanceService } from '@/lib/services/wip-balance.service';
 import { createRequestLogger, logRequest, logResponse } from '@/lib/utils/logger';
 import { logActivity } from '@/lib/log-activity';
 
+function getWipBalanceLogCompanyCode(payload: any): number | null {
+  if (!Array.isArray(payload?.records)) {
+    return null;
+  }
+
+  const companyCodes = payload.records
+    .map((record: any) => record?.company_code)
+    .filter((companyCode: unknown): companyCode is number => typeof companyCode === 'number' && Number.isFinite(companyCode));
+
+  const uniqueCompanyCodes = new Set(companyCodes);
+  return uniqueCompanyCodes.size === 1 ? companyCodes[0] : null;
+}
+
 /**
  * POST /api/v1/wip-balance
  * Process WIP Balance batch request
@@ -65,6 +78,7 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     body = await request.json();
+    const logCompanyCode = getWipBalanceLogCompanyCode(body);
 
     // Process WIP Balance batch
     const service = new WIPBalanceService();
@@ -90,7 +104,7 @@ export async function POST(request: NextRequest) {
         },
         metadata: {
           wms_id: body?.wms_id,
-          company_code: body?.company_code,
+          company_code: logCompanyCode,
           error_type: 'VALIDATION_ERROR',
           totalRecords,
           failedCount: totalRecords,
@@ -132,9 +146,10 @@ export async function POST(request: NextRequest) {
       action: 'WMS_PROCESS_WIP_BALANCE',
       description: `Successfully processed WIP balance - ${result.data?.summary?.success_count || 0} records processed`,
       status: 'success',
+      wms_payload: body,
       metadata: {
         wms_id: body?.records?.[0]?.wms_id,
-        company_code: body?.company_code,
+        company_code: logCompanyCode,
         item_count: result.data?.summary?.success_count,
         summary: result.data?.summary,
       },
@@ -143,6 +158,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result.data, { status: 200 });
   } catch (error) {
     requestLogger.error('Failed to process WIP Balance batch', { error });
+    const logCompanyCode = getWipBalanceLogCompanyCode(body);
 
     // Log error with payload tracking
     await logActivity({
@@ -156,7 +172,7 @@ export async function POST(request: NextRequest) {
       },
       metadata: {
         wms_id: body?.wms_id,
-        company_code: body?.company_code,
+        company_code: logCompanyCode,
         error_type: 'SYSTEM_ERROR',
       },
     });

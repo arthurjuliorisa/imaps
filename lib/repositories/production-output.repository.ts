@@ -284,32 +284,22 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
           });
         }
 
-        return { header, items: [], itemCodeToIdMap };
-      });
+        // Step 4: Create traceability records for work order to finished/semifinished goods.
+        // Rebuild inside the same transaction as header/items so a failed
+        // dependency rebuild cannot leave stale or missing traceability rows.
+        if (itemCodeToIdMap.size > 0) {
+          await tx.work_order_fg_production.deleteMany({
+            where: {
+              production_output_id: header.id,
+              company_code: data.company_code,
+            },
+          });
 
-      log.info('Items managed successfully', {
-        totalItems: data.items.length,
-        mappedItems: itemCodeToIdMap.size,
-      });
-
-      // Step 4: Create traceability records for work order to finished/semifinished goods
-      // This links production outputs to their source work orders for PPKEK traceability
-      if (result.header && itemCodeToIdMap && itemCodeToIdMap.size > 0) {
-        // Delete existing traceability records for this production output
-        // when updating, replace with new traceability data
-        await prisma.work_order_fg_production.deleteMany({
-          where: {
-            production_output_id: result.header.id,
-            company_code: data.company_code,
-          },
-        });
-
-        try {
           for (const item of data.items) {
             if (item.work_order_number && itemCodeToIdMap.has(item.item_code)) {
               const itemId = itemCodeToIdMap.get(item.item_code)!;
 
-              await prisma.work_order_fg_production.upsert({
+              await tx.work_order_fg_production.upsert({
                 where: {
                   work_order_fg_production_unique: {
                     production_wms_id: data.wms_id,
@@ -318,10 +308,15 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
                   },
                 },
                 update: {
+                  production_output_id: header.id,
+                  production_output_item_id: itemId,
+                  company_code: data.company_code,
+                  item_type: item.item_type,
                   qty_produced: new Prisma.Decimal(item.qty),
+                  trx_date: transactionDate,
                 },
                 create: {
-                  production_output_id: result.header.id,
+                  production_output_id: header.id,
                   production_output_item_id: itemId,
                   production_wms_id: data.wms_id,
                   work_order_number: item.work_order_number,
@@ -338,12 +333,15 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
           log.info('Production traceability records created', {
             count: data.items.filter(i => i.work_order_number).length,
           });
-        } catch (err) {
-          log.warn('Failed to create production traceability records', {
-            error: (err as any).message,
-          });
         }
-      }
+
+        return { header, items: [], itemCodeToIdMap };
+      });
+
+      log.info('Items managed successfully', {
+        totalItems: data.items.length,
+        mappedItems: itemCodeToIdMap.size,
+      });
 
       // Step 5: Calculate item-level snapshots and cascade recalculation
       try {

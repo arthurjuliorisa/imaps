@@ -78,7 +78,7 @@ export async function GET(request: Request) {
         OR item_name ILIKE $${countParamIndex}
         OR item_type ILIKE $${countParamIndex}
         OR unit_quantity ILIKE $${countParamIndex}
-        OR COALESCE(currency, '') ILIKE $${countParamIndex}
+        OR COALESCE(currency::text, '') ILIKE $${countParamIndex}
       )`;
       countParams.push(`%${search}%`);
     }
@@ -123,7 +123,7 @@ export async function GET(request: Request) {
         OR item_name ILIKE $${itemType ? 5 : 4}
         OR item_type ILIKE $${itemType ? 5 : 4}
         OR unit_quantity ILIKE $${itemType ? 5 : 4}
-        OR COALESCE(currency, '') ILIKE $${itemType ? 5 : 4}
+        OR COALESCE(currency::text, '') ILIKE $${itemType ? 5 : 4}
       )` : ''}
       ORDER BY item_code
       LIMIT $${4 + (itemType ? 1 : 0) + (search ? 1 : 0)}::integer OFFSET $${5 + (itemType ? 1 : 0) + (search ? 1 : 0)}::integer

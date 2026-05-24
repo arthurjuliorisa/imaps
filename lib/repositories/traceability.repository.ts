@@ -88,7 +88,7 @@ export class TraceabilityRepository {
   private calculateDisplayedAllocatedQty(
     materialAllocatedQty: Prisma.Decimal | null | undefined,
     ppkekQtyConsumed: Prisma.Decimal,
-    totalMaterialQtyConsumed: Prisma.Decimal,
+    totalRelevantQtyConsumed: Prisma.Decimal,
     ppkekCount: number
   ): number {
     if (!materialAllocatedQty) {
@@ -101,14 +101,14 @@ export class TraceabilityRepository {
       return Number(outgoingAllocatedQty.toString());
     }
 
-    if (totalMaterialQtyConsumed.isZero()) {
+    if (totalRelevantQtyConsumed.isZero()) {
       return Number(ppkekQtyConsumed.toString());
     }
 
     return Number(
       outgoingAllocatedQty
         .mul(ppkekQtyConsumed)
-        .div(totalMaterialQtyConsumed)
+        .div(totalRelevantQtyConsumed)
         .toString()
     );
   }
@@ -339,16 +339,60 @@ export class TraceabilityRepository {
             consumptionByPPKEK.set(consumption.ppkek_number, existingQty.add(consumedQty));
           }
 
-          const totalMaterialQtyConsumed = Array.from(consumptionByPPKEK.values()).reduce(
-            (sum, qty) => sum.add(qty),
+          const tracePPKEKNumbers = new Set(
+            materialTraceRecords
+              .map((record) => record.ppkek_number_incoming)
+              .filter((ppkekNumber): ppkekNumber is string =>
+                typeof ppkekNumber === 'string' && ppkekNumber.trim().length > 0
+              )
+          );
+
+          const ppkekCandidates = [];
+
+          // Build the exact PPKEK/registration rows that can be displayed first.
+          // The split denominator must come from this same visible row set; using
+          // the full WO material consumption can under-allocate visible PPKEKs
+          // when some consumption rows are not part of the traceability result.
+          for (const [ppkekNumber, ppkekQtyConsumed] of consumptionByPPKEK.entries()) {
+            const incomingGood = await prisma.incoming_goods.findFirst({
+              where: {
+                ppkek_number: ppkekNumber,
+                company_code: companyCode,
+              },
+              orderBy: { incoming_date: 'desc' },
+            });
+
+            ppkekCandidates.push({
+              ppkekNumber,
+              ppkekQtyConsumed,
+              incomingGood,
+            });
+          }
+
+          const traceMatchedCandidates = ppkekCandidates.filter((candidate) =>
+            tracePPKEKNumbers.has(candidate.ppkekNumber)
+          );
+          const incomingMatchedCandidates = ppkekCandidates.filter(
+            (candidate) => candidate.incomingGood
+          );
+
+          const displayPPKEKRows =
+            traceMatchedCandidates.length > 1
+              ? traceMatchedCandidates
+              : incomingMatchedCandidates.length > 0
+                ? incomingMatchedCandidates
+                : ppkekCandidates;
+
+          const totalRelevantQtyConsumed = displayPPKEKRows.reduce(
+            (sum, candidate) => sum.add(candidate.ppkekQtyConsumed),
             new Prisma.Decimal(0)
           );
 
-          // Process each PPKEK to get customs details and displayed allocation.
-          for (const [ppkekNumber, ppkekQtyConsumed] of consumptionByPPKEK.entries()) {
+          // Process each visible PPKEK to get customs details and displayed allocation.
+          for (const candidate of displayPPKEKRows) {
             const exactTraceRecordWithAllocation = materialTraceRecords.find(
               (r) =>
-                r.ppkek_number_incoming === ppkekNumber &&
+                r.ppkek_number_incoming === candidate.ppkekNumber &&
                 r.material_qty_allocated !== null
             );
 
@@ -358,33 +402,24 @@ export class TraceabilityRepository {
 
             // Check if PPKEK already added
             const ppkekExists = materialEntry.ppkeksWithQty.some(
-              (p) => p.ppkek_number === ppkekNumber
+              (p) => p.ppkek_number === candidate.ppkekNumber
             );
 
             if (!ppkekExists) {
-              // Query incoming_goods to get customs details
-              const incomingGood = await prisma.incoming_goods.findFirst({
-                where: {
-                  ppkek_number: ppkekNumber,
-                  company_code: companyCode,
-                },
-                orderBy: { incoming_date: 'desc' },
-              });
-
               materialEntry.ppkeksWithQty.push({
-                ppkek_number: ppkekNumber,
-                customs_registration_date: incomingGood?.customs_registration_date
-                  ? new Date(incomingGood.customs_registration_date).toISOString().split('T')[0]
+                ppkek_number: candidate.ppkekNumber,
+                customs_registration_date: candidate.incomingGood?.customs_registration_date
+                  ? new Date(candidate.incomingGood.customs_registration_date).toISOString().split('T')[0]
                   : '',
-                customs_document_type: incomingGood?.customs_document_type || '',
-                incoming_date: incomingGood?.incoming_date
-                  ? new Date(incomingGood.incoming_date).toISOString().split('T')[0]
+                customs_document_type: candidate.incomingGood?.customs_document_type || '',
+                incoming_date: candidate.incomingGood?.incoming_date
+                  ? new Date(candidate.incomingGood.incoming_date).toISOString().split('T')[0]
                   : '',
                 qty_allocated: this.calculateDisplayedAllocatedQty(
                   materialAllocatedQty,
-                  ppkekQtyConsumed,
-                  totalMaterialQtyConsumed,
-                  consumptionByPPKEK.size
+                  candidate.ppkekQtyConsumed,
+                  totalRelevantQtyConsumed,
+                  displayPPKEKRows.length
                 ),
                 qty_uom: materialEntry.qtyUom,
               });

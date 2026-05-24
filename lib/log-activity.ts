@@ -178,7 +178,7 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
 
     // 2. For ANY WMS transmission action, create detailed transmission log
     // Strategy: ALWAYS log WMS transmissions (success, failed, error)
-    // Difference: Only FAILED/ERROR cases include wms_payload and imaps_response (for storage efficiency)
+    // Difference: request payload is stored when supplied; only FAILED/ERROR cases include imaps_response.
     if (action && action.startsWith('WMS_')) {
       try {
         // Determine transmission status
@@ -189,7 +189,7 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
 
         // Normalize payload structure before storing
         const transactionType = getTransactionTypeFromAction(action);
-        const normalizedPayload = status !== 'success' && wms_payload 
+        const normalizedPayload = wms_payload
           ? normalizeWmsPayload(wms_payload, transactionType)
           : null;
 
@@ -227,7 +227,6 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
             transmission_status: transmissionStatus,
             error_type: status !== 'success' ? (metadata?.error_type || 'UNKNOWN') : null,
             summary: description,
-            // Only store payloads for FAILED/ERROR cases
             wms_request_payload: serializedPayload,
             imaps_error_response: serializedResponse,
             item_count: Array.isArray(wms_payload?.items) ? wms_payload.items.length : null,
