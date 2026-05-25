@@ -875,7 +875,8 @@ BEGIN
                 sds.item_code,
                 sds.uom,
                 SUM(sds.incoming_qty) as total_incoming_qty,
-                SUM(sds.outgoing_qty) as total_outgoing_qty
+                SUM(sds.outgoing_qty) as total_outgoing_qty,
+                SUM(sds.adjustment_qty) as total_adjustment_qty
             FROM stock_daily_snapshot sds
             WHERE sds.item_type = ANY(p_item_types)
               AND sds.snapshot_date BETWEEN v_start_date AND v_end_date
@@ -931,7 +932,7 @@ BEGIN
             ) as opening_balance,
             COALESCE(rm.total_incoming_qty, 0)::NUMERIC(15,3) as quantity_received,
             COALESCE(rm.total_outgoing_qty, 0)::NUMERIC(15,3) as quantity_issued_outgoing,
-            0::NUMERIC(15,3) as adjustment,
+            COALESCE(rm.total_adjustment_qty, 0)::NUMERIC(15,3) as adjustment,
             COALESCE(
                 (SELECT cbd.closing_balance FROM closing_balance_data cbd 
                  WHERE cbd.company_code = ai.company_code 
@@ -955,7 +956,7 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION fn_calculate_lpj_barang_sisa IS 
 'Calculate LPJ (Laporan Pemasukan Jurnal) for scrap/waste items (SCRAP)
-Using snapshot-only approach: sum incoming_qty and outgoing_qty within date range, no adjustments
+Using snapshot-only approach: sum incoming_qty, outgoing_qty, and adjustment_qty within date range
 Opening balance from closest snapshot BEFORE start_date (or 0), closing balance from end_date snapshot';
 
 -- ============================================================================

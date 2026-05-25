@@ -36,31 +36,51 @@ export async function GET(request: Request) {
 
     // Query from function with custom date range support and pagination
     let query = `
-      SELECT
-        no,
-        company_code,
-        company_name,
-        item_code,
-        item_name,
-        item_type,
-        unit_quantity as unit,
-        snapshot_date,
-        opening_balance as beginning,
-        quantity_received as "in",
-        quantity_issued_outgoing as "out",
-        adjustment,
-        closing_balance as ending,
-        stock_count_result as "stockOpname",
-        quantity_difference as variant,
-        value_amount,
-        currency,
-        remarks
-      FROM fn_calculate_lpj_barang_sisa(
-        ARRAY['SCRAP'],
-        $2::DATE,
-        $3::DATE
+      WITH lpj AS (
+        SELECT *
+        FROM fn_calculate_lpj_barang_sisa(
+          ARRAY['SCRAP'],
+          $2::DATE,
+          $3::DATE
+        )
+      ),
+      range_adjustments AS (
+        SELECT
+          company_code,
+          item_code,
+          uom,
+          SUM(adjustment_qty)::NUMERIC(15,3) AS adjustment
+        FROM stock_daily_snapshot
+        WHERE item_type = 'SCRAP'
+          AND company_code = $1
+          AND snapshot_date BETWEEN $2::DATE AND $3::DATE
+        GROUP BY company_code, item_code, uom
       )
-      WHERE company_code = $1
+      SELECT
+        lpj.no,
+        lpj.company_code,
+        lpj.company_name,
+        lpj.item_code,
+        lpj.item_name,
+        lpj.item_type,
+        lpj.unit_quantity as unit,
+        lpj.snapshot_date,
+        lpj.opening_balance as beginning,
+        lpj.quantity_received as "in",
+        lpj.quantity_issued_outgoing as "out",
+        COALESCE(range_adjustments.adjustment, lpj.adjustment, 0::NUMERIC(15,3)) as adjustment,
+        lpj.closing_balance as ending,
+        lpj.stock_count_result as "stockOpname",
+        lpj.quantity_difference as variant,
+        lpj.value_amount,
+        lpj.currency,
+        lpj.remarks
+      FROM lpj
+      LEFT JOIN range_adjustments
+        ON range_adjustments.company_code = lpj.company_code
+       AND range_adjustments.item_code = lpj.item_code
+       AND COALESCE(range_adjustments.uom, 'UNIT') = lpj.unit_quantity
+      WHERE lpj.company_code = $1
     `;
 
     const params: any[] = [companyCode];
@@ -89,25 +109,25 @@ export async function GET(request: Request) {
     paramIndex += 2;
 
     if (itemType) {
-      query += ` AND item_type = $${paramIndex}`;
+      query += ` AND lpj.item_type = $${paramIndex}`;
       params.push(itemType);
       paramIndex++;
     }
 
     if (search) {
       query += ` AND (
-        company_name ILIKE $${paramIndex}
-        OR item_code ILIKE $${paramIndex}
-        OR item_name ILIKE $${paramIndex}
-        OR item_type ILIKE $${paramIndex}
-        OR unit_quantity ILIKE $${paramIndex}
-        OR COALESCE(remarks, '') ILIKE $${paramIndex}
+        lpj.company_name ILIKE $${paramIndex}
+        OR lpj.item_code ILIKE $${paramIndex}
+        OR lpj.item_name ILIKE $${paramIndex}
+        OR lpj.item_type ILIKE $${paramIndex}
+        OR lpj.unit_quantity ILIKE $${paramIndex}
+        OR COALESCE(lpj.remarks, '') ILIKE $${paramIndex}
       )`;
       params.push(`%${search}%`);
       paramIndex++;
     }
 
-    query += ` ORDER BY item_code`;
+    query += ` ORDER BY lpj.item_code`;
 
     // Get total count for pagination
     let countQuery = `
