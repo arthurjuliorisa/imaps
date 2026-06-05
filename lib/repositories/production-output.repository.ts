@@ -412,6 +412,13 @@ export class ProductionOutputRepository extends BaseTransactionRepository {
           note: 'All future snapshots recalculated with correct opening_balance from previous closing'
         });
 
+        await this.syncItemDescriptionsFromPayload(
+          data.company_code,
+          snapshotItems,
+          data.wms_id,
+          'production_output'
+        );
+
         // Additional: If date changed, also recalculate old date
         if (isDateChanged && oldDate) {
           try {

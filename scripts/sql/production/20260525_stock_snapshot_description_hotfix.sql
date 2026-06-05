@@ -1,72 +1,20 @@
 -- =============================================================================
--- iMAPS Database - Item-Level Stock Snapshot Functions
--- File: 05_item_level_snapshot_functions.sql
--- Purpose: Direct recalculation of item-level snapshots without queue
--- Version: 1.0 (Item-level, incoming_goods focused, extensible for other sources)
--- =============================================================================
-
--- =============================================================================
--- 1. GET ITEM OPENING BALANCE
--- Purpose: Find opening balance for a single item at a given date
--- Logic:
---   1. Check beginning_balances for exact date
---   2. If not found, get closing_balance from MAX(snapshot_date) < target_date
---   3. If not found, return 0
--- =============================================================================
-
-CREATE OR REPLACE FUNCTION get_item_opening_balance(
-    p_company_code INTEGER,
-    p_item_type VARCHAR(10),
-    p_item_code VARCHAR(50),
-    p_uom VARCHAR(20),
-    p_snapshot_date DATE
-)
-RETURNS NUMERIC(15,3)
-LANGUAGE plpgsql
-STABLE
-AS $$
-DECLARE
-    v_opening_balance NUMERIC(15,3);
-BEGIN
-    -- Try 1: Get from beginning_balances (exact date, include UOM)
-    SELECT qty INTO v_opening_balance
-    FROM beginning_balances
-    WHERE company_code = p_company_code
-      AND item_type = p_item_type
-      AND item_code = p_item_code
-      AND uom = p_uom
-      AND balance_date = p_snapshot_date
-      AND deleted_at IS NULL
-    LIMIT 1;
-
-    IF v_opening_balance IS NOT NULL THEN
-        RETURN v_opening_balance;
-    END IF;
-
-    -- Try 2: Get closing_balance from previous snapshot (latest before target_date, include UOM)
-    SELECT closing_balance INTO v_opening_balance
-    FROM stock_daily_snapshot
-    WHERE company_code = p_company_code
-      AND item_type = p_item_type
-      AND item_code = p_item_code
-      AND uom = p_uom
-      AND snapshot_date < p_snapshot_date
-    ORDER BY snapshot_date DESC
-    LIMIT 1;
-
-    IF v_opening_balance IS NOT NULL THEN
-        RETURN v_opening_balance;
-    END IF;
-
-    -- Default: 0
-    RETURN NUMERIC '0.000';
-END;
-$$;
-
--- =============================================================================
--- 2. LATEST STOCK ITEM NAME
--- Purpose: Resolve canonical display description for a stock identity.
--- Identity remains company_code + item_type + item_code + uom.
+-- iMAPS Production Hotfix
+-- Stock daily snapshot item_name consolidation, legacy snapshot guard,
+-- and cascade recalculation advisory lock for race-condition prevention
+--
+-- Correct production order:
+--   1. Backup database:
+--      pg_dump "$DATABASE_URL" -Fc -f "/tmp/imaps_before_stock_snapshot_hotfix_$(date +%Y%m%d_%H%M%S).dump"
+--   2. Apply this function-only hotfix.
+--   3. Run scripts/sql/07_stock_snapshot_description_audit.sql.
+--
+-- Safe production hotfix command:
+--   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f scripts/sql/production/20260525_stock_snapshot_description_hotfix.sql
+--
+-- This patch only creates/replaces functions and grants execute permission.
+-- It does not create/drop/truncate tables, rebuild indexes, recreate views,
+-- or update stock_daily_snapshot rows during patch application.
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION get_latest_stock_item_name(
@@ -355,19 +303,6 @@ $$;
 
 COMMENT ON FUNCTION sync_item_description_from_payload IS 'Payload-driven display item_name sync for stock_daily_snapshot and wip_balances; updates only changed item_name/updated_at rows and never scans historical source tables.';
 
--- =============================================================================
--- 3. UPSERT ITEM STOCK SNAPSHOT (SINGLE ITEM)
--- Purpose: Calculate and upsert snapshot for ONE item on ONE date
--- Returns: Detail of opening, closing, and quantities
--- Logic:
---   1. Get opening balance via get_item_opening_balance()
---   2. Query SUM quantities dari transaksi pada tanggal tersebut:
---      - incoming_good_items (untuk incoming_goods)
---      - (Nanti: outgoing, adjustments, production, material_usage, scrap)
---   3. Calculate closing = opening + incoming - outgoing - usage + production ± adjustment
---   4. UPSERT ke stock_daily_snapshot ON CONFLICT DO UPDATE
--- =============================================================================
-
 CREATE OR REPLACE FUNCTION upsert_item_stock_snapshot(
     p_company_code INTEGER,
     p_item_type VARCHAR(10),
@@ -384,7 +319,7 @@ RETURNS TABLE(
     material_usage_qty NUMERIC(15,3),
     production_qty NUMERIC(15,3),
     adjustment_qty NUMERIC(15,3),
-    operation VARCHAR(20) -- 'INSERT' or 'UPDATE'
+    operation VARCHAR(20)
 )
 LANGUAGE plpgsql
 AS $$
@@ -400,29 +335,25 @@ DECLARE
     v_exists BOOLEAN;
     v_item_name VARCHAR(200);
 BEGIN
-    -- Get opening balance (include UOM filter)
     v_opening_balance := get_item_opening_balance(
         p_company_code, p_item_type, p_item_code, p_uom, p_snapshot_date
     );
 
-    -- Query incoming quantities (from incoming_good_items AND scrap_transaction_items)
     SELECT COALESCE(SUM(qty), NUMERIC '0.000')
     INTO v_incoming_qty
     FROM (
-      -- Incoming from incoming_good_items (NOT for SCRAP - scrap uses scrap_transaction_items)
       SELECT qty
       FROM incoming_good_items
       WHERE incoming_good_company = p_company_code
         AND item_type = p_item_type
-        AND item_type != 'SCRAP'  -- SCRAP items use scrap_transaction_items instead
+        AND item_type != 'SCRAP'
         AND item_code = p_item_code
         AND uom = p_uom
         AND incoming_good_date = p_snapshot_date
         AND deleted_at IS NULL
-      
+
       UNION ALL
-      
-      -- Incoming from scrap_transaction_items (for SCRAP item type only)
+
       SELECT sti.qty
       FROM scrap_transaction_items sti
       JOIN scrap_transactions st ON sti.scrap_transaction_id = st.id
@@ -437,11 +368,9 @@ BEGIN
         AND sti.deleted_at IS NULL
     ) AS combined_incoming;
 
-    -- Query outgoing quantities (from outgoing_good_items AND scrap_transaction_items)
     SELECT COALESCE(SUM(qty), NUMERIC '0.000')
     INTO v_outgoing_qty
     FROM (
-      -- Outgoing from outgoing_good_items (for non-SCRAP items AND SCRAP items)
       SELECT qty
       FROM outgoing_good_items
       WHERE outgoing_good_company = p_company_code
@@ -450,10 +379,9 @@ BEGIN
         AND uom = p_uom
         AND outgoing_good_date = p_snapshot_date
         AND deleted_at IS NULL
-      
+
       UNION ALL
-      
-      -- Outgoing from scrap_transaction_items (for SCRAP item type only, when NOT in outgoing_good_items)
+
       SELECT sti.qty
       FROM scrap_transaction_items sti
       JOIN scrap_transactions st ON sti.scrap_transaction_id = st.id
@@ -477,11 +405,10 @@ BEGIN
         )
     ) AS combined_outgoing;
 
-    -- Query material usage quantities
     SELECT COALESCE(SUM(
-        CASE 
-            WHEN mu.reversal = 'Y' THEN -mui.qty  -- Return increases stock
-            ELSE mui.qty 
+        CASE
+            WHEN mu.reversal = 'Y' THEN -mui.qty
+            ELSE mui.qty
         END
     ), NUMERIC '0.000')
     INTO v_material_usage_qty
@@ -495,11 +422,10 @@ BEGIN
       AND mu.deleted_at IS NULL
       AND mui.deleted_at IS NULL;
 
-    -- Query production quantities
     SELECT COALESCE(SUM(
-        CASE 
-            WHEN po.reversal = 'Y' THEN -poi.qty  -- Reversal decreases stock
-            ELSE poi.qty 
+        CASE
+            WHEN po.reversal = 'Y' THEN -poi.qty
+            ELSE poi.qty
         END
     ), NUMERIC '0.000')
     INTO v_production_qty
@@ -513,11 +439,10 @@ BEGIN
       AND po.deleted_at IS NULL
       AND poi.deleted_at IS NULL;
 
-    -- Query adjustment quantities (using File 03 pattern for consistency)
     SELECT COALESCE(SUM(
-        CASE 
+        CASE
             WHEN ai.adjustment_type = 'GAIN' THEN ai.qty
-            ELSE -ai.qty  -- LOSS
+            ELSE -ai.qty
         END
     ), NUMERIC '0.000')
     INTO v_adjustment_qty
@@ -529,16 +454,13 @@ BEGIN
       AND ai.adjustment_date = p_snapshot_date
       AND ai.deleted_at IS NULL;
 
-    -- Calculate closing balance
-    -- Formula: Closing = Opening + In - Out - Usage + Production ± Adjustment
-    v_closing_balance := v_opening_balance 
-                       + v_incoming_qty 
-                       - v_outgoing_qty 
-                       - v_material_usage_qty 
-                       + v_production_qty 
+    v_closing_balance := v_opening_balance
+                       + v_incoming_qty
+                       - v_outgoing_qty
+                       - v_material_usage_qty
+                       + v_production_qty
                        + v_adjustment_qty;
 
-    -- Check if exists (include UOM in check)
     SELECT EXISTS (
         SELECT 1 FROM stock_daily_snapshot
         WHERE company_code = p_company_code
@@ -563,7 +485,6 @@ BEGIN
         ''
     );
 
-    -- UPSERT
     INSERT INTO stock_daily_snapshot (
         company_code,
         item_type,
@@ -615,10 +536,8 @@ BEGIN
         calculated_at = EXCLUDED.calculated_at,
         updated_at = NOW();
 
-    -- Determine operation type
     v_operation := CASE WHEN v_exists THEN 'UPDATE' ELSE 'INSERT' END;
 
-    -- Return result
     RETURN QUERY SELECT
         v_opening_balance AS opening_balance,
         v_closing_balance AS closing_balance,
@@ -630,138 +549,6 @@ BEGIN
         v_operation::VARCHAR(20) AS operation;
 END;
 $$;
-
--- =============================================================================
--- 4. SYNC SNAPSHOT ITEM NAMES
--- Purpose: Idempotently backfill stock_daily_snapshot.item_name to latest display name
--- =============================================================================
-
-CREATE OR REPLACE FUNCTION sync_stock_daily_snapshot_item_names()
-RETURNS INTEGER
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_updated_count INTEGER := 0;
-BEGIN
-    WITH identities AS (
-        SELECT DISTINCT
-            sds.company_code,
-            sds.item_type,
-            sds.item_code,
-            sds.uom
-        FROM stock_daily_snapshot sds
-    ),
-    canonical AS (
-        SELECT
-            identities.company_code,
-            identities.item_type,
-            identities.item_code,
-            identities.uom,
-            get_latest_stock_item_name(
-                identities.company_code,
-                identities.item_type,
-                identities.item_code,
-                identities.uom
-            ) AS item_name
-        FROM identities
-    )
-    UPDATE stock_daily_snapshot sds
-    SET
-        item_name = canonical.item_name,
-        updated_at = NOW()
-    FROM canonical
-    WHERE sds.company_code = canonical.company_code
-      AND sds.item_type = canonical.item_type
-      AND sds.item_code = canonical.item_code
-      AND sds.uom = canonical.uom
-      AND canonical.item_name IS NOT NULL
-      AND canonical.item_name != ''
-      AND sds.item_name IS DISTINCT FROM canonical.item_name;
-
-    GET DIAGNOSTICS v_updated_count = ROW_COUNT;
-    RETURN v_updated_count;
-END;
-$$;
-
-COMMENT ON FUNCTION sync_stock_daily_snapshot_item_names IS 'Idempotently updates only stock_daily_snapshot.item_name to latest canonical display names; does not change transactions, quantities, dates, or rows.';
-
--- =============================================================================
--- 5. BATCH UPSERT ITEMS STOCK SNAPSHOT
--- Purpose: Process multiple items (dari satu transaksi) sekaligus
--- Input: JSONB array [{"item_type":"ROH","item_code":"MAT-001","item_name":"Material A","uom":"PCS"}, ...]
--- Returns: Status each item (item_code, opening, closing, status, message)
--- =============================================================================
-
-CREATE OR REPLACE FUNCTION upsert_items_stock_snapshot(
-    p_company_code INTEGER,
-    p_items JSONB,
-    p_snapshot_date DATE
-)
-RETURNS TABLE(
-    item_code VARCHAR(50),
-    opening_balance NUMERIC(15,3),
-    closing_balance NUMERIC(15,3),
-    status VARCHAR(20),
-    message TEXT
-)
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_item JSONB;
-    v_item_type VARCHAR(10);
-    v_item_code VARCHAR(50);
-    v_item_name VARCHAR(200);
-    v_uom VARCHAR(20);
-    v_result RECORD;
-BEGIN
-    -- Loop through each item in the JSONB array
-    FOR v_item IN SELECT jsonb_array_elements(p_items)
-    LOOP
-        v_item_type := v_item->>'item_type';
-        v_item_code := v_item->>'item_code';
-        v_item_name := v_item->>'item_name';
-        v_uom := v_item->>'uom';
-
-        BEGIN
-            -- Call upsert_item_stock_snapshot untuk setiap item
-            SELECT * INTO v_result
-            FROM upsert_item_stock_snapshot(
-                p_company_code,
-                v_item_type,
-                v_item_code,
-                v_item_name,
-                v_uom,
-                p_snapshot_date
-            );
-
-            RETURN QUERY SELECT
-                v_item_code,
-                (v_result)."opening_balance",
-                (v_result)."closing_balance",
-                'SUCCESS'::VARCHAR(20),
-                format('Item %s snapshot calculated', v_item_code)::TEXT;
-
-        EXCEPTION WHEN OTHERS THEN
-            RETURN QUERY SELECT
-                v_item_code,
-                NULL::NUMERIC(15,3),
-                NULL::NUMERIC(15,3),
-                'ERROR'::VARCHAR(20),
-                format('Failed to upsert snapshot: %s', SQLERRM)::TEXT;
-        END;
-    END LOOP;
-END;
-$$;
-
--- =============================================================================
--- 6. RECALCULATE ITEM SNAPSHOTS FROM DATE
--- Purpose: Cascade recalculate snapshots dari tanggal tertentu ke snapshot-snapshot setelahnya
--- Logic:
---   1. Find semua DISTINCT snapshot_date >= p_from_date untuk item tersebut
---   2. Loop dari tanggal terkecil ke terbesar
---   3. Untuk setiap tanggal, panggil upsert_item_stock_snapshot()
--- Returns: INTEGER (jumlah tanggal yang di-recalculate)
--- =============================================================================
 
 CREATE OR REPLACE FUNCTION recalculate_item_snapshots_from_date(
     p_company_code INTEGER,
@@ -816,13 +603,11 @@ BEGIN
 
     v_item_name := COALESCE(v_item_name, '');
 
-    -- Open cursor and loop through dates
     OPEN v_dates_cursor;
     LOOP
         FETCH v_dates_cursor INTO v_snapshot_date;
         EXIT WHEN v_snapshot_date IS NULL;
 
-        -- Recalculate snapshot for this date (use p_uom explicitly)
         PERFORM upsert_item_stock_snapshot(
             p_company_code,
             p_item_type,
@@ -840,16 +625,111 @@ BEGIN
 END;
 $$;
 
--- =============================================================================
--- 7. GRANT PERMISSIONS
--- =============================================================================
+CREATE OR REPLACE FUNCTION sync_stock_daily_snapshot_item_names()
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_updated_count INTEGER := 0;
+BEGIN
+    WITH identities AS (
+        SELECT DISTINCT
+            sds.company_code,
+            sds.item_type,
+            sds.item_code,
+            sds.uom
+        FROM stock_daily_snapshot sds
+    ),
+    canonical AS (
+        SELECT
+            identities.company_code,
+            identities.item_type,
+            identities.item_code,
+            identities.uom,
+            get_latest_stock_item_name(
+                identities.company_code,
+                identities.item_type,
+                identities.item_code,
+                identities.uom
+            ) AS item_name
+        FROM identities
+    )
+    UPDATE stock_daily_snapshot sds
+    SET
+        item_name = canonical.item_name,
+        updated_at = NOW()
+    FROM canonical
+    WHERE sds.company_code = canonical.company_code
+      AND sds.item_type = canonical.item_type
+      AND sds.item_code = canonical.item_code
+      AND sds.uom = canonical.uom
+      AND canonical.item_name IS NOT NULL
+      AND canonical.item_name != ''
+      AND sds.item_name IS DISTINCT FROM canonical.item_name;
 
--- Grant execute permission to app user (adjust imapsuser to your actual user)
-GRANT EXECUTE ON FUNCTION get_item_opening_balance(INTEGER, VARCHAR, VARCHAR, VARCHAR, DATE) TO imapsuser;
+    GET DIAGNOSTICS v_updated_count = ROW_COUNT;
+    RETURN v_updated_count;
+END;
+$$;
+
+COMMENT ON FUNCTION sync_stock_daily_snapshot_item_names IS 'Idempotently updates only stock_daily_snapshot.item_name to latest canonical display names; does not change transactions, quantities, dates, or rows.';
+
+CREATE OR REPLACE FUNCTION calculate_stock_snapshot(
+    p_company_code INTEGER,
+    p_snapshot_date DATE
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION
+        'calculate_stock_snapshot(integer,date) is disabled because the legacy implementation was UOM-blind and can corrupt mixed-UOM stock. Use upsert_item_stock_snapshot(...) or recalculate_item_snapshots_from_date(...) instead. company_code=%, snapshot_date=%',
+        p_company_code,
+        p_snapshot_date;
+END;
+$$;
+
+COMMENT ON FUNCTION calculate_stock_snapshot IS 'Disabled legacy UOM-blind daily stock snapshot function. Use item-level snapshot recalculation functions instead.';
+
+CREATE OR REPLACE FUNCTION calculate_stock_snapshot_range(
+    p_company_code INTEGER,
+    p_start_date DATE,
+    p_end_date DATE
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION
+        'calculate_stock_snapshot_range(integer,date,date) is disabled because it delegates to legacy UOM-blind calculate_stock_snapshot(...). Use item-level recalculation instead. company_code=%, start_date=%, end_date=%',
+        p_company_code,
+        p_start_date,
+        p_end_date;
+END;
+$$;
+
+COMMENT ON FUNCTION calculate_stock_snapshot_range IS 'Disabled legacy UOM-blind stock snapshot range function. Use item-level snapshot recalculation functions instead.';
+
+CREATE OR REPLACE FUNCTION process_recalc_queue(
+    p_batch_size INTEGER DEFAULT 10
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION
+        'process_recalc_queue(integer) is disabled because it delegates to legacy UOM-blind calculate_stock_snapshot(...). Use direct item-level snapshot recalculation instead.';
+END;
+$$;
+
+COMMENT ON FUNCTION process_recalc_queue IS 'Disabled legacy queue worker because it delegates to UOM-blind calculate_stock_snapshot(...). Use direct item-level snapshot recalculation instead.';
+
 GRANT EXECUTE ON FUNCTION get_latest_stock_item_name(INTEGER, VARCHAR, VARCHAR, VARCHAR) TO imapsuser;
 GRANT EXECUTE ON FUNCTION sync_stock_daily_snapshot_item_name_for_identity(INTEGER, VARCHAR, VARCHAR, VARCHAR) TO imapsuser;
 GRANT EXECUTE ON FUNCTION sync_item_description_from_payload(INTEGER, VARCHAR, VARCHAR, VARCHAR, VARCHAR) TO imapsuser;
 GRANT EXECUTE ON FUNCTION upsert_item_stock_snapshot(INTEGER, VARCHAR, VARCHAR, VARCHAR, VARCHAR, DATE) TO imapsuser;
-GRANT EXECUTE ON FUNCTION upsert_items_stock_snapshot(INTEGER, JSONB, DATE) TO imapsuser;
 GRANT EXECUTE ON FUNCTION recalculate_item_snapshots_from_date(INTEGER, VARCHAR, VARCHAR, VARCHAR, DATE) TO imapsuser;
 GRANT EXECUTE ON FUNCTION sync_stock_daily_snapshot_item_names() TO imapsuser;
+GRANT EXECUTE ON FUNCTION calculate_stock_snapshot(INTEGER, DATE) TO imapsuser;
+GRANT EXECUTE ON FUNCTION calculate_stock_snapshot_range(INTEGER, DATE, DATE) TO imapsuser;
+GRANT EXECUTE ON FUNCTION process_recalc_queue(INTEGER) TO imapsuser;

@@ -259,6 +259,40 @@ export abstract class BaseTransactionRepository {
   }
 
   /**
+   * Sync SDS/WIP display item names from the accepted payload.
+   * This only updates changed display rows; it never inserts, deletes, or changes quantities.
+   */
+  protected async syncItemDescriptionsFromPayload(
+    companyCode: number,
+    items: SnapshotItem[],
+    wmsId: string,
+    transactionType: string
+  ): Promise<void> {
+    const log = logger.child({
+      scope: 'BaseTransactionRepository.syncItemDescriptionsFromPayload',
+      wmsId,
+      companyCode,
+      transactionType,
+      itemsCount: items.length,
+    });
+
+    try {
+      const results = await this.snapshotRepo.syncItemDescriptionsFromPayload(companyCode, items);
+      log.info('Payload item descriptions synced', {
+        identities: results.length,
+        sdsUpdatedCount: results.reduce((sum, r) => sum + r.sds_updated_count, 0),
+        wipUpdatedCount: results.reduce((sum, r) => sum + r.wip_updated_count, 0),
+      });
+    } catch (error: any) {
+      log.error('Failed to sync payload item descriptions (non-blocking)', {
+        errorName: error?.name,
+        errorMessage: error?.message,
+        errorCode: error?.code,
+      });
+    }
+  }
+
+  /**
    * Cascade recalculate snapshots from given date onwards
    * Called when transaction date changes (e.g., re-transmit with different date)
    * Ensures opening balances of subsequent dates are updated

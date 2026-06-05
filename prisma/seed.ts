@@ -68,6 +68,22 @@ async function grantDatabasePermissions() {
       `GRANT EXECUTE ON FUNCTION process_recalc_queue(INTEGER) TO ${appUser}`
     ).catch(() => null);
 
+    await prisma.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION get_latest_stock_item_name(INTEGER, VARCHAR, VARCHAR, VARCHAR) TO ${appUser}`
+    ).catch(() => null);
+
+    await prisma.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION sync_stock_daily_snapshot_item_names() TO ${appUser}`
+    ).catch(() => null);
+
+    await prisma.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION sync_stock_daily_snapshot_item_name_for_identity(INTEGER, VARCHAR, VARCHAR, VARCHAR) TO ${appUser}`
+    ).catch(() => null);
+
+    await prisma.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION sync_item_description_from_payload(INTEGER, VARCHAR, VARCHAR, VARCHAR, VARCHAR) TO ${appUser}`
+    ).catch(() => null);
+
     // Grant EXECUTE on traceability functions
     console.log('   ✓ Granting EXECUTE on traceability functions...');
     await prisma.$executeRawUnsafe(

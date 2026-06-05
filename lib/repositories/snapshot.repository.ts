@@ -12,6 +12,15 @@ export interface SnapshotItem {
   uom: string;
 }
 
+export interface ItemDescriptionSyncResult {
+  item_type: string;
+  item_code: string;
+  uom: string;
+  item_name: string;
+  sds_updated_count: number;
+  wip_updated_count: number;
+}
+
 /**
  * Interface for snapshot calculation result
  */
@@ -45,6 +54,76 @@ export interface BatchUpsertResult {
  */
 export class SnapshotRepository {
   private log = logger.child({ context: 'SnapshotRepository' });
+
+  /**
+   * Sync display descriptions from the accepted WMS payload.
+   * Payload item_name is the latest description candidate; do not scan history.
+   */
+  async syncItemDescriptionsFromPayload(
+    companyCode: number,
+    items: SnapshotItem[]
+  ): Promise<ItemDescriptionSyncResult[]> {
+    const log = this.log.child({
+      method: 'syncItemDescriptionsFromPayload',
+      companyCode,
+      itemsCount: items.length,
+    });
+
+    const distinctItems = new Map<string, SnapshotItem>();
+    for (const item of items) {
+      const itemName = item.item_name?.trim();
+      if (!itemName) {
+        continue;
+      }
+
+      distinctItems.set(
+        `${item.item_type}|${item.item_code}|${item.uom}|${itemName}`,
+        {
+          ...item,
+          item_name: itemName,
+        }
+      );
+    }
+
+    if (distinctItems.size === 0) {
+      log.debug('No item descriptions to sync');
+      return [];
+    }
+
+    const results: ItemDescriptionSyncResult[] = [];
+
+    for (const item of distinctItems.values()) {
+      const result = await prisma.$queryRaw<Array<{
+        sds_updated_count: number;
+        wip_updated_count: number;
+      }>>`
+        SELECT * FROM sync_item_description_from_payload(
+          ${companyCode}::INTEGER,
+          ${item.item_type}::VARCHAR,
+          ${item.item_code}::VARCHAR,
+          ${item.uom}::VARCHAR,
+          ${item.item_name}::VARCHAR
+        )
+      `;
+
+      results.push({
+        item_type: item.item_type,
+        item_code: item.item_code,
+        uom: item.uom,
+        item_name: item.item_name,
+        sds_updated_count: Number(result[0]?.sds_updated_count ?? 0),
+        wip_updated_count: Number(result[0]?.wip_updated_count ?? 0),
+      });
+    }
+
+    log.info('Item descriptions synced from payload', {
+      identities: results.length,
+      sdsUpdatedCount: results.reduce((sum, r) => sum + r.sds_updated_count, 0),
+      wipUpdatedCount: results.reduce((sum, r) => sum + r.wip_updated_count, 0),
+    });
+
+    return results;
+  }
 
   /**
    * Upsert snapshots for multiple items on a specific date
@@ -157,20 +236,7 @@ export class SnapshotRepository {
     });
 
     try {
-      // Call PostgreSQL function: recalculate_item_snapshots_from_date
-      const result = await prisma.$executeRaw`
-        SELECT recalculate_item_snapshots_from_date(
-          ${companyCode}::INTEGER,
-          ${itemType}::VARCHAR(10),
-          ${itemCode}::VARCHAR(50),
-          ${uom}::VARCHAR(20),
-          ${fromDate}::DATE
-        )
-      `;
-
-      // Extract count from result
-      // prisma.$executeRaw returns number of affected rows, but function returns a scalar
-      // We need to use $queryRaw to get the return value
+      // Call PostgreSQL function and read its scalar return value.
       const countResult = await prisma.$queryRaw<[{ recalculate_item_snapshots_from_date: number }]>`
         SELECT recalculate_item_snapshots_from_date(
           ${companyCode}::INTEGER,

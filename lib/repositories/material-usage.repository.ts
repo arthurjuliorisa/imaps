@@ -362,6 +362,46 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
           });
         }
 
+        const latestNamesByIdentity = new Map<
+          string,
+          { itemType: string; itemCode: string; uom: string; itemName: string }
+        >();
+        for (const item of data.items) {
+          const latestName = item.item_name?.trim();
+          if (latestName) {
+            latestNamesByIdentity.set(
+              `${item.item_type}|${item.item_code}|${item.uom}`,
+              {
+                itemType: item.item_type,
+                itemCode: item.item_code,
+                uom: item.uom,
+                itemName: latestName,
+              }
+            );
+          }
+        }
+
+        for (const latest of latestNamesByIdentity.values()) {
+          await tx.material_usage_items.updateMany({
+            where: {
+              material_usage_id: header.id,
+              material_usage_company: data.company_code,
+              material_usage_date: transactionDate,
+              item_type: latest.itemType,
+              item_code: latest.itemCode,
+              uom: latest.uom,
+              deleted_at: null,
+              NOT: {
+                item_name: latest.itemName,
+              },
+            },
+            data: {
+              item_name: latest.itemName,
+              updated_at: new Date(),
+            },
+          });
+        }
+
         // Step 4: Create traceability records for work order material consumption
         // This links materials (with PPKEK) to their work orders for customs compliance.
         // It lives in the same transaction as header/items so stale PPKEK split
@@ -496,6 +536,13 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
           reversal: data.reversal,
           note: 'All future snapshots recalculated with correct opening_balance from previous closing'
         });
+
+        await this.syncItemDescriptionsFromPayload(
+          data.company_code,
+          snapshotItems,
+          data.wms_id,
+          'material_usage'
+        );
 
         // Additional: If date changed, also recalculate old date
         if (isDateChanged && oldDate) {

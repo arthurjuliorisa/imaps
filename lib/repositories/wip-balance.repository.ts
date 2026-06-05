@@ -26,11 +26,14 @@ import {
   WipBalanceUpsertResult,
   WipBalanceBatchResult 
 } from '@/lib/types/wip-balance.types';
+import { SnapshotRepository } from './snapshot.repository';
 
 /**
  * Repository for WIP Balance operations
  */
 export class WipBalanceRepository {
+  private snapshotRepository = new SnapshotRepository();
+
   /**
    * Upsert single WIP balance record (idempotent operation)
    * 
@@ -92,6 +95,13 @@ export class WipBalanceRepository {
         },
         select: { id: true },
       });
+
+      await this.snapshotRepository.syncItemDescriptionsFromPayload(record.company_code, [{
+        item_type: record.item_type,
+        item_code: record.item_code,
+        item_name: record.item_name,
+        uom: record.uom,
+      }]);
 
       return {
         success: true,

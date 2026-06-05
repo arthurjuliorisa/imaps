@@ -875,6 +875,13 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
         await this.cascadeRecalculateSnapshots(data.company_code, deletedItems, outgoingDate);
       }
 
+      await this.syncItemDescriptionsFromPayload(
+        data.company_code,
+        newItems,
+        data.wms_id,
+        'outgoing_goods'
+      );
+
       repositoryLogger.info('Outgoing goods and snapshots fully processed', {
         id: result.outgoingGoodId,
         wmsId: data.wms_id,

@@ -417,6 +417,13 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
           itemCount: snapshotItems.length,
         });
 
+        await this.syncItemDescriptionsFromPayload(
+          data.company_code,
+          snapshotItems,
+          data.wms_id,
+          'adjustments'
+        );
+
         // Additional: If date changed, also recalculate old date
         if (isDateChanged && oldDate) {
           try {

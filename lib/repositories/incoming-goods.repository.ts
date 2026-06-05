@@ -371,6 +371,13 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
         await this.cascadeRecalculateSnapshots(data.company_code, deletedItems, result.incoming_date);
       }
 
+      await this.syncItemDescriptionsFromPayload(
+        data.company_code,
+        newItems,
+        data.wms_id,
+        'incoming_goods'
+      );
+
       requestLogger.info('Incoming goods and snapshots fully processed', {
         id: result.id,
         wmsId: data.wms_id,

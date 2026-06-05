@@ -57,6 +57,34 @@ BEGIN
   ELSE
     RAISE WARNING 'Function process_recalc_queue not found - skipping grant';
   END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.routines WHERE routine_name = 'get_latest_stock_item_name') THEN
+    GRANT EXECUTE ON FUNCTION get_latest_stock_item_name(INTEGER, CHARACTER VARYING, CHARACTER VARYING, CHARACTER VARYING) TO imapsuser;
+    RAISE NOTICE 'Granted EXECUTE on get_latest_stock_item_name';
+  ELSE
+    RAISE WARNING 'Function get_latest_stock_item_name not found - skipping grant';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.routines WHERE routine_name = 'sync_stock_daily_snapshot_item_names') THEN
+    GRANT EXECUTE ON FUNCTION sync_stock_daily_snapshot_item_names() TO imapsuser;
+    RAISE NOTICE 'Granted EXECUTE on sync_stock_daily_snapshot_item_names';
+  ELSE
+    RAISE WARNING 'Function sync_stock_daily_snapshot_item_names not found - skipping grant';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.routines WHERE routine_name = 'sync_stock_daily_snapshot_item_name_for_identity') THEN
+    GRANT EXECUTE ON FUNCTION sync_stock_daily_snapshot_item_name_for_identity(INTEGER, CHARACTER VARYING, CHARACTER VARYING, CHARACTER VARYING) TO imapsuser;
+    RAISE NOTICE 'Granted EXECUTE on sync_stock_daily_snapshot_item_name_for_identity';
+  ELSE
+    RAISE WARNING 'Function sync_stock_daily_snapshot_item_name_for_identity not found - skipping grant';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.routines WHERE routine_name = 'sync_item_description_from_payload') THEN
+    GRANT EXECUTE ON FUNCTION sync_item_description_from_payload(INTEGER, CHARACTER VARYING, CHARACTER VARYING, CHARACTER VARYING, CHARACTER VARYING) TO imapsuser;
+    RAISE NOTICE 'Granted EXECUTE on sync_item_description_from_payload';
+  ELSE
+    RAISE WARNING 'Function sync_item_description_from_payload not found - skipping grant';
+  END IF;
 END $$;
 
 -- Grant EXECUTE privilege on traceability functions (Conditional)
