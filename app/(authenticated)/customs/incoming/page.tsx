@@ -25,8 +25,13 @@ import { Search as SearchIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
-import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
+import { exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
 import { formatQty, formatAmount } from '@/lib/utils/format';
+import {
+  downloadTransactionExcelResponse,
+  readTransactionExportErrorMessage,
+  validateClientTransactionExportDateRange,
+} from '@/lib/customs/transaction-export-client';
 
 interface IncomingReportData {
   id: string;
@@ -52,26 +57,6 @@ interface IncomingReportData {
   internalDocument?: string;
 }
 
-const getExcelHeaders = (isSEZ: boolean) => [
-  { key: 'no', label: 'No', type: 'number' as const },
-  { key: 'companyName', label: 'Company Name', type: 'text' as const },
-  { key: 'documentType', label: 'Jenis Dokumen Pabean', type: 'text' as const },
-  { key: 'ppkekNumber', label: 'Nomor Daftar', type: 'text' as const },
-  { key: 'registrationDate', label: 'Tanggal Daftar', type: 'date' as const },
-  { key: 'documentNumber', label: 'Nomor Bukti Penerimaan Barang', type: 'text' as const },
-  ...(isSEZ ? [{ key: 'internalDocument', label: 'Internal Document', type: 'text' as const }] : []),
-  { key: 'date', label: 'Tanggal Bukti Penerimaan Barang', type: 'date' as const },
-  { key: 'shipperName', label: 'Nama Pengirim Barang', type: 'text' as const },
-  { key: 'typeCode', label: 'Kategori Barang', type: 'text' as const },
-  { key: 'itemCodeBahasa', label: 'Nama Item Type', type: 'text' as const },
-  { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
-  { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
-  { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
-  { key: 'qty', label: 'Jumlah Barang', type: 'number' as const },
-  { key: 'currency', label: 'valas', type: 'text' as const },
-  { key: 'amount', label: 'nilai barang', type: 'number' as const },
-];
-
 const getPdfColumns = (isSEZ: boolean) => [
   { header: 'No', dataKey: 'no' },
   { header: 'Company Name', dataKey: 'companyName' },
@@ -86,9 +71,6 @@ const getPdfColumns = (isSEZ: boolean) => [
   { header: 'valas', dataKey: 'currency' },
   { header: 'nilai barang', dataKey: 'amount' },
 ];
-
-const EXCEL_HEADERS = getExcelHeaders(false);
-const PDF_COLUMNS = getPdfColumns(false);
 
 export default function IncomingGoodsReportPage() {
   const theme = useTheme();
@@ -106,6 +88,7 @@ export default function IncomingGoodsReportPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
   const [totalCount, setTotalCount] = useState(0);
+  const [exportLoading, setExportLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -195,33 +178,39 @@ export default function IncomingGoodsReportPage() {
     setPage(0);
   };
 
-  const handleExportExcel = () => {
-    const exportData = filteredData.map((row, index) => ({
-      no: index + 1,
-      companyName: row.companyName,
-      documentType: row.documentType,
-      ppkekNumber: row.ppkekNumber || '-',
-      registrationDate: row.registrationDate,
-      documentNumber: row.documentNumber,
-      internalDocument: row.internalDocument || '',
-      date: row.date,
-      shipperName: row.shipperName,
-      typeCode: row.typeCode,
-      itemCodeBahasa: row.itemCodeBahasa,
-      itemCode: row.itemCode,
-      itemName: row.itemName,
-      unit: row.unit,
-      qty: typeof row.qty === 'string' ? parseFloat(row.qty) : row.qty,
-      currency: row.currency,
-      amount: typeof row.amount === 'string' ? parseFloat(row.amount) : row.amount,
-    }));
+  const handleExportExcel = async () => {
+    if (exportLoading) return;
 
-    exportToExcelWithHeaders(
-      exportData,
-      getExcelHeaders(isSEZ),
-      `Laporan_Pemasukan_Barang_${startDate}_${endDate}`,
-      'Laporan Pemasukan Barang'
-    );
+    const validationMessage = validateClientTransactionExportDateRange(startDate, endDate);
+    if (validationMessage) {
+      toast.warning(validationMessage);
+      return;
+    }
+
+    setExportLoading(true);
+    toast.info('Preparing Excel export...');
+
+    try {
+      const params = new URLSearchParams({ startDate, endDate });
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (itemTypeFilter) params.append('itemType', itemTypeFilter);
+
+      const response = await fetch(`/api/customs/incoming/export?${params}`);
+      if (!response.ok) {
+        throw new Error(await readTransactionExportErrorMessage(response));
+      }
+
+      await downloadTransactionExcelResponse(
+        response,
+        `Laporan_Pemasukan_Barang_${startDate}_${endDate}.xlsx`
+      );
+      toast.success('Excel export downloaded.');
+    } catch (error) {
+      console.error('Error exporting incoming Excel:', error);
+      toast.error(error instanceof Error ? error.message : 'Export failed. Please narrow the filters or try again.');
+    } finally {
+      setExportLoading(false);
+    }
   };
 
   const handleExportPDF = () => {
@@ -267,7 +256,8 @@ export default function IncomingGoodsReportPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={filteredData.length === 0 || loading}
+              excelDisabled={exportLoading || !startDate || !endDate}
+              pdfDisabled={filteredData.length === 0 || loading}
             />
           </Box>
         </Stack>

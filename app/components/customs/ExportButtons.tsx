@@ -8,16 +8,24 @@ interface ExportButtonsProps {
   onExportExcel: () => void;
   onExportPDF: () => void;
   disabled?: boolean;
+  excelDisabled?: boolean;
+  pdfDisabled?: boolean;
 }
 
-export function ExportButtons({ onExportExcel, onExportPDF, disabled = false }: ExportButtonsProps) {
+export function ExportButtons({
+  onExportExcel,
+  onExportPDF,
+  disabled = false,
+  excelDisabled,
+  pdfDisabled,
+}: ExportButtonsProps) {
   return (
     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
       <Button
         variant="outlined"
         startIcon={<TableChart />}
         onClick={onExportExcel}
-        disabled={disabled}
+        disabled={excelDisabled ?? disabled}
         color="success"
         sx={{ minWidth: 140 }}
       >
@@ -27,7 +35,7 @@ export function ExportButtons({ onExportExcel, onExportPDF, disabled = false }: 
         variant="outlined"
         startIcon={<PictureAsPdf />}
         onClick={onExportPDF}
-        disabled={disabled}
+        disabled={pdfDisabled ?? disabled}
         color="error"
         sx={{ minWidth: 140 }}
       >

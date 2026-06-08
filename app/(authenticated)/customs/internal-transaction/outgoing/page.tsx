@@ -25,8 +25,13 @@ import { Search as SearchIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
-import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
+import { exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
 import { formatQty, formatAmount } from '@/lib/utils/format';
+import {
+  downloadTransactionExcelResponse,
+  readTransactionExportErrorMessage,
+  validateClientTransactionExportDateRange,
+} from '@/lib/customs/transaction-export-client';
 
 interface InternalTransactionOutgoingData {
   id: string;
@@ -46,24 +51,6 @@ interface InternalTransactionOutgoingData {
   qty: number;
   amount: number;
 }
-
-const getExcelHeaders = (isSEZ: boolean) => [
-  { key: 'no', label: 'No', type: 'number' as const },
-  { key: 'companyName', label: 'Company Name', type: 'text' as const },
-  { key: 'documentType', label: 'Jenis Dokumen Pabean', type: 'text' as const },
-  { key: 'ppkekNumber', label: 'Nomor Daftar', type: 'text' as const },
-  { key: 'registrationDate', label: 'Tanggal Daftar', type: 'date' as const },
-  { key: 'documentNumber', label: 'Nomor Bukti Pengeluaran Barang', type: 'text' as const },
-  ...(isSEZ ? [{ key: 'internalDocument', label: 'Internal Document', type: 'text' as const }] : []),
-  { key: 'date', label: 'Tanggal Bukti Pengeluaran Barang', type: 'date' as const },
-  { key: 'recipientName', label: 'Penerima barang', type: 'text' as const },
-  { key: 'typeCode', label: 'Item Type', type: 'text' as const },
-  { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
-  { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
-  { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
-  { key: 'qty', label: 'Jumlah Barang', type: 'number' as const },
-  { key: 'amount', label: 'nilai barang', type: 'number' as const },
-];
 
 const getPdfColumns = (isSEZ: boolean) => [
   { header: 'No', dataKey: 'no' },
@@ -95,6 +82,7 @@ export default function InternalTransactionOutgoingPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
   const [totalCount, setTotalCount] = useState(0);
+  const [exportLoading, setExportLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -180,31 +168,39 @@ export default function InternalTransactionOutgoingPage() {
     setPage(0);
   };
 
-  const handleExportExcel = () => {
-    const exportData = filteredData.map((row, index) => ({
-      no: index + 1,
-      companyName: row.companyName,
-      documentType: '-',
-      ppkekNumber: '-',
-      registrationDate: row.date,
-      documentNumber: row.documentNumber,
-      internalDocument: row.internalDocument || '',
-      date: row.date,
-      recipientName: row.recipientName || '-',
-      typeCode: row.typeCode,
-      itemCode: row.itemCode,
-      itemName: row.itemName,
-      unit: row.unit,
-      qty: typeof row.qty === 'string' ? parseFloat(row.qty) : row.qty,
-      amount: typeof row.amount === 'string' ? parseFloat(row.amount) : row.amount,
-    }));
+  const handleExportExcel = async () => {
+    if (exportLoading) return;
 
-    exportToExcelWithHeaders(
-      exportData,
-      getExcelHeaders(isSEZ),
-      `Internal_Transaction_Outgoing_${startDate}_${endDate}`,
-      'Laporan Internal Transaction - Outgoing'
-    );
+    const validationMessage = validateClientTransactionExportDateRange(startDate, endDate);
+    if (validationMessage) {
+      toast.warning(validationMessage);
+      return;
+    }
+
+    setExportLoading(true);
+    toast.info('Preparing Excel export...');
+
+    try {
+      const params = new URLSearchParams({ startDate, endDate });
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (itemTypeFilter) params.append('itemType', itemTypeFilter);
+
+      const response = await fetch(`/api/customs/internal-transaction/outgoing/export?${params}`);
+      if (!response.ok) {
+        throw new Error(await readTransactionExportErrorMessage(response));
+      }
+
+      await downloadTransactionExcelResponse(
+        response,
+        `Internal_Transaction_Outgoing_${startDate}_${endDate}.xlsx`
+      );
+      toast.success('Excel export downloaded successfully');
+    } catch (error) {
+      console.error('Error exporting internal transaction outgoing Excel:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to export Excel file');
+    } finally {
+      setExportLoading(false);
+    }
   };
 
   const handleExportPDF = () => {
@@ -249,7 +245,8 @@ export default function InternalTransactionOutgoingPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={filteredData.length === 0 || loading}
+              excelDisabled={exportLoading || !startDate || !endDate}
+              pdfDisabled={filteredData.length === 0 || loading}
             />
           </Box>
         </Stack>

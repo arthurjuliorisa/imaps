@@ -7,20 +7,12 @@ import { Search as SearchIcon } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { WIPReportTable, WIPData } from '@/app/components/customs/WIPReportTable';
-import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
-
-const EXCEL_HEADERS = [
-  { key: 'no', label: 'No', type: 'number' as const },
-  { key: 'companyName', label: 'Company Name', type: 'text' as const },
-  { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
-  { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
-  { key: 'itemType', label: 'Item Type', type: 'text' as const },
-  { key: 'unitQuantity', label: 'Satuan Barang', type: 'text' as const },
-  { key: 'quantity', label: 'jumlah', type: 'number' as const },
-  { key: 'stockDate', label: 'Stock Date', type: 'date' as const },
-  { key: 'remarks', label: 'catatan', type: 'text' as const },
-  { key: 'createdAt', label: 'Created At', type: 'date' as const },
-];
+import { exportToPDF, formatDateShort } from '@/lib/exportUtils';
+import {
+  downloadExcelResponse,
+  readExportErrorMessage,
+  validateClientExportDateRange,
+} from '@/lib/customs/lpj-export-client';
 
 const PDF_COLUMNS = [
   { header: 'No', dataKey: 'no' },
@@ -47,6 +39,7 @@ export default function WIPMutationPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
   const [totalCount, setTotalCount] = useState(0);
+  const [exportLoading, setExportLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!selectedDate) return;
@@ -155,26 +148,37 @@ export default function WIPMutationPage() {
     setPage(0);
   };
 
-  const handleExportExcel = () => {
-    const exportData = filteredData.map((row) => ({
-      no: row.no,
-      companyName: row.companyName || '-',
-      itemCode: row.itemCode,
-      itemName: row.itemName,
-      itemType: row.itemType || '-',
-      unitQuantity: row.unitQuantity,
-      quantity: row.quantity,
-      stockDate: row.stockDate,
-      remarks: row.remarks || '-',
-      createdAt: row.createdAt,
-    }));
+  const handleExportExcel = async () => {
+    const validationMessage = validateClientExportDateRange(selectedDate, selectedDate);
+    if (validationMessage) {
+      toast.warning(validationMessage);
+      return;
+    }
 
-    exportToExcelWithHeaders(
-      exportData,
-      EXCEL_HEADERS,
-      `Laporan_Posisi_Barang_Dalam_Proses_${selectedDate}`,
-      'Laporan Posisi Barang Dalam Proses'
-    );
+    setExportLoading(true);
+    toast.info('Preparing Excel export...');
+
+    try {
+      const params = new URLSearchParams({ stockDate: selectedDate });
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (itemTypeFilter) params.append('itemType', itemTypeFilter);
+
+      const response = await fetch(`/api/customs/wip/export?${params}`);
+      if (!response.ok) {
+        throw new Error(await readExportErrorMessage(response));
+      }
+
+      await downloadExcelResponse(
+        response,
+        `Laporan_Posisi_Barang_Dalam_Proses_${selectedDate}.xlsx`
+      );
+      toast.success('Excel export downloaded.');
+    } catch (error) {
+      console.error('Error exporting WIP Excel:', error);
+      toast.error(error instanceof Error ? error.message : 'Export failed. Please narrow the filters or try again.');
+    } finally {
+      setExportLoading(false);
+    }
   };
 
   const handleExportPDF = () => {
@@ -232,7 +236,8 @@ export default function WIPMutationPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={filteredData.length === 0 || loading || initialLoading}
+              excelDisabled={exportLoading || initialLoading || !selectedDate}
+              pdfDisabled={filteredData.length === 0 || loading || initialLoading}
             />
           </Box>
         </Stack>

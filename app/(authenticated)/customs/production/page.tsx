@@ -8,24 +8,12 @@ import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import { DateRangeFilter } from '@/app/components/customs/DateRangeFilter';
 import { ExportButtons } from '@/app/components/customs/ExportButtons';
 import { MutationReportTable, MutationData } from '@/app/components/customs/MutationReportTable';
-import { exportToExcelWithHeaders, exportToPDF, formatDate, formatDateShort } from '@/lib/exportUtils';
-
-const EXCEL_HEADERS = [
-  { key: 'no', label: 'No', type: 'number' as const },
-  { key: 'companyName', label: 'Company Name', type: 'text' as const },
-  { key: 'itemCode', label: 'Kode Barang', type: 'text' as const },
-  { key: 'itemName', label: 'Nama Barang', type: 'text' as const },
-  { key: 'itemType', label: 'Item Type', type: 'text' as const },
-  { key: 'unit', label: 'Satuan Barang', type: 'text' as const },
-  { key: 'beginning', label: 'Saldo Awal', type: 'number' as const },
-  { key: 'in', label: 'Jumlah Pemasukan Barang', type: 'number' as const },
-  { key: 'out', label: 'Jumlah Pengeluaran Barang', type: 'number' as const },
-  { key: 'adjustment', label: 'Penyesuaian', type: 'number' as const },
-  { key: 'ending', label: 'Saldo Akhir', type: 'number' as const },
-  { key: 'stockOpname', label: 'Hasil Pencacahan', type: 'number' as const },
-  { key: 'variant', label: 'Jumlah Selisih', type: 'number' as const },
-  { key: 'remarks', label: 'Keterangan', type: 'text' as const },
-];
+import { exportToPDF, formatDateShort } from '@/lib/exportUtils';
+import {
+  downloadExcelResponse,
+  readExportErrorMessage,
+  validateClientExportDateRange,
+} from '@/lib/customs/lpj-export-client';
 
 const PDF_COLUMNS = [
   { header: 'No', dataKey: 'no' },
@@ -57,6 +45,7 @@ export default function ProductionMutationPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<string>('');
   const [totalCount, setTotalCount] = useState(0);
+  const [exportLoading, setExportLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -136,30 +125,34 @@ export default function ProductionMutationPage() {
     setPage(0);
   };
 
-  const handleExportExcel = () => {
-    const exportData = filteredData.map((row, index) => ({
-      no: index + 1,
-      companyName: row.companyName || '-',
-      itemCode: row.itemCode,
-      itemName: row.itemName,
-      itemType: row.itemType || '-',
-      unit: row.unit,
-      beginning: typeof row.beginning === 'string' ? parseFloat(row.beginning) : row.beginning,
-      in: typeof row.in === 'string' ? parseFloat(row.in) : row.in,
-      out: typeof row.out === 'string' ? parseFloat(row.out) : row.out,
-      adjustment: typeof row.adjustment === 'string' ? parseFloat(row.adjustment) : row.adjustment,
-      ending: typeof row.ending === 'string' ? parseFloat(row.ending) : row.ending,
-      stockOpname: typeof row.stockOpname === 'string' ? parseFloat(row.stockOpname) : row.stockOpname,
-      variant: typeof row.variant === 'string' ? parseFloat(row.variant) : row.variant,
-      remarks: row.remarks || '-',
-    }));
+  const handleExportExcel = async () => {
+    const validationMessage = validateClientExportDateRange(startDate, endDate);
+    if (validationMessage) {
+      toast.warning(validationMessage);
+      return;
+    }
 
-    exportToExcelWithHeaders(
-      exportData,
-      EXCEL_HEADERS,
-      `Laporan_Hasil_Produksi_${startDate}_${endDate}`,
-      'Laporan Hasil Produksi'
-    );
+    setExportLoading(true);
+    toast.info('Preparing Excel export...');
+
+    try {
+      const params = new URLSearchParams({ startDate, endDate });
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (itemTypeFilter) params.append('itemType', itemTypeFilter);
+
+      const response = await fetch(`/api/customs/production/export?${params}`);
+      if (!response.ok) {
+        throw new Error(await readExportErrorMessage(response));
+      }
+
+      await downloadExcelResponse(response, `Laporan_Hasil_Produksi_${startDate}_${endDate}.xlsx`);
+      toast.success('Excel export downloaded.');
+    } catch (error) {
+      console.error('Error exporting production Excel:', error);
+      toast.error(error instanceof Error ? error.message : 'Export failed. Please narrow the filters or try again.');
+    } finally {
+      setExportLoading(false);
+    }
   };
 
   const handleExportPDF = () => {
@@ -213,7 +206,8 @@ export default function ProductionMutationPage() {
             <ExportButtons
               onExportExcel={handleExportExcel}
               onExportPDF={handleExportPDF}
-              disabled={filteredData.length === 0 || loading}
+              excelDisabled={exportLoading || !startDate || !endDate}
+              pdfDisabled={filteredData.length === 0 || loading}
             />
           </Box>
         </Stack>

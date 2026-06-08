@@ -43,6 +43,9 @@ export default function INSWUOMPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [total, setTotal] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -109,12 +112,14 @@ export default function INSWUOMPage() {
 
   useEffect(() => {
     fetchData();
-  }, [searchQuery]);
+  }, [searchQuery, page, rowsPerPage]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
+        limit: rowsPerPage.toString(),
+        offset: (page * rowsPerPage).toString(),
         ...(searchQuery && { search: searchQuery }),
       });
 
@@ -123,18 +128,31 @@ export default function INSWUOMPage() {
 
       if (result.success) {
         setData(result.data);
+        setTotal(result.total || 0);
         setError(null);
       } else {
         setData([]);
+        setTotal(0);
         setError(result.error || 'Failed to fetch data');
       }
     } catch (err) {
       console.error('Error fetching INSW UOM:', err);
       setData([]);
+      setTotal(0);
       setError('Failed to fetch INSW UOM data');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value);
+    setPage(0);
+  };
+
+  const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
   };
 
   const handleRefresh = () => {
@@ -331,7 +349,7 @@ export default function INSWUOMPage() {
           <TextField
             label="Search"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleSearchChange}
             placeholder="Search by code or description..."
             size="small"
             fullWidth
@@ -345,6 +363,14 @@ export default function INSWUOMPage() {
         data={data}
         loading={loading}
         searchable={false}
+        pagination={{
+          page,
+          rowsPerPage,
+          total,
+          onPageChange: setPage,
+          onRowsPerPageChange: handleRowsPerPageChange,
+          rowsPerPageOptions: [10, 25, 50, 100],
+        }}
       />
 
       <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
