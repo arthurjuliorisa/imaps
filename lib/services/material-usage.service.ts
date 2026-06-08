@@ -11,6 +11,7 @@ import { MaterialUsageRepository } from '@/lib/repositories/material-usage.repos
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { prisma } from '@/lib/db/prisma';
 import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
+import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
 
 /**
  * Material Usage Service
@@ -168,7 +169,26 @@ export class MaterialUsageService {
         itemsCount: data.items.length,
       });
 
-      // Step 6: Queue for immediate async insert (non-blocking) + auto-transmit to INSW
+      // Step 6: Prevent duplicate accepted WMS IDs before any async side effects
+      const duplicateWmsIdErrors = await assertWmsIdNotExists({
+        transactionType: 'material_usage',
+        companyCode: data.company_code,
+        wmsId: data.wms_id,
+      });
+      if (duplicateWmsIdErrors.length > 0) {
+        log.warn('Duplicate WMS ID rejected', {
+          wmsId: data.wms_id,
+          companyCode: data.company_code,
+        });
+        return {
+          status: 'failed',
+          message: 'Validation failed',
+          wms_id: data.wms_id,
+          errors: duplicateWmsIdErrors as BatchValidationError[],
+        };
+      }
+
+      // Step 7: Queue for immediate async insert (non-blocking) + auto-transmit to INSW
       this.repository
         .batchUpsert(data)
         .then(async () => {

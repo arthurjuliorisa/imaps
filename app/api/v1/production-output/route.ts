@@ -4,6 +4,7 @@ import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware'
 import { ProductionOutputService } from '@/lib/services/production-output.service';
 import { logger } from '@/lib/utils/logger';
 import { logActivity } from '@/lib/log-activity';
+import { isDuplicateWmsIdError } from '@/lib/services/wms-duplicate.service';
 
 /**
  * POST /api/v1/production-output
@@ -91,6 +92,18 @@ export async function POST(request: NextRequest) {
         wmsId,
         errorCount: result.errors.length,
       });
+
+      if (isDuplicateWmsIdError(result.errors)) {
+        return NextResponse.json(
+          {
+            status: 'failed',
+            message: 'Duplicate WMS ID is not allowed',
+            wms_id: wmsId || 'unknown',
+            errors: result.errors,
+          },
+          { status: 409 }
+        );
+      }
       
       // Log validation failure with payload tracking
       await logActivity({

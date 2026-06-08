@@ -4,6 +4,7 @@ import { rateLimiterMiddleware } from '@/lib/middleware/rate-limiter.middleware'
 import { OutgoingGoodsService } from '@/lib/services/outgoing-goods.service';
 import { logger } from '@/lib/utils/logger';
 import { logActivity } from '@/lib/log-activity';
+import { isDuplicateWmsIdError } from '@/lib/services/wms-duplicate.service';
 
 /**
  * POST /api/v1/outgoing-goods
@@ -91,6 +92,18 @@ export async function POST(request: NextRequest) {
     if (!result.success) {
       // Validation failed
       log.info('Validation failed', { wmsId, errorCount: result.errors.length });
+
+      if (isDuplicateWmsIdError(result.errors)) {
+        return NextResponse.json(
+          {
+            status: 'failed',
+            message: 'Duplicate WMS ID is not allowed',
+            wms_id: wmsId,
+            errors: result.errors,
+          },
+          { status: 409 }
+        );
+      }
       
       // Convert company_code to number if it's a string
       const companyCode = body?.company_code 

@@ -12,6 +12,7 @@ import {
 } from '@/lib/validators/schemas/outgoing-goods.schema';
 import { OutgoingGoodsRepository } from '@/lib/repositories/outgoing-goods.repository';
 import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
+import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
 
 export interface SuccessResponse {
   status: 'success';
@@ -138,11 +139,25 @@ export class OutgoingGoodsService {
       //   return { success: false, errors: traceabilityErrors as ErrorDetail[] };
       // }
 
-      // 7. Detect if this is a revision (same wms_id already exists)
+      // 7. Prevent duplicate accepted WMS IDs before any revision/upsert side effects
+      const duplicateWmsIdErrors = await assertWmsIdNotExists({
+        transactionType: 'outgoing_goods',
+        companyCode: data.company_code,
+        wmsId: data.wms_id,
+      });
+      if (duplicateWmsIdErrors.length > 0) {
+        requestLogger.warn('Duplicate WMS ID rejected', {
+          wmsId: data.wms_id,
+          companyCode: data.company_code,
+        });
+        return { success: false, errors: duplicateWmsIdErrors };
+      }
+
+      // 8. Detect if this is a revision (same wms_id already exists)
       const revisionInfo = await this.detectRevision(data);
       requestLogger.info('Revision detection', { isRevision: revisionInfo.isRevision, wmsId: data.wms_id });
 
-      // 8. Business validations - log unresolved traceability references without blocking stock movement
+      // 9. Business validations - log unresolved traceability references without blocking stock movement
       const allocationValidationErrors = await this.validateWorkOrderAllocations(data);
       if (allocationValidationErrors.length > 0) {
         requestLogger.warn(
@@ -152,10 +167,10 @@ export class OutgoingGoodsService {
         return { success: false, errors: allocationValidationErrors };
       }
 
-      // 9. Check stock and collect warnings (pass revision info)
+      // 10. Check stock and collect warnings (pass revision info)
       const stockCheckResult = await this.checkStockAndCollectWarnings(data, revisionInfo);
 
-      // 10. Queue async database insert + INSW auto-transmit
+      // 11. Queue async database insert + INSW auto-transmit
       const repository = new OutgoingGoodsRepository();
       repository.insertOutgoingGoodsAsync(data)
         .then(async () => {
@@ -195,7 +210,7 @@ export class OutgoingGoodsService {
           });
         });
 
-      // 11. Return success response immediately (without waiting for DB insert)
+      // 12. Return success response immediately (without waiting for DB insert)
       const response: SuccessResponse = {
         status: 'success',
         message: 'Transaction validated and queued for processing',

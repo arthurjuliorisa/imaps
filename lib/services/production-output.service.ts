@@ -11,6 +11,7 @@ import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/ap
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { prisma } from '@/lib/db/prisma';
 import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
+import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
 
 /**
  * Production Output Service
@@ -131,7 +132,24 @@ export class ProductionOutputService {
         companyCode: data.company_code,
       });
 
-      // Step 5: Queue for immediate async insert (non-blocking) + auto-transmit to INSW
+      // Step 5: Prevent duplicate accepted WMS IDs before any async side effects
+      const duplicateWmsIdErrors = await assertWmsIdNotExists({
+        transactionType: 'production_output',
+        companyCode: data.company_code,
+        wmsId: data.wms_id,
+      });
+      if (duplicateWmsIdErrors.length > 0) {
+        log.warn('Duplicate WMS ID rejected', {
+          wmsId: data.wms_id,
+          companyCode: data.company_code,
+        });
+        return {
+          success: false,
+          errors: duplicateWmsIdErrors,
+        };
+      }
+
+      // Step 6: Queue for immediate async insert (non-blocking) + auto-transmit to INSW
       this.repository
         .create(data)
         .then(async (result) => {

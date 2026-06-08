@@ -5,6 +5,7 @@ import { errorHandler } from '@/lib/middleware/error-handler.middleware';
 import { IncomingGoodsService } from '@/lib/services/incoming-goods.service';
 import { createRequestLogger, logRequest, logResponse } from '@/lib/utils/logger';
 import { logActivity } from '@/lib/log-activity';
+import { isDuplicateWmsIdError } from '@/lib/services/wms-duplicate.service';
 
 /**
  * POST /api/v1/incoming-goods
@@ -58,6 +59,19 @@ export async function POST(request: NextRequest) {
     const result = await service.processIncomingGoods(body);
 
     if (!result.success) {
+      if (isDuplicateWmsIdError(result.errors)) {
+        logResponse(requestLogger, 409, startTime);
+        return NextResponse.json(
+          {
+            status: 'failed',
+            message: 'Duplicate WMS ID is not allowed',
+            wms_id: wmsId,
+            errors: result.errors,
+          },
+          { status: 409 }
+        );
+      }
+
       // Validation failed
       logResponse(requestLogger, 400, startTime);
       
