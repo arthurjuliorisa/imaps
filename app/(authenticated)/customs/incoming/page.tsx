@@ -40,6 +40,7 @@ interface IncomingReportData {
   companyName: string;
   companyType?: string;
   documentType: string;
+  isNonFacility?: boolean;
   ppkekNumber: string;
   registrationDate: Date;
   documentNumber: string;
@@ -71,6 +72,10 @@ const getPdfColumns = (isSEZ: boolean) => [
   { header: 'valas', dataKey: 'currency' },
   { header: 'nilai barang', dataKey: 'amount' },
 ];
+
+function getDocumentTypeLabel(row: Pick<IncomingReportData, 'documentType' | 'isNonFacility'>): string {
+  return row.isNonFacility ? 'Non Facility Goods' : row.documentType;
+}
 
 export default function IncomingGoodsReportPage() {
   const theme = useTheme();
@@ -148,7 +153,7 @@ export default function IncomingGoodsReportPage() {
       filtered = filtered.filter((row) => {
         return (
           row.companyName?.toLowerCase().includes(query) ||
-          row.documentType?.toLowerCase().includes(query) ||
+          getDocumentTypeLabel(row)?.toLowerCase().includes(query) ||
           row.ppkekNumber?.toLowerCase().includes(query) ||
           row.documentNumber?.toLowerCase().includes(query) ||
           row.shipperName?.toLowerCase().includes(query) ||
@@ -217,7 +222,7 @@ export default function IncomingGoodsReportPage() {
     const exportData = filteredData.map((row, index) => ({
       no: index + 1,
       companyName: row.companyName,
-      documentType: row.documentType,
+      documentType: getDocumentTypeLabel(row),
       documentNumber: row.documentNumber,
       internalDocument: row.internalDocument || '',
       date: formatDateShort(row.date),
@@ -348,7 +353,7 @@ export default function IncomingGoodsReportPage() {
                     <TableCell>{row.companyName}</TableCell>
                     <TableCell>
                       <Chip
-                        label={row.documentType}
+                        label={getDocumentTypeLabel(row)}
                         size="small"
                         color="primary"
                         variant="outlined"

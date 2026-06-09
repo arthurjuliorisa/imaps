@@ -39,6 +39,10 @@ interface InternalTransactionOutgoingData {
   companyCode: number;
   companyName: string;
   companyType?: string;
+  sourceType?: string;
+  sourceTypeDetail?: string;
+  ppkekNumber?: string;
+  isNonFacility?: boolean;
   documentNumber: string;
   internalDocument?: string;
   date: Date;
@@ -65,6 +69,20 @@ const getPdfColumns = (isSEZ: boolean) => [
   { header: 'Jumlah Barang', dataKey: 'qty' },
   { header: 'nilai barang', dataKey: 'amount' },
 ];
+
+function isMaterialUsageSource(row: Pick<InternalTransactionOutgoingData, 'sourceType' | 'sourceTypeDetail'>): boolean {
+  return row.sourceType === 'MU' || row.sourceType === 'MATERIAL_USAGE' || row.sourceTypeDetail === 'MATERIAL_USAGE';
+}
+
+function getDocumentTypeLabel(
+  row: Pick<InternalTransactionOutgoingData, 'sourceType' | 'sourceTypeDetail' | 'ppkekNumber' | 'isNonFacility'>
+): string {
+  if (isMaterialUsageSource(row) && (row.isNonFacility || row.ppkekNumber === 'N')) {
+    return 'Non Facility Goods';
+  }
+
+  return '-';
+}
 
 export default function InternalTransactionOutgoingPage() {
   const theme = useTheme();
@@ -142,6 +160,7 @@ export default function InternalTransactionOutgoingPage() {
       filtered = filtered.filter((row) => {
         return (
           row.companyName?.toLowerCase().includes(query) ||
+          getDocumentTypeLabel(row).toLowerCase().includes(query) ||
           row.documentNumber?.toLowerCase().includes(query) ||
           row.typeCode?.toLowerCase().includes(query) ||
           row.itemCode?.toLowerCase().includes(query) ||
@@ -207,7 +226,7 @@ export default function InternalTransactionOutgoingPage() {
     const exportData = filteredData.map((row, index) => ({
       no: index + 1,
       companyName: row.companyName,
-      documentType: '-',
+      documentType: getDocumentTypeLabel(row),
       documentNumber: row.documentNumber,
       internalDocument: row.internalDocument || '',
       date: formatDateShort(row.date),
@@ -335,7 +354,12 @@ export default function InternalTransactionOutgoingPage() {
                     <TableCell>{page * rowsPerPage + index + 1}</TableCell>
                     <TableCell>{row.companyName}</TableCell>
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary">-</Typography>
+                      <Typography
+                        variant="body2"
+                        color={getDocumentTypeLabel(row) === '-' ? 'text.secondary' : 'text.primary'}
+                      >
+                        {getDocumentTypeLabel(row)}
+                      </Typography>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary">-</Typography>

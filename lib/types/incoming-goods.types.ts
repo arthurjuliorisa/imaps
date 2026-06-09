@@ -38,9 +38,10 @@ export interface IncomingGoodData {
   wms_id: string;
   company_code: number;
   owner: number;
-  customs_document_type: CustomsDocumentType;
+  customs_document_type: CustomsDocumentType | null;
   ppkek_number: string;
-  customs_registration_date: Date;
+  customs_registration_date: Date | null;
+  is_non_facility?: boolean;
   incoming_evidence_number: string;
   incoming_date: Date;
   invoice_number: string;

@@ -178,9 +178,9 @@ export const incomingGoodRequestSchema = z
     company_code: companyCodeSchema,
     owner: companyCodeSchema,
     
-    customs_document_type: z.enum(INCOMING_CUSTOMS_TYPES, {
+    customs_document_type: z.union([z.enum(INCOMING_CUSTOMS_TYPES, {
         message: `Customs document type must be one of: ${INCOMING_CUSTOMS_TYPES.join(', ')}`,
-      }),
+      }), z.literal('N')]),
     
     ppkek_number: z
       .string()
@@ -188,7 +188,7 @@ export const incomingGoodRequestSchema = z
       .max(50, 'PPKEK number must not exceed 50 characters')
       .trim(),
     
-    customs_registration_date: dateStringSchema,
+    customs_registration_date: z.union([dateStringSchema, z.literal('N')]),
     
     incoming_evidence_number: z
       .string()
@@ -222,6 +222,14 @@ export const incomingGoodRequestSchema = z
   // Business rule: customs_registration_date <= incoming_date
   .refine(
     (data: any) => {
+      if (
+        data.ppkek_number === 'N' ||
+        data.customs_document_type === 'N' ||
+        data.customs_registration_date === 'N'
+      ) {
+        return true;
+      }
+
       // Parse both dates in consistent local timezone (YYYY-MM-DD format)
       const [customsYear, customsMonth, customsDay] = data.customs_registration_date.split('-').map(Number);
       const customsDate = new Date(customsYear, customsMonth - 1, customsDay, 0, 0, 0, 0);
@@ -358,6 +366,10 @@ export function validateIncomingGoodRequest(data: unknown): ValidationResult {
  */
 export function validateIncomingGoodsDates(data: IncomingGoodRequestInput): ValidationErrorDetail[] {
   const errors: ValidationErrorDetail[] = [];
+  if (data.customs_registration_date === 'N') {
+    return errors;
+  }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 

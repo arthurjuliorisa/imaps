@@ -37,23 +37,23 @@ export async function resolvePPKEKToIncoming(
     const outgoingYear = new Date(outgoingDate).getFullYear();
 
     // Query incoming goods with matching PPKEK
-    const incomingCandidates = await prisma.incoming_goods.findMany({
-      where: {
-        ppkek_number: ppkekNumber,
-        company_code: companyCode,
-        deleted_at: null,
-      },
-      select: {
-        id: true,
-        ppkek_number: true,
-        customs_registration_date: true,
-        customs_document_type: true,
-        incoming_date: true,
-      },
-      orderBy: {
-        incoming_date: 'asc',
-      },
-    });
+    const incomingCandidates = await prisma.$queryRaw<Array<{
+      id: number;
+      ppkek_number: string;
+      customs_registration_date: Date;
+      customs_document_type: string;
+      incoming_date: Date;
+    }>>`
+      SELECT id, ppkek_number, customs_registration_date, customs_document_type::text AS customs_document_type, incoming_date
+      FROM incoming_goods
+      WHERE ppkek_number = ${ppkekNumber}
+        AND company_code = ${companyCode}
+        AND COALESCE(is_non_facility, false) = false
+        AND customs_document_type IS NOT NULL
+        AND customs_registration_date IS NOT NULL
+        AND deleted_at IS NULL
+      ORDER BY incoming_date ASC
+    `;
 
     if (incomingCandidates.length === 0) {
       logger.debug(`[PPKEK Resolution] No incoming goods found for PPKEK: ${ppkekNumber}`);

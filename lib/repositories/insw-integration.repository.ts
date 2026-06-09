@@ -340,6 +340,7 @@ export class INSWIntegrationRepository {
         AND mu.id = ANY($2::int[])
         AND mu.deleted_at IS NULL
         AND mui.deleted_at IS NULL
+        AND COALESCE(mui.ppkek_number, '') <> 'N'
       ORDER BY mu.transaction_date, mu.id
     `;
 

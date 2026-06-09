@@ -13,6 +13,7 @@ export interface TransactionExportFilters {
   endDate: Date;
   search?: string | null;
   itemType?: string | null;
+  isCustomsUser?: boolean;
 }
 
 function cleanFilter(value?: string | null): string | null {
@@ -22,6 +23,10 @@ function cleanFilter(value?: string | null): string | null {
 
 function numericString(value: unknown): string {
   return value === null || value === undefined ? '0' : String(value);
+}
+
+function incomingDocumentTypeLabel(row: { customs_document_type: unknown; is_non_facility?: unknown }): unknown {
+  return row.is_non_facility === true ? 'Non Facility Goods' : row.customs_document_type;
 }
 
 function appendRegularFilters(
@@ -109,6 +114,9 @@ export async function countIncomingRows(filters: TransactionExportFilters): Prom
     WHERE company_code = $1
       AND deleted_at IS NULL
   `;
+  if (filters.isCustomsUser) {
+    query += ` AND NOT (COALESCE(is_non_facility, false) = true)`;
+  }
   const result = appendRegularFilters(query, [filters.companyCode], filters, 'shipper_name');
   const countResult = await prisma.$queryRawUnsafe<[{ count: string }]>(
     result.query,
@@ -139,11 +147,15 @@ export async function fetchIncomingRows(filters: TransactionExportFilters): Prom
       currency,
       value_amount,
       item_code_bahasa,
+      is_non_facility,
       created_at
     FROM vw_laporan_pemasukan
     WHERE company_code = $1
       AND deleted_at IS NULL
   `;
+  if (filters.isCustomsUser) {
+    query += ` AND NOT (COALESCE(is_non_facility, false) = true)`;
+  }
   const result = appendRegularFilters(query, [filters.companyCode], filters, 'shipper_name');
   query = `${result.query} ORDER BY doc_date DESC, id DESC`;
 
@@ -151,7 +163,7 @@ export async function fetchIncomingRows(filters: TransactionExportFilters): Prom
   return serializeBigInt(rows).map((row: any, index: number) => ({
     no: index + 1,
     companyName: row.company_name,
-    documentType: row.customs_document_type,
+    documentType: incomingDocumentTypeLabel(row),
     registrationNumber: row.ppkek_number,
     registrationDate: row.registration_date,
     evidenceNumber: row.company_type === 'SEZ' ? String(row.wms_id || row.id) : row.doc_number,
@@ -285,6 +297,9 @@ export async function countInternalRows(
 ): Promise<number> {
   const viewName = kind === 'internal-incoming' ? 'vw_internal_incoming' : 'vw_internal_outgoing';
   let query = `SELECT COUNT(*) as count FROM ${viewName} WHERE company_code = $1`;
+  if (kind === 'internal-outgoing' && filters.isCustomsUser) {
+    query += ` AND NOT (source_type = 'MATERIAL_USAGE' AND COALESCE(is_non_facility, false) = true)`;
+  }
   const result = appendInternalFilters(query, [filters.companyCode], filters);
   const countResult = await prisma.$queryRawUnsafe<[{ count: string }]>(
     result.query,
@@ -299,6 +314,9 @@ export async function fetchInternalRows(
 ): Promise<Record<string, unknown>[]> {
   const viewName = kind === 'internal-incoming' ? 'vw_internal_incoming' : 'vw_internal_outgoing';
   let query = internalBaseQuery(viewName);
+  if (kind === 'internal-outgoing' && filters.isCustomsUser) {
+    query += ` AND NOT (source_type = 'MATERIAL_USAGE' AND COALESCE(is_non_facility, false) = true)`;
+  }
   const result = appendInternalFilters(query, [filters.companyCode], filters);
   query = `${result.query} ORDER BY transaction_date DESC, id`;
 

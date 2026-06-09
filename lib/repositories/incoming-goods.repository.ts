@@ -35,7 +35,10 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
 
     try {
       const incomingDate = new Date(data.incoming_date);
-      const customsRegDate = new Date(data.customs_registration_date);
+      const isNonFacility = data.ppkek_number === 'N'
+        && data.customs_document_type === 'N'
+        && data.customs_registration_date === 'N';
+      const customsRegDate = isNonFacility ? null : new Date(data.customs_registration_date);
       const invoiceDate = new Date(data.invoice_date);
       const timestamp = new Date(data.timestamp);
 
@@ -162,11 +165,12 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
               incoming_date: incomingDate,
             },
           },
-          update: {
+          update: ({
             owner: data.owner,
-            customs_document_type: data.customs_document_type,
+            customs_document_type: isNonFacility ? null : data.customs_document_type as any,
             ppkek_number: data.ppkek_number,
-            customs_registration_date: customsRegDate,
+            customs_registration_date: customsRegDate as any,
+            is_non_facility: isNonFacility,
             incoming_evidence_number: data.incoming_evidence_number,
             invoice_number: data.invoice_number,
             invoice_date: invoiceDate,
@@ -174,21 +178,22 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
             timestamp: timestamp,
             updated_at: new Date(),
             deleted_at: null,
-          },
-          create: {
+          } as any),
+          create: ({
             wms_id: data.wms_id,
             company_code: data.company_code,
             owner: data.owner,
-            customs_document_type: data.customs_document_type,
+            customs_document_type: isNonFacility ? null : data.customs_document_type as any,
             ppkek_number: data.ppkek_number,
-            customs_registration_date: customsRegDate,
+            customs_registration_date: customsRegDate as any,
+            is_non_facility: isNonFacility,
             incoming_evidence_number: data.incoming_evidence_number,
             incoming_date: incomingDate,
             invoice_number: data.invoice_number,
             invoice_date: invoiceDate,
             shipper_name: data.shipper_name,
             timestamp: timestamp,
-          },
+          } as any),
         });
 
         // For update case (same date), intelligently manage items:

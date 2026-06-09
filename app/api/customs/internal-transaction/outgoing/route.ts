@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 import { validateCompanyCode } from '@/lib/company-validation';
+import { isCustomsUser } from '@/lib/utils/user-role.util';
 
 export async function GET(request: Request) {
   try {
@@ -33,6 +34,7 @@ export async function GET(request: Request) {
       return companyValidation.response;
     }
     const { companyCode } = companyValidation;
+    const isCustUser = isCustomsUser((session as any)?.user?.role);
 
     // Query from vw_internal_outgoing view with company_type and pagination
     // Single efficient query with pagination support (company_type merged in view)
@@ -54,6 +56,11 @@ export async function GET(request: Request) {
         unit,
         quantity,
         value_amount,
+        source_type as source_type_detail,
+        source_table,
+        source_item_id,
+        ppkek_number,
+        is_non_facility,
         ROW_NUMBER() OVER (PARTITION BY id ORDER BY item_code) as item_seq,
         CASE 
           WHEN id IN (SELECT id FROM material_usages WHERE company_code = $1 AND deleted_at IS NULL AND reversal IS NULL) THEN 'MU'
@@ -67,6 +74,10 @@ export async function GET(request: Request) {
 
     const params: any[] = [companyCode];
     let paramIndex = 2;
+
+    if (isCustUser) {
+      query += ` AND NOT (source_type = 'MATERIAL_USAGE' AND COALESCE(is_non_facility, false) = true)`;
+    }
 
     // Apply date range filter
     if (startDate && endDate) {
@@ -109,6 +120,10 @@ export async function GET(request: Request) {
     let countQuery = `SELECT COUNT(*) as count FROM vw_internal_outgoing WHERE company_code = $1`;
     const countParamsList: any[] = [companyCode];
     let countParamIndex = 2;
+
+    if (isCustUser) {
+      countQuery += ` AND NOT (source_type = 'MATERIAL_USAGE' AND COALESCE(is_non_facility, false) = true)`;
+    }
 
     if (startDate && endDate) {
       countQuery += ` AND (transaction_date::date >= $${countParamIndex}::date AND transaction_date::date <= $${countParamIndex + 1}::date)`;
@@ -165,6 +180,10 @@ export async function GET(request: Request) {
         companyCode: row.company_code,
         companyName: row.company_name,
         companyType: row.company_type,
+        sourceType: row.source_type,
+        sourceTypeDetail: row.source_type_detail,
+        ppkekNumber: row.ppkek_number,
+        isNonFacility: row.is_non_facility === true,
         date: row.transaction_date,
         recipientName: row.section || '-',
         typeCode: row.type_code,

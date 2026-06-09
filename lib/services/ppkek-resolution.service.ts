@@ -63,23 +63,23 @@ export class PPKEKResolutionService {
       const outgoingYear = new Date(outgoingDate).getFullYear();
 
       // Query all incoming goods matching the PPKEK number
-      const incomingCandidates = await prisma.incoming_goods.findMany({
-        where: {
-          ppkek_number: ppkekNumber,
-          company_code: companyCode,
-          deleted_at: null,
-        },
-        select: {
-          id: true,
-          ppkek_number: true,
-          customs_registration_date: true,
-          customs_document_type: true,
-          incoming_date: true,
-        },
-        orderBy: {
-          incoming_date: 'asc',
-        },
-      });
+      const incomingCandidates = await prisma.$queryRaw<Array<{
+        id: number;
+        ppkek_number: string;
+        customs_registration_date: Date;
+        customs_document_type: string;
+        incoming_date: Date;
+      }>>`
+        SELECT id, ppkek_number, customs_registration_date, customs_document_type::text AS customs_document_type, incoming_date
+        FROM incoming_goods
+        WHERE ppkek_number = ${ppkekNumber}
+          AND company_code = ${companyCode}
+          AND COALESCE(is_non_facility, false) = false
+          AND customs_document_type IS NOT NULL
+          AND customs_registration_date IS NOT NULL
+          AND deleted_at IS NULL
+        ORDER BY incoming_date ASC
+      `;
 
       if (incomingCandidates.length === 0) {
         resolveLogger.debug('No incoming goods found for PPKEK', {
@@ -217,23 +217,23 @@ export class PPKEKResolutionService {
     });
 
     try {
-      const matches = await prisma.incoming_goods.findMany({
-        where: {
-          ppkek_number: ppkekNumber,
-          company_code: companyCode,
-          deleted_at: null,
-        },
-        select: {
-          id: true,
-          ppkek_number: true,
-          customs_registration_date: true,
-          customs_document_type: true,
-          incoming_date: true,
-        },
-        orderBy: {
-          incoming_date: 'desc',
-        },
-      });
+      const matches = await prisma.$queryRaw<Array<{
+        id: number;
+        ppkek_number: string;
+        customs_registration_date: Date;
+        customs_document_type: string;
+        incoming_date: Date;
+      }>>`
+        SELECT id, ppkek_number, customs_registration_date, customs_document_type::text AS customs_document_type, incoming_date
+        FROM incoming_goods
+        WHERE ppkek_number = ${ppkekNumber}
+          AND company_code = ${companyCode}
+          AND COALESCE(is_non_facility, false) = false
+          AND customs_document_type IS NOT NULL
+          AND customs_registration_date IS NOT NULL
+          AND deleted_at IS NULL
+        ORDER BY incoming_date DESC
+      `;
 
       auditLogger.debug('Retrieved all matching incoming goods', {
         matchCount: matches.length,
@@ -262,13 +262,17 @@ export class PPKEKResolutionService {
    */
   async canResolve(ppkekNumber: string, companyCode: number): Promise<{ canResolve: boolean; matchCount: number }> {
     try {
-      const count = await prisma.incoming_goods.count({
-        where: {
-          ppkek_number: ppkekNumber,
-          company_code: companyCode,
-          deleted_at: null,
-        },
-      });
+      const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT COUNT(*)::bigint AS count
+        FROM incoming_goods
+        WHERE ppkek_number = ${ppkekNumber}
+          AND company_code = ${companyCode}
+          AND COALESCE(is_non_facility, false) = false
+          AND customs_document_type IS NOT NULL
+          AND customs_registration_date IS NOT NULL
+          AND deleted_at IS NULL
+      `;
+      const count = Number(rows[0]?.count ?? 0);
 
       return {
         canResolve: count > 0,

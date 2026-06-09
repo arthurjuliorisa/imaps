@@ -412,9 +412,10 @@ model incoming_goods {
   wms_id                    String              @db.VarChar(100)
   company_code              Int
   owner                     Int
-  customs_document_type     CustomsDocumentType
+  customs_document_type     CustomsDocumentType?
   ppkek_number              String              @db.VarChar(50)
-  customs_registration_date DateTime            @db.Date
+  customs_registration_date DateTime?           @db.Date
+  is_non_facility           Boolean             @default(false)
   incoming_evidence_number  String              @db.VarChar(50)
   incoming_date             DateTime            @db.Date
   invoice_number            String              @db.VarChar(50)

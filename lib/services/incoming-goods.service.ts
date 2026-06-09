@@ -54,6 +54,15 @@ export class IncomingGoodsService {
 
       requestLogger.info('Validation passed', { wmsId: data.wms_id });
 
+      const nonFacilityMarkerErrors = this.validateNonFacilityMarker(data);
+      if (nonFacilityMarkerErrors.length > 0) {
+        requestLogger.warn('Non-facility marker validation failed', {
+          errors: nonFacilityMarkerErrors,
+          wmsId: data.wms_id,
+        });
+        return { success: false, errors: nonFacilityMarkerErrors };
+      }
+
       // 2. Validate dates
       const dateErrors = validateIncomingGoodsDates(data);
       if (dateErrors.length > 0) {
@@ -131,6 +140,17 @@ export class IncomingGoodsService {
           );
 
           try {
+            const isNonFacility = data.ppkek_number === 'N'
+              && data.customs_document_type === 'N'
+              && data.customs_registration_date === 'N';
+
+            if (isNonFacility) {
+              const inswService = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+              await inswService.transmitIncomingGoods(data.company_code, [result.id]);
+              requestLogger.info('Incoming goods INSW skipped as non-facility', { wmsId: data.wms_id });
+              return;
+            }
+
             // Check company type
             const company = await prisma.companies.findUnique({
               where: { code: data.company_code },
@@ -260,5 +280,25 @@ export class IncomingGoodsService {
     // iMAPS will accept any item_code sent by WMS
 
     return errors;
+  }
+
+  private validateNonFacilityMarker(data: IncomingGoodRequestInput): ErrorDetail[] {
+    const markerFields = [
+      data.ppkek_number,
+      data.customs_document_type,
+      data.customs_registration_date,
+    ];
+    const markerCount = markerFields.filter(value => value === 'N').length;
+
+    if (markerCount === 0 || markerCount === 3) {
+      return [];
+    }
+
+    return [{
+      location: 'header',
+      field: 'non_facility_marker',
+      code: 'NON_FACILITY_MARKER_INCOMPLETE',
+      message: 'Non-facility incoming goods must use "N" for ppkek_number, customs_document_type, and customs_registration_date together',
+    }];
   }
 }

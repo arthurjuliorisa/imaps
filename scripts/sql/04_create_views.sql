@@ -387,6 +387,7 @@ SELECT
     ig.incoming_date as doc_date,
     ig.shipper_name,
     ig.wms_id,
+    ig.is_non_facility,
     
     -- Item details
     igi.item_type as type_code,
@@ -1066,7 +1067,12 @@ SELECT
     mui.item_name,
     mui.uom as unit,
     mui.qty as quantity,
-    mui.amount as value_amount
+    mui.amount as value_amount,
+    'MATERIAL_USAGE'::VARCHAR(50) as source_type,
+    'material_usage_items'::VARCHAR(100) as source_table,
+    mui.id as source_item_id,
+    mui.ppkek_number,
+    (mui.ppkek_number = 'N') as is_non_facility
 FROM material_usages mu
 JOIN material_usage_items mui ON mu.company_code = mui.material_usage_company
     AND mu.id = mui.material_usage_id
@@ -1144,7 +1150,12 @@ SELECT
     poi.item_name,
     poi.uom as unit,
     poi.qty as quantity,
-    poi.amount as value_amount
+    poi.amount as value_amount,
+    'PRODUCTION_OUTPUT_REVERSAL'::VARCHAR(50) as source_type,
+    'production_output_items'::VARCHAR(100) as source_table,
+    poi.id as source_item_id,
+    NULL::VARCHAR(50) as ppkek_number,
+    false as is_non_facility
 FROM production_outputs po
 JOIN production_output_items poi ON po.company_code = poi.production_output_company
     AND po.id = poi.production_output_id
@@ -1175,7 +1186,12 @@ SELECT
     sti.item_name,
     sti.uom as unit,
     sti.qty as quantity,
-    sti.amount::NUMERIC(19,4) as value_amount
+    sti.amount::NUMERIC(19,4) as value_amount,
+    'SCRAP_TRANSACTION'::VARCHAR(50) as source_type,
+    'scrap_transaction_items'::VARCHAR(100) as source_table,
+    sti.id as source_item_id,
+    NULL::VARCHAR(50) as ppkek_number,
+    false as is_non_facility
 FROM scrap_transactions st
 JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
     AND st.id = sti.scrap_transaction_id

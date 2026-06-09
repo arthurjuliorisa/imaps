@@ -24,6 +24,7 @@ import {
   fetchOutgoingRows,
   TransactionExportKind,
 } from '@/lib/customs/transaction-export-queries';
+import { isCustomsUser } from '@/lib/utils/user-role.util';
 
 const EXCEL_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -99,6 +100,7 @@ export async function handleTransactionExportRequest(
       endDate: dateRange.endDate,
       search: searchParams.get('search')?.trim() || null,
       itemType: searchParams.get('itemType')?.trim() || null,
+      isCustomsUser: isCustomsUser((session as any)?.user?.role),
     };
 
     const totalRows = await countRows(kind, filters);
