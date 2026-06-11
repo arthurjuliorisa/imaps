@@ -218,24 +218,6 @@ export class MaterialUsageService {
               return;
             }
 
-            const allNonFacilityRows = data.items.every(item =>
-              item.traceability_data.every(tracEntry => tracEntry.ppkek_number === 'N')
-            );
-            if (allNonFacilityRows) {
-              const inswService = new INSWTransmissionService(
-                process.env.INSW_USE_TEST_MODE === 'true'
-              );
-              await inswService.transmitMaterialUsage(
-                data.company_code,
-                [savedRecord.id],
-                [data.wms_id]
-              );
-              log.info('Material usage INSW skipped as non-facility', {
-                wmsId: data.wms_id,
-              });
-              return;
-            }
-
             // Check company type
             const company = await prisma.companies.findUnique({
               where: { code: data.company_code },

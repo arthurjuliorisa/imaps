@@ -370,6 +370,9 @@ export class INSWIntegrationService {
           nilai: Number(item.value_amount || 0),
           dokumen: [
             {
+              // Non-facility incoming goods persist a null document type/date while
+              // keeping ppkek_number = 'N'. Preserve the existing INSW fallback
+              // behavior unless INSW/client confirms a dedicated 'N' mapping.
               kodeDokumen:
                 this.mapCustomsDocTypeToINSWDocCode(
                   item.customs_document_type

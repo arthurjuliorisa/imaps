@@ -1119,7 +1119,12 @@ SELECT
     mui.item_name,
     mui.uom as unit,
     mui.qty as quantity,
-    mui.amount as value_amount
+    mui.amount as value_amount,
+    'MATERIAL_USAGE'::VARCHAR(50) as source_type,
+    'material_usage_items'::VARCHAR(100) as source_table,
+    mui.id as source_item_id,
+    mui.ppkek_number,
+    (mui.ppkek_number = 'N') as is_non_facility
 FROM material_usages mu
 JOIN material_usage_items mui ON mu.company_code = mui.material_usage_company
     AND mu.id = mui.material_usage_id

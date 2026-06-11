@@ -3,7 +3,6 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 import { validateCompanyCode } from '@/lib/company-validation';
-import { isCustomsUser } from '@/lib/utils/user-role.util';
 
 export async function GET(request: Request) {
   try {
@@ -34,7 +33,6 @@ export async function GET(request: Request) {
       return companyValidation.response;
     }
     const { companyCode } = companyValidation;
-    const isCustUser = isCustomsUser((session as any)?.user?.role);
 
     // Query from vw_laporan_pemasukan view with company_type and pagination
     // Single efficient query with pagination support
@@ -68,10 +66,6 @@ export async function GET(request: Request) {
 
     const params: any[] = [companyCode];
     let paramIndex = 2;
-
-    if (isCustUser) {
-      query += ` AND NOT (COALESCE(is_non_facility, false) = true)`;
-    }
 
     // Apply date range filter using OR condition for both doc_date and reg_date
     if (startDate && endDate) {

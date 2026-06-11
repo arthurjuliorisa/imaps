@@ -3,7 +3,6 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 import { validateCompanyCode } from '@/lib/company-validation';
-import { isCustomsUser } from '@/lib/utils/user-role.util';
 
 export async function GET(request: Request) {
   try {
@@ -34,7 +33,6 @@ export async function GET(request: Request) {
       return companyValidation.response;
     }
     const { companyCode } = companyValidation;
-    const isCustUser = isCustomsUser((session as any)?.user?.role);
 
     // Query from vw_internal_outgoing view with company_type and pagination
     // Single efficient query with pagination support (company_type merged in view)
@@ -74,10 +72,6 @@ export async function GET(request: Request) {
 
     const params: any[] = [companyCode];
     let paramIndex = 2;
-
-    if (isCustUser) {
-      query += ` AND NOT (source_type = 'MATERIAL_USAGE' AND COALESCE(is_non_facility, false) = true)`;
-    }
 
     // Apply date range filter
     if (startDate && endDate) {
@@ -120,10 +114,6 @@ export async function GET(request: Request) {
     let countQuery = `SELECT COUNT(*) as count FROM vw_internal_outgoing WHERE company_code = $1`;
     const countParamsList: any[] = [companyCode];
     let countParamIndex = 2;
-
-    if (isCustUser) {
-      countQuery += ` AND NOT (source_type = 'MATERIAL_USAGE' AND COALESCE(is_non_facility, false) = true)`;
-    }
 
     if (startDate && endDate) {
       countQuery += ` AND (transaction_date::date >= $${countParamIndex}::date AND transaction_date::date <= $${countParamIndex + 1}::date)`;

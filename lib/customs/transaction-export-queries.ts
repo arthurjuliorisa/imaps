@@ -114,9 +114,6 @@ export async function countIncomingRows(filters: TransactionExportFilters): Prom
     WHERE company_code = $1
       AND deleted_at IS NULL
   `;
-  if (filters.isCustomsUser) {
-    query += ` AND NOT (COALESCE(is_non_facility, false) = true)`;
-  }
   const result = appendRegularFilters(query, [filters.companyCode], filters, 'shipper_name');
   const countResult = await prisma.$queryRawUnsafe<[{ count: string }]>(
     result.query,
@@ -153,9 +150,6 @@ export async function fetchIncomingRows(filters: TransactionExportFilters): Prom
     WHERE company_code = $1
       AND deleted_at IS NULL
   `;
-  if (filters.isCustomsUser) {
-    query += ` AND NOT (COALESCE(is_non_facility, false) = true)`;
-  }
   const result = appendRegularFilters(query, [filters.companyCode], filters, 'shipper_name');
   query = `${result.query} ORDER BY doc_date DESC, id DESC`;
 
@@ -297,9 +291,6 @@ export async function countInternalRows(
 ): Promise<number> {
   const viewName = kind === 'internal-incoming' ? 'vw_internal_incoming' : 'vw_internal_outgoing';
   let query = `SELECT COUNT(*) as count FROM ${viewName} WHERE company_code = $1`;
-  if (kind === 'internal-outgoing' && filters.isCustomsUser) {
-    query += ` AND NOT (source_type = 'MATERIAL_USAGE' AND COALESCE(is_non_facility, false) = true)`;
-  }
   const result = appendInternalFilters(query, [filters.companyCode], filters);
   const countResult = await prisma.$queryRawUnsafe<[{ count: string }]>(
     result.query,
@@ -314,9 +305,6 @@ export async function fetchInternalRows(
 ): Promise<Record<string, unknown>[]> {
   const viewName = kind === 'internal-incoming' ? 'vw_internal_incoming' : 'vw_internal_outgoing';
   let query = internalBaseQuery(viewName);
-  if (kind === 'internal-outgoing' && filters.isCustomsUser) {
-    query += ` AND NOT (source_type = 'MATERIAL_USAGE' AND COALESCE(is_non_facility, false) = true)`;
-  }
   const result = appendInternalFilters(query, [filters.companyCode], filters);
   query = `${result.query} ORDER BY transaction_date DESC, id`;
 

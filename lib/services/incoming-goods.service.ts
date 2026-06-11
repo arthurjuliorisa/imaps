@@ -140,17 +140,6 @@ export class IncomingGoodsService {
           );
 
           try {
-            const isNonFacility = data.ppkek_number === 'N'
-              && data.customs_document_type === 'N'
-              && data.customs_registration_date === 'N';
-
-            if (isNonFacility) {
-              const inswService = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
-              await inswService.transmitIncomingGoods(data.company_code, [result.id]);
-              requestLogger.info('Incoming goods INSW skipped as non-facility', { wmsId: data.wms_id });
-              return;
-            }
-
             // Check company type
             const company = await prisma.companies.findUnique({
               where: { code: data.company_code },

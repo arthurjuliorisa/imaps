@@ -68,75 +68,25 @@ export class INSWTransmissionService {
 
     // Fetch incoming goods WMS IDs early (needed for all cases including endpoint disabled)
     let incomingDocMap = new Map<number, string>();
-    let nonFacilityIncomingIds = new Set<number>();
     try {
       const incomingDocs = await prisma.$queryRaw<Array<{
         id: number;
         wms_id: string;
-        is_non_facility: boolean;
       }>>`
-        SELECT id, wms_id, COALESCE(is_non_facility, false) AS is_non_facility
+        SELECT id, wms_id
         FROM incoming_goods
         WHERE company_code = ${companyCode}
           AND id = ANY(${ids}::int[])
       `;
       incomingDocMap = new Map(incomingDocs.map(r => [Number(r.id), r.wms_id]));
-      nonFacilityIncomingIds = new Set(
-        incomingDocs
-          .filter(r => r.is_non_facility)
-          .map(r => Number(r.id))
-      );
     } catch { /* fallback to empty map */ }
 
-    if (nonFacilityIncomingIds.size > 0) {
-      const results: INSWTransmitResult[] = [];
-      for (const id of ids) {
-        if (!nonFacilityIncomingIds.has(id)) {
-          continue;
-        }
-
-        await this.logSkippedNonFacilityTransmission({
-          transaction_type: 'incoming',
-          transaction_id: id,
-          wms_id: incomingDocMap.get(id),
-          company_code: companyCode,
-          insw_activity_code: '30',
-          metadata: {
-            transmission_scope: 'INTERNAL_ONLY',
-            transmission_mode: 'SKIPPED',
-            reason: 'NON_FACILITY',
-            facility_scope: 'HEADER',
-          },
-        });
-
-        results.push({
-          id,
-          wms_id: incomingDocMap.get(id) || `ID-${id}`,
-          status: 'skipped',
-          insw_status: INSWTransmissionStatus.SKIPPED,
-        });
-      }
-
-      if (nonFacilityIncomingIds.size === ids.length) {
-        return {
-          status: 'success',
-          message: 'Incoming goods skipped for INSW because it is non-facility data',
-          total: ids.length,
-          success_count: 0,
-          failed_count: 0,
-          skipped_count: ids.length,
-          results,
-        };
-      }
-    }
-
-    const facilityIds = ids.filter(id => !nonFacilityIncomingIds.has(id));
     try {
-      payload = await this.inswService.convertPemasukanToINSW(companyCode, facilityIds);
+      payload = await this.inswService.convertPemasukanToINSW(companyCode, ids);
     } catch { /* payload remains null if generation fails */ }
 
     if (!skipEndpointCheck && !(await this.isEndpointEnabled('PEMASUKAN'))) {
-      for (const id of facilityIds) {
+      for (const id of ids) {
         await this.logTransmission({
           transaction_type: 'incoming',
           transaction_id: id,
@@ -165,7 +115,7 @@ export class INSWTransmissionService {
 
     try {
       // Convert to INSW format
-      if (!payload) payload = await this.inswService.convertPemasukanToINSW(companyCode, facilityIds);
+      if (!payload) payload = await this.inswService.convertPemasukanToINSW(companyCode, ids);
 
       // Validate payload
       const validation = INSWHelper.validateINSWPayload(payload);
@@ -173,7 +123,7 @@ export class INSWTransmissionService {
         this.log.error('Validation failed', { errors: validation.errors });
 
         // Log each failed record
-        for (const id of facilityIds) {
+        for (const id of ids) {
           await this.logTransmission({
             transaction_type: 'incoming',
             transaction_id: id,
@@ -201,7 +151,7 @@ export class INSWTransmissionService {
           total: ids.length,
           success_count: 0,
           failed_count: failedCount,
-          skipped_count: nonFacilityIncomingIds.size,
+          skipped_count: 0,
           results,
         };
       }
@@ -211,7 +161,7 @@ export class INSWTransmissionService {
 
       // Process response
       if (inswResponse.status) {
-        for (const id of facilityIds) {
+        for (const id of ids) {
           await this.logTransmission({
             transaction_type: 'incoming',
             transaction_id: id,
@@ -233,7 +183,7 @@ export class INSWTransmissionService {
           successCount++;
         }
       } else {
-        for (const id of facilityIds) {
+        for (const id of ids) {
           await this.logTransmission({
             transaction_type: 'incoming',
             transaction_id: id,
@@ -266,13 +216,13 @@ export class INSWTransmissionService {
         total: ids.length,
         success_count: successCount,
         failed_count: failedCount,
-        skipped_count: nonFacilityIncomingIds.size,
+        skipped_count: 0,
         results,
       };
     } catch (error: any) {
       this.log.error('Error transmitting to INSW', { error: error.message });
 
-      for (const id of facilityIds) {
+      for (const id of ids) {
         await this.logTransmission({
           transaction_type: 'incoming',
           transaction_id: id,
@@ -297,8 +247,8 @@ export class INSWTransmissionService {
         message: error.message,
         total: ids.length,
         success_count: 0,
-        failed_count: facilityIds.length,
-        skipped_count: nonFacilityIncomingIds.size,
+        failed_count: ids.length,
+        skipped_count: 0,
         results,
       };
     }
@@ -668,40 +618,6 @@ export class INSWTransmissionService {
     this.log.info('Starting material usage transmission', { companyCode, ids, skipEndpointCheck });
 
     let payload: any = null;
-    const nonFacilityMetadata = await this.getMaterialUsageNonFacilityMetadata(companyCode, ids);
-    const transmissionMetadata = nonFacilityMetadata?.metadata;
-
-    if (nonFacilityMetadata?.allNonFacility) {
-      const results: INSWTransmitResult[] = [];
-      for (let i = 0; i < ids.length; i++) {
-        await this.logSkippedNonFacilityTransmission({
-          transaction_type: 'material_usage',
-          transaction_id: ids[i],
-          wms_id: wmsIds[i],
-          company_code: companyCode,
-          insw_activity_code: '31',
-          metadata: transmissionMetadata,
-        });
-
-        results.push({
-          id: ids[i],
-          wms_id: wmsIds[i],
-          status: 'skipped',
-          insw_status: INSWTransmissionStatus.SKIPPED,
-        });
-      }
-
-      return {
-        status: 'success',
-        message: 'Material usage skipped for INSW because all rows are non-facility data',
-        total: ids.length,
-        success_count: 0,
-        failed_count: 0,
-        skipped_count: ids.length,
-        results,
-      };
-    }
-
     try {
       payload = await this.inswService.convertMaterialUsageToINSW(companyCode, ids);
     } catch { /* payload remains null if generation fails */ }
@@ -717,7 +633,6 @@ export class INSWTransmissionService {
           insw_activity_code: '30',
           insw_request_payload: payload || undefined,
           insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
-          metadata: transmissionMetadata,
         });
       }
       return {
@@ -755,7 +670,6 @@ export class INSWTransmissionService {
             insw_activity_code: '31',
             insw_request_payload: payload,
             insw_error: validation.errors.join('; '),
-            metadata: transmissionMetadata,
           });
 
           results.push({
@@ -794,7 +708,6 @@ export class INSWTransmissionService {
             insw_activity_code: '31',
             insw_request_payload: payload,
             insw_response: inswResponse,
-            metadata: transmissionMetadata,
           });
 
           results.push({
@@ -818,7 +731,6 @@ export class INSWTransmissionService {
             insw_request_payload: payload,
             insw_response: inswResponse,
             insw_error: inswResponse.message,
-            metadata: transmissionMetadata,
           });
 
           results.push({
@@ -858,7 +770,6 @@ export class INSWTransmissionService {
           insw_status: INSWTransmissionStatus.FAILED,
           insw_activity_code: '31',
           insw_error: error.message,
-          metadata: transmissionMetadata,
         });
 
         results.push({
@@ -1173,108 +1084,6 @@ export class INSWTransmissionService {
       results.push({ id: adjustmentId, wms_id: wmsId, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
       return { status: 'failed', message: error.message, total: 1, success_count: 0, failed_count: 1, skipped_count: 0, results };
     }
-  }
-
-  private async getMaterialUsageNonFacilityMetadata(
-    companyCode: number,
-    ids: number[]
-  ): Promise<{ allNonFacility: boolean; metadata: any } | null> {
-    if (ids.length === 0) {
-      return null;
-    }
-
-    const rows = await prisma.material_usage_items.findMany({
-      where: {
-        material_usage_company: companyCode,
-        material_usage_id: { in: ids },
-        deleted_at: null,
-      },
-      select: {
-        item_code: true,
-        ppkek_number: true,
-        qty: true,
-      },
-    });
-
-    const originalCount = rows.length;
-    const skippedRows = rows.filter(row => row.ppkek_number === 'N');
-    const transmittedCount = originalCount - skippedRows.length;
-
-    if (originalCount === 0 || skippedRows.length === 0) {
-      return null;
-    }
-
-    if (transmittedCount === 0) {
-      return {
-        allNonFacility: true,
-        metadata: {
-          transmission_scope: 'INTERNAL_ONLY',
-          transmission_mode: 'SKIPPED',
-          reason: 'NON_FACILITY',
-          facility_scope: 'ITEM',
-          original_traceability_row_count: originalCount,
-          transmitted_traceability_row_count: 0,
-          skipped_traceability_row_count: skippedRows.length,
-        },
-      };
-    }
-
-    return {
-      allNonFacility: false,
-      metadata: {
-        transmission_scope: 'PARTIAL_INSW',
-        transmission_mode: 'PARTIAL',
-        reason: 'MIXED_FACILITY_AND_NON_FACILITY_ITEMS',
-        skipped_reason: 'NON_FACILITY',
-        original_traceability_row_count: originalCount,
-        transmitted_traceability_row_count: transmittedCount,
-        skipped_traceability_row_count: skippedRows.length,
-        skipped_items: skippedRows.map(row => ({
-          item_code: row.item_code,
-          ppkek_number: row.ppkek_number,
-          qty: Number(row.qty),
-        })),
-      },
-    };
-  }
-
-  private async logSkippedNonFacilityTransmission(data: {
-    transaction_type: string;
-    transaction_id?: number;
-    wms_id?: string;
-    company_code: number;
-    insw_activity_code: string;
-    metadata: any;
-  }) {
-    const existing = await prisma.insw_tracking_log.findFirst({
-      where: {
-        transaction_type: data.transaction_type,
-        company_code: data.company_code,
-        transaction_id: data.transaction_id,
-        wms_id: data.wms_id,
-        insw_status: INSWTransmissionStatus.SKIPPED,
-        metadata: {
-          path: ['reason'],
-          equals: 'NON_FACILITY',
-        },
-      },
-      select: { id: true },
-    });
-
-    if (existing) {
-      return;
-    }
-
-    await this.logTransmission({
-      transaction_type: data.transaction_type,
-      transaction_id: data.transaction_id,
-      wms_id: data.wms_id,
-      company_code: data.company_code,
-      insw_status: INSWTransmissionStatus.SKIPPED,
-      insw_activity_code: data.insw_activity_code,
-      insw_error: 'NON_FACILITY',
-      metadata: data.metadata,
-    });
   }
 
   /**
