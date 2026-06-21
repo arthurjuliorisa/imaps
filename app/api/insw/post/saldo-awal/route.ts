@@ -22,9 +22,7 @@ export async function POST() {
     if (!sezValidation.success) {
       return sezValidation.response;
     }
-
-    const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
-    const service = new INSWTransmissionService(useTestMode);
+    const service = new INSWTransmissionService();
 
     const result = await service.transmitSaldoAwal(companyCode);
 

@@ -4,7 +4,7 @@ import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { checkStockAvailability } from '@/lib/utils/stock-checker';
 import { logActivity } from '@/lib/log-activity';
-import { INSWIntegrationService } from '@/lib/services/insw-integration.service';
+import { createInswIntegrationService } from '@/lib/services/insw-service.factory';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -305,12 +305,7 @@ export async function POST(request: Request) {
 
         // Only transmit if SEZ company
         if (company?.company_type === 'SEZ') {
-          const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
-          const inswService = new INSWIntegrationService(
-            process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-            useTestMode ? process.env.INSW_UNIQUE_KEY_TEST || '' : process.env.INSW_UNIQUE_KEY_REAL || '',
-            useTestMode
-          );
+          const inswService = createInswIntegrationService(companyCode);
 
           const payload = await inswService.convertCapitalGoodsOutToINSWByWmsIds(
             companyCode,

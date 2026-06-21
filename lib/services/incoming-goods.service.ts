@@ -148,7 +148,7 @@ export class IncomingGoodsService {
 
             // Only transmit if SEZ company
             if (company?.company_type === 'SEZ') {
-              const inswService = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+              const inswService = new INSWTransmissionService();
               const transmissionResult = await inswService.transmitIncomingGoods(data.company_code, [result.id]);
               if (transmissionResult.status === 'success') {
                 requestLogger.info('Incoming goods transmitted to INSW', { wmsId: data.wms_id });

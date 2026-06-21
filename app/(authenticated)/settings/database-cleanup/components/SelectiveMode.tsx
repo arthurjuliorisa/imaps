@@ -54,7 +54,13 @@ import {
   useExecuteCleanup,
   CleanupProgress,
 } from '@/hooks/useSelectiveCleanup';
-import { CLEANUP_TABLES, PHASES, getTablesByPhase, Phase } from '@/lib/cleanup/table-config';
+import {
+  CLEANUP_TABLES,
+  PHASES,
+  getCleanupEligibility,
+  getTablesByPhase,
+  Phase,
+} from '@/lib/cleanup/table-config';
 
 interface SelectiveModeProps {
   onBack: () => void;
@@ -263,10 +269,14 @@ export function SelectiveMode({ onBack }: SelectiveModeProps) {
 
                   {PHASES.map((phase: Phase) => {
                     const tablesInPhase = getTablesByPhase(phase.number);
+                    const selectableTables = tablesInPhase.filter(
+                      (table) => getCleanupEligibility(table).selectiveCleanup
+                    );
                     const selectedCount = tablesInPhase.filter((t) =>
                       selectedTableIds.has(t.id)
                     ).length;
-                    const allSelected = selectedCount === tablesInPhase.length;
+                    const allSelected =
+                      selectableTables.length > 0 && selectedCount === selectableTables.length;
                     const someSelected = selectedCount > 0;
 
                     return (
@@ -279,6 +289,7 @@ export function SelectiveMode({ onBack }: SelectiveModeProps) {
                           <Checkbox
                             checked={allSelected}
                             indeterminate={someSelected && !allSelected}
+                            disabled={selectableTables.length === 0}
                             onClick={(e) => e.stopPropagation()}
                             onChange={() => {
                               if (allSelected) {
@@ -294,7 +305,7 @@ export function SelectiveMode({ onBack }: SelectiveModeProps) {
                               {phase.name}
                             </Typography>
                             <Typography variant="caption" color="textSecondary">
-                              {selectedCount} / {tablesInPhase.length} selected
+                              {selectedCount} / {selectableTables.length} selected
                             </Typography>
                           </Box>
                         </AccordionSummary>
@@ -306,6 +317,7 @@ export function SelectiveMode({ onBack }: SelectiveModeProps) {
                                 control={
                                   <Checkbox
                                     checked={selectedTableIds.has(table.id)}
+                                    disabled={!getCleanupEligibility(table).selectiveCleanup}
                                     onChange={() => toggleTable(table.id)}
                                   />
                                 }
@@ -315,7 +327,11 @@ export function SelectiveMode({ onBack }: SelectiveModeProps) {
                                       {table.displayName}
                                     </Typography>
                                     <Typography variant="caption" color="textSecondary">
-                                      {rowCounts[table.id] !== undefined
+                                      {!getCleanupEligibility(table).selectiveCleanup
+                                        ? getCleanupEligibility(table).exclusionReason ||
+                                          table.reason ||
+                                          'Unsupported for company-scoped cleanup'
+                                        : rowCounts[table.id] !== undefined
                                         ? `${rowCounts[table.id].toLocaleString()} rows`
                                         : "Loading..."}
                                     </Typography>
@@ -662,8 +678,8 @@ export function SelectiveMode({ onBack }: SelectiveModeProps) {
                     {error || 'Unknown error occurred'}
                   </Typography>
                   <Typography variant="body2">
-                    The database backup has been preserved. Please contact support if the
-                    cleanup fails repeatedly.
+                    No unsupported/shared table data is deleted. If cleanup failed during
+                    pre-validation, no company data was deleted.
                   </Typography>
                 </Alert>
 

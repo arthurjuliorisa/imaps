@@ -174,9 +174,7 @@ export class ProductionOutputService {
                 productionOutputId: result.header.id,
               });
 
-              const inswService = new INSWTransmissionService(
-                process.env.INSW_USE_TEST_MODE === 'true'
-              );
+              const inswService = new INSWTransmissionService();
 
               const transmissionResult = await inswService.transmitProductionOutput(
                 data.company_code,

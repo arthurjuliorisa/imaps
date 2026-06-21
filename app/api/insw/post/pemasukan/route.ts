@@ -35,9 +35,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-
-    const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
-    const service = new INSWTransmissionService(useTestMode);
+    const service = new INSWTransmissionService();
 
     const result = await service.transmitIncomingGoods(companyCode, ids);
 

@@ -266,7 +266,7 @@ export async function POST(request: Request) {
         });
 
         if (company?.company_type === 'SEZ') {
-          const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+          const inswTransmission = new INSWTransmissionService();
           const r = await inswTransmission.transmitScrapIn(companyCode, [result.transactionId]);
           console.log('[INSW] Scrap IN transmitted', { status: r.status, transactionId: result.transactionId });
         } else {

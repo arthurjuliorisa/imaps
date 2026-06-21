@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { INSWIntegrationService } from '@/lib/services/insw-integration.service';
 import { checkAuth } from '@/lib/api-auth';
+import { createInswIntegrationService } from '@/lib/services/insw-service.factory';
 
 export async function POST(request: Request) {
   try {
@@ -9,6 +9,8 @@ export async function POST(request: Request) {
       return authCheck.response;
     }
 
+    const { session } = authCheck as { authenticated: true; session: any };
+    const companyCode = Number(session?.user?.companyCode);
     const body = await request.json();
     const { tglAwal, tglAkhir } = body;
 
@@ -22,12 +24,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
-    const service = new INSWIntegrationService(
-      process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-      useTestMode ? process.env.INSW_UNIQUE_KEY_TEST || '' : process.env.INSW_UNIQUE_KEY_REAL || '',
-      useTestMode
-    );
+    if (!Number.isFinite(companyCode) || companyCode <= 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Company code is required for company-specific INSW credentials',
+        },
+        { status: 400 }
+      );
+    }
+
+    const service = createInswIntegrationService(companyCode);
 
     const result = await service.getPengeluaran({ tglAwal, tglAkhir });
 

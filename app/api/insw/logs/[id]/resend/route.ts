@@ -41,11 +41,10 @@ export async function POST(
         { status: 400 }
       );
     }
-
-    const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
-    const service = new INSWTransmissionService(useTestMode);
+    const service = new INSWTransmissionService();
 
     let result;
+    const logCompanyCode = log.company_code;
     const transactionId = log.transaction_id ? Number(log.transaction_id) : null;
     const wmsId = log.wms_id;
     // Only skip endpoint check for PENDING status. FAILED status must respect endpoint settings.
@@ -59,14 +58,14 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitIncomingGoods(companyCode, [transactionId], skipEndpointCheck);
+        result = await service.transmitIncomingGoods(logCompanyCode, [transactionId], skipEndpointCheck);
         break;
 
       case 'outgoing':
         if (wmsId) {
-          result = await service.transmitOutgoingGoodsByWmsIds(companyCode, [wmsId], skipEndpointCheck);
+          result = await service.transmitOutgoingGoodsByWmsIds(logCompanyCode, [wmsId], skipEndpointCheck);
         } else if (transactionId) {
-          result = await service.transmitOutgoingGoodsByIds(companyCode, [transactionId], skipEndpointCheck);
+          result = await service.transmitOutgoingGoodsByIds(logCompanyCode, [transactionId], skipEndpointCheck);
         } else {
           return NextResponse.json(
             { success: false, message: 'Transaction ID atau WMS ID tidak ditemukan pada log ini' },
@@ -82,7 +81,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitMaterialUsage(companyCode, [transactionId], [wmsId || ''], skipEndpointCheck);
+        result = await service.transmitMaterialUsage(logCompanyCode, [transactionId], [wmsId || ''], skipEndpointCheck);
         break;
 
       case 'production_output':
@@ -92,7 +91,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitProductionOutput(companyCode, [transactionId], [wmsId || ''], skipEndpointCheck);
+        result = await service.transmitProductionOutput(logCompanyCode, [transactionId], [wmsId || ''], skipEndpointCheck);
         break;
 
       case 'scrap_in':
@@ -102,7 +101,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitScrapIn(companyCode, [transactionId], skipEndpointCheck);
+        result = await service.transmitScrapIn(logCompanyCode, [transactionId], skipEndpointCheck);
         break;
 
       case 'scrap_out':
@@ -112,7 +111,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitScrapOut(companyCode, [transactionId], skipEndpointCheck);
+        result = await service.transmitScrapOut(logCompanyCode, [transactionId], skipEndpointCheck);
         break;
 
       case 'capital_goods_out':
@@ -122,7 +121,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitCapitalGoodsOut(companyCode, [wmsId], skipEndpointCheck);
+        result = await service.transmitCapitalGoodsOut(logCompanyCode, [wmsId], skipEndpointCheck);
         break;
 
       case 'stock_opname':
@@ -132,7 +131,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitStockOpname(companyCode, transactionId, wmsId, skipEndpointCheck);
+        result = await service.transmitStockOpname(logCompanyCode, transactionId, wmsId, skipEndpointCheck);
         break;
 
       case 'adjustment':
@@ -142,7 +141,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitAdjustment(companyCode, transactionId, wmsId, skipEndpointCheck);
+        result = await service.transmitAdjustment(logCompanyCode, transactionId, wmsId, skipEndpointCheck);
         break;
 
       default:

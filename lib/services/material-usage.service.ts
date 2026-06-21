@@ -226,9 +226,7 @@ export class MaterialUsageService {
 
             // Only transmit if SEZ company
             if (company?.company_type === 'SEZ') {
-              const inswService = new INSWTransmissionService(
-                process.env.INSW_USE_TEST_MODE === 'true'
-              );
+              const inswService = new INSWTransmissionService();
 
               const transmissionResult = await inswService.transmitMaterialUsage(
                 data.company_code,

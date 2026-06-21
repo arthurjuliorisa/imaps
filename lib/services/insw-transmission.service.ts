@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/prisma';
-import { INSWIntegrationService } from './insw-integration.service';
 import { INSWHelper } from '@/lib/utils/insw-helper';
 import {
   INSWTransmissionStatus,
@@ -8,34 +7,30 @@ import {
 } from '@/lib/types/insw-transmission.types';
 import { INSW_ENDPOINTS } from '@/lib/types/insw-api.types';
 import { logger } from '@/lib/utils/logger';
+import { resolveInswCompanyNpwp } from '@/lib/config/insw-company-config';
+import { createInswIntegrationService, createInswPayloadConverter } from '@/lib/services/insw-service.factory';
 
 export class INSWTransmissionService {
-  private inswService: INSWIntegrationService;
-  private useTestMode: boolean;
   private log = logger.child({ service: 'INSWTransmissionService' });
 
-  constructor(useTestMode: boolean = true) {
-    this.useTestMode = useTestMode;
-    const uniqueKey = useTestMode
-      ? process.env.INSW_UNIQUE_KEY_TEST || ''
-      : process.env.INSW_UNIQUE_KEY_REAL || '';
-    this.inswService = new INSWIntegrationService(
-      process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-      uniqueKey,
-      useTestMode
-    );
-  }
-
-  private getEndpointUrl(transactionType: string): string {
-    if (transactionType === 'saldo_awal') {
-      return this.useTestMode
-        ? INSW_ENDPOINTS.saldoAwal.temp
-        : INSW_ENDPOINTS.saldoAwal.real;
-    }
+  private getEndpointUrl(transactionType: string, companyCode: number): string | null {
     if (transactionType === 'insw_cleanup') {
       return INSW_ENDPOINTS.transaksi.temp;
     }
-    return this.useTestMode
+
+    const modeValue = process.env[`INSW_${companyCode}_USE_TEST_MODE`];
+    if (modeValue !== 'true' && modeValue !== 'false') {
+      return null;
+    }
+
+    const useTestMode = modeValue === 'true';
+
+    if (transactionType === 'saldo_awal') {
+      return useTestMode
+        ? INSW_ENDPOINTS.saldoAwal.temp
+        : INSW_ENDPOINTS.saldoAwal.real;
+    }
+    return useTestMode
       ? INSW_ENDPOINTS.transaksi.temp
       : INSW_ENDPOINTS.transaksi.real;
   }
@@ -63,6 +58,7 @@ export class INSWTransmissionService {
     skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting incoming goods transmission', { companyCode, ids, skipEndpointCheck });
+    const converter = createInswPayloadConverter();
 
     let payload: any = null;
 
@@ -82,7 +78,7 @@ export class INSWTransmissionService {
     } catch { /* fallback to empty map */ }
 
     try {
-      payload = await this.inswService.convertPemasukanToINSW(companyCode, ids);
+      payload = await converter.convertPemasukanToINSW(companyCode, ids);
     } catch { /* payload remains null if generation fails */ }
 
     if (!skipEndpointCheck && !(await this.isEndpointEnabled('PEMASUKAN'))) {
@@ -115,7 +111,7 @@ export class INSWTransmissionService {
 
     try {
       // Convert to INSW format
-      if (!payload) payload = await this.inswService.convertPemasukanToINSW(companyCode, ids);
+      if (!payload) payload = await converter.convertPemasukanToINSW(companyCode, ids);
 
       // Validate payload
       const validation = INSWHelper.validateINSWPayload(payload);
@@ -157,7 +153,8 @@ export class INSWTransmissionService {
       }
 
       // Send to INSW
-      const inswResponse = await this.inswService.postPemasukan(payload);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.postPemasukan(payload);
 
       // Process response
       if (inswResponse.status) {
@@ -267,10 +264,11 @@ export class INSWTransmissionService {
       ids,
       skipEndpointCheck,
     });
+    const converter = createInswPayloadConverter();
 
     let payload: any = null;
     try {
-      payload = await this.inswService.convertPengeluaranToINSWByIds(companyCode, ids);
+      payload = await converter.convertPengeluaranToINSWByIds(companyCode, ids);
     } catch { /* payload remains null if generation fails */ }
 
     if (!skipEndpointCheck && !(await this.isEndpointEnabled('PENGELUARAN'))) {
@@ -301,7 +299,7 @@ export class INSWTransmissionService {
     let failedCount = 0;
 
     try {
-      if (!payload) payload = await this.inswService.convertPengeluaranToINSWByIds(companyCode, ids);
+      if (!payload) payload = await converter.convertPengeluaranToINSWByIds(companyCode, ids);
 
       const validation = INSWHelper.validateINSWPayload(payload);
       if (!validation.valid) {
@@ -337,7 +335,8 @@ export class INSWTransmissionService {
         };
       }
 
-      const inswResponse = await this.inswService.postPengeluaran(payload);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.postPengeluaran(payload);
 
       if (inswResponse.status) {
         for (const id of ids) {
@@ -443,10 +442,11 @@ export class INSWTransmissionService {
       wmsIds,
       skipEndpointCheck,
     });
+    const converter = createInswPayloadConverter();
 
     let payload: any = null;
     try {
-      payload = await this.inswService.convertPengeluaranToINSWByWmsIds(companyCode, wmsIds);
+      payload = await converter.convertPengeluaranToINSWByWmsIds(companyCode, wmsIds);
     } catch { /* payload remains null if generation fails */ }
 
     if (!skipEndpointCheck && !(await this.isEndpointEnabled('PENGELUARAN'))) {
@@ -477,7 +477,7 @@ export class INSWTransmissionService {
     let failedCount = 0;
 
     try {
-      if (!payload) payload = await this.inswService.convertPengeluaranToINSWByWmsIds(companyCode, wmsIds);
+      if (!payload) payload = await converter.convertPengeluaranToINSWByWmsIds(companyCode, wmsIds);
 
       const validation = INSWHelper.validateINSWPayload(payload);
       if (!validation.valid) {
@@ -513,7 +513,8 @@ export class INSWTransmissionService {
         };
       }
 
-      const inswResponse = await this.inswService.postPengeluaran(payload);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.postPengeluaran(payload);
 
       if (inswResponse.status) {
         for (const wmsId of wmsIds) {
@@ -616,10 +617,11 @@ export class INSWTransmissionService {
     skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting material usage transmission', { companyCode, ids, skipEndpointCheck });
+    const converter = createInswPayloadConverter();
 
     let payload: any = null;
     try {
-      payload = await this.inswService.convertMaterialUsageToINSW(companyCode, ids);
+      payload = await converter.convertMaterialUsageToINSW(companyCode, ids);
     } catch { /* payload remains null if generation fails */ }
 
     if (!skipEndpointCheck && !(await this.isEndpointEnabled('MATERIAL_USAGE'))) {
@@ -652,7 +654,7 @@ export class INSWTransmissionService {
 
     try {
       // Convert to INSW format
-      if (!payload) payload = await this.inswService.convertMaterialUsageToINSW(companyCode, ids);
+      if (!payload) payload = await converter.convertMaterialUsageToINSW(companyCode, ids);
 
       // Validate payload
       const validation = INSWHelper.validateINSWPayload(payload);
@@ -694,7 +696,8 @@ export class INSWTransmissionService {
       }
 
       // Send to INSW
-      const inswResponse = await this.inswService.postPengeluaran(payload);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.postPengeluaran(payload);
 
       // Process response
       if (inswResponse.status) {
@@ -807,10 +810,11 @@ export class INSWTransmissionService {
       ids,
       skipEndpointCheck,
     });
+    const converter = createInswPayloadConverter();
 
     let payload: any = null;
     try {
-      payload = await this.inswService.convertProductionOutputToINSW(companyCode, ids);
+      payload = await converter.convertProductionOutputToINSW(companyCode, ids);
     } catch { /* payload remains null if generation fails */ }
 
     if (!skipEndpointCheck && !(await this.isEndpointEnabled('PRODUCTION_OUTPUT'))) {
@@ -843,7 +847,7 @@ export class INSWTransmissionService {
 
     try {
       // Convert to INSW format
-      if (!payload) payload = await this.inswService.convertProductionOutputToINSW(companyCode, ids);
+      if (!payload) payload = await converter.convertProductionOutputToINSW(companyCode, ids);
 
       // Validate payload
       const validation = INSWHelper.validateINSWPayload(payload);
@@ -885,7 +889,8 @@ export class INSWTransmissionService {
       }
 
       // Send to INSW
-      const inswResponse = await this.inswService.postPemasukan(payload);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.postPemasukan(payload);
 
       // Process response
       if (inswResponse.status) {
@@ -991,10 +996,11 @@ export class INSWTransmissionService {
     skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting adjustment transmission', { companyCode, adjustmentId, wmsId, skipEndpointCheck });
+    const converter = createInswPayloadConverter();
 
     let payload: any = null;
     try {
-      payload = await this.inswService.convertAdjustmentToINSW(companyCode, adjustmentId);
+      payload = await converter.convertAdjustmentToINSW(companyCode, adjustmentId);
     } catch { /* payload remains null if generation fails */ }
 
     if (!skipEndpointCheck && !(await this.isEndpointEnabled('ADJUSTMENT'))) {
@@ -1022,7 +1028,7 @@ export class INSWTransmissionService {
     const results: INSWTransmitResult[] = [];
 
     try {
-      if (!payload) payload = await this.inswService.convertAdjustmentToINSW(companyCode, adjustmentId);
+      if (!payload) payload = await converter.convertAdjustmentToINSW(companyCode, adjustmentId);
 
       const validation = INSWHelper.validateINSWPayload(payload);
       if (!validation.valid) {
@@ -1040,7 +1046,8 @@ export class INSWTransmissionService {
         return { status: 'failed', message: 'Validation failed', total: 1, success_count: 0, failed_count: 1, skipped_count: 0, results };
       }
 
-      const inswResponse = await this.inswService.postAdjustment(payload);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.postAdjustment(payload);
 
       if (inswResponse.status) {
         await this.logTransmission({
@@ -1102,7 +1109,7 @@ export class INSWTransmissionService {
     metadata?: any;
   }) {
     try {
-      const endpointUrl = this.getEndpointUrl(data.transaction_type);
+      const endpointUrl = this.getEndpointUrl(data.transaction_type, data.company_code);
       await prisma.insw_tracking_log.create({
         data: {
           transaction_type: data.transaction_type,
@@ -1136,10 +1143,11 @@ export class INSWTransmissionService {
     skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting scrap IN transmission', { companyCode, transactionIds, skipEndpointCheck });
+    const converter = createInswPayloadConverter();
 
     let payload: any = null;
     try {
-      payload = await this.inswService.convertScrapInToINSW(companyCode, transactionIds);
+      payload = await converter.convertScrapInToINSW(companyCode, transactionIds);
     } catch { /* payload remains null if generation fails */ }
 
     // Fetch scrap documents early (needed for all cases including endpoint disabled)
@@ -1180,7 +1188,7 @@ export class INSWTransmissionService {
     let failedCount = 0;
 
     try {
-      if (!payload) payload = await this.inswService.convertScrapInToINSW(companyCode, transactionIds);
+      if (!payload) payload = await converter.convertScrapInToINSW(companyCode, transactionIds);
 
       const validation = INSWHelper.validateINSWPayload(payload);
       if (!validation.valid) {
@@ -1201,7 +1209,8 @@ export class INSWTransmissionService {
         return { status: 'failed', message: 'Validation failed', total: transactionIds.length, success_count: 0, failed_count: failedCount, skipped_count: 0, results };
       }
 
-      const inswResponse = await this.inswService.postPemasukan(payload);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.postPemasukan(payload);
 
       if (inswResponse.status) {
         for (const id of transactionIds) {
@@ -1237,10 +1246,11 @@ export class INSWTransmissionService {
     skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting scrap OUT transmission', { companyCode, transactionIds, skipEndpointCheck });
+    const converter = createInswPayloadConverter();
 
     let payload: any = null;
     try {
-      payload = await this.inswService.convertScrapOutToINSW(companyCode, transactionIds);
+      payload = await converter.convertScrapOutToINSW(companyCode, transactionIds);
     } catch { /* payload remains null if generation fails */ }
 
     // Fetch scrap documents early (needed for all cases including endpoint disabled)
@@ -1281,7 +1291,7 @@ export class INSWTransmissionService {
     let failedCount = 0;
 
     try {
-      if (!payload) payload = await this.inswService.convertScrapOutToINSW(companyCode, transactionIds);
+      if (!payload) payload = await converter.convertScrapOutToINSW(companyCode, transactionIds);
 
       const validation = INSWHelper.validateINSWPayload(payload);
       if (!validation.valid) {
@@ -1293,7 +1303,8 @@ export class INSWTransmissionService {
         return { status: 'failed', message: 'Validation failed', total: transactionIds.length, success_count: 0, failed_count: failedCount, skipped_count: 0, results };
       }
 
-      const inswResponse = await this.inswService.postPengeluaran(payload);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.postPengeluaran(payload);
 
       if (inswResponse.status) {
         for (const id of transactionIds) {
@@ -1329,10 +1340,11 @@ export class INSWTransmissionService {
     skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting capital goods OUT transmission', { companyCode, wmsIds, skipEndpointCheck });
+    const converter = createInswPayloadConverter();
 
     let payload: any = null;
     try {
-      payload = await this.inswService.convertCapitalGoodsOutToINSWByWmsIds(companyCode, wmsIds);
+      payload = await converter.convertCapitalGoodsOutToINSWByWmsIds(companyCode, wmsIds);
     } catch { /* payload remains null if generation fails */ }
 
     if (!skipEndpointCheck && !(await this.isEndpointEnabled('CAPITAL_GOODS_OUT'))) {
@@ -1363,7 +1375,7 @@ export class INSWTransmissionService {
     let failedCount = 0;
 
     try {
-      if (!payload) payload = await this.inswService.convertCapitalGoodsOutToINSWByWmsIds(companyCode, wmsIds);
+      if (!payload) payload = await converter.convertCapitalGoodsOutToINSWByWmsIds(companyCode, wmsIds);
 
       const validation = INSWHelper.validateINSWPayload(payload);
       if (!validation.valid) {
@@ -1375,7 +1387,8 @@ export class INSWTransmissionService {
         return { status: 'failed', message: 'Validation failed', total: wmsIds.length, success_count: 0, failed_count: failedCount, skipped_count: 0, results };
       }
 
-      const inswResponse = await this.inswService.postPengeluaran(payload);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.postPengeluaran(payload);
 
       if (inswResponse.status) {
         for (const wmsId of wmsIds) {
@@ -1409,10 +1422,11 @@ export class INSWTransmissionService {
     skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting stock opname transmission', { companyCode, stockOpnameId, wmsId, skipEndpointCheck });
+    const converter = createInswPayloadConverter();
 
     let payload: any = null;
     try {
-      payload = await this.inswService.convertStockOpnameToINSW(companyCode, stockOpnameId);
+      payload = await converter.convertStockOpnameToINSW(companyCode, stockOpnameId);
     } catch { /* payload remains null if generation fails */ }
 
     if (!skipEndpointCheck && !(await this.isEndpointEnabled('STOCK_OPNAME'))) {
@@ -1440,7 +1454,7 @@ export class INSWTransmissionService {
     const results: INSWTransmitResult[] = [];
 
     try {
-      if (!payload) payload = await this.inswService.convertStockOpnameToINSW(companyCode, stockOpnameId);
+      if (!payload) payload = await converter.convertStockOpnameToINSW(companyCode, stockOpnameId);
 
       const validation = INSWHelper.validateINSWPayload(payload);
       if (!validation.valid) {
@@ -1458,7 +1472,8 @@ export class INSWTransmissionService {
         return { status: 'failed', message: 'Validation failed', total: 1, success_count: 0, failed_count: 1, skipped_count: 0, results };
       }
 
-      const inswResponse = await this.inswService.postStockOpname(payload);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.postStockOpname(payload);
 
       if (inswResponse.status) {
         await this.logTransmission({
@@ -1511,10 +1526,11 @@ export class INSWTransmissionService {
     companyCode: number
   ): Promise<{ status: string; message: string; insw_response?: any }> {
     this.log.info('Starting saldo awal transmission', { companyCode });
+    const converter = createInswPayloadConverter();
 
     let payload: any = null;
     try {
-      payload = await this.inswService.convertSaldoAwalToINSW(companyCode);
+      payload = await converter.convertSaldoAwalToINSW(companyCode);
     } catch { /* payload remains null if generation fails */ }
 
     if (!(await this.isEndpointEnabled('SALDO_AWAL'))) {
@@ -1530,9 +1546,10 @@ export class INSWTransmissionService {
     }
 
     try {
-      if (!payload) payload = await this.inswService.convertSaldoAwalToINSW(companyCode);
+      if (!payload) payload = await converter.convertSaldoAwalToINSW(companyCode);
 
-      const inswResponse = await this.inswService.postSaldoAwal(payload);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.postSaldoAwal(payload);
 
       if (inswResponse.status) {
         await prisma.$executeRawUnsafe(
@@ -1600,7 +1617,8 @@ export class INSWTransmissionService {
     }
 
     try {
-      const inswResponse = await this.inswService.registrasiFinal();
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.registrasiFinal();
 
       if (inswResponse.status) {
         await prisma.$executeRawUnsafe(
@@ -1648,13 +1666,14 @@ export class INSWTransmissionService {
    * Clean up temporary transaction data in INSW (test mode only)
    */
   async cleanupINSWData(
-    companyCode: number,
-    npwp: string
+    companyCode: number
   ): Promise<INSWTransmitResponse> {
-    this.log.info('Starting INSW temporary data cleanup', { companyCode, npwp });
+    this.log.info('Starting INSW temporary data cleanup', { companyCode });
 
     try {
-      const inswResponse = await this.inswService.cleansingData(npwp);
+      const npwp = resolveInswCompanyNpwp(companyCode);
+      const inswService = createInswIntegrationService(companyCode);
+      const inswResponse = await inswService.cleansingData(npwp);
 
       if (inswResponse.status) {
         await this.logTransmission({
@@ -1662,7 +1681,7 @@ export class INSWTransmissionService {
           company_code: companyCode,
           insw_status: INSWTransmissionStatus.SUCCESS,
           insw_activity_code: '99', // Custom code for cleanup
-          insw_request_payload: { npwp },
+          insw_request_payload: { companyCode },
           insw_response: inswResponse,
         });
 
@@ -1690,7 +1709,7 @@ export class INSWTransmissionService {
           company_code: companyCode,
           insw_status: INSWTransmissionStatus.FAILED,
           insw_activity_code: '99',
-          insw_request_payload: { npwp },
+          insw_request_payload: { companyCode },
           insw_response: inswResponse,
           insw_error: inswResponse.message || 'Cleanup failed',
         });
@@ -1721,7 +1740,7 @@ export class INSWTransmissionService {
         company_code: companyCode,
         insw_status: INSWTransmissionStatus.FAILED,
         insw_activity_code: '99',
-        insw_request_payload: { npwp },
+        insw_request_payload: { companyCode },
         insw_error: error.message,
       });
 

@@ -25,9 +25,7 @@ export async function GET(request: Request) {
     const inswStatus = searchParams.get('insw_status');
     const dateFrom = searchParams.get('date_from');
     const dateTo = searchParams.get('date_to');
-
-    const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
-    const service = new INSWTransmissionService(useTestMode);
+    const service = new INSWTransmissionService();
 
     const logs = await service.getTransmissionLogs({
       company_code: companyCode,

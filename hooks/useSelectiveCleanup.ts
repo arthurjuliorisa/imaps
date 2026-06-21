@@ -9,7 +9,13 @@ import {
   ValidationError,
   SelectionResult
 } from '@/lib/cleanup/validation-service';
-import { CLEANUP_TABLES, PHASES, getTablesByPhase, Phase } from '@/lib/cleanup/table-config';
+import {
+  CLEANUP_TABLES,
+  PHASES,
+  getCleanupEligibility,
+  getTablesByPhase,
+  Phase,
+} from '@/lib/cleanup/table-config';
 
 export interface SelectedTable {
   id: string;
@@ -40,6 +46,36 @@ interface TableRowCounts {
   [tableId: string]: number;
 }
 
+export async function parseCleanupErrorResponse(
+  response: Response,
+  fallbackMessage = `Cleanup failed (${response.status})`
+): Promise<string> {
+  const contentType = response.headers.get('content-type');
+  let errorMessage = fallbackMessage;
+  let errorCode: string | undefined;
+
+  if (contentType?.includes('application/json')) {
+    const errorBody = await response.json().catch(() => null);
+
+    errorCode =
+      errorBody?.error?.code ??
+      errorBody?.code;
+
+    errorMessage =
+      errorBody?.error?.message ??
+      errorBody?.message ??
+      errorMessage;
+  } else {
+    const responseText = await response.text().catch(() => '');
+
+    if (responseText.trim()) {
+      errorMessage = responseText;
+    }
+  }
+
+  return errorCode ? `${errorMessage} [${errorCode}]` : errorMessage;
+}
+
 export function useSelectiveCleanup() {
   const [selectedTableIds, setSelectedTableIds] = useState<Set<string>>(
     new Set()
@@ -53,6 +89,11 @@ export function useSelectiveCleanup() {
    */
   const toggleTable = useCallback(
     (tableId: string) => {
+      const table = CLEANUP_TABLES.find((candidate) => candidate.id === tableId);
+      if (!table || !getCleanupEligibility(table).selectiveCleanup) {
+        return;
+      }
+
       setSelectedTableIds((prev) => {
         const next = new Set(prev);
         if (next.has(tableId)) {
@@ -73,7 +114,9 @@ export function useSelectiveCleanup() {
    * Select entire phase
    */
   const selectPhase = useCallback((phaseNumber: number) => {
-    const tablesInPhase = getTablesByPhase(phaseNumber);
+    const tablesInPhase = getTablesByPhase(phaseNumber).filter(
+      (table) => getCleanupEligibility(table).selectiveCleanup
+    );
     setSelectedTableIds((prev) => {
       const next = new Set(prev);
       tablesInPhase.forEach((table) => {
@@ -179,7 +222,12 @@ export function useSelectiveCleanup() {
     const suggested = getSuggestedTables();
     if (suggested.length > 0) {
       const newSelection = new Set(selectedTableIds);
-      suggested.forEach((id) => newSelection.add(id));
+      suggested.forEach((id) => {
+        const table = CLEANUP_TABLES.find((candidate) => candidate.id === id);
+        if (table && getCleanupEligibility(table).selectiveCleanup) {
+          newSelection.add(id);
+        }
+      });
       setSelectedTableIds(newSelection);
       setWarnings([
         `Added ${suggested.length} dependent table(s) for valid cleanup`
@@ -202,6 +250,9 @@ export function useSelectiveCleanup() {
     // Build phase selections
     const phaseSelections: PhaseSelection[] = PHASES.map((phase: Phase) => {
       const tablesInPhase = getTablesByPhase(phase.number);
+      const selectableTables = tablesInPhase.filter((table) =>
+        getCleanupEligibility(table).selectiveCleanup
+      );
       const selectedInPhase = tablesInPhase.filter((t) =>
         selectedTableIds.has(t.id)
       ).length;
@@ -209,9 +260,9 @@ export function useSelectiveCleanup() {
       return {
         phaseNumber: phase.number,
         phaseName: phase.name,
-        tablesTotal: tablesInPhase.length,
+        tablesTotal: selectableTables.length,
         tablesSelected: selectedInPhase,
-        selected: selectedInPhase === tablesInPhase.length
+        selected: selectableTables.length > 0 && selectedInPhase === selectableTables.length
       };
     });
 
@@ -294,7 +345,11 @@ export function useFetchTableRowCounts(tableIds: string[]) {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch row counts: ${response.statusText}`);
+        const errorMessage = await parseCleanupErrorResponse(
+          response,
+          `Failed to fetch row counts (${response.status})`
+        );
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -357,7 +412,11 @@ export function useExecuteCleanup() {
         });
 
         if (!response.ok) {
-          throw new Error(`Cleanup failed: ${response.statusText}`);
+          const errorMessage = await parseCleanupErrorResponse(
+            response,
+            `Cleanup failed (${response.status})`
+          );
+          throw new Error(errorMessage);
         }
 
         // Handle SSE for progress updates
@@ -394,6 +453,7 @@ export function useExecuteCleanup() {
         const message = err instanceof Error ? err.message : 'Unknown error';
         setError(message);
         console.error('Cleanup execution error:', err);
+        throw err;
       } finally {
         setIsRunning(false);
       }

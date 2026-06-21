@@ -253,16 +253,32 @@ export async function PATCH(request: NextRequest) {
     const result = await service.processUpdate(validationResult.data, 'system-wms');
 
     if (result.status === 'Confirmed') {
-      const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
-      inswTransmission.transmitStockOpname(
-        Number(result.company_code),
-        Number(result.id),
-        result.wms_id
-      ).then((res) => {
-        log.info('INSW stock opname transmitted', { wmsId: result.wms_id, status: res.status });
-      }).catch((err: any) => {
-        log.error('INSW stock opname transmission error', { wmsId: result.wms_id, error: err.message });
-      });
+      (async () => {
+        try {
+          const company = await prisma.companies.findUnique({
+            where: { code: Number(result.company_code) },
+            select: { company_type: true },
+          });
+
+          if (company?.company_type === 'SEZ') {
+            const inswTransmission = new INSWTransmissionService();
+            const res = await inswTransmission.transmitStockOpname(
+              Number(result.company_code),
+              Number(result.id),
+              result.wms_id
+            );
+            log.info('INSW stock opname transmitted', { wmsId: result.wms_id, status: res.status });
+          } else {
+            log.info('INSW stock opname NOT transmitted (non-SEZ company)', {
+              wmsId: result.wms_id,
+              companyCode: result.company_code,
+              companyType: company?.company_type,
+            });
+          }
+        } catch (err: any) {
+          log.error('INSW stock opname transmission error', { wmsId: result.wms_id, error: err.message });
+        }
+      })();
     }
 
     // 6. Success response

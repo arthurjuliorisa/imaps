@@ -203,7 +203,7 @@ export class AdjustmentsService {
 
               // Only transmit if SEZ company
               if (company?.company_type === 'SEZ') {
-                const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
+                const inswTransmission = new INSWTransmissionService();
                 const res = await inswTransmission.transmitAdjustment(
                   data.company_code,
                   result.header.id,

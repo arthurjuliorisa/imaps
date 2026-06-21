@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { INSWIntegrationService } from '@/lib/services/insw-integration.service';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
+import { createInswPayloadConverter } from '@/lib/services/insw-service.factory';
 
 export async function POST(request: Request) {
   try {
@@ -20,12 +20,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { balanceDate } = body;
 
-    const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
-    const service = new INSWIntegrationService(
-      process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-      useTestMode ? process.env.INSW_UNIQUE_KEY_TEST || '' : process.env.INSW_UNIQUE_KEY_REAL || '',
-      useTestMode
-    );
+    const service = createInswPayloadConverter();
 
     const payload = await service.convertSaldoAwalToINSW(
       companyCode,

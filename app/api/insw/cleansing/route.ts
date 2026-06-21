@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { INSWIntegrationService } from '@/lib/services/insw-integration.service';
 import { checkAuth } from '@/lib/api-auth';
+import { validateCompanyCode } from '@/lib/company-validation';
+import { resolveInswCompanyNpwp } from '@/lib/config/insw-company-config';
+import { createInswIntegrationService } from '@/lib/services/insw-service.factory';
 
 export async function DELETE(request: Request) {
   try {
@@ -10,6 +12,12 @@ export async function DELETE(request: Request) {
     }
 
     const { session } = authCheck as { authenticated: true; session: any };
+    const companyValidation = validateCompanyCode(session);
+    if (!companyValidation.success) {
+      return companyValidation.response;
+    }
+
+    const { companyCode } = companyValidation;
 
     if (session.user?.role !== 'ADMIN' && session.user?.role !== 'SUPERADMIN') {
       return NextResponse.json(
@@ -22,9 +30,9 @@ export async function DELETE(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const npwp = searchParams.get('npwp');
+    const requestedNpwp = searchParams.get('npwp');
 
-    if (!npwp) {
+    if (!requestedNpwp) {
       return NextResponse.json(
         {
           success: false,
@@ -34,11 +42,18 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const service = new INSWIntegrationService(
-      process.env.INSW_API_KEY || 'RqT40lH7Hy202uUybBLkFhtNnfAvxrlp',
-      process.env.INSW_UNIQUE_KEY_TEST || '',
-      true
-    );
+    const npwp = resolveInswCompanyNpwp(companyCode);
+    if (requestedNpwp.trim() !== npwp) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'NPWP does not match configured company NPWP',
+        },
+        { status: 400 }
+      );
+    }
+
+    const service = createInswIntegrationService(companyCode);
 
     const result = await service.cleansingData(npwp);
 

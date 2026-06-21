@@ -42,8 +42,8 @@ export class BackupService {
   }
 
   /**
-   * Create backup before cleanup
-   * Note: In production, use proper backup tools like pg_dump
+   * Create cleanup metadata before cleanup.
+   * This does not export table data; use proper backup tools like pg_dump for restoreable backups.
    */
   static async createBackup(
     companyCode: number,

@@ -35,6 +35,11 @@ import {
 import { FormControlLabel, Checkbox } from '@mui/material';
 import { useToast } from '@/app/components/ToastProvider';
 import { CleanupProgress, useExecuteCleanup } from '@/hooks/useSelectiveCleanup';
+import {
+  getDedicatedINSWCleanupTables,
+  getFullResetTables,
+  getUnsupportedCleanupTables,
+} from '@/lib/cleanup/table-config';
 
 interface FullResetModeProps {
   onBack: () => void;
@@ -53,6 +58,9 @@ export function FullResetMode({ onBack }: FullResetModeProps) {
   const [createBackup, setCreateBackup] = useState(true);
   const [backupLocation, setBackupLocation] = useState('./backups');
   const [showBackupOptions, setShowBackupOptions] = useState(false);
+  const supportedTableCount = getFullResetTables().length;
+  const skippedTables = getUnsupportedCleanupTables();
+  const retainedINSWTables = getDedicatedINSWCleanupTables();
 
   const handleStartCleanup = () => {
     setStep('password');
@@ -105,8 +113,8 @@ export function FullResetMode({ onBack }: FullResetModeProps) {
           <Card>
             <CardHeader
               avatar={<Warning sx={{ color: theme.palette.error.main }} />}
-              title="Full Reset - Delete All Data"
-              subheader="This action will delete all data from 25 tables"
+              title="Full Reset - Current Company Data"
+              subheader="This action deletes supported application transaction and inventory data for your authenticated company"
             />
             <CardContent>
               <Stack spacing={3}>
@@ -116,25 +124,51 @@ export function FullResetMode({ onBack }: FullResetModeProps) {
                     This action cannot be undone
                   </Typography>
                   <Typography variant="body2">
-                    All data in the following table categories will be permanently deleted:
+                    Full Reset removes supported application transaction and inventory data for your
+                    current company. INSW transmission history and unsupported shared audit data are
+                    preserved. Data belonging to other companies will not be affected.
                   </Typography>
                 </Alert>
 
                 {/* Table Stats */}
                 <Box>
                   <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
-                    Tables to be cleared:
+                    Tables to be cleared: {supportedTableCount}
                   </Typography>
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                     <Chip label="Phase 1: Scrap Management" variant="outlined" />
-                    <Chip label="Phase 2: Incoming Goods" variant="outlined" />
-                    <Chip label="Phase 3: Material Usage" variant="outlined" />
-                    <Chip label="Phase 4: Production Output" variant="outlined" />
-                    <Chip label="Phase 5: Adjustments" variant="outlined" />
-                    <Chip label="Phase 6: Outgoing Goods" variant="outlined" />
-                    <Chip label="Phase 7: Audit & Logging" variant="outlined" />
+                    <Chip label="Phase 2: Traceability / Allocation" variant="outlined" />
+                    <Chip label="Phase 3: Snapshot / Summary / WIP" variant="outlined" />
+                    <Chip label="Phase 4: Detail / Item Tables" variant="outlined" />
+                    <Chip label="Phase 5: Main Transaction Headers" variant="outlined" />
+                    <Chip label="Phase 6: Beginning Balance" variant="outlined" />
+                    <Chip label="Phase 7: Activity Logs" variant="outlined" />
                   </Box>
                 </Box>
+
+                {retainedINSWTables.length > 0 && (
+                  <Alert severity="info">
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                      INSW transmission history is preserved
+                    </Typography>
+                    <Typography variant="body2">
+                      {retainedINSWTables.map((table) => table.displayName).join(', ')} is handled
+                      exclusively by the dedicated INSW Data Cleanup flow.
+                    </Typography>
+                  </Alert>
+                )}
+
+                {skippedTables.length > 0 && (
+                  <Alert severity="info">
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                      Unsupported tables will be skipped
+                    </Typography>
+                    <Typography variant="body2">
+                      {skippedTables.map((table) => table.displayName).join(', ')} cannot be safely
+                      scoped to one company, so Full Reset preserves that data.
+                    </Typography>
+                  </Alert>
+                )}
 
                 {/* Features */}
                 <Box
@@ -159,7 +193,7 @@ export function FullResetMode({ onBack }: FullResetModeProps) {
                           checkedIcon={<BackupIcon />}
                         />
                       }
-                      label="Create backup before cleanup"
+                      label="Create cleanup metadata backup before cleanup"
                     />
 
                     {createBackup && (
@@ -178,7 +212,8 @@ export function FullResetMode({ onBack }: FullResetModeProps) {
                             helperText="Path relative to project or absolute path"
                           />
                           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                            Default: ./backups (relative to project root)
+                            Default: ./backups (relative to project root). This creates cleanup metadata,
+                            not a full SQL data restore.
                           </Typography>
                         </Stack>
                       </Box>
@@ -422,8 +457,8 @@ export function FullResetMode({ onBack }: FullResetModeProps) {
                     {error || 'Unknown error occurred'}
                   </Typography>
                   <Typography variant="body2">
-                    The database backup has been preserved. Please contact support if the
-                    cleanup fails repeatedly.
+                    No unsupported/shared table data is deleted. If cleanup failed during
+                    pre-validation, no company data was deleted.
                   </Typography>
                 </Alert>
 

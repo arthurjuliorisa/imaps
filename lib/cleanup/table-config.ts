@@ -1,6 +1,6 @@
 /**
  * Database Cleanup Table Configuration
- * Defines all 25 tables to be cleaned up with their metadata and dependencies
+ * Defines cleanup tables with their metadata, dependencies, and feature eligibility.
  */
 
 export interface CleanupTable {
@@ -19,7 +19,34 @@ export interface CleanupTable {
   selected?: boolean; // User selection state
   disabled?: boolean; // Is disabled for selection
   reason?: string; // Why cannot delete (if disabled)
+  companyScope: CleanupCompanyScope; // Explicit company ownership strategy
+  cleanupEligibility?: CleanupEligibility; // Which cleanup features may operate on this table
 }
+
+export interface CleanupEligibility {
+  fullReset: boolean;
+  selectiveCleanup: boolean;
+  dedicatedFeature?: 'insw-cleanup';
+  retainedHistory?: boolean;
+  exclusionReason?: string;
+}
+
+export type CleanupCompanyScope =
+  | {
+      type: 'direct';
+      companyColumn: string;
+    }
+  | {
+      type: 'parent';
+      parentTable: string;
+      parentCompanyColumn: string;
+      childForeignKey: string;
+      parentPrimaryKey: string;
+    }
+  | {
+      type: 'unsupported';
+      reason: string;
+    };
 
 // ============================================================================
 // PHASE 1: SCRAP MANAGEMENT (2 tables)
@@ -35,7 +62,8 @@ const PHASE_1_TABLES: CleanupTable[] = [
     dependencies: ['scrap_transactions'],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'scrap_transaction_company' }
   },
   {
     id: 'scrap_transactions',
@@ -48,7 +76,8 @@ const PHASE_1_TABLES: CleanupTable[] = [
     dependencies: [],
     dependentTables: ['scrap_transaction_items'],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   }
 ];
 
@@ -66,7 +95,8 @@ const PHASE_2_TABLES: CleanupTable[] = [
     dependencies: ['material_usages'],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   },
   {
     id: 'work_order_fg_production',
@@ -78,7 +108,8 @@ const PHASE_2_TABLES: CleanupTable[] = [
     dependencies: ['production_outputs'],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   },
   {
     id: 'outgoing_work_order_allocations',
@@ -90,7 +121,14 @@ const PHASE_2_TABLES: CleanupTable[] = [
     dependencies: ['outgoing_good_items'],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: {
+      type: 'parent',
+      parentTable: 'outgoing_good_items',
+      parentCompanyColumn: 'outgoing_good_company',
+      childForeignKey: 'outgoing_good_item_id',
+      parentPrimaryKey: 'id'
+    }
   },
   {
     id: 'outgoing_fg_production_traceability',
@@ -102,7 +140,8 @@ const PHASE_2_TABLES: CleanupTable[] = [
     dependencies: ['outgoing_good_items', 'incoming_goods'],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   }
 ];
 
@@ -120,7 +159,8 @@ const PHASE_3_TABLES: CleanupTable[] = [
     dependencies: [],
     dependentTables: ['stock_daily_snapshot'],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   },
   {
     id: 'stock_daily_snapshot',
@@ -132,7 +172,25 @@ const PHASE_3_TABLES: CleanupTable[] = [
     dependencies: [],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
+  },
+  {
+    id: 'wip_balances',
+    name: 'wip_balances',
+    displayName: 'WIP Balances',
+    phase: 3,
+    phaseName: 'Phase 3: Snapshot / Summary',
+    cascadeDelete: false,
+    dependencies: [],
+    dependentTables: [],
+    canDelete: true,
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' },
+    cleanupEligibility: {
+      fullReset: true,
+      selectiveCleanup: true,
+    }
   }
 ];
 
@@ -153,7 +211,8 @@ const PHASE_4_TABLES: CleanupTable[] = [
       'outgoing_fg_production_traceability'
     ],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'outgoing_good_company' }
   },
   {
     id: 'adjustment_items',
@@ -165,7 +224,8 @@ const PHASE_4_TABLES: CleanupTable[] = [
     dependencies: ['adjustments'],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'adjustment_company' }
   },
   {
     id: 'production_output_items',
@@ -177,7 +237,8 @@ const PHASE_4_TABLES: CleanupTable[] = [
     dependencies: ['production_outputs'],
     dependentTables: ['work_order_fg_production'],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'production_output_company' }
   },
   {
     id: 'material_usage_items',
@@ -189,7 +250,8 @@ const PHASE_4_TABLES: CleanupTable[] = [
     dependencies: ['material_usages'],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'material_usage_company' }
   },
   {
     id: 'incoming_good_items',
@@ -201,7 +263,8 @@ const PHASE_4_TABLES: CleanupTable[] = [
     dependencies: ['incoming_goods'],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'incoming_good_company' }
   },
   {
     id: 'wms_stock_opname_items',
@@ -213,7 +276,8 @@ const PHASE_4_TABLES: CleanupTable[] = [
     dependencies: ['wms_stock_opnames'],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   }
 ];
 
@@ -232,7 +296,8 @@ const PHASE_5_TABLES: CleanupTable[] = [
     dependencies: [],
     dependentTables: ['outgoing_good_items'],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   },
   {
     id: 'adjustments',
@@ -245,7 +310,8 @@ const PHASE_5_TABLES: CleanupTable[] = [
     dependencies: [],
     dependentTables: ['adjustment_items'],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   },
   {
     id: 'production_outputs',
@@ -258,7 +324,8 @@ const PHASE_5_TABLES: CleanupTable[] = [
     dependencies: [],
     dependentTables: ['production_output_items', 'work_order_fg_production'],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   },
   {
     id: 'material_usages',
@@ -271,7 +338,8 @@ const PHASE_5_TABLES: CleanupTable[] = [
     dependencies: [],
     dependentTables: ['material_usage_items', 'work_order_material_consumption'],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   },
   {
     id: 'incoming_goods',
@@ -284,7 +352,8 @@ const PHASE_5_TABLES: CleanupTable[] = [
     dependencies: [],
     dependentTables: ['incoming_good_items', 'outgoing_fg_production_traceability'],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   }
 ];
 
@@ -302,7 +371,14 @@ const PHASE_6_TABLES: CleanupTable[] = [
     dependencies: ['beginning_balances'],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: {
+      type: 'parent',
+      parentTable: 'beginning_balances',
+      parentCompanyColumn: 'company_code',
+      childForeignKey: 'beginning_balance_id',
+      parentPrimaryKey: 'id'
+    }
   },
   {
     id: 'beginning_balances',
@@ -314,7 +390,8 @@ const PHASE_6_TABLES: CleanupTable[] = [
     dependencies: [],
     dependentTables: ['beginning_balance_ppkeks'],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   },
   {
     id: 'wms_stock_opnames',
@@ -326,7 +403,8 @@ const PHASE_6_TABLES: CleanupTable[] = [
     dependencies: [],
     dependentTables: ['wms_stock_opname_items'],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   }
 ];
 
@@ -343,8 +421,17 @@ const PHASE_7_TABLES: CleanupTable[] = [
     cascadeDelete: false,
     dependencies: [],
     dependentTables: [],
-    canDelete: true,
-    selected: true
+    canDelete: false,
+    selected: false,
+    disabled: true,
+    reason: 'INSW tracking logs are retained as integration history and are not part of application data cleanup.',
+    companyScope: { type: 'direct', companyColumn: 'company_code' },
+    cleanupEligibility: {
+      fullReset: false,
+      selectiveCleanup: false,
+      dedicatedFeature: 'insw-cleanup',
+      exclusionReason: 'Managed exclusively by the dedicated INSW Data Cleanup flow.',
+    }
   },
   {
     id: 'activity_logs',
@@ -356,7 +443,8 @@ const PHASE_7_TABLES: CleanupTable[] = [
     dependencies: [],
     dependentTables: [],
     canDelete: true,
-    selected: true
+    selected: true,
+    companyScope: { type: 'direct', companyColumn: 'company_code' }
   },
   {
     id: 'audit_logs',
@@ -367,8 +455,19 @@ const PHASE_7_TABLES: CleanupTable[] = [
     cascadeDelete: false,
     dependencies: [],
     dependentTables: [],
-    canDelete: true,
-    selected: true
+    canDelete: false,
+    selected: false,
+    disabled: true,
+    reason: 'audit_logs has no reliable company ownership column or parent relationship.',
+    companyScope: {
+      type: 'unsupported',
+      reason: 'audit_logs has no reliable company ownership column or parent relationship.'
+    },
+    cleanupEligibility: {
+      fullReset: false,
+      selectiveCleanup: false,
+      exclusionReason: 'Unsupported shared audit data is preserved because it cannot be safely scoped to one company.'
+    }
   }
 ];
 
@@ -457,6 +556,68 @@ export function getAllTableSqlNames(): string[] {
   return CLEANUP_TABLES.map(t => t.name);
 }
 
+export function getCleanupEligibility(table: CleanupTable): CleanupEligibility {
+  if (table.cleanupEligibility) {
+    return table.cleanupEligibility;
+  }
+
+  if (table.companyScope.type === 'unsupported' || table.canDelete === false || table.disabled === true) {
+    return {
+      fullReset: false,
+      selectiveCleanup: false,
+      exclusionReason: table.reason,
+    };
+  }
+
+  return {
+    fullReset: true,
+    selectiveCleanup: true,
+  };
+}
+
+/**
+ * Get application tables that Full Reset can execute.
+ */
+export function getFullResetTables(): CleanupTable[] {
+  return CLEANUP_TABLES.filter(
+    (table) => getCleanupEligibility(table).fullReset && table.companyScope.type !== 'unsupported'
+  );
+}
+
+/**
+ * Get application tables that Selective Cleanup can execute.
+ */
+export function getSelectiveCleanupTables(): CleanupTable[] {
+  return CLEANUP_TABLES.filter(
+    (table) => getCleanupEligibility(table).selectiveCleanup && table.companyScope.type !== 'unsupported'
+  );
+}
+
+/**
+ * Backward-compatible alias for application Full Reset executable tables.
+ */
+export function getCompanyScopedCleanupTables(): CleanupTable[] {
+  return getFullResetTables();
+}
+
+/**
+ * Get INSW-owned tracking tables. Local tracking logs are currently retained,
+ * so this helper is classification metadata, not a delete list.
+ */
+export function getDedicatedINSWCleanupTables(): CleanupTable[] {
+  return CLEANUP_TABLES.filter(
+    (table) => getCleanupEligibility(table).dedicatedFeature === 'insw-cleanup'
+  );
+}
+
+/**
+ * Get tables that are intentionally excluded from cleanup because no safe
+ * company ownership path exists.
+ */
+export function getUnsupportedCleanupTables(): CleanupTable[] {
+  return CLEANUP_TABLES.filter((table) => table.companyScope.type === 'unsupported');
+}
+
 /**
  * Count total tables
  */
@@ -488,7 +649,7 @@ export const PHASE_INFO: Record<number, { name: string; description: string; tab
   3: {
     name: 'Snapshot / Summary',
     description: 'Daily stock snapshots and recalc queue',
-    tableCount: 2
+    tableCount: 3
   },
   4: {
     name: 'Detail / Item Tables',

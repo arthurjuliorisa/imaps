@@ -85,8 +85,8 @@ export function CleanupModeSelector({
 
                 {/* Description */}
                 <Typography variant="body2" color="textSecondary">
-                  Delete all data from all 25 cleanup tables in one operation. Perfect for
-                  complete database reset.
+                  Delete cleanup-supported data for your authenticated company in one operation.
+                  Other companies are not affected.
                 </Typography>
 
                 {/* Features */}
@@ -94,7 +94,7 @@ export function CleanupModeSelector({
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Speed fontSize="small" sx={{ color: 'success.main' }} />
                     <Typography variant="caption" color="textSecondary">
-                      Fastest option - single operation
+                      Fastest company-scoped option
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -164,8 +164,8 @@ export function CleanupModeSelector({
 
                 {/* Description */}
                 <Typography variant="body2" color="textSecondary">
-                  Choose specific tables to clean with smart dependency validation. See row
-                  counts before cleanup.
+                  Choose specific tables to clean with smart dependency validation. Row
+                  counts are scoped to your authenticated company.
                 </Typography>
 
                 {/* Features */}

@@ -64,10 +64,16 @@ module.exports = {
         CRON_DAILY_SNAPSHOT_SCHEDULE: process.env.CRON_DAILY_SNAPSHOT_SCHEDULE,
         
         // INSW Configuration
-        INSW_API_KEY: process.env.INSW_API_KEY,
-        INSW_UNIQUE_KEY_TEST: process.env.INSW_UNIQUE_KEY_TEST,
-        INSW_UNIQUE_KEY_REAL: process.env.INSW_UNIQUE_KEY_REAL,
-        INSW_USE_TEST_MODE: process.env.INSW_USE_TEST_MODE || 'false',
+        INSW_1370_USE_TEST_MODE: process.env.INSW_1370_USE_TEST_MODE,
+        INSW_1370_API_KEY: process.env.INSW_1370_API_KEY,
+        INSW_1370_UNIQUE_KEY_TEST: process.env.INSW_1370_UNIQUE_KEY_TEST,
+        INSW_1370_UNIQUE_KEY_REAL: process.env.INSW_1370_UNIQUE_KEY_REAL,
+        INSW_1370_NPWP: process.env.INSW_1370_NPWP,
+        INSW_1380_USE_TEST_MODE: process.env.INSW_1380_USE_TEST_MODE,
+        INSW_1380_API_KEY: process.env.INSW_1380_API_KEY,
+        INSW_1380_UNIQUE_KEY_TEST: process.env.INSW_1380_UNIQUE_KEY_TEST,
+        INSW_1380_UNIQUE_KEY_REAL: process.env.INSW_1380_UNIQUE_KEY_REAL,
+        INSW_1380_NPWP: process.env.INSW_1380_NPWP,
 
         // Proxy Configuration
         NODE_USE_ENV_PROXY: process.env.NODE_USE_ENV_PROXY || '1',

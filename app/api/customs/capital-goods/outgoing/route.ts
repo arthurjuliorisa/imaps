@@ -270,10 +270,28 @@ export async function POST(request: Request) {
       }
 
       // Transmit capital goods OUT to INSW (fire-and-forget, with tracking log)
-      const inswTransmission = new INSWTransmissionService(process.env.INSW_USE_TEST_MODE === 'true');
-      inswTransmission.transmitCapitalGoodsOut(companyCode, [result.wmsId])
-        .then(r => console.log('[INSW] Capital Goods OUT transmitted', { status: r.status, wmsId: result.wmsId }))
-        .catch(err => console.error('[INSW] Capital Goods OUT INSW error', { err }));
+      (async () => {
+        try {
+          const company = await prisma.companies.findUnique({
+            where: { code: companyCode },
+            select: { company_type: true },
+          });
+
+          if (company?.company_type === 'SEZ') {
+            const inswTransmission = new INSWTransmissionService();
+            const r = await inswTransmission.transmitCapitalGoodsOut(companyCode, [result.wmsId]);
+            console.log('[INSW] Capital Goods OUT transmitted', { status: r.status, wmsId: result.wmsId });
+          } else {
+            console.log('[INSW] Capital Goods OUT NOT transmitted (non-SEZ company)', {
+              companyCode,
+              companyType: company?.company_type,
+              wmsId: result.wmsId,
+            });
+          }
+        } catch (err) {
+          console.error('[INSW] Capital Goods OUT INSW error', { err });
+        }
+      })();
 
       return NextResponse.json(
         {

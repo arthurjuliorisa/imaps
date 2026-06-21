@@ -50,9 +50,7 @@ export async function GET(request: Request) {
     const page = Math.max(rawPage, 1);
     const limit = Math.min(Math.max(rawLimit, 10), 500);
     const offset = (page - 1) * limit;
-
-    const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
-    const service = new INSWTransmissionService(useTestMode);
+    const service = new INSWTransmissionService();
 
     // Get total count
     const totalCount = await service.countTransmissionLogs({

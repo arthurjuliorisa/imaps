@@ -43,6 +43,7 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
   const theme = useTheme();
   const { showToast } = useToast();
   const { data: session } = useSession();
+  const companyCode = session?.user?.companyCode;
 
   const [step, setStep] = useState<ConfirmationStep>('preview');
   const [password, setPassword] = useState('');
@@ -72,9 +73,7 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          companyCode: 1, // Default company code for INSW cleanup
-        }),
+        body: JSON.stringify({}),
       });
 
       const data = await res.json();
@@ -88,7 +87,7 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
 
       setResponse(data);
       setStep('completed');
-      showToast('INSW temporary data cleanup completed successfully', 'success');
+      showToast('INSW temporary data and local tracking logs cleaned successfully', 'success');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Cleanup failed';
       setError(errorMsg);
@@ -128,8 +127,15 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
                     Test Mode Operation
                   </Typography>
                   <Typography variant="body2">
-                    This cleanup operation is only available in test mode and will remove temporary
-                    transaction data from the INSW system (temporary endpoint).
+                    This operation removes temporary transaction data from INSW and clears the local
+                    INSW transmission logs for your current company. Logs belonging to other
+                    companies are not affected.
+                  </Typography>
+                </Alert>
+
+                <Alert severity="success">
+                  <Typography variant="body2">
+                    INSW cleanup will only affect data for company {companyCode || 'your current company'}.
                   </Typography>
                 </Alert>
 
@@ -155,7 +161,15 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
                         Action:
                       </Typography>
                       <Typography variant="body2" color="textSecondary">
-                        Remove all temporary transaksi data
+                        Remove temporary transaksi data for company {companyCode || 'your current company'} only
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Local logs:
+                      </Typography>
+                      <Typography variant="body2" color="textSecondary">
+                        Deleted for company {companyCode || 'your current company'} after external cleanup succeeds
                       </Typography>
                     </Box>
                   </Stack>
@@ -164,8 +178,10 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
                 {/* Warning */}
                 <Alert severity="warning" icon={<Warning />}>
                   <Typography variant="body2">
-                    This operation will permanently delete temporary transaction data from INSW.
-                    This action cannot be undone.
+                    This operation will permanently delete temporary transaction data from INSW for
+                    company {companyCode || 'your current company'} only. Data belonging to other
+                    companies will not be affected. Local INSW tracking logs for this company will
+                    also be deleted after the external cleanup succeeds. This action cannot be undone.
                   </Typography>
                 </Alert>
 
@@ -194,7 +210,8 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
             <DialogContent>
               <Stack spacing={2} sx={{ pt: 2 }}>
                 <Typography variant="body2" color="textSecondary">
-                  Please enter your password to confirm this INSW cleanup operation.
+                  Please enter your password to confirm this INSW cleanup operation for company{' '}
+                  {companyCode || 'your current company'} only.
                 </Typography>
                 <TextField
                   fullWidth
@@ -264,50 +281,42 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
                       Cleanup Completed Successfully
                     </Typography>
                     <Typography variant="caption" color="textSecondary">
-                      {response.message}
+                      INSW cleanup completed for company {response.companyCode || companyCode || 'your current company'}.
                     </Typography>
                   </Box>
                 </Box>
 
                 {/* Response Details */}
-                {response.results && response.results.length > 0 && (
-                  <Box sx={{ backgroundColor: alpha(theme.palette.success.main, 0.1), p: 2, borderRadius: 1 }}>
-                    <Stack spacing={1}>
+                <Box sx={{ backgroundColor: alpha(theme.palette.success.main, 0.1), p: 2, borderRadius: 1 }}>
+                  <Stack spacing={1}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                        External temporary data:
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 600 }}>
+                        {response.externalINSWCleanup?.success ? 'Cleaned' : 'Unknown'}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                        Local tracking logs deleted:
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 600 }}>
+                        {(response.localTrackingLogCleanup?.deletedRows ?? 0).toLocaleString()}
+                      </Typography>
+                    </Box>
+                    {response.timestamp && (
                       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                         <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                          Success Count:
+                          Timestamp:
                         </Typography>
-                        <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 600 }}>
-                          {response.success_count}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                          Failed Count:
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            color: response.failed_count > 0 ? 'error.main' : 'success.main',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {response.failed_count}
+                        <Typography variant="caption" color="textSecondary">
+                          {new Date(response.timestamp).toLocaleString()}
                         </Typography>
                       </Box>
-                      {response.timestamp && (
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                            Timestamp:
-                          </Typography>
-                          <Typography variant="caption" color="textSecondary">
-                            {new Date(response.timestamp).toLocaleString()}
-                          </Typography>
-                        </Box>
-                      )}
-                    </Stack>
-                  </Box>
-                )}
+                    )}
+                  </Stack>
+                </Box>
 
                 {/* Actions */}
                 <Stack direction="row" spacing={2} sx={{ pt: 2 }}>

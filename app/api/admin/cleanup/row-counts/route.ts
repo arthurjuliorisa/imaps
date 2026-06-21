@@ -4,12 +4,43 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { Prisma } from '@prisma/client';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/utils/logger';
-import { CLEANUP_TABLES } from '@/lib/cleanup/table-config';
+import {
+  countRowsForCompany,
+  validateCleanupTableScopes,
+  CleanupScopeError,
+} from '@/lib/cleanup/company-scoped-cleanup.service';
+import { getTableById } from '@/lib/cleanup/table-config';
+import {
+  resolveCleanupCompanyContext,
+  CleanupCompanyContextError,
+} from '@/lib/cleanup/cleanup-company-context';
+
+function cleanupErrorResponse(
+  status: number,
+  code: string,
+  message: string,
+  details?: Record<string, unknown>
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: {
+        code,
+        message,
+        ...(details ? { details } : {}),
+      },
+    },
+    { status }
+  );
+}
+
+function cleanupScopeErrorCode(error: CleanupScopeError): string {
+  const table = error.tableId ? getTableById(error.tableId) : undefined;
+  return table?.companyScope.type === 'unsupported'
+    ? 'UNSUPPORTED_CLEANUP_TABLE'
+    : 'INVALID_CLEANUP_SELECTION';
+}
 
 /**
  * Handler: POST /api/admin/cleanup/row-counts
@@ -17,56 +48,48 @@ import { CLEANUP_TABLES } from '@/lib/cleanup/table-config';
  */
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Verify admin role
-    const user = await prisma.users.findUnique({
-      where: { email: session.user.email },
-      select: { role: true }
-    });
-
-    if (user?.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      );
-    }
+    const { companyCode } = await resolveCleanupCompanyContext();
 
     // Parse request body
     const body = await request.json();
     const { tableIds } = body;
 
     if (!Array.isArray(tableIds) || tableIds.length === 0) {
-      return NextResponse.json(
-        { error: 'Bad Request', message: 'Table IDs array required' },
-        { status: 400 }
-      );
+      return cleanupErrorResponse(400, 'INVALID_CLEANUP_SELECTION', 'Table IDs array required');
     }
 
-    // Get row counts for each table
+    try {
+      validateCleanupTableScopes(tableIds, 'selectiveCleanup');
+    } catch (error) {
+      if (error instanceof CleanupScopeError) {
+        return cleanupErrorResponse(
+          error.status,
+          cleanupScopeErrorCode(error),
+          error.message,
+          { tableId: error.tableId, companyCode, validationStage: 'row_count_pre_validation' }
+        );
+      }
+      throw error;
+    }
+
+    // Get company-scoped row counts for each table
     const rowCounts: Record<string, number> = {};
 
     for (const tableId of tableIds) {
-      const table = CLEANUP_TABLES.find((t) => t.id === tableId);
-      if (!table) {
-        logger.warn(`Unknown table ID requested: ${tableId}`);
-        continue;
-      }
-
       try {
-        const result = await prisma.$queryRaw<[{ count: bigint }]>`
-          SELECT COUNT(*) as count FROM ${Prisma.raw(table.name)}
-        `;
-        rowCounts[tableId] = Number(result[0]?.count ?? 0);
+        rowCounts[tableId] = await countRowsForCompany(tableId, companyCode);
       } catch (error) {
-        logger.error(`Failed to get row count for ${table.name}`, {
+        if (error instanceof CleanupScopeError) {
+          return cleanupErrorResponse(
+            error.status,
+            cleanupScopeErrorCode(error),
+            error.message,
+            { tableId: error.tableId, companyCode, validationStage: 'row_count' }
+          );
+        }
+
+        logger.error(`Failed to get company-scoped row count for ${tableId}`, {
+          companyCode,
           errorMessage: error instanceof Error ? error.message : String(error)
         });
         rowCounts[tableId] = 0;
@@ -79,16 +102,18 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    if (error instanceof CleanupCompanyContextError) {
+      return cleanupErrorResponse(error.status, error.code, error.message);
+    }
+
     logger.error('Failed to get row counts', {
       errorMessage: error instanceof Error ? error.message : String(error)
     });
 
-    return NextResponse.json(
-      {
-        error: 'Internal Server Error',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
+    return cleanupErrorResponse(
+      500,
+      'CLEANUP_EXECUTION_FAILED',
+      error instanceof Error ? error.message : 'Unknown error'
     );
   }
 }

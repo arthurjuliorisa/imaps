@@ -25,9 +25,7 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const { ids, wmsIds } = body;
-
-    const useTestMode = process.env.INSW_USE_TEST_MODE === 'true';
-    const service = new INSWTransmissionService(useTestMode);
+    const service = new INSWTransmissionService();
 
     let result;
     let method = '';
