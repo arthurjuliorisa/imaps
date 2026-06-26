@@ -15,8 +15,8 @@ interface WmsPayloadHeader {
   customs_registration_date?: string;
   incoming_evidence_number?: string;
   incoming_date?: string;
-  invoice_number?: string;
-  invoice_date?: string;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
   shipper_name?: string;
   blank1?: any;
   blank2?: any;

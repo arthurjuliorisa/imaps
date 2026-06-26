@@ -418,8 +418,8 @@ model incoming_goods {
   is_non_facility           Boolean             @default(false)
   incoming_evidence_number  String              @db.VarChar(50)
   incoming_date             DateTime            @db.Date
-  invoice_number            String              @db.VarChar(50)
-  invoice_date              DateTime            @db.Date
+  invoice_number            String?             @db.VarChar(50)
+  invoice_date              DateTime?           @db.Date
   shipper_name              String              @db.VarChar(200)
   timestamp                 DateTime            @db.Timestamptz(6)
   created_at                DateTime            @default(now()) @db.Timestamptz(6)

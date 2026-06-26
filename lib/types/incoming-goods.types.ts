@@ -44,8 +44,8 @@ export interface IncomingGoodData {
   is_non_facility?: boolean;
   incoming_evidence_number: string;
   incoming_date: Date;
-  invoice_number: string;
-  invoice_date: Date;
+  invoice_number: string | null;
+  invoice_date: Date | null;
   shipper_name: string;
   items: IncomingGoodItemInput[];
   timestamp: Date;

@@ -27,6 +27,7 @@ import { prisma } from '@/lib/db/prisma';
 import { checkDuplicateItems } from '@/lib/validators/duplicate-item.validator';
 import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
 import { INCOMING_CUSTOMS_TYPES } from '@/lib/validators/constants/customs-document-types';
+import { isValidDateOnlyString } from '@/lib/utils/incoming-goods-invoice';
 
 // =============================================================================
 // CONSTANTS
@@ -51,12 +52,26 @@ const dateStringSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format')
   .refine(
-    (dateStr: string) => {
-      const date = new Date(dateStr);
-      return !isNaN(date.getTime());
-    },
+    isValidDateOnlyString,
     { message: 'Invalid date value' }
   );
+
+const nullableInvoiceNumberSchema = z.preprocess(
+  (value) => value === undefined ? null : value,
+  z.union([
+    z.null(),
+    z
+      .string()
+      .trim()
+      .min(1, 'Invoice number must not be empty')
+      .max(50, 'Invoice number must not exceed 50 characters'),
+  ])
+);
+
+const nullableInvoiceDateSchema = z.preprocess(
+  (value) => value === undefined ? null : value,
+  z.union([z.null(), dateStringSchema])
+);
 
 /**
  * ISO 8601 datetime schema
@@ -198,13 +213,9 @@ export const incomingGoodRequestSchema = z
     
     incoming_date: dateStringSchema,
     
-    invoice_number: z
-      .string()
-      .min(1, 'Invoice number is required')
-      .max(50, 'Invoice number must not exceed 50 characters')
-      .trim(),
+    invoice_number: nullableInvoiceNumberSchema,
     
-    invoice_date: dateStringSchema,
+    invoice_date: nullableInvoiceDateSchema,
     
     shipper_name: z
       .string()
@@ -218,6 +229,25 @@ export const incomingGoodRequestSchema = z
       .max(10000, 'Maximum 10,000 items per request'),
     
     timestamp: iso8601Schema,
+  })
+  .superRefine((data, ctx) => {
+    const hasInvoiceNumber = data.invoice_number !== null;
+    const hasInvoiceDate = data.invoice_date !== null;
+
+    if (hasInvoiceNumber !== hasInvoiceDate) {
+      const message = 'Invoice number and invoice date must both be provided or both be null';
+
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invoice_number'],
+        message,
+      });
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invoice_date'],
+        message,
+      });
+    }
   })
   // Business rule: customs_registration_date <= incoming_date
   .refine(

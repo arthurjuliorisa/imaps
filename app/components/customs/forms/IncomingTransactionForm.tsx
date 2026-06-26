@@ -63,7 +63,7 @@ interface FormHeaderData {
   owner: string;
   incoming_date: Dayjs | null;
   ppkek_number: string;
-  invoice_number: string;
+  invoice_number: string | null;
   invoice_date: Dayjs | null;
   shipper_name: string;
 }
@@ -129,8 +129,8 @@ export function IncomingTransactionForm() {
     owner: '',
     incoming_date: dayjs(),
     ppkek_number: '',
-    invoice_number: '',
-    invoice_date: dayjs(),
+    invoice_number: null,
+    invoice_date: null,
     shipper_name: '',
   });
 
@@ -183,12 +183,16 @@ export function IncomingTransactionForm() {
       toast.error('Incoming Date is required');
       return false;
     }
-    if (!header.invoice_number.trim()) {
-      toast.error('Invoice Number is required');
+    const invoiceNumber = header.invoice_number;
+    const hasInvoiceNumber = invoiceNumber !== null;
+    const hasInvoiceDate = header.invoice_date !== null;
+
+    if (hasInvoiceNumber && invoiceNumber.trim().length === 0) {
+      toast.error('Invoice Number must not be empty');
       return false;
     }
-    if (!header.invoice_date) {
-      toast.error('Invoice Date is required');
+    if (hasInvoiceNumber !== hasInvoiceDate) {
+      toast.error('Invoice Number and Invoice Date must both be provided or both be empty');
       return false;
     }
     if (!header.shipper_name.trim()) {
@@ -238,8 +242,8 @@ export function IncomingTransactionForm() {
           customs_registration_date: header.customs_registration_date!.toDate(),
           incoming_evidence_number: header.incoming_evidence_number,
           incoming_date: header.incoming_date!.toDate(),
-          invoice_number: header.invoice_number,
-          invoice_date: header.invoice_date!.toDate(),
+          invoice_number: header.invoice_number?.trim() || null,
+          invoice_date: header.invoice_date?.toDate() || null,
           shipper_name: header.shipper_name,
           timestamp: new Date(),
         },
@@ -393,22 +397,25 @@ export function IncomingTransactionForm() {
               <Grid size={{ xs: 12, md: 6 }}>
                 <TextField
                   fullWidth
-                  required
                   label="Invoice Number"
-                  value={header.invoice_number}
-                  onChange={(e) => setHeader({ ...header, invoice_number: e.target.value })}
+                  value={header.invoice_number ?? ''}
+                  onChange={(e) => setHeader({
+                    ...header,
+                    invoice_number: e.target.value === '' ? null : e.target.value,
+                  })}
+                  helperText="Optional; provide together with Invoice Date"
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <LocalizationProvider dateAdapter={AdapterDayjs}>
                   <DatePicker
-                    label="Invoice Date *"
+                    label="Invoice Date"
                     value={header.invoice_date}
                     onChange={(date) => setHeader({ ...header, invoice_date: date })}
                     slotProps={{
                       textField: {
                         fullWidth: true,
-                        required: true,
+                        helperText: 'Optional; provide together with Invoice Number',
                       },
                     }}
                   />
@@ -626,12 +633,12 @@ export function IncomingTransactionForm() {
                 </Grid>
                 <Grid size={6}>
                   <Typography variant="body2" color="text.secondary">Invoice Number</Typography>
-                  <Typography variant="body1" fontWeight={500}>{header.invoice_number}</Typography>
+                  <Typography variant="body1" fontWeight={500}>{header.invoice_number || '-'}</Typography>
                 </Grid>
                 <Grid size={6}>
                   <Typography variant="body2" color="text.secondary">Invoice Date</Typography>
                   <Typography variant="body1" fontWeight={500}>
-                    {header.invoice_date?.format('MM/DD/YYYY')}
+                    {header.invoice_date?.format('MM/DD/YYYY') || '-'}
                   </Typography>
                 </Grid>
                 <Grid size={6}>

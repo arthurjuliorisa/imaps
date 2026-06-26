@@ -9,6 +9,8 @@
 --   - Regular index: {table}_{column}_idx
 -- 
 -- IMPORTANT: This script converts parent tables to partitioned
+-- SOURCE-OF-TRUTH MAINTENANCE ONLY.
+-- DO NOT EXECUTE THIS FILE IN AN EXISTING ENVIRONMENT.
 -- NOTE: Uses CASCADE drops on parent tables only
 --   - Parent tables are recreated as partitioned
 --   - Child tables (with FK references) are NOT affected by CASCADE
@@ -53,8 +55,8 @@ CREATE TABLE incoming_goods (
     is_non_facility BOOLEAN NOT NULL DEFAULT false,
     incoming_evidence_number VARCHAR(50) NOT NULL,
     incoming_date DATE NOT NULL,
-    invoice_number VARCHAR(50) NOT NULL,
-    invoice_date DATE NOT NULL,
+    invoice_number VARCHAR(50),
+    invoice_date DATE,
     shipper_name VARCHAR(200) NOT NULL,
     "timestamp" TIMESTAMPTZ(6) NOT NULL,
     created_at TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),

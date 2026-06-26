@@ -65,8 +65,8 @@ export interface IncomingHeader extends BaseHeader {
   is_non_facility?: boolean;
   incoming_evidence_number: string;
   incoming_date: Date;
-  invoice_number: string;
-  invoice_date: Date;
+  invoice_number: string | null;
+  invoice_date: Date | null;
   shipper_name: string;
   deleted_at?: Date;
 

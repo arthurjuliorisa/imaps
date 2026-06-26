@@ -4,6 +4,7 @@ import { BaseTransactionRepository } from './base-transaction.repository';
 import { SnapshotItem } from './snapshot.repository';
 import { logger } from '../utils/logger';
 import type { IncomingGoodRequestInput } from '../validators/schemas/incoming-goods.schema';
+import { toNullableInvoiceDate } from '../utils/incoming-goods-invoice';
 
 export interface IncomingGoodsCreateResult {
   id: number;
@@ -39,7 +40,7 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
         && data.customs_document_type === 'N'
         && data.customs_registration_date === 'N';
       const customsRegDate = isNonFacility ? null : new Date(data.customs_registration_date);
-      const invoiceDate = new Date(data.invoice_date);
+      const invoiceDate = toNullableInvoiceDate(data.invoice_date);
       const timestamp = new Date(data.timestamp);
 
       // =========================================================================

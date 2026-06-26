@@ -42,8 +42,8 @@ export interface IncomingGoodsRequest {
   customs_registration_date: string; // YYYY-MM-DD
   incoming_evidence_number: string;
   incoming_date: string; // YYYY-MM-DD
-  invoice_number: string;
-  invoice_date: string; // YYYY-MM-DD
+  invoice_number?: string | null;
+  invoice_date?: string | null; // YYYY-MM-DD; both fields omitted means no invoice
   shipper_name: string;
   items: IncomingGoodsItem[];
   timestamp: string; // ISO 8601

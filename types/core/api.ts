@@ -84,6 +84,7 @@ export interface ValidationError {
 
 /**
  * Incoming Transaction Request (BC23, BC27, BC40)
+ * IncomingHeader carries a nullable, both-or-none invoice number/date pair.
  */
 export interface IncomingTransactionRequest {
   header: Omit<IncomingHeader, 'id' | 'received_at' | 'created_at' | 'updated_at'>;

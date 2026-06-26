@@ -67,8 +67,8 @@ export interface IncomingHeaderFormData {
   owner: string;
   pib_number?: string;
   pib_date?: Date | string;
-  invoice_number?: string;
-  invoice_date?: Date | string;
+  invoice_number?: string | null;
+  invoice_date?: Date | string | null;
   bl_awb_number?: string;
   bl_awb_date?: Date | string;
   remarks?: string;

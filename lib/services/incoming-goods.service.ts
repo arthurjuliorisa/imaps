@@ -52,7 +52,10 @@ export class IncomingGoodsService {
         };
       }
 
-      requestLogger.info('Validation passed', { wmsId: data.wms_id });
+      requestLogger.info('Validation passed', {
+        wmsId: data.wms_id,
+        hasInvoice: data.invoice_number !== null,
+      });
 
       const nonFacilityMarkerErrors = this.validateNonFacilityMarker(data);
       if (nonFacilityMarkerErrors.length > 0) {
