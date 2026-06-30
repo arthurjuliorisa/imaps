@@ -22,6 +22,12 @@ import { validateItemTypeConsistency } from '@/lib/validators/item-type-consiste
 
 const VALID_COMPANY_CODES = [1370, 1310, 1380] as const;
 
+export const adjustmentDocumentTypeSchema = z.enum([
+  'daily_adjustment',
+  'sto_adjustment',
+  'revise_adjustment',
+]);
+
 // =============================================================================
 // REUSABLE SCHEMAS
 // =============================================================================
@@ -159,11 +165,9 @@ export const adjustmentBatchRequestSchema = z
     owner: companyCodeSchema,
     
     wms_doc_type: z
-      .string()
+      .string({ message: 'WMS document type is required' })
       .trim()
-      .max(100, 'WMS document type must not exceed 100 characters')
-      .nullable()
-      .optional(),
+      .pipe(adjustmentDocumentTypeSchema),
     
     internal_evidence_number: z
       .string()
@@ -189,7 +193,32 @@ export const adjustmentBatchRequestSchema = z
       message: 'Adjustment must include at least one item',
       path: ['items'],
     }
-  );
+  )
+  .superRefine((data, ctx) => {
+    data.items.forEach((item, index) => {
+      const stockcountOrderNumber = item.stockcount_order_number?.trim();
+      const hasStockcountReference = !!stockcountOrderNumber;
+
+      if (data.wms_doc_type === 'sto_adjustment' && !hasStockcountReference) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['items', index, 'stockcount_order_number'],
+          message: 'STOCKCOUNT_ORDER_REQUIRED',
+        });
+      }
+
+      if (
+        (data.wms_doc_type === 'daily_adjustment' || data.wms_doc_type === 'revise_adjustment') &&
+        hasStockcountReference
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['items', index, 'stockcount_order_number'],
+          message: 'STOCKCOUNT_ORDER_NOT_ALLOWED',
+        });
+      }
+    });
+  });
 
 export type AdjustmentBatchRequestInput = z.infer<typeof adjustmentBatchRequestSchema>;
 
@@ -260,10 +289,14 @@ export function validateAdjustmentBatch(data: unknown): ValidationResult {
       }
     }
     
+    const customCode = typeof err.message === 'string' && /^[A-Z0-9_]+$/.test(err.message)
+      ? err.message
+      : 'INVALID_VALUE';
+
     return {
       location: isItemError ? ('item' as const) : ('header' as const),
       field,
-      code: err.code === 'custom' ? 'INVALID_VALUE' : err.code.toUpperCase(),
+      code: err.code === 'custom' ? customCode : err.code.toUpperCase(),
       message: err.message,
       ...(itemIndex !== undefined && { item_index: itemIndex }),
       ...(itemCode && { item_code: itemCode }),

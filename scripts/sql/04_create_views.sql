@@ -648,7 +648,8 @@ SELECT
     -- Audit fields
     waso.created_at,
     waso.updated_at,
-    waso.confirmed_at
+    waso.confirmed_at,
+    adj.wms_doc_type
     
 FROM wms_stock_opnames waso
 JOIN wms_stock_opname_items wasoi ON wasoi.wms_stock_opname_id = waso.id
@@ -696,7 +697,10 @@ SELECT
     ajust_items.variance_vs_original,  -- ✅ NEW: Progressive variance (Type 2)
     
     -- Adjustment & final state
-    ajust_items.qty as adjustment_qty_signed,
+    CASE
+      WHEN ajust_items.adjustment_type = 'LOSS' THEN -ajust_items.qty
+      ELSE ajust_items.qty
+    END as adjustment_qty_signed,
     ajust_items.adjusted_qty,
     
     -- Amount & reason
@@ -709,7 +713,8 @@ SELECT
     -- Audit fields
     ajust.created_at,
     ajust.updated_at,
-    NULL::TIMESTAMP as confirmed_at
+    NULL::TIMESTAMP as confirmed_at,
+    ajust.wms_doc_type
     
 FROM adjustments ajust
 JOIN adjustment_items ajust_items ON ajust_items.adjustment_id = ajust.id
@@ -721,7 +726,7 @@ WHERE ajust_items.stockcount_order_number IS NULL
 
 ORDER BY company_code, doc_date DESC, id;
 
-COMMENT ON VIEW vw_laporan_adjustment IS 'Report #2.7: Adjustment Report - Unified view combining both adjustment types (Type 1: STO-related via adjustment_id FK, Type 2: Standalone with calculated reconciliation). Separate rows for same date if both types exist. Columns: sto_wms_id (Type 1 only), adjustment_wms_id, internal_evidence_number, adjustment_flow (STO_RELATED|STANDALONE), all reconciliation data';
+COMMENT ON VIEW vw_laporan_adjustment IS 'Report #2.7: Adjustment Report - Unified view combining both adjustment types (Type 1: STO-related via adjustment_id FK, Type 2: Standalone with calculated reconciliation). Includes appended wms_doc_type for routing revise_adjustment to Reversal Record while preserving legacy/null rows.';
 
 -- ============================================================================
 -- ============================================================================

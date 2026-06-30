@@ -37,7 +37,7 @@ export async function GET(request: Request) {
       result = await prisma.$queryRawUnsafe<any[]>(
         `SELECT DISTINCT
           ad.id, ad.sto_wms_id, ad.adjustment_wms_id, ad.internal_evidence_number, 
-          ad.company_code, ad.company_name,
+          ad.company_code, ad.company_name, ad.wms_doc_type,
           ad.doc_date,
           ad.type_code, ad.item_code, ad.item_code_bahasa, ad.item_name, ad.unit,
           ad.beginning_qty, ad.incoming_qty_on_date, ad.outgoing_qty_on_date,
@@ -47,6 +47,7 @@ export async function GET(request: Request) {
         FROM vw_laporan_adjustment ad
         INNER JOIN insw_tracking_log log ON ad.adjustment_wms_id = log.wms_id
         WHERE ad.company_code = $1
+          AND (ad.wms_doc_type IS NULL OR ad.wms_doc_type <> 'revise_adjustment')
           AND log.transaction_type = 'adjustment'
           AND log.insw_status = 'SUCCESS'
           AND log.company_code = $1
@@ -60,6 +61,7 @@ export async function GET(request: Request) {
       result = await prisma.$queryRawUnsafe<any[]>(
         `SELECT
           id, sto_wms_id, adjustment_wms_id, internal_evidence_number, company_code, company_name,
+          wms_doc_type,
           doc_date,
           type_code, item_code, item_code_bahasa, item_name, unit,
           beginning_qty, incoming_qty_on_date, outgoing_qty_on_date,
@@ -68,6 +70,7 @@ export async function GET(request: Request) {
           value_amount, reason
         FROM vw_laporan_adjustment
         WHERE company_code = $1
+          AND (wms_doc_type IS NULL OR wms_doc_type <> 'revise_adjustment')
         ORDER BY doc_date DESC, id`,
         companyCode
       );

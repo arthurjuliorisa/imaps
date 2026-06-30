@@ -711,6 +711,8 @@ model adjustments {
   @@index([wms_id])
   @@index([company_code])
   @@index([transaction_date])
+  @@index([company_code, wms_doc_type, transaction_date])
+  @@index([company_code, transaction_date])
   @@index([internal_evidence_number])
 }
 
@@ -758,6 +760,7 @@ model adjustment_items {
   @@index([item_type])
   @@index([adjustment_type])
   @@index([stockcount_order_number]) // For v3.4.0 Stock Opname reference lookup
+  @@index([stockcount_order_number, item_type, item_code, uom])
 }
 
 // ============================================================================

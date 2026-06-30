@@ -69,6 +69,7 @@ export class AdjustmentsService {
 
       log.info('Batch schema validated', {
         wmsId: data.wms_id,
+        wmsDocType: data.wms_doc_type,
         itemCount: data.items.length,
       });
 
@@ -277,40 +278,58 @@ export class AdjustmentsService {
     data: AdjustmentBatchRequestInput
   ): Promise<ErrorDetail[]> {
     const errors: ErrorDetail[] = [];
+
+    if (data.wms_doc_type !== 'sto_adjustment') {
+      return errors;
+    }
     
     // Collect unique stockcount_order_numbers
     const orderNumbers = new Set<string>();
-    data.items.forEach((item) => {
-      if (item.stockcount_order_number) {
-        orderNumbers.add(item.stockcount_order_number);
+    data.items.forEach((item, index) => {
+      const stockcountOrderNumber = item.stockcount_order_number?.trim();
+      if (!stockcountOrderNumber) {
+        errors.push({
+          location: 'item',
+          item_index: index,
+          item_code: item.item_code,
+          field: 'stockcount_order_number',
+          code: 'STOCKCOUNT_ORDER_REQUIRED',
+          message: 'stockcount_order_number is required for sto_adjustment',
+        });
+        return;
       }
+      orderNumbers.add(stockcountOrderNumber);
     });
 
-    if (orderNumbers.size === 0) {
-      // No stockcount_order_numbers to validate
-      return [];
+    if (errors.length > 0) {
+      return errors;
     }
 
     // Fetch Stock Opnames
-    const stockOpnames = await this.repository.getStockOpnamesByWmsIds(
-      Array.from(orderNumbers),
-      data.company_code
-    );
-
-    const validOpnames = new Map(
-      stockOpnames
-        .filter((so) => so.status === 'Confirmed')
-        .map((so) => [so.wms_id, true])
-    );
+    const stockOpnames = await prisma.wms_stock_opnames.findMany({
+      where: {
+        wms_id: { in: Array.from(orderNumbers) },
+      },
+      select: {
+        wms_id: true,
+        company_code: true,
+        status: true,
+        items: {
+          select: {
+            item_type: true,
+            item_code: true,
+            uom: true,
+          },
+        },
+      },
+    });
 
     // Check each item's stockcount_order_number
     data.items.forEach((item, index) => {
-      if (!item.stockcount_order_number) {
-        return; // Skip if not provided
-      }
-
-      const stoWmsId = item.stockcount_order_number;
-      const foundStockOpname = stockOpnames.find((so) => so.wms_id === stoWmsId);
+      const stoWmsId = item.stockcount_order_number!.trim();
+      const matchingStockOpnames = stockOpnames.filter((so) => so.wms_id === stoWmsId);
+      const foundStockOpname = matchingStockOpnames.find((so) => so.company_code === data.company_code)
+        || matchingStockOpnames[0];
 
       if (!foundStockOpname) {
         errors.push({
@@ -324,6 +343,18 @@ export class AdjustmentsService {
         return;
       }
 
+      if (foundStockOpname.company_code !== data.company_code) {
+        errors.push({
+          location: 'item',
+          item_index: index,
+          item_code: item.item_code,
+          field: 'stockcount_order_number',
+          code: 'STOCKCOUNT_ORDER_COMPANY_MISMATCH',
+          message: `Stock Opname '${stoWmsId}' belongs to company ${foundStockOpname.company_code}, not ${data.company_code}`,
+        });
+        return;
+      }
+
       if (foundStockOpname.status !== 'Confirmed') {
         errors.push({
           location: 'item',
@@ -332,6 +363,24 @@ export class AdjustmentsService {
           field: 'stockcount_order_number',
           code: 'STOCKCOUNT_ORDER_NOT_CONFIRMED',
           message: `Stock Opname '${stoWmsId}' has status '${foundStockOpname.status}', must be 'Confirmed'`,
+        });
+        return;
+      }
+
+      const matchingItem = foundStockOpname.items.some((stockOpnameItem) => (
+        stockOpnameItem.item_type === item.item_type &&
+        stockOpnameItem.item_code === item.item_code &&
+        stockOpnameItem.uom === item.uom
+      ));
+
+      if (!matchingItem) {
+        errors.push({
+          location: 'item',
+          item_index: index,
+          item_code: item.item_code,
+          field: 'stockcount_order_number',
+          code: 'STOCKCOUNT_ITEM_NOT_FOUND',
+          message: `Stock Opname '${stoWmsId}' does not contain item ${item.item_type}|${item.item_code}|${item.uom}`,
         });
       }
     });
@@ -419,7 +468,9 @@ export class AdjustmentsService {
         // Step 1: Fetch stock snapshot for exact adjustment date
         let snapshot = await this.repository.getStockSnapshot(
           companyCode,
+          item.item_type,
           item.item_code,
+          item.uom,
           adjustmentDate
         );
 
@@ -427,7 +478,9 @@ export class AdjustmentsService {
         if (!snapshot) {
           snapshot = await this.repository.getLatestStockSnapshotBefore(
             companyCode,
+            item.item_type,
             item.item_code,
+            item.uom,
             adjustmentDate
           );
 

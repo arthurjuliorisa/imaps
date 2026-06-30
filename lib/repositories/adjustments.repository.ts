@@ -94,17 +94,10 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       const hasType1 = type1Items.length > 0;
       const hasType2 = type2Items.length > 0;
       
-      // Automatic wms_doc_type mapping based on what's present
-      const automappedDocType = hasType1 && !hasType2
-        ? 'Stock Opname Adjustment' 
-        : hasType2 && !hasType1
-        ? 'Standalone Adjustment'
-        : 'Mixed Adjustment';  // NEW: For mixed payloads
-
       log.debug('Adjustment items segregated by type', {
         type1Count: type1Items.length,
         type2Count: type2Items.length,
-        automappedDocType: automappedDocType,
+        wmsDocType: data.wms_doc_type,
       });
 
       // =========================================================================
@@ -158,7 +151,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
             },
           },
           update: {
-            wms_doc_type: automappedDocType,  // UPDATED: Use auto-mapped type
+            wms_doc_type: data.wms_doc_type,
             internal_evidence_number: data.internal_evidence_number,
             timestamp: new Date(data.timestamp),
             updated_at: new Date(),
@@ -168,7 +161,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
             wms_id: data.wms_id,
             company_code: data.company_code,
             owner: data.owner,
-            wms_doc_type: automappedDocType,  // UPDATED: Use auto-mapped type
+            wms_doc_type: data.wms_doc_type,
             internal_evidence_number: data.internal_evidence_number,
             transaction_date: transactionDate,
             timestamp: new Date(data.timestamp),
@@ -233,7 +226,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
 
             if (existingItem) {
               // Item exists, update it
-              const reconciliation = reconciliationDataMap.get(item.item_code);
+              const reconciliation = reconciliationDataMap.get(this.getItemIdentityKey(item));
               
               // ✅ v3.4.0 Type 2: Calculate variance tracking (Type 2 only, no stockcount_order_number)
               const isType2 = !item.stockcount_order_number;
@@ -277,7 +270,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
               });
             } else {
               // New item, insert it
-              const reconciliation = reconciliationDataMap.get(item.item_code);
+              const reconciliation = reconciliationDataMap.get(this.getItemIdentityKey(item));
               
               // ✅ v3.4.0 Type 2: Calculate variance tracking (Type 2 only, no stockcount_order_number)
               const isType2 = !item.stockcount_order_number;
@@ -332,7 +325,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         } else {
           // Date changed: insert all new items
           const itemsData = data.items.map((item) => {
-            const reconciliation = reconciliationDataMap.get(item.item_code);
+            const reconciliation = reconciliationDataMap.get(this.getItemIdentityKey(item));
             return {
               adjustment_id: header.id,
               adjustment_company: data.company_code,
@@ -674,14 +667,11 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
     }
 
     try {
-      // Step 1: Get all unique combinations of (item_code, uom) ONLY
-      // NOTE: Do NOT include adjustment_type in matching key because:
-      // - When STO is first created, adjustment_type = NULL in wms_stock_opname_items
-      // - When adjustment is transmitted, adjustment_type is populated
-      // - So we match by item_code + uom only, then update adjustment_type field
+      // Step 1: Get all exact Stock Opname item identities.
+      // The stockcount_order_number scopes the update to the referenced STO only.
       const uniqueCombinations = new Map<string, typeof data.items[0]>();
       for (const item of data.items) {
-        const key = `${item.item_code}:${item.uom}`;  // NO adjustment_type in key!
+        const key = `${item.stockcount_order_number}:${this.getItemIdentityKey(item)}`;
         if (!uniqueCombinations.has(key)) {
           uniqueCombinations.set(key, item);
         }
@@ -689,16 +679,22 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
 
       const uniqueItems = Array.from(uniqueCombinations.values());
 
-      // Step 2: Query matching STO items using Prisma OR conditions
-      // Match ONLY by item_code and uom (NOT by adjustment_type, which is NULL until this adjustment)
+      // Step 2: Query matching STO items using the referenced confirmed Stock Opname.
       // Include system_qty for final_adjusted_qty calculation
       // For idempotency (resubmit): also get STO items that are ALREADY updated (adjustment_qty_signed NOT NULL)
       // This allows reset + re-update on resubmit
       const orConditions = uniqueItems.map((item) => ({
         AND: [
+          { item_type: item.item_type },
           { item_code: item.item_code },
           { uom: item.uom },
-          // REMOVED: { adjustment_type: item.adjustment_type } - This was causing NO MATCH!
+          {
+            wms_stock_opname: {
+              company_code: data.company_code,
+              wms_id: item.stockcount_order_number!,
+              status: 'Confirmed' as const,
+            },
+          },
         ],
       }));
 
@@ -710,13 +706,21 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         select: {
           id: true,
           item_code: true,
+          item_type: true,
           uom: true,
           adjustment_type: true,
           system_qty: true,
           adjustment_qty_signed: true,
           created_at: true,
+          wms_stock_opname: {
+            select: {
+              wms_id: true,
+            },
+          },
         },
         orderBy: [
+          { wms_stock_opname_id: 'asc' },
+          { item_type: 'asc' },
           { item_code: 'asc' },
           { uom: 'asc' },
           { adjustment_type: 'asc' },
@@ -732,24 +736,19 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         return;
       }
 
-      // Step 3: Select ONLY the most recent (latest created_at) for each combination
-      // Key is now ONLY (item_code, uom) - NO adjustment_type
-      // Prioritize items with NULL adjustment_qty_signed (first transmit) but also accept already-updated ones (resubmit)
-      const mostRecentMap = new Map<string, typeof allMatchingStoItems[0]>();
+      // Step 3: Index exact matches. No fallback to another Stock Opname is allowed.
+      const exactMatchMap = new Map<string, typeof allMatchingStoItems[0]>();
       for (const stoItem of allMatchingStoItems) {
-        const key = `${stoItem.item_code}:${stoItem.uom}`;  // NO adjustment_type in key!
-        // Since we ordered by created_at DESC, first match is the most recent
-        if (!mostRecentMap.has(key)) {
-          mostRecentMap.set(key, stoItem);
+        const key = `${stoItem.wms_stock_opname.wms_id}:${stoItem.item_type}|${stoItem.item_code}|${stoItem.uom}`;
+        if (!exactMatchMap.has(key)) {
+          exactMatchMap.set(key, stoItem);
         }
       }
 
-
-
-      // Step 4: Build mapping: (item_code, uom) -> {qty, reason, stockcount_order_number, adjustment_type}
+      // Step 4: Build mapping: referenced STO + item identity -> adjustment data
       const adjDataMap = new Map<string, { qty: number; reason: string | null; stockcount_order_number: string | null; adjustment_type: string }>();
       for (const item of data.items) {
-        const key = `${item.item_code}:${item.uom}`;  // NO adjustment_type in key!
+        const key = `${item.stockcount_order_number}:${this.getItemIdentityKey(item)}`;
         adjDataMap.set(key, {
           qty: item.qty,
           reason: item.reason || null,
@@ -775,34 +774,42 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         isType1: boolean;  // NEW: Track if Type 1 (for adjustment_id linking)
       }> = [];
 
-      for (const [key, stoItem] of mostRecentMap) {
-        const adjData = adjDataMap.get(key);
-        if (adjData !== undefined) {
-          // Apply sign based on adjustment_type from PAYLOAD (stoItem.adjustment_type may be NULL)
-          // LOSS = -1, GAIN = +1
-          const multiplier = adjData.adjustment_type === 'LOSS' ? -1 : 1;
-          const signedQty = new Prisma.Decimal(adjData.qty * multiplier);
-
-          // Calculate final_adjusted_qty = system_qty + adjustment_qty_signed
-          const finalQty = stoItem.system_qty.plus(signedQty);
-
-          // Type 1 = has stockcount_order_number (linking back to STO)
-          const isType1 = !!adjData.stockcount_order_number;
-
-          updates.push({
-            id: stoItem.id,
-            qty: signedQty,
-            finalAdjustedQty: finalQty,
-            reason: adjData.reason,
-            adjustmentType: adjData.adjustment_type,  // NEW: From adjustment payload
-            isType1: isType1,  // NEW
+      for (const [key, adjData] of adjDataMap) {
+        const stoItem = exactMatchMap.get(key);
+        if (!stoItem) {
+          const [stockcountOrderNumber, itemIdentity] = key.split(':');
+          log.error('Referenced Stock Opname item not found during update', {
+            stockcountOrderNumber,
+            itemIdentity,
+            stage: 'stock_opname_item_update',
           });
+          continue;
         }
+
+        // Apply sign based on adjustment_type from PAYLOAD (stoItem.adjustment_type may be NULL)
+        // LOSS = -1, GAIN = +1
+        const multiplier = adjData.adjustment_type === 'LOSS' ? -1 : 1;
+        const signedQty = new Prisma.Decimal(adjData.qty * multiplier);
+
+        // Calculate final_adjusted_qty = system_qty + adjustment_qty_signed
+        const finalQty = stoItem.system_qty.plus(signedQty);
+
+        // Type 1 = has stockcount_order_number (linking back to STO)
+        const isType1 = !!adjData.stockcount_order_number;
+
+        updates.push({
+          id: stoItem.id,
+          qty: signedQty,
+          finalAdjustedQty: finalQty,
+          reason: adjData.reason,
+          adjustmentType: adjData.adjustment_type,
+          isType1: isType1,
+        });
       }
 
       if (updates.length === 0) {
         log.debug('No updates to apply after deduplication', {
-          matchingCombinations: mostRecentMap.size,
+          exactMatches: exactMatchMap.size,
           adjustmentCombinations: data.items.length,
         });
         return;
@@ -949,7 +956,9 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
    */
   async getStockSnapshot(
     companyCode: number,
+    itemType: string,
     itemCode: string,
+    uom: string,
     snapshotDate: Date
   ): Promise<{
     opening_balance: number;
@@ -960,7 +969,9 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       const snapshot = await prisma.stock_daily_snapshot.findFirst({
         where: {
           company_code: companyCode,
+          item_type: itemType,
           item_code: itemCode,
+          uom,
           snapshot_date: snapshotDate,
         },
         select: {
@@ -1007,7 +1018,9 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
    */
   async getLatestStockSnapshotBefore(
     companyCode: number,
+    itemType: string,
     itemCode: string,
+    uom: string,
     beforeDate: Date
   ): Promise<{
     snapshot_date: Date;
@@ -1019,7 +1032,9 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
       const snapshot = await prisma.stock_daily_snapshot.findFirst({
         where: {
           company_code: companyCode,
+          item_type: itemType,
           item_code: itemCode,
+          uom,
           snapshot_date: {
             lt: beforeDate,
           },
@@ -1107,11 +1122,14 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
     }>();
 
     for (const item of items) {
+      const itemKey = this.getItemIdentityKey(item);
       try {
         // Step 1: Fetch stock snapshot for exact adjustment date
         let snapshot = await this.getStockSnapshot(
           companyCode,
+          item.item_type,
           item.item_code,
+          item.uom,
           adjustmentDate
         );
 
@@ -1119,7 +1137,9 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         if (!snapshot) {
           const snapshotBefore = await this.getLatestStockSnapshotBefore(
             companyCode,
+            item.item_type,
             item.item_code,
+            item.uom,
             adjustmentDate
           );
           if (snapshotBefore) {
@@ -1154,7 +1174,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         const signedVariance = new Prisma.Decimal(item.qty * multiplier);
         const adjusted_qty = system_qty.plus(signedVariance);
 
-        reconciliationMap.set(item.item_code, {
+        reconciliationMap.set(itemKey, {
           beginning_qty,
           incoming_qty_on_date,
           outgoing_qty_on_date,
@@ -1177,7 +1197,7 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
         });
 
         // Use zeros if calculation fails
-        reconciliationMap.set(item.item_code, {
+        reconciliationMap.set(itemKey, {
           beginning_qty: new Prisma.Decimal(0),
           incoming_qty_on_date: new Prisma.Decimal(0),
           outgoing_qty_on_date: new Prisma.Decimal(0),
@@ -1193,5 +1213,13 @@ export class AdjustmentsRepository extends BaseTransactionRepository {
     });
 
     return reconciliationMap;
+  }
+
+  private getItemIdentityKey(item: {
+    item_type: string;
+    item_code: string;
+    uom: string;
+  }): string {
+    return `${item.item_type}|${item.item_code}|${item.uom}`;
   }
 }
