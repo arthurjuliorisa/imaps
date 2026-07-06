@@ -25,6 +25,28 @@ import {
   ProductionOutputData,
 } from '@/lib/repositories/insw-integration.repository';
 
+export const REVISION_INSW_REASON =
+  'Transaksi Perlu dilakukan pembatalan dan diproses ulang karena terdapat kesalahan input';
+
+type AdjustmentReasonSource = {
+  reason: string | null;
+};
+
+export function resolveAdjustmentKeteranganForINSW(
+  wmsDocType: string | null | undefined,
+  items: AdjustmentReasonSource[]
+): string {
+  if (wmsDocType === 'revise_adjustment') {
+    return REVISION_INSW_REASON;
+  }
+
+  const uniqueReasons = Array.from(
+    new Set(items.map((item) => item.reason).filter((reason) => reason))
+  );
+
+  return uniqueReasons.length > 0 ? uniqueReasons.join('; ') : '';
+}
+
 export class INSWIntegrationService {
   private repository: INSWIntegrationRepository;
   private apiHeaders: INSWApiHeaders;
@@ -1101,11 +1123,10 @@ export class INSWIntegrationService {
       );
     }
 
-    // Aggregate unique reasons from items for dokumenKegiatan level keterangan
-    const uniqueReasons = Array.from(
-      new Set(adjustment.items.map((item) => item.reason).filter((r) => r))
+    const keteranganDokumen = resolveAdjustmentKeteranganForINSW(
+      adjustment.wms_doc_type,
+      adjustment.items
     );
-    const keteranganDokumen = uniqueReasons.length > 0 ? uniqueReasons.join('; ') : '';
 
     const payload = {
       data: [
