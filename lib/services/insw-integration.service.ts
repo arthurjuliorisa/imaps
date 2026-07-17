@@ -330,7 +330,10 @@ export class INSWIntegrationService {
       BC262: '0407262',
       PPKEKTLDDP: '0407613',
       PPKEKLDIN: '0407611',
-      PPKEKLDPOUT: '0407631'
+      PPKEKLDPOUT: '0407631',
+      free_movement: '0407008',
+      'free_movement-IN': '0407008',
+      'free_movement-OUT': '0407008'
     };
 
     return mapping[customsDocType] || null;

@@ -6,6 +6,7 @@ import { BaseTransactionRepository } from './base-transaction.repository';
 import type { SnapshotItem } from './snapshot.repository';
 import { ppkekResolutionService, resolvePPKEKToIncoming } from '@/lib/services/ppkek-resolution.service';
 import { bomCalculationService } from '@/lib/services/bom-calculation.service';
+import { mapCustomsDocumentType } from '@/lib/customs/customs-document-type-mapper';
 
 /**
  * Outgoing Goods Repository
@@ -408,6 +409,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
       const outgoingDate = new Date(data.outgoing_date);
       const customsRegistrationDate = new Date(data.customs_registration_date);
       const invoiceDate = new Date(data.invoice_date);
+      const customsDocumentType = mapCustomsDocumentType(data.customs_document_type);
 
       // =========================================================================
       // STEP 1: Detect date change (check if this wms_id had previous record)
@@ -523,7 +525,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
           },
           update: {
             owner: data.owner,
-            customs_document_type: data.customs_document_type,
+            customs_document_type: customsDocumentType,
             ppkek_number: data.ppkek_number,
             customs_registration_date: customsRegistrationDate,
             outgoing_evidence_number: data.outgoing_evidence_number,
@@ -538,7 +540,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
             wms_id: data.wms_id,
             company_code: data.company_code,
             owner: data.owner,
-            customs_document_type: data.customs_document_type,
+            customs_document_type: customsDocumentType,
             ppkek_number: data.ppkek_number,
             customs_registration_date: customsRegistrationDate,
             outgoing_evidence_number: data.outgoing_evidence_number,

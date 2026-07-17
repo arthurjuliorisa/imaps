@@ -13,6 +13,7 @@ import {
 import { OutgoingGoodsRepository } from '@/lib/repositories/outgoing-goods.repository';
 import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
+import { validateSezFreeMovementCustomsDocumentType } from '@/lib/validators/free-movement-customs-document';
 
 export interface SuccessResponse {
   status: 'success';
@@ -88,6 +89,18 @@ export class OutgoingGoodsService {
 
       const data = validationResult.data!;
       requestLogger.info('Validation passed', { wmsId: data.wms_id });
+
+      const freeMovementErrors = validateSezFreeMovementCustomsDocumentType(
+        data.company_code,
+        data.customs_document_type
+      );
+      if (freeMovementErrors.length > 0) {
+        requestLogger.warn('Free movement customs document validation failed', {
+          errors: freeMovementErrors,
+          wmsId: data.wms_id,
+        });
+        return { success: false, errors: freeMovementErrors };
+      }
 
       // 2. Validate dates
       const dateErrors = validateOutgoingGoodsDates(data);

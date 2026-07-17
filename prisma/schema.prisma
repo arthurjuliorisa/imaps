@@ -28,6 +28,9 @@ enum CustomsDocumentType {
   PPKEKTLDDP // PPKEK incoming for TLDDP
   PPKEKLDIN // PPKEK incoming for LDP
   PPKEKLDPOUT  // PPKEK outgoing for LDP
+  FREE_MOVEMENT @map("free_movement")
+  FREE_MOVEMENT_IN @map("free_movement-IN")
+  FREE_MOVEMENT_OUT @map("free_movement-OUT")
 }
 
 // ============================================================================

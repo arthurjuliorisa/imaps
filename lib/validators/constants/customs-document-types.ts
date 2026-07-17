@@ -31,6 +31,9 @@
  * - PPKEKTLDDP: PPKEK incoming for TLDDP
  * - PPKEKLDIN: PPKEK incoming for LDP
  * - PPKEKLDPOUT: PPKEK outgoing for LDP
+ * - free_movement: SEZ Free Movement
+ * - free_movement-IN: SEZ Free Movement Incoming
+ * - free_movement-OUT: SEZ Free Movement Outgoing
  */
 export const ALL_CUSTOMS_TYPES = [
   'BC23',       // Import Declaration
@@ -45,7 +48,10 @@ export const ALL_CUSTOMS_TYPES = [
   'BC262',      // Subcontracting - Incoming
   'PPKEKTLDDP', // PPKEK incoming for TLDDP
   'PPKEKLDIN',  // PPKEK incoming for LDP
-  'PPKEKLDPOUT' // PPKEK outgoing for LDP
+  'PPKEKLDPOUT', // PPKEK outgoing for LDP
+  'free_movement', // SEZ Free Movement
+  'free_movement-IN', // SEZ Free Movement Incoming
+  'free_movement-OUT' // SEZ Free Movement Outgoing
 ] as const;
 
 export type CustomsDocumentTypeValue = (typeof ALL_CUSTOMS_TYPES)[number];
@@ -65,6 +71,8 @@ export type CustomsDocumentTypeValue = (typeof ALL_CUSTOMS_TYPES)[number];
  * - BC262: Subcontracting - Incoming
  * - PPKEKTLDDP: PPKEK incoming for TLDDP
  * - PPKEKLDIN: PPKEK incoming for LDP
+ * - free_movement: SEZ Free Movement
+ * - free_movement-IN: SEZ Free Movement Incoming
  */
 export const INCOMING_CUSTOMS_TYPES = [
   'BC23',       // Import Declaration
@@ -73,7 +81,9 @@ export const INCOMING_CUSTOMS_TYPES = [
   'BC40',       // Local Purchase from Non-Bonded Zone
   'BC262',      // Subcontracting - Incoming
   'PPKEKTLDDP', // PPKEK incoming for TLDDP
-  'PPKEKLDIN'   // PPKEK incoming for LDP
+  'PPKEKLDIN',  // PPKEK incoming for LDP
+  'free_movement', // SEZ Free Movement
+  'free_movement-IN' // SEZ Free Movement Incoming
 ] as const;
 
 export type IncomingCustomsDocumentType = (typeof INCOMING_CUSTOMS_TYPES)[number];
@@ -93,6 +103,8 @@ export type IncomingCustomsDocumentType = (typeof INCOMING_CUSTOMS_TYPES)[number
  * - BC41: Local Sales from Local Purchase (BC40)
  * - BC261: Subcontracting - Outgoing
  * - PPKEKLDPOUT: PPKEK outgoing for LDP
+ * - free_movement: SEZ Free Movement
+ * - free_movement-OUT: SEZ Free Movement Outgoing
  */
 export const OUTGOING_CUSTOMS_TYPES = [
   'BC30',       // Export Declaration
@@ -101,7 +113,9 @@ export const OUTGOING_CUSTOMS_TYPES = [
   'BC27OUT',    // Other Bonded Zone Release (Outgoing)
   'BC41',       // Local Sales to Non-Bonded Zone from Local Purchase (BC40)
   'BC261',      // Subcontracting - Outgoing
-  'PPKEKLDPOUT' // PPKEK outgoing for LDP
+  'PPKEKLDPOUT', // PPKEK outgoing for LDP
+  'free_movement', // SEZ Free Movement
+  'free_movement-OUT' // SEZ Free Movement Outgoing
 ] as const;
 
 export type OutgoingCustomsDocumentType = (typeof OUTGOING_CUSTOMS_TYPES)[number];
@@ -198,7 +212,10 @@ export const CUSTOMS_TYPE_DESCRIPTIONS: Record<CustomsDocumentTypeValue, string>
   BC262: 'Subcontracting - Incoming',
   PPKEKTLDDP: 'PPKEK incoming for TLDDP',
   PPKEKLDIN: 'PPKEK incoming for LDP',
-  PPKEKLDPOUT: 'PPKEK outgoing for LDP'
+  PPKEKLDPOUT: 'PPKEK outgoing for LDP',
+  free_movement: 'SEZ Free Movement',
+  'free_movement-IN': 'SEZ Free Movement - Incoming',
+  'free_movement-OUT': 'SEZ Free Movement - Outgoing'
 };
 
 /**

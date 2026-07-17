@@ -1,10 +1,11 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type CustomsDocumentType } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { BaseTransactionRepository } from './base-transaction.repository';
 import { SnapshotItem } from './snapshot.repository';
 import { logger } from '../utils/logger';
 import type { IncomingGoodRequestInput } from '../validators/schemas/incoming-goods.schema';
 import { toNullableInvoiceDate } from '../utils/incoming-goods-invoice';
+import { mapCustomsDocumentType } from '@/lib/customs/customs-document-type-mapper';
 
 export interface IncomingGoodsCreateResult {
   id: number;
@@ -42,6 +43,13 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
       const customsRegDate = isNonFacility ? null : new Date(data.customs_registration_date);
       const invoiceDate = toNullableInvoiceDate(data.invoice_date);
       const timestamp = new Date(data.timestamp);
+      let customsDocumentType: CustomsDocumentType | null = null;
+      if (!isNonFacility) {
+        if (data.customs_document_type === 'N') {
+          throw new Error('customs_document_type N is only valid for non-facility incoming goods');
+        }
+        customsDocumentType = mapCustomsDocumentType(data.customs_document_type);
+      }
 
       // =========================================================================
       // STEP 1: Find existing by wms_id (ANY date) to detect date change
@@ -166,11 +174,11 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
               incoming_date: incomingDate,
             },
           },
-          update: ({
+          update: {
             owner: data.owner,
-            customs_document_type: isNonFacility ? null : data.customs_document_type as any,
+            customs_document_type: customsDocumentType,
             ppkek_number: data.ppkek_number,
-            customs_registration_date: customsRegDate as any,
+            customs_registration_date: customsRegDate,
             is_non_facility: isNonFacility,
             incoming_evidence_number: data.incoming_evidence_number,
             invoice_number: data.invoice_number,
@@ -179,14 +187,14 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
             timestamp: timestamp,
             updated_at: new Date(),
             deleted_at: null,
-          } as any),
-          create: ({
+          },
+          create: {
             wms_id: data.wms_id,
             company_code: data.company_code,
             owner: data.owner,
-            customs_document_type: isNonFacility ? null : data.customs_document_type as any,
+            customs_document_type: customsDocumentType,
             ppkek_number: data.ppkek_number,
-            customs_registration_date: customsRegDate as any,
+            customs_registration_date: customsRegDate,
             is_non_facility: isNonFacility,
             incoming_evidence_number: data.incoming_evidence_number,
             incoming_date: incomingDate,
@@ -194,7 +202,7 @@ export class IncomingGoodsRepository extends BaseTransactionRepository {
             invoice_date: invoiceDate,
             shipper_name: data.shipper_name,
             timestamp: timestamp,
-          } as any),
+          },
         });
 
         // For update case (same date), intelligently manage items:

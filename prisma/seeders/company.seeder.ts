@@ -28,11 +28,11 @@ export async function seedCompanies() {
     }),
     prisma.companies.upsert({
       where: { code: 1380 },
-      update: { company_type: 'BZ' },
+      update: { company_type: 'SEZ' },
       create: {
         code: 1380,
         name: 'PT. Sino Berkat Indonesia',
-        company_type: 'BZ',
+        company_type: 'SEZ',
         status: 'ACTIVE',
       },
     }),

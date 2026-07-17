@@ -7,6 +7,7 @@ import { INSWTransmissionService } from '@/lib/services/insw-transmission.servic
 import { prisma } from '@/lib/db/prisma';
 import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
+import { validateSezFreeMovementCustomsDocumentType } from '@/lib/validators/free-movement-customs-document';
 
 export class IncomingGoodsService {
   private repository: IncomingGoodsRepository;
@@ -64,6 +65,18 @@ export class IncomingGoodsService {
           wmsId: data.wms_id,
         });
         return { success: false, errors: nonFacilityMarkerErrors };
+      }
+
+      const freeMovementErrors = validateSezFreeMovementCustomsDocumentType(
+        data.company_code,
+        data.customs_document_type
+      );
+      if (freeMovementErrors.length > 0) {
+        requestLogger.warn('Free movement customs document validation failed', {
+          errors: freeMovementErrors,
+          wmsId: data.wms_id,
+        });
+        return { success: false, errors: freeMovementErrors };
       }
 
       // 2. Validate dates
