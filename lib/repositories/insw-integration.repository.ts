@@ -3,11 +3,13 @@ import { Prisma } from '@prisma/client';
 
 export interface LaporanPemasukanView {
   id: number;
+  wms_id: string | null;
   company_code: number;
   company_name: string;
-  customs_document_type: string;
+  customs_document_type: string | null;
   cust_doc_registration_no: string | null;
   reg_date: Date | null;
+  is_non_facility: boolean;
   doc_number: string;
   doc_date: Date;
   shipper_name: string | null;
@@ -24,9 +26,10 @@ export interface LaporanPengeluaranView {
   wms_id: string | null;
   company_code: number;
   company_name: string;
-  customs_document_type: string;
+  customs_document_type: string | null;
   cust_doc_registration_no: string | null;
   reg_date: Date | null;
+  is_non_facility: boolean;
   doc_number: string;
   doc_date: Date;
   recipient_name: string | null;
@@ -112,11 +115,13 @@ export class INSWIntegrationRepository {
     const query = `
       SELECT
         id,
+        wms_id,
         company_code,
         company_name,
         customs_document_type,
         cust_doc_registration_no,
         reg_date,
+        is_non_facility,
         doc_number,
         doc_date,
         shipper_name,
@@ -158,6 +163,7 @@ export class INSWIntegrationRepository {
         customs_document_type,
         cust_doc_registration_no,
         reg_date,
+        is_non_facility,
         doc_number,
         doc_date,
         recipient_name,
@@ -199,6 +205,7 @@ export class INSWIntegrationRepository {
         customs_document_type,
         cust_doc_registration_no,
         reg_date,
+        is_non_facility,
         doc_number,
         doc_date,
         recipient_name,

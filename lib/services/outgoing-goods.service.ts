@@ -14,6 +14,7 @@ import { OutgoingGoodsRepository } from '@/lib/repositories/outgoing-goods.repos
 import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
 import { validateSezFreeMovementCustomsDocumentType } from '@/lib/validators/free-movement-customs-document';
+import { validateNonFacilityMarker } from '@/lib/validators/non-facility-marker.validator';
 
 export interface SuccessResponse {
   status: 'success';
@@ -89,6 +90,15 @@ export class OutgoingGoodsService {
 
       const data = validationResult.data!;
       requestLogger.info('Validation passed', { wmsId: data.wms_id });
+
+      const nonFacilityMarkerErrors = validateNonFacilityMarker(data, 'outgoing goods');
+      if (nonFacilityMarkerErrors.length > 0) {
+        requestLogger.warn('Non-facility marker validation failed', {
+          errors: nonFacilityMarkerErrors,
+          wmsId: data.wms_id,
+        });
+        return { success: false, errors: nonFacilityMarkerErrors };
+      }
 
       const freeMovementErrors = validateSezFreeMovementCustomsDocumentType(
         data.company_code,

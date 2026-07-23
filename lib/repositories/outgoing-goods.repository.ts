@@ -7,6 +7,8 @@ import type { SnapshotItem } from './snapshot.repository';
 import { ppkekResolutionService, resolvePPKEKToIncoming } from '@/lib/services/ppkek-resolution.service';
 import { bomCalculationService } from '@/lib/services/bom-calculation.service';
 import { mapCustomsDocumentType } from '@/lib/customs/customs-document-type-mapper';
+import { isCompleteNonFacilityMarker } from '@/lib/validators/non-facility-marker.validator';
+import type { CustomsDocumentTypeValue } from '@/lib/validators/constants/customs-document-types';
 
 /**
  * Outgoing Goods Repository
@@ -407,9 +409,12 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
     try {
       // Parse dates
       const outgoingDate = new Date(data.outgoing_date);
-      const customsRegistrationDate = new Date(data.customs_registration_date);
+      const isNonFacility = isCompleteNonFacilityMarker(data);
+      const customsRegistrationDate = isNonFacility ? null : new Date(data.customs_registration_date);
       const invoiceDate = new Date(data.invoice_date);
-      const customsDocumentType = mapCustomsDocumentType(data.customs_document_type);
+      const customsDocumentType = isNonFacility
+        ? null
+        : mapCustomsDocumentType(data.customs_document_type as CustomsDocumentTypeValue);
 
       // =========================================================================
       // STEP 1: Detect date change (check if this wms_id had previous record)
@@ -528,6 +533,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
             customs_document_type: customsDocumentType,
             ppkek_number: data.ppkek_number,
             customs_registration_date: customsRegistrationDate,
+            is_non_facility: isNonFacility,
             outgoing_evidence_number: data.outgoing_evidence_number,
             invoice_number: data.invoice_number,
             invoice_date: invoiceDate,
@@ -535,7 +541,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
             timestamp: new Date(data.timestamp),
             updated_at: new Date(),
             deleted_at: null,
-          },
+          } as any,
           create: {
             wms_id: data.wms_id,
             company_code: data.company_code,
@@ -543,13 +549,14 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
             customs_document_type: customsDocumentType,
             ppkek_number: data.ppkek_number,
             customs_registration_date: customsRegistrationDate,
+            is_non_facility: isNonFacility,
             outgoing_evidence_number: data.outgoing_evidence_number,
             outgoing_date: outgoingDate,
             invoice_number: data.invoice_number,
             invoice_date: invoiceDate,
             recipient_name: data.recipient_name,
             timestamp: new Date(data.timestamp),
-          },
+          } as any,
         });
 
         repositoryLogger.info('Outgoing goods header upserted', { outgoingGoodId: outgoingGood.id });

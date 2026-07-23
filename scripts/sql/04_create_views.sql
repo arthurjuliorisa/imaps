@@ -387,7 +387,6 @@ SELECT
     ig.incoming_date as doc_date,
     ig.shipper_name,
     ig.wms_id,
-    ig.is_non_facility,
     
     -- Item details
     igi.item_type as type_code,
@@ -402,7 +401,8 @@ SELECT
     -- Audit fields
     ig.created_at,
     ig.updated_at,
-    ig.deleted_at
+    ig.deleted_at,
+    ig.is_non_facility
 FROM incoming_goods ig
 JOIN incoming_good_items igi ON ig.company_code = igi.incoming_good_company
     AND ig.id = igi.incoming_good_id
@@ -449,7 +449,8 @@ SELECT
     -- Audit fields
     og.created_at,
     og.updated_at,
-    og.deleted_at
+    og.deleted_at,
+    og.is_non_facility
 FROM outgoing_goods og
 JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
     AND og.id = ogi.outgoing_good_id

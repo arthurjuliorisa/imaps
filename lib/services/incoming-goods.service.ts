@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db/prisma';
 import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
 import { validateSezFreeMovementCustomsDocumentType } from '@/lib/validators/free-movement-customs-document';
+import { validateNonFacilityMarker } from '@/lib/validators/non-facility-marker.validator';
 
 export class IncomingGoodsService {
   private repository: IncomingGoodsRepository;
@@ -58,7 +59,7 @@ export class IncomingGoodsService {
         hasInvoice: data.invoice_number !== null,
       });
 
-      const nonFacilityMarkerErrors = this.validateNonFacilityMarker(data);
+      const nonFacilityMarkerErrors = validateNonFacilityMarker(data, 'incoming goods');
       if (nonFacilityMarkerErrors.length > 0) {
         requestLogger.warn('Non-facility marker validation failed', {
           errors: nonFacilityMarkerErrors,
@@ -285,25 +286,5 @@ export class IncomingGoodsService {
     // iMAPS will accept any item_code sent by WMS
 
     return errors;
-  }
-
-  private validateNonFacilityMarker(data: IncomingGoodRequestInput): ErrorDetail[] {
-    const markerFields = [
-      data.ppkek_number,
-      data.customs_document_type,
-      data.customs_registration_date,
-    ];
-    const markerCount = markerFields.filter(value => value === 'N').length;
-
-    if (markerCount === 0 || markerCount === 3) {
-      return [];
-    }
-
-    return [{
-      location: 'header',
-      field: 'non_facility_marker',
-      code: 'NON_FACILITY_MARKER_INCOMPLETE',
-      message: 'Non-facility incoming goods must use "N" for ppkek_number, customs_document_type, and customs_registration_date together',
-    }];
   }
 }

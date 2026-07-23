@@ -23,6 +23,7 @@ import { Currency } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { validateItemTypeConsistency } from '@/lib/validators/item-type-consistency.validator';
 import { OUTGOING_CUSTOMS_TYPES } from '@/lib/validators/constants/customs-document-types';
+import { validateNonFacilityMarker } from '@/lib/validators/non-facility-marker.validator';
 
 // =============================================================================
 // CONSTANTS
@@ -216,9 +217,9 @@ export const outgoingGoodRequestSchema = z
     company_code: companyCodeSchema,
     owner: companyCodeSchema,
     
-    customs_document_type: z.enum(OUTGOING_CUSTOMS_TYPES, {
+    customs_document_type: z.union([z.enum(OUTGOING_CUSTOMS_TYPES, {
         message: `Customs document type must be one of: ${OUTGOING_CUSTOMS_TYPES.join(', ')}`,
-      }),
+      }), z.literal('N')]),
     
     ppkek_number: z
       .string()
@@ -226,7 +227,7 @@ export const outgoingGoodRequestSchema = z
       .max(50, 'PPKEK number must not exceed 50 characters')
       .trim(),
     
-    customs_registration_date: dateStringSchema,
+    customs_registration_date: z.union([dateStringSchema, z.literal('N')]),
     
     outgoing_evidence_number: z
       .string()
@@ -257,9 +258,27 @@ export const outgoingGoodRequestSchema = z
     
     timestamp: iso8601Schema,
   })
+  .superRefine((data, ctx) => {
+    const markerErrors = validateNonFacilityMarker(data, 'outgoing goods');
+    for (const error of markerErrors) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [error.field],
+        message: error.message,
+      });
+    }
+  })
   // Business rule: customs_registration_date <= outgoing_date
   .refine(
     (data: any) => {
+      if (
+        data.ppkek_number === 'N' ||
+        data.customs_document_type === 'N' ||
+        data.customs_registration_date === 'N'
+      ) {
+        return true;
+      }
+
       // Parse both dates in consistent local timezone (YYYY-MM-DD format)
       const [customsYear, customsMonth, customsDay] = data.customs_registration_date.split('-').map(Number);
       const customsDate = new Date(customsYear, customsMonth - 1, customsDay, 0, 0, 0, 0);
@@ -396,6 +415,10 @@ export function validateOutgoingGoodRequest(data: unknown): ValidationResult {
  */
 export function validateOutgoingGoodsDates(data: OutgoingGoodRequestInput): ValidationErrorDetail[] {
   const errors: ValidationErrorDetail[] = [];
+  if (data.customs_registration_date === 'N') {
+    return errors;
+  }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 

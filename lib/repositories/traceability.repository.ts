@@ -172,11 +172,11 @@ export class TraceabilityRepository {
 
           if (incomingGood) {
             resolvedPPKEKs.push({
-              ppkek_number: incomingGood.ppkek_number,
+              ppkek_number: incomingGood.ppkek_number || '',
               customs_registration_date: incomingGood.customs_registration_date
                 ? new Date(incomingGood.customs_registration_date).toISOString().split('T')[0]
                 : '',
-              customs_document_type: incomingGood.customs_document_type || '',
+              customs_document_type: incomingGood.customs_document_type?.toString() || '',
               incoming_date: incomingGood.incoming_date
                 ? new Date(incomingGood.incoming_date).toISOString().split('T')[0]
                 : '',

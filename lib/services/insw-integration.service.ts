@@ -315,8 +315,12 @@ export class INSWIntegrationService {
   }
 
   private mapCustomsDocTypeToINSWDocCode(
-    customsDocType: string
+    customsDocType: string | null
   ): string | null {
+    if (!customsDocType) {
+      return null;
+    }
+
     const mapping: Record<string, string> = {
       BC23: '0407023',
       BC27: '0407027',
@@ -339,6 +343,35 @@ export class INSWIntegrationService {
     return mapping[customsDocType] || null;
   }
 
+  private buildTransactionDocuments(
+    item: {
+      is_non_facility?: boolean;
+      customs_document_type: string | null;
+      cust_doc_registration_no: string | null;
+      reg_date: Date | null;
+      doc_number: string;
+      doc_date: Date;
+    },
+    fallbackDocumentCode: string
+  ) {
+    if (item.is_non_facility) {
+      return [];
+    }
+
+    return [
+      {
+        kodeDokumen:
+          this.mapCustomsDocTypeToINSWDocCode(
+            item.customs_document_type
+          ) || fallbackDocumentCode,
+        nomorDokumen: item.cust_doc_registration_no || item.doc_number,
+        tanggalDokumen: this.formatINSWDateOnly(
+          item.reg_date || item.doc_date
+        ),
+      },
+    ];
+  }
+
   async convertPemasukanToINSW(
     companyCode: number,
     ids: number[]
@@ -359,18 +392,6 @@ export class INSWIntegrationService {
       };
     }
 
-    // Get wms_id mapping from incoming_goods
-    const wmsIdMap = new Map<number, string>();
-    const uniqueIds = [...new Set(data.map((item) => item.id))];
-    const incomingGoods = await prisma.incoming_goods.findMany({
-      where: {
-        id: { in: uniqueIds },
-        company_code: companyCode,
-      },
-      select: { id: true, wms_id: true },
-    });
-    incomingGoods.forEach((ig) => wmsIdMap.set(ig.id, ig.wms_id));
-
     const uomMap = await this.loadUomMappings();
     const missingUoms = new Set<string>();
 
@@ -378,7 +399,7 @@ export class INSWIntegrationService {
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
       (group) => ({
-        nomorDokKegiatan: wmsIdMap.get(group.items[0].id) || group.doc_number,
+        nomorDokKegiatan: group.items[0].wms_id || group.doc_number,
         tanggalKegiatan: this.formatINSWDateOnly(group.doc_date),
         namaEntitas: group.shipper_name || 'Unknown',
         barangTransaksi: group.items.map((item) => ({
@@ -393,21 +414,7 @@ export class INSWIntegrationService {
             return mapped || key;
           })(),
           nilai: Number(item.value_amount || 0),
-          dokumen: [
-            {
-              // Non-facility incoming goods persist a null document type/date while
-              // keeping ppkek_number = 'N'. Preserve the existing INSW fallback
-              // behavior unless INSW/client confirms a dedicated 'N' mapping.
-              kodeDokumen:
-                this.mapCustomsDocTypeToINSWDocCode(
-                  item.customs_document_type
-                ) || '0407020',
-              nomorDokumen: item.cust_doc_registration_no || item.doc_number,
-              tanggalDokumen: this.formatINSWDateOnly(
-                item.reg_date || item.doc_date
-              ),
-            },
-          ],
+          dokumen: this.buildTransactionDocuments(item, '0407020'),
         })),
       })
     );
@@ -449,18 +456,6 @@ export class INSWIntegrationService {
       };
     }
 
-    // Get wms_id mapping from outgoing_goods
-    const wmsIdMap = new Map<number, string>();
-    const uniqueIds = [...new Set(data.map((item) => item.id))];
-    const outgoingGoods = await prisma.outgoing_goods.findMany({
-      where: {
-        id: { in: uniqueIds },
-        company_code: companyCode,
-      },
-      select: { id: true, wms_id: true },
-    });
-    outgoingGoods.forEach((og) => wmsIdMap.set(og.id, og.wms_id));
-
     const uomMap = await this.loadUomMappings();
     const missingUoms = new Set<string>();
 
@@ -468,7 +463,7 @@ export class INSWIntegrationService {
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
       (group) => ({
-        nomorDokKegiatan: wmsIdMap.get(group.items[0].id) || group.doc_number,
+        nomorDokKegiatan: group.items[0].wms_id || group.doc_number,
         tanggalKegiatan: this.formatINSWDateOnly(group.doc_date),
         namaEntitas: group.recipient_name || 'Unknown',
         barangTransaksi: group.items.map((item) => ({
@@ -483,18 +478,7 @@ export class INSWIntegrationService {
             return mapped || key;
           })(),
           nilai: Number(item.value_amount || 0),
-          dokumen: [
-            {
-              kodeDokumen:
-                this.mapCustomsDocTypeToINSWDocCode(
-                  item.customs_document_type
-                ) || '0407631',
-              nomorDokumen: item.cust_doc_registration_no || item.doc_number,
-              tanggalDokumen: this.formatINSWDateOnly(
-                item.reg_date || item.doc_date
-              ),
-            },
-          ],
+          dokumen: this.buildTransactionDocuments(item, '0407631'),
         })),
       })
     );
@@ -536,18 +520,6 @@ export class INSWIntegrationService {
       };
     }
 
-    // Get wms_id mapping from outgoing_goods
-    const wmsIdMap = new Map<number, string>();
-    const uniqueIds = [...new Set(data.map((item) => item.id))];
-    const outgoingGoods = await prisma.outgoing_goods.findMany({
-      where: {
-        id: { in: uniqueIds },
-        company_code: companyCode,
-      },
-      select: { id: true, wms_id: true },
-    });
-    outgoingGoods.forEach((og) => wmsIdMap.set(og.id, og.wms_id));
-
     const uomMap = await this.loadUomMappings();
     const missingUoms = new Set<string>();
 
@@ -555,7 +527,7 @@ export class INSWIntegrationService {
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
       (group) => ({
-        nomorDokKegiatan: wmsIdMap.get(group.items[0].id) || group.doc_number,
+        nomorDokKegiatan: group.items[0].wms_id || group.doc_number,
         tanggalKegiatan: this.formatINSWDateOnly(group.doc_date),
         namaEntitas: group.recipient_name || 'Unknown',
         barangTransaksi: group.items.map((item) => ({
@@ -570,18 +542,7 @@ export class INSWIntegrationService {
             return mapped || key;
           })(),
           nilai: Number(item.value_amount || 0),
-          dokumen: [
-            {
-              kodeDokumen:
-                this.mapCustomsDocTypeToINSWDocCode(
-                  item.customs_document_type
-                ) || '0407631',
-              nomorDokumen: item.cust_doc_registration_no || item.doc_number,
-              tanggalDokumen: this.formatINSWDateOnly(
-                item.reg_date || item.doc_date
-              ),
-            },
-          ],
+          dokumen: this.buildTransactionDocuments(item, '0407631'),
         })),
       })
     );
@@ -762,18 +723,6 @@ export class INSWIntegrationService {
       };
     }
 
-    // Get wms_id mapping from outgoing_goods
-    const wmsIdMap = new Map<number, string>();
-    const uniqueIds = [...new Set(data.map((item) => item.id))];
-    const outgoingGoods = await prisma.outgoing_goods.findMany({
-      where: {
-        id: { in: uniqueIds },
-        company_code: companyCode,
-      },
-      select: { id: true, wms_id: true },
-    });
-    outgoingGoods.forEach((og) => wmsIdMap.set(og.id, og.wms_id));
-
     const uomMap = await this.loadUomMappings();
     const missingUoms = new Set<string>();
 
@@ -781,7 +730,7 @@ export class INSWIntegrationService {
 
     const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
       (group) => ({
-        nomorDokKegiatan: wmsIdMap.get(group.items[0].id) || group.doc_number,
+        nomorDokKegiatan: group.items[0].wms_id || group.doc_number,
         tanggalKegiatan: this.formatINSWDateOnly(group.doc_date),
         namaEntitas: group.recipient_name || 'Unknown',
         barangTransaksi: group.items.map((item) => ({
@@ -796,18 +745,7 @@ export class INSWIntegrationService {
             return mapped || key;
           })(),
           nilai: Number(item.value_amount || 0),
-          dokumen: [
-            {
-              kodeDokumen:
-                this.mapCustomsDocTypeToINSWDocCode(
-                  item.customs_document_type
-                ) || '0407631',
-              nomorDokumen: item.cust_doc_registration_no || item.doc_number,
-              tanggalDokumen: this.formatINSWDateOnly(
-                item.reg_date || item.doc_date
-              ),
-            },
-          ],
+          dokumen: this.buildTransactionDocuments(item, '0407631'),
         })),
       })
     );
