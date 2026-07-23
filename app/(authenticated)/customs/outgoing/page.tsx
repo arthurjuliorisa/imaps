@@ -35,6 +35,7 @@ import {
   readTransactionExportErrorMessage,
   validateClientTransactionExportDateRange,
 } from '@/lib/customs/transaction-export-client';
+import { getCustomsDocumentTypeDisplayValue } from '@/lib/customs/document-type-display';
 
 interface OutgoingReportData {
   id: string;
@@ -42,7 +43,8 @@ interface OutgoingReportData {
   companyCode: number;
   companyName: string;
   companyType?: string;
-  documentType: string;
+  documentType: string | null;
+  isNonFacility?: boolean;
   ppkekNumber: string;
   registrationDate: Date;
   documentNumber: string;
@@ -144,7 +146,7 @@ export default function OutgoingGoodsReportPage() {
       filtered = filtered.filter((row) => {
         return (
           row.companyName?.toLowerCase().includes(query) ||
-          row.documentType?.toLowerCase().includes(query) ||
+          getCustomsDocumentTypeDisplayValue(row).toLowerCase().includes(query) ||
           row.ppkekNumber?.toLowerCase().includes(query) ||
           row.documentNumber?.toLowerCase().includes(query) ||
           row.recipientName?.toLowerCase().includes(query) ||
@@ -213,7 +215,7 @@ export default function OutgoingGoodsReportPage() {
     const exportData = filteredData.map((row, index) => ({
       no: index + 1,
       companyName: row.companyName,
-      documentType: row.documentType,
+      documentType: getCustomsDocumentTypeDisplayValue(row),
       documentNumber: row.documentNumber,
       date: formatDateShort(row.date),
       recipientName: row.recipientName,
@@ -343,7 +345,7 @@ export default function OutgoingGoodsReportPage() {
                     <TableCell>{row.companyName}</TableCell>
                     <TableCell>
                       <Chip
-                        label={row.documentType}
+                        label={getCustomsDocumentTypeDisplayValue(row)}
                         size="small"
                         color="primary"
                         variant="outlined"

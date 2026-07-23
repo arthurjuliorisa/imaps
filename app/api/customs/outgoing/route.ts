@@ -72,6 +72,7 @@ export async function GET(request: Request) {
         value_amount,
         item_code_bahasa,
         incoming_ppkek_numbers,
+        is_non_facility,
         created_at
       FROM vw_laporan_pengeluaran
       WHERE company_code = $1
@@ -160,6 +161,7 @@ export async function GET(request: Request) {
         companyName: row.company_name,
         companyType: row.company_type,
         documentType: row.customs_document_type,
+        isNonFacility: row.is_non_facility === true,
         ppkekNumber: row.ppkek_number,
         registrationDate: row.registration_date,
         documentNumber: row.doc_number,

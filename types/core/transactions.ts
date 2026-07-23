@@ -102,9 +102,9 @@ export interface IncomingDetail extends BaseDetail {
  */
 export interface OutgoingHeader extends BaseHeader {
   owner: number;
-  customs_document_type: CustomsDocumentType;
+  customs_document_type: CustomsDocumentType | null;
   ppkek_number: string;
-  customs_registration_date: Date;
+  customs_registration_date: Date | null;
   outgoing_evidence_number: string;
   outgoing_date: Date;
   invoice_number: string;

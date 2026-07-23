@@ -30,6 +30,7 @@ import {
 import { NavigateNext, Home, Receipt, ArrowBack, OpenInNew } from '@mui/icons-material';
 import { formatDate, formatCurrency } from '@/lib/exportUtils';
 import type { OutgoingHeader, OutgoingDetail } from '@/types/core';
+import { getCustomsDocumentTypeDisplayValue } from '@/lib/customs/document-type-display';
 
 // Number formatting utilities
 const formatAmount = (value: number): string => {
@@ -210,7 +211,14 @@ export default function OutgoingDetailPage() {
                 Customs Document Type
               </Typography>
               <Box sx={{ mt: 0.5 }}>
-                <Chip label={data.header.customs_document_type} color="primary" size="small" />
+                <Chip
+                  label={getCustomsDocumentTypeDisplayValue({
+                    documentType: data.header.customs_document_type,
+                    isNonFacility: data.header.ppkek_number === 'N',
+                  })}
+                  color="primary"
+                  size="small"
+                />
               </Box>
             </Box>
             <Box sx={{ mb: 2 }}>
