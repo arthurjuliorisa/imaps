@@ -23,6 +23,7 @@ import {
   Tabs,
   TextField,
   InputAdornment,
+  Chip,
 } from '@mui/material';
 import { Close, Search } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
@@ -68,6 +69,45 @@ interface TraceabilityItem {
   incoming_ppkek_numbers?: TraceabilityPPKEKDetail[];
 }
 
+interface TraceabilityDetailRow {
+  outgoing_good_item_id: number;
+  work_order_number: string | null;
+  production_wms_id: string;
+  material_item_code: string | null;
+  material_item_name: string | null;
+  material_uom: string | null;
+  source_material_usage_wms_id: string | null;
+  source_material_usage_item_id: number | null;
+  trace_row_type: string | null;
+  display_ppkek_number: string | null;
+  ppkek_bucket_key: string | null;
+  actual_qty: number | null;
+  signed_qty: number | null;
+  raw_allocated_qty: number | null;
+  final_allocated_qty: number | null;
+  rounding_adjustment: number | null;
+  material_net_usage_total: number | null;
+  incoming_goods_id: number | null;
+  ppkek_number_incoming: string | null;
+  customs_document_type: string | null;
+  customs_registration_date: string | null;
+  incoming_date: string | null;
+}
+
+interface TraceabilitySummaryRow {
+  work_order_number: string | null;
+  material_item_code: string | null;
+  material_item_name: string | null;
+  material_uom: string | null;
+  display_ppkek_number: string | null;
+  ppkek_bucket_key: string | null;
+  normal_actual_qty: number;
+  reversal_actual_qty: number;
+  net_usage_qty: number;
+  final_allocated_qty: number;
+  rounding_adjustment_total: number;
+}
+
 interface TraceabilityModalProps {
   open: boolean;
   onClose: () => void;
@@ -77,6 +117,76 @@ interface TraceabilityModalProps {
 
 function includesSearch(value: unknown, search: string): boolean {
   return String(value ?? '').toLowerCase().includes(search);
+}
+
+function formatQty(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return '-';
+  }
+
+  return Number(value).toLocaleString(undefined, {
+    maximumFractionDigits: 3,
+  });
+}
+
+function formatPPKEK(displayValue: string | null | undefined, bucketKey?: string | null): string {
+  if (displayValue === 'N' || bucketKey === 'LITERAL_N') {
+    return 'N';
+  }
+
+  if (displayValue && displayValue.trim().length > 0) {
+    return displayValue;
+  }
+
+  if (bucketKey === 'BLANK' || !bucketKey) {
+    return 'Blank PPKEK';
+  }
+
+  return displayValue || bucketKey;
+}
+
+function filterTraceabilityDetails(
+  details: TraceabilityDetailRow[],
+  search: string
+): TraceabilityDetailRow[] {
+  if (!search) {
+    return details;
+  }
+
+  return details.filter((detail) =>
+    [
+      detail.work_order_number,
+      detail.production_wms_id,
+      detail.material_item_code,
+      detail.material_item_name,
+      detail.material_uom,
+      detail.source_material_usage_wms_id,
+      detail.trace_row_type,
+      detail.display_ppkek_number,
+      detail.ppkek_bucket_key,
+      detail.customs_document_type,
+    ].some((value) => includesSearch(value, search))
+  );
+}
+
+function filterTraceabilitySummary(
+  summary: TraceabilitySummaryRow[],
+  search: string
+): TraceabilitySummaryRow[] {
+  if (!search) {
+    return summary;
+  }
+
+  return summary.filter((row) =>
+    [
+      row.work_order_number,
+      row.material_item_code,
+      row.material_item_name,
+      row.material_uom,
+      row.display_ppkek_number,
+      row.ppkek_bucket_key,
+    ].some((value) => includesSearch(value, search))
+  );
 }
 
 function filterProductionTraceability(
@@ -215,6 +325,8 @@ export function TraceabilityModal({
   const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TraceabilityItem[]>([]);
+  const [traceabilityDetails, setTraceabilityDetails] = useState<TraceabilityDetailRow[]>([]);
+  const [traceabilitySummary, setTraceabilitySummary] = useState<TraceabilitySummaryRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tabValue, setTabValue] = useState<'production' | 'incoming'>('production');
   const [companyType, setCompanyType] = useState<string>('');
@@ -258,6 +370,8 @@ export function TraceabilityModal({
         }
 
         setData(result.data.items || []);
+        setTraceabilityDetails(result.data.traceability_details || []);
+        setTraceabilitySummary(result.data.traceability_summary || []);
 
         // Fetch company type
         if (companyCode) {
@@ -300,6 +414,139 @@ export function TraceabilityModal({
     () => filterProductionTraceability(productionItems, normalizedSearch),
     [productionItems, normalizedSearch]
   );
+  const filteredTraceabilityDetails = useMemo(
+    () => filterTraceabilityDetails(traceabilityDetails, normalizedSearch),
+    [traceabilityDetails, normalizedSearch]
+  );
+  const filteredTraceabilitySummary = useMemo(
+    () => filterTraceabilitySummary(traceabilitySummary, normalizedSearch),
+    [traceabilitySummary, normalizedSearch]
+  );
+
+  const renderTraceabilityDetailsTable = () => {
+    if (traceabilityDetails.length === 0) {
+      return null;
+    }
+
+    return (
+      <Box sx={{ mt: 3 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+          Material Traceability Details
+        </Typography>
+        {filteredTraceabilityDetails.length === 0 ? (
+          <Alert severity="info">No matching detail rows found.</Alert>
+        ) : (
+          <TableContainer sx={{ maxHeight: '420px' }}>
+            <Table stickyHeader size="small">
+              <TableHead>
+                <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.12) }}>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 100 }}>Row Type</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 130 }}>Source WMS ID</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 120 }}>Work Order</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 220 }}>Material</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 70 }}>UOM</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 130 }}>PPKEK</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Actual Qty</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Signed Qty</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 120, textAlign: 'right' }}>Final Allocated</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Rounding Adj.</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredTraceabilityDetails.map((detail, index) => (
+                  <TableRow
+                    key={`${detail.outgoing_good_item_id}-${detail.source_material_usage_item_id}-${detail.ppkek_bucket_key}-${index}`}
+                  >
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={detail.trace_row_type || 'NORMAL'}
+                        color={detail.trace_row_type === 'REVERSAL' ? 'warning' : 'default'}
+                        variant={detail.trace_row_type === 'REVERSAL' ? 'filled' : 'outlined'}
+                      />
+                    </TableCell>
+                    <TableCell>{detail.source_material_usage_wms_id || '-'}</TableCell>
+                    <TableCell>{detail.work_order_number || '-'}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {detail.material_item_code || '-'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        {detail.material_item_name || '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{detail.material_uom || '-'}</TableCell>
+                    <TableCell>{formatPPKEK(detail.display_ppkek_number, detail.ppkek_bucket_key)}</TableCell>
+                    <TableCell align="right">{formatQty(detail.actual_qty)}</TableCell>
+                    <TableCell align="right">{formatQty(detail.signed_qty)}</TableCell>
+                    <TableCell align="right">{formatQty(detail.final_allocated_qty)}</TableCell>
+                    <TableCell align="right">
+                      {detail.rounding_adjustment ? formatQty(detail.rounding_adjustment) : '-'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Box>
+    );
+  };
+
+  const renderTraceabilitySummaryTable = () => {
+    if (traceabilitySummary.length === 0) {
+      return null;
+    }
+
+    return (
+      <Box sx={{ mt: 3 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+          PPKEK Bucket Summary
+        </Typography>
+        {filteredTraceabilitySummary.length === 0 ? (
+          <Alert severity="info">No matching summary rows found.</Alert>
+        ) : (
+          <TableContainer sx={{ maxHeight: '360px' }}>
+            <Table stickyHeader size="small">
+              <TableHead>
+                <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.12) }}>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 120 }}>Work Order</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 220 }}>Material</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 70 }}>UOM</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 130 }}>PPKEK Bucket</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 110, textAlign: 'right' }}>Normal Usage</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 110, textAlign: 'right' }}>Reversal Usage</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Net Usage</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 120, textAlign: 'right' }}>Final Allocated</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredTraceabilitySummary.map((row, index) => (
+                  <TableRow key={`${row.work_order_number}-${row.material_item_code}-${row.ppkek_bucket_key}-${index}`}>
+                    <TableCell>{row.work_order_number || '-'}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {row.material_item_code || '-'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        {row.material_item_name || '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{row.material_uom || '-'}</TableCell>
+                    <TableCell>{formatPPKEK(row.display_ppkek_number, row.ppkek_bucket_key)}</TableCell>
+                    <TableCell align="right">{formatQty(row.normal_actual_qty)}</TableCell>
+                    <TableCell align="right">{formatQty(row.reversal_actual_qty)}</TableCell>
+                    <TableCell align="right">{formatQty(row.net_usage_qty)}</TableCell>
+                    <TableCell align="right">{formatQty(row.final_allocated_qty)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Box>
+    );
+  };
 
   const renderProductionTable = () => {
     if (filteredProductionItems.length === 0) {
@@ -355,7 +602,7 @@ export function TraceabilityModal({
                   <TableRow key={`${item.item_code}-no-wo`}>
                     <TableCell>{item.item_code}</TableCell>
                     <TableCell>{item.item_name}</TableCell>
-                    <TableCell align="right">{Number(item.qty).toLocaleString()}</TableCell>
+                    <TableCell align="right">{formatQty(item.qty)}</TableCell>
                     <TableCell>{item.uom}</TableCell>
                     <TableCell colSpan={9} sx={{ color: 'text.secondary' }}>
                       No work order allocations
@@ -372,10 +619,10 @@ export function TraceabilityModal({
                     <TableRow key={`${item.item_code}-${wo.work_order_number}-no-mat`}>
                       <TableCell>{woIdx === 0 ? item.item_code : ''}</TableCell>
                       <TableCell>{woIdx === 0 ? item.item_name : ''}</TableCell>
-                      <TableCell align="right">{woIdx === 0 ? Number(item.qty).toLocaleString() : ''}</TableCell>
+                      <TableCell align="right">{woIdx === 0 ? formatQty(item.qty) : ''}</TableCell>
                       <TableCell>{woIdx === 0 ? item.uom : ''}</TableCell>
                       <TableCell>{wo.work_order_number}</TableCell>
-                      <TableCell align="right">{Number(wo.qty_per_wo).toLocaleString()}</TableCell>
+                      <TableCell align="right">{formatQty(wo.qty_per_wo)}</TableCell>
                       <TableCell colSpan={7} sx={{ color: 'text.secondary' }}>
                         No materials
                       </TableCell>
@@ -400,7 +647,7 @@ export function TraceabilityModal({
                           <TableCell rowSpan={totalPPKEKRows}>{item.item_code}</TableCell>
                           <TableCell rowSpan={totalPPKEKRows}>{item.item_name}</TableCell>
                           <TableCell align="right" rowSpan={totalPPKEKRows}>
-                            {Number(item.qty).toLocaleString()}
+                            {formatQty(item.qty)}
                           </TableCell>
                           <TableCell rowSpan={totalPPKEKRows}>{item.uom}</TableCell>
                         </>
@@ -409,7 +656,7 @@ export function TraceabilityModal({
                         <>
                           <TableCell rowSpan={woPPKEKRowCount}>{wo.work_order_number}</TableCell>
                           <TableCell align="right" rowSpan={woPPKEKRowCount}>
-                            {Number(wo.qty_per_wo).toLocaleString()}
+                            {formatQty(wo.qty_per_wo)}
                           </TableCell>
                         </>
                       )}
@@ -426,7 +673,7 @@ export function TraceabilityModal({
                         <>
                           <TableCell align="right">
                             {ppkek && ppkek.qty_allocated !== undefined && ppkek.qty_allocated !== null
-                              ? Number(ppkek.qty_allocated).toLocaleString()
+                              ? formatQty(ppkek.qty_allocated)
                               : '-'}
                           </TableCell>
                           <TableCell>{ppkek?.qty_uom || '-'}</TableCell>
@@ -489,7 +736,7 @@ export function TraceabilityModal({
                   <TableRow key={`${item.item_code}-no-ppkek`}>
                     <TableCell>{item.item_code}</TableCell>
                     <TableCell>{item.item_name}</TableCell>
-                    <TableCell align="right">{Number(item.qty).toLocaleString()}</TableCell>
+                    <TableCell align="right">{formatQty(item.qty)}</TableCell>
                     <TableCell>{item.uom}</TableCell>
                     <TableCell colSpan={5} sx={{ color: 'text.secondary' }}>
                       No PPKEK references
@@ -505,7 +752,7 @@ export function TraceabilityModal({
                       <TableCell rowSpan={ppkeks.length}>{item.item_code}</TableCell>
                       <TableCell rowSpan={ppkeks.length}>{item.item_name}</TableCell>
                       <TableCell align="right" rowSpan={ppkeks.length}>
-                        {Number(item.qty).toLocaleString()}
+                        {formatQty(item.qty)}
                       </TableCell>
                       <TableCell rowSpan={ppkeks.length}>{item.uom}</TableCell>
                     </>
@@ -593,7 +840,13 @@ export function TraceabilityModal({
               </Tabs>
             )}
 
-            {tabValue === 'production' && renderProductionTable()}
+            {tabValue === 'production' && (
+              <>
+                {renderProductionTable()}
+                {renderTraceabilityDetailsTable()}
+                {renderTraceabilitySummaryTable()}
+              </>
+            )}
             {tabValue === 'incoming' && renderIncomingTable()}
           </>
         )}

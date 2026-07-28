@@ -10,7 +10,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { traceabilityRepository, type TraceabilityItem } from '@/lib/repositories/traceability.repository';
+import {
+  traceabilityRepository,
+  type TraceabilityDetailRow,
+  type TraceabilityItem,
+  type TraceabilitySummaryRow,
+} from '@/lib/repositories/traceability.repository';
 import type { ApiSuccessResponse, ApiErrorResponse } from '@/types/core';
 
 /**
@@ -92,11 +97,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get traceability data
-    const traceabilityData = await traceabilityRepository.getTraceabilityByOutgoingItemIds(
-      itemIds,
-      companyCode
-    );
+    // Get traceability data. Keep the existing grouped hierarchy for current UI
+    // compatibility, and add the Phase 2 persisted detail read model alongside it.
+    const [traceabilityData, traceabilityDetails] = await Promise.all([
+      traceabilityRepository.getTraceabilityByOutgoingItemIds(itemIds, companyCode),
+      traceabilityRepository.getTraceabilityDetailsByOutgoingItemIds(itemIds, companyCode),
+    ]);
+    const traceabilitySummary = traceabilityRepository.buildTraceabilitySummary(traceabilityDetails);
 
     // Group by item code to merge items with same code (if multiple outgoing items same code)
     const groupedData = traceabilityData.reduce(
@@ -145,9 +152,20 @@ export async function GET(request: NextRequest) {
       [] as TraceabilityItem[]
     );
 
-    return successResponse({
+    return successResponse<{
+      items: TraceabilityItem[];
+      traceability_details: TraceabilityDetailRow[];
+      traceability_summary: TraceabilitySummaryRow[];
+      count: number;
+      detail_count: number;
+      summary_count: number;
+    }>({
       items: groupedData,
+      traceability_details: traceabilityDetails,
+      traceability_summary: traceabilitySummary,
       count: groupedData.length,
+      detail_count: traceabilityDetails.length,
+      summary_count: traceabilitySummary.length,
     });
   } catch (error) {
     console.error('Error fetching traceability data:', error);

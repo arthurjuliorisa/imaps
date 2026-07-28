@@ -72,11 +72,213 @@ export interface TraceabilityItem {
   incoming_ppkek_numbers?: TraceabilityIncomingPPKEK[]; // For incoming-based (with full details)
 }
 
+export interface TraceabilityDetailRow {
+  outgoing_good_item_id: number;
+  work_order_number: string | null;
+  production_wms_id: string;
+  material_item_code: string | null;
+  material_item_name: string | null;
+  material_uom: string | null;
+  source_material_usage_wms_id: string | null;
+  source_material_usage_item_id: number | null;
+  trace_row_type: string | null;
+  display_ppkek_number: string | null;
+  ppkek_bucket_key: string | null;
+  actual_qty: number | null;
+  signed_qty: number | null;
+  raw_allocated_qty: number | null;
+  final_allocated_qty: number | null;
+  rounding_adjustment: number | null;
+  material_net_usage_total: number | null;
+  incoming_goods_id: number | null;
+  ppkek_number_incoming: string | null;
+  customs_document_type: string | null;
+  customs_registration_date: string | null;
+  incoming_date: string | null;
+}
+
+export interface TraceabilitySummaryRow {
+  work_order_number: string | null;
+  material_item_code: string | null;
+  material_item_name: string | null;
+  material_uom: string | null;
+  display_ppkek_number: string | null;
+  ppkek_bucket_key: string | null;
+  normal_actual_qty: number;
+  reversal_actual_qty: number;
+  net_usage_qty: number;
+  final_allocated_qty: number;
+  rounding_adjustment_total: number;
+}
+
+function decimalToNumber(value: Prisma.Decimal | null | undefined): number | null {
+  return value == null ? null : Number(value.toString());
+}
+
+function dateToISODate(value: Date | null | undefined): string | null {
+  return value ? value.toISOString().split('T')[0] : null;
+}
+
+type TraceabilityDetailRecord = {
+  outgoing_good_item_id: number;
+  work_order_number: string | null;
+  production_wms_id: string;
+  material_item_code: string | null;
+  material_item_name: string | null;
+  material_uom: string | null;
+  source_material_usage_wms_id: string | null;
+  source_material_usage_item_id: number | null;
+  trace_row_type: string | null;
+  display_ppkek_number: string | null;
+  ppkek_bucket_key: string | null;
+  actual_qty: Prisma.Decimal | null;
+  signed_qty: Prisma.Decimal | null;
+  raw_allocated_qty: Prisma.Decimal | null;
+  final_allocated_qty: Prisma.Decimal | null;
+  rounding_adjustment: Prisma.Decimal | null;
+  material_net_usage_total: Prisma.Decimal | null;
+  incoming_goods_id: number | null;
+  ppkek_number_incoming: string | null;
+  customs_document_type: string | null;
+  customs_registration_date: Date | null;
+  incoming_date: Date | null;
+};
+
 /**
  * Traceability Repository
  * Handles fetching and enriching traceability data from multiple sources
  */
 export class TraceabilityRepository {
+  /**
+   * Get Phase 2 persisted material traceability detail rows.
+   *
+   * This is a read-model query only: no PPKEK resolution or allocation math is
+   * performed here, so blank/null buckets and historical literal N buckets stay
+   * exactly as persisted by the calculation phase.
+   */
+  async getTraceabilityDetailsByOutgoingItemIds(
+    outgoingItemIds: number[],
+    companyCode: number
+  ): Promise<TraceabilityDetailRow[]> {
+    if (outgoingItemIds.length === 0) {
+      return [];
+    }
+
+    const rows = await prisma.$queryRaw<TraceabilityDetailRecord[]>`
+      SELECT
+        "outgoing_good_item_id",
+        "work_order_number",
+        "production_wms_id",
+        "material_item_code",
+        "material_item_name",
+        "material_uom",
+        "source_material_usage_wms_id",
+        "source_material_usage_item_id",
+        "trace_row_type",
+        "display_ppkek_number",
+        "ppkek_bucket_key",
+        "actual_qty",
+        "signed_qty",
+        "raw_allocated_qty",
+        "final_allocated_qty",
+        "rounding_adjustment",
+        "material_net_usage_total",
+        "incoming_goods_id",
+        "ppkek_number_incoming",
+        "customs_document_type",
+        "customs_registration_date",
+        "incoming_date"
+      FROM "outgoing_fg_production_traceability"
+      WHERE "company_code" = ${companyCode}
+        AND "outgoing_good_item_id" IN (${Prisma.join(outgoingItemIds)})
+      ORDER BY
+        "work_order_number" ASC NULLS LAST,
+        "production_wms_id" ASC,
+        "material_item_code" ASC NULLS LAST,
+        "ppkek_bucket_key" ASC NULLS LAST,
+        "trace_row_type" ASC NULLS LAST,
+        "source_material_usage_wms_id" ASC NULLS LAST,
+        "source_material_usage_item_id" ASC NULLS LAST,
+        "id" ASC
+    `;
+
+    return rows.map((row) => ({
+      outgoing_good_item_id: row.outgoing_good_item_id,
+      work_order_number: row.work_order_number,
+      production_wms_id: row.production_wms_id,
+      material_item_code: row.material_item_code,
+      material_item_name: row.material_item_name,
+      material_uom: row.material_uom,
+      source_material_usage_wms_id: row.source_material_usage_wms_id,
+      source_material_usage_item_id: row.source_material_usage_item_id,
+      trace_row_type: row.trace_row_type,
+      display_ppkek_number: row.display_ppkek_number,
+      ppkek_bucket_key: row.ppkek_bucket_key,
+      actual_qty: decimalToNumber(row.actual_qty),
+      signed_qty: decimalToNumber(row.signed_qty),
+      raw_allocated_qty: decimalToNumber(row.raw_allocated_qty),
+      final_allocated_qty: decimalToNumber(row.final_allocated_qty),
+      rounding_adjustment: decimalToNumber(row.rounding_adjustment),
+      material_net_usage_total: decimalToNumber(row.material_net_usage_total),
+      incoming_goods_id: row.incoming_goods_id,
+      ppkek_number_incoming: row.ppkek_number_incoming,
+      customs_document_type: row.customs_document_type,
+      customs_registration_date: dateToISODate(row.customs_registration_date),
+      incoming_date: dateToISODate(row.incoming_date),
+    }));
+  }
+
+  buildTraceabilitySummary(details: TraceabilityDetailRow[]): TraceabilitySummaryRow[] {
+    const summaryByKey = new Map<string, TraceabilitySummaryRow>();
+
+    for (const detail of details) {
+      const key = [
+        detail.work_order_number || '',
+        detail.material_item_code || '',
+        detail.material_uom || '',
+        detail.ppkek_bucket_key || '',
+      ].join('|');
+
+      const current = summaryByKey.get(key) || {
+        work_order_number: detail.work_order_number,
+        material_item_code: detail.material_item_code,
+        material_item_name: detail.material_item_name,
+        material_uom: detail.material_uom,
+        display_ppkek_number: detail.display_ppkek_number,
+        ppkek_bucket_key: detail.ppkek_bucket_key,
+        normal_actual_qty: 0,
+        reversal_actual_qty: 0,
+        net_usage_qty: 0,
+        final_allocated_qty: 0,
+        rounding_adjustment_total: 0,
+      };
+
+      const actualQty = detail.actual_qty || 0;
+      const traceRowType = detail.trace_row_type || 'NORMAL';
+
+      if (traceRowType === 'REVERSAL') {
+        current.reversal_actual_qty += actualQty;
+      } else {
+        current.normal_actual_qty += actualQty;
+      }
+
+      current.net_usage_qty += detail.signed_qty || 0;
+      current.final_allocated_qty += detail.final_allocated_qty || 0;
+      current.rounding_adjustment_total += detail.rounding_adjustment || 0;
+
+      summaryByKey.set(key, current);
+    }
+
+    return Array.from(summaryByKey.values()).map((row) => ({
+      ...row,
+      normal_actual_qty: Number(row.normal_actual_qty.toFixed(3)),
+      reversal_actual_qty: Number(row.reversal_actual_qty.toFixed(3)),
+      net_usage_qty: Number(row.net_usage_qty.toFixed(3)),
+      final_allocated_qty: Number(row.final_allocated_qty.toFixed(3)),
+      rounding_adjustment_total: Number(row.rounding_adjustment_total.toFixed(3)),
+    }));
+  }
+
   /**
    * Calculate the quantity shown in the modal for a material PPKEK row.
    *
