@@ -408,50 +408,41 @@ export class MaterialUsageRepository extends BaseTransactionRepository {
         // or stale old-WO rows cannot survive a same-WMS re-submit.
         if (data.work_order_number && createdItemsMap.size > 0) {
           let traceabilityCount = 0;
+          const traceabilityRows: Prisma.work_order_material_consumptionCreateManyInput[] = [];
 
           for (const item of data.items) {
             for (const tracEntry of item.traceability_data) {
-              if (!tracEntry.ppkek_number) {
-                continue;
-              }
-
-              const itemIdKey = `${item.item_code}|${tracEntry.ppkek_number}`;
+              const normalizedPPKEK =
+                typeof tracEntry.ppkek_number === 'string' && tracEntry.ppkek_number.trim().length > 0
+                  ? tracEntry.ppkek_number.trim()
+                  : null;
+              const itemIdKey = `${item.item_code}|${normalizedPPKEK || 'no-ppkek'}`;
               const itemId = createdItemsMap.get(itemIdKey);
 
               if (!itemId) {
                 continue;
               }
 
-              await tx.work_order_material_consumption.upsert({
-                where: {
-                  material_usage_wms_id_work_order_number_item_code_ppkek_number: {
-                    material_usage_wms_id: data.wms_id,
-                    work_order_number: data.work_order_number,
-                    item_code: item.item_code,
-                    ppkek_number: tracEntry.ppkek_number,
-                  },
-                },
-                update: {
-                  material_usage_id: header.id,
-                  material_usage_item_id: itemId,
-                  qty_consumed: new Prisma.Decimal(tracEntry.qty),
-                  trx_date: transactionDate,
-                },
-                create: {
-                  material_usage_id: header.id,
-                  material_usage_item_id: itemId,
-                  material_usage_wms_id: data.wms_id,
-                  work_order_number: data.work_order_number,
-                  company_code: data.company_code,
-                  item_code: item.item_code,
-                  ppkek_number: tracEntry.ppkek_number,
-                  qty_consumed: new Prisma.Decimal(tracEntry.qty),
-                  trx_date: transactionDate,
-                },
+              traceabilityRows.push({
+                material_usage_id: header.id,
+                material_usage_item_id: itemId,
+                material_usage_wms_id: data.wms_id,
+                work_order_number: data.work_order_number,
+                company_code: data.company_code,
+                item_code: item.item_code,
+                ppkek_number: normalizedPPKEK,
+                qty_consumed: new Prisma.Decimal(tracEntry.qty),
+                trx_date: transactionDate,
               });
 
               traceabilityCount++;
             }
+          }
+
+          if (traceabilityRows.length > 0) {
+            await tx.work_order_material_consumption.createMany({
+              data: traceabilityRows,
+            });
           }
 
           log.info('Traceability records created', {

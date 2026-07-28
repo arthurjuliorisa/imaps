@@ -4,7 +4,11 @@ import type { OutgoingGoodRequestInput } from '@/lib/validators/schemas/outgoing
 import { Prisma } from '@prisma/client';
 import { BaseTransactionRepository } from './base-transaction.repository';
 import type { SnapshotItem } from './snapshot.repository';
-import { ppkekResolutionService, resolvePPKEKToIncoming } from '@/lib/services/ppkek-resolution.service';
+import {
+  makePPKEKResolutionKey,
+  ppkekResolutionService,
+  resolvePPKEKToIncoming,
+} from '@/lib/services/ppkek-resolution.service';
 import { bomCalculationService } from '@/lib/services/bom-calculation.service';
 import { mapCustomsDocumentType } from '@/lib/customs/customs-document-type-mapper';
 import { isCompleteNonFacilityMarker } from '@/lib/validators/non-facility-marker.validator';
@@ -41,7 +45,7 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
    * @param companyCode - Company code
    * @param outgoingDate - Outgoing goods date
    * @param outgoingWmsId - Outgoing goods WMS ID
-   * @param ppkekNumbersArray - Optional PPKEK numbers from outgoing goods header
+   * @param resolvedWorkOrderNumber - Work Order number already resolved by caller
    * @returns Array of enriched allocations or null if calculation failed
    */
   private async enrichTraceability(
@@ -52,38 +56,50 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
     companyCode: number,
     outgoingDate: Date,
     outgoingWmsId: string,
-    ppkekNumbersArray?: string[]
+    resolvedWorkOrderNumber?: string
   ): Promise<any> {
     const logger_sub = logger.child({
       method: 'enrichTraceability',
       productionWmsId,
       itemCode,
+      outgoingWmsId,
     });
 
     try {
       // ====================================================================
       // STEP 1: Resolve production WMS ID to work order number
       // ====================================================================
-      const workOrderFG = await db.work_order_fg_production.findFirst({
-        where: {
-          production_wms_id: productionWmsId,
-          item_code: itemCode,
-        },
-        orderBy: { id: 'desc' },
-      });
+      let workOrderNumber = resolvedWorkOrderNumber;
 
-      if (!workOrderFG) {
-        logger_sub.warn('No work order FG production found', { productionWmsId, itemCode });
+      if (!workOrderNumber) {
+        const workOrderFG = await db.work_order_fg_production.findFirst({
+          where: {
+            production_wms_id: productionWmsId,
+            item_code: itemCode,
+          },
+          orderBy: { id: 'desc' },
+        });
+
+        if (!workOrderFG) {
+          logger_sub.warn('No work order FG production found', { productionWmsId, itemCode });
+          return null;
+        }
+
+        workOrderNumber = workOrderFG.work_order_number;
+      }
+
+      if (!workOrderNumber) {
+        logger_sub.warn('Work order number could not be resolved', { productionWmsId, itemCode });
         return null;
       }
 
-      const workOrderNumber = workOrderFG.work_order_number;
+      const calculationWorkOrderNumber = workOrderNumber;
 
       // ====================================================================
       // STEP 2: Use BOM Calculation Service to calculate allocations
       // ====================================================================
       const bomResult = await bomCalculationService.calculateBOM(
-        workOrderNumber,
+        calculationWorkOrderNumber,
         itemCode,
         qtyFG,
         companyCode
@@ -105,74 +121,70 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
       }
 
       // ====================================================================
-      // STEP 3: Resolve PPKEK numbers for each allocation and enrich
+      // STEP 3: Resolve explicit PPKEK numbers for each detail row and enrich
       // ====================================================================
       const traceAllocations: any[] = [];
+      const resolutionKeys = bomResult.allocations.flatMap((allocation) =>
+        allocation.detail_rows
+          .filter((detail) =>
+            Boolean(detail.display_ppkek_number) &&
+            detail.ppkek_bucket_key.startsWith('PPKEK:')
+          )
+          .map((detail) => ({
+            ppkekNumber: detail.display_ppkek_number!,
+            itemCode: allocation.material_item_code,
+          }))
+      );
+      const resolvedPPKEKByKey = await ppkekResolutionService.resolveMany(
+        resolutionKeys,
+        companyCode,
+        outgoingDate
+      );
 
       for (const allocation of bomResult.allocations) {
-        let resolvedPPKEK = null;
+        for (const detail of allocation.detail_rows) {
+          let resolvedPPKEK = null;
 
-        // Try to resolve PPKEK from material usage first
-        if (allocation) {
-          // Get the PPKEK from material usage
-          const materialUsageWithPPKEK = await db.$queryRaw<any[]>`
-            SELECT mui.ppkek_number
-            FROM material_usage_items mui
-            JOIN material_usages mu ON 
-              mui.material_usage_id = mu.id 
-              AND mui.material_usage_company = mu.company_code 
-              AND mui.material_usage_date = mu.transaction_date
-            WHERE mu.work_order_number = ${workOrderNumber}
-              AND mui.item_code = ${allocation.material_item_code}
-              AND mu.company_code = ${companyCode}
-              AND mui.component_demand_qty IS NOT NULL
-              AND mui.deleted_at IS NULL
-            ORDER BY mu.transaction_date DESC
-            LIMIT 1
-          `;
-
-          if (materialUsageWithPPKEK && materialUsageWithPPKEK.length > 0) {
-            const ppkekNumber = materialUsageWithPPKEK[0].ppkek_number;
-            if (ppkekNumber) {
-              // Resolve PPKEK using service
-              resolvedPPKEK = await ppkekResolutionService.resolve(
-                ppkekNumber,
-                allocation.material_item_code,
-                companyCode,
-                outgoingDate
-              );
-            }
+          if (detail.display_ppkek_number && detail.ppkek_bucket_key.startsWith('PPKEK:')) {
+            resolvedPPKEK = resolvedPPKEKByKey.get(makePPKEKResolutionKey(
+              detail.display_ppkek_number,
+              allocation.material_item_code,
+              companyCode,
+              outgoingDate
+            )) || null;
           }
+
+          traceAllocations.push({
+            work_order_number: allocation.work_order_number,
+            material_item_code: allocation.material_item_code,
+            material_item_name: allocation.material_item_name,
+            material_qty_allocated: detail.final_allocated_qty,
+            consumption_ratio: allocation.consumption_ratio,
+            ppkek_number_incoming: resolvedPPKEK?.ppkek_number || null,
+            incoming_goods_id: resolvedPPKEK?.incoming_goods_id || null,
+            customs_registration_date: resolvedPPKEK?.customs_registration_date || null,
+            customs_document_type: resolvedPPKEK?.customs_document_type || null,
+            incoming_date: resolvedPPKEK?.incoming_date || null,
+            source_material_usage_item_id: detail.source_material_usage_item_id,
+            source_material_usage_wms_id: detail.source_material_usage_wms_id,
+            trace_row_type: detail.trace_row_type,
+            display_ppkek_number: detail.display_ppkek_number,
+            ppkek_bucket_key: detail.ppkek_bucket_key,
+            actual_qty: detail.actual_qty,
+            signed_qty: detail.signed_qty,
+            material_net_usage_total: detail.material_net_usage_total,
+            raw_allocated_qty: detail.raw_allocated_qty,
+            final_allocated_qty: detail.final_allocated_qty,
+            rounding_adjustment: detail.rounding_adjustment,
+            material_uom: detail.material_uom,
+          });
+
+          logger_sub.debug('Enriched allocation detail with PPKEK resolution', {
+            materialItemCode: allocation.material_item_code,
+            bucket: detail.ppkek_bucket_key,
+            hasPPKEK: !!resolvedPPKEK,
+          });
         }
-
-        // Fallback: try to resolve from outgoing goods header PPKEK array
-        if (!resolvedPPKEK && ppkekNumbersArray && ppkekNumbersArray.length > 0) {
-          resolvedPPKEK = await ppkekResolutionService.resolve(
-            ppkekNumbersArray[0],
-            allocation.material_item_code,
-            companyCode,
-            outgoingDate
-          );
-        }
-
-        // Build enriched traceability record
-        traceAllocations.push({
-          work_order_number: allocation.work_order_number,
-          material_item_code: allocation.material_item_code,
-          material_item_name: allocation.material_item_name,
-          material_qty_allocated: allocation.material_qty_allocated,
-          consumption_ratio: allocation.consumption_ratio,
-          ppkek_number_incoming: resolvedPPKEK?.ppkek_number || null,
-          incoming_goods_id: resolvedPPKEK?.incoming_goods_id || null,
-          customs_registration_date: resolvedPPKEK?.customs_registration_date || null,
-          customs_document_type: resolvedPPKEK?.customs_document_type || null,
-          incoming_date: resolvedPPKEK?.incoming_date || null,
-        });
-
-        logger_sub.debug('Enriched allocation with PPKEK resolution', {
-          materialItemCode: allocation.material_item_code,
-          hasPPKEK: !!resolvedPPKEK,
-        });
       }
 
       // Consolidations already done in BOM Calculation Service
@@ -205,6 +217,50 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
       createData: any[];
       createSingle?: boolean;
     }> = [];
+    const workOrderLookupKeys = data.items.flatMap((item) =>
+      ['FERT', 'HALB'].includes(item.item_type.toUpperCase())
+        ? (item.work_order_allocations || [])
+            .filter((allocation) => Boolean(allocation.work_order_number))
+            .map((allocation) => ({
+              work_order_number: allocation.work_order_number!,
+              item_code: item.item_code,
+            }))
+        : []
+    );
+    const uniqueWorkOrderLookupKeys = Array.from(
+      new Map(
+        workOrderLookupKeys.map((key) => [
+          `${key.work_order_number}|${key.item_code}`,
+          key,
+        ])
+      ).values()
+    );
+    const workOrderProductionRows = uniqueWorkOrderLookupKeys.length > 0
+      ? await db.work_order_fg_production.findMany({
+          where: {
+            company_code: data.company_code,
+            OR: uniqueWorkOrderLookupKeys.map((key) => ({
+              work_order_number: key.work_order_number,
+              item_code: key.item_code,
+            })),
+          },
+          select: {
+            id: true,
+            work_order_number: true,
+            item_code: true,
+            production_wms_id: true,
+          },
+          orderBy: { id: 'desc' },
+        })
+      : [];
+    const workOrderProductionByKey = new Map<string, { production_wms_id: string }>();
+    for (const row of workOrderProductionRows) {
+      const key = `${row.work_order_number}|${row.item_code}`;
+      if (!workOrderProductionByKey.has(key)) {
+        workOrderProductionByKey.set(key, row);
+      }
+    }
+    const directPPKEKCache = new Map<string, Awaited<ReturnType<typeof resolvePPKEKToIncoming>>>();
 
     for (const originalItem of data.items) {
       const currentItem = itemCodeToCurrentItem.get(originalItem.item_code);
@@ -221,16 +277,9 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
           let sourceType: 'production' | 'incoming' = 'production';
 
           if (allocation.work_order_number) {
-            const workOrderProduction = await db.work_order_fg_production.findFirst({
-              where: {
-                work_order_number: allocation.work_order_number,
-                item_code: originalItem.item_code,
-                company_code: data.company_code,
-              },
-              select: {
-                production_wms_id: true,
-              },
-            });
+            const workOrderProduction = workOrderProductionByKey.get(
+              `${allocation.work_order_number}|${originalItem.item_code}`
+            );
 
             if (!workOrderProduction) {
               repositoryLogger.warn('Work order production not found, skipping allocation', {
@@ -265,15 +314,28 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
               new Prisma.Decimal(allocation.qty.toString()),
               data.company_code,
               outgoingDate,
-              data.wms_id
+              data.wms_id,
+              allocation.work_order_number || undefined
             );
           } else if (sourceType === 'incoming' && allocation.ppkek_number) {
-            const incomingResolve = await resolvePPKEKToIncoming(
+            const directPPKEKCacheKey = makePPKEKResolutionKey(
               allocation.ppkek_number,
               originalItem.item_code,
               data.company_code,
               outgoingDate
             );
+            if (!directPPKEKCache.has(directPPKEKCacheKey)) {
+              directPPKEKCache.set(
+                directPPKEKCacheKey,
+                await resolvePPKEKToIncoming(
+                  allocation.ppkek_number,
+                  originalItem.item_code,
+                  data.company_code,
+                  outgoingDate
+                )
+              );
+            }
+            const incomingResolve = directPPKEKCache.get(directPPKEKCacheKey);
 
             if (incomingResolve) {
               enrichedAllocations = [{
@@ -320,6 +382,18 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
                   customs_registration_date: enrichment.customs_registration_date,
                   customs_document_type: enrichment.customs_document_type,
                   incoming_date: enrichment.incoming_date,
+                  source_material_usage_item_id: enrichment.source_material_usage_item_id,
+                  source_material_usage_wms_id: enrichment.source_material_usage_wms_id,
+                  trace_row_type: enrichment.trace_row_type,
+                  display_ppkek_number: enrichment.display_ppkek_number,
+                  ppkek_bucket_key: enrichment.ppkek_bucket_key,
+                  actual_qty: enrichment.actual_qty,
+                  signed_qty: enrichment.signed_qty,
+                  material_net_usage_total: enrichment.material_net_usage_total,
+                  raw_allocated_qty: enrichment.raw_allocated_qty,
+                  final_allocated_qty: enrichment.final_allocated_qty,
+                  rounding_adjustment: enrichment.rounding_adjustment,
+                  material_uom: enrichment.material_uom,
                 })),
               });
             } else {

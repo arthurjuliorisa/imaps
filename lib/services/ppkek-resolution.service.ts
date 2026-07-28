@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/utils/logger';
+import { Prisma } from '@prisma/client';
 
 /**
  * Interface for PPKEK resolution result
@@ -10,6 +11,33 @@ export interface ResolvedPPKEK {
   customs_registration_date: Date;
   customs_document_type: string;
   incoming_date: Date;
+}
+
+export interface PPKEKResolutionKey {
+  ppkekNumber: string;
+  itemCode: string;
+}
+
+type IncomingCandidate = {
+  id: number;
+  ppkek_number: string;
+  customs_registration_date: Date;
+  customs_document_type: string;
+  incoming_date: Date;
+};
+
+export function makePPKEKResolutionKey(
+  ppkekNumber: string,
+  itemCode: string,
+  companyCode: number,
+  outgoingDate: Date
+): string {
+  return JSON.stringify({
+    ppkekNumber,
+    itemCode,
+    companyCode,
+    outgoingDate: outgoingDate.toISOString().split('T')[0],
+  });
 }
 
 /**
@@ -32,6 +60,51 @@ export class PPKEKResolutionService {
   private logger = logger.child({
     service: 'PPKEKResolutionService',
   });
+
+  private selectBestCandidate(
+    incomingCandidates: IncomingCandidate[],
+    outgoingDate: Date
+  ): ResolvedPPKEK | null {
+    const outgoingYear = new Date(outgoingDate).getFullYear();
+
+    const sameYearMatch = incomingCandidates.find(
+      (candidate) => new Date(candidate.incoming_date).getFullYear() === outgoingYear
+    );
+
+    if (sameYearMatch) {
+      return {
+        incoming_goods_id: sameYearMatch.id,
+        ppkek_number: sameYearMatch.ppkek_number,
+        customs_registration_date: sameYearMatch.customs_registration_date,
+        customs_document_type: sameYearMatch.customs_document_type,
+        incoming_date: sameYearMatch.incoming_date,
+      };
+    }
+
+    const groupedByYear = new Map<number, IncomingCandidate>();
+
+    for (const candidate of incomingCandidates) {
+      const year = new Date(candidate.incoming_date).getFullYear();
+      if (year < outgoingYear && !groupedByYear.has(year)) {
+        groupedByYear.set(year, candidate);
+      }
+    }
+
+    if (groupedByYear.size === 0) {
+      return null;
+    }
+
+    const mostRecentYear = Array.from(groupedByYear.keys()).sort((a, b) => b - a)[0];
+    const previousYearMatch = groupedByYear.get(mostRecentYear)!;
+
+    return {
+      incoming_goods_id: previousYearMatch.id,
+      ppkek_number: previousYearMatch.ppkek_number,
+      customs_registration_date: previousYearMatch.customs_registration_date,
+      customs_document_type: previousYearMatch.customs_document_type,
+      incoming_date: previousYearMatch.incoming_date,
+    };
+  }
 
   /**
    * Resolve a single PPKEK number to incoming goods
@@ -60,16 +133,8 @@ export class PPKEKResolutionService {
     });
 
     try {
-      const outgoingYear = new Date(outgoingDate).getFullYear();
-
       // Query all incoming goods matching the PPKEK number
-      const incomingCandidates = await prisma.$queryRaw<Array<{
-        id: number;
-        ppkek_number: string;
-        customs_registration_date: Date;
-        customs_document_type: string;
-        incoming_date: Date;
-      }>>`
+      const incomingCandidates = await prisma.$queryRaw<IncomingCandidate[]>`
         SELECT id, ppkek_number, customs_registration_date, customs_document_type::text AS customs_document_type, incoming_date
         FROM incoming_goods
         WHERE ppkek_number = ${ppkekNumber}
@@ -89,71 +154,12 @@ export class PPKEKResolutionService {
         return null;
       }
 
-      // ======================================================================
-      // TIER 1: Same year as outgoing date
-      // ======================================================================
-      const sameYearMatch = incomingCandidates.find(
-        (candidate) => new Date(candidate.incoming_date).getFullYear() === outgoingYear
-      );
-
-      if (sameYearMatch) {
-        resolveLogger.debug('Resolved via Tier 1 (Same Year)', {
-          incomingDate: sameYearMatch.incoming_date,
-          outgoingYear,
-        });
-        return {
-          incoming_goods_id: sameYearMatch.id,
-          ppkek_number: sameYearMatch.ppkek_number,
-          customs_registration_date: sameYearMatch.customs_registration_date,
-          customs_document_type: sameYearMatch.customs_document_type,
-          incoming_date: sameYearMatch.incoming_date,
-        };
-      }
-
-      // ======================================================================
-      // TIER 2: Previous years (descending year order)
-      // ======================================================================
-      // Group candidates by year and keep the one with closest date per year
-      const groupedByYear = new Map<number, (typeof incomingCandidates)[0]>();
-
-      for (const candidate of incomingCandidates) {
-        const year = new Date(candidate.incoming_date).getFullYear();
-        if (year < outgoingYear) {
-          // Keep first (closest) from each year (already sorted by incoming_date asc)
-          if (!groupedByYear.has(year)) {
-            groupedByYear.set(year, candidate);
-          }
-        }
-      }
-
-      if (groupedByYear.size > 0) {
-        // Select most recent previous year
-        const yearsArray = Array.from(groupedByYear.keys()).sort((a, b) => b - a);
-        const mostRecentYear = yearsArray[0];
-        const previousYearMatch = groupedByYear.get(mostRecentYear)!;
-
-        resolveLogger.debug('Resolved via Tier 2 (Previous Year)', {
-          incomingDate: previousYearMatch.incoming_date,
-          matchedYear: mostRecentYear,
-          outgoingYear,
-        });
-        return {
-          incoming_goods_id: previousYearMatch.id,
-          ppkek_number: previousYearMatch.ppkek_number,
-          customs_registration_date: previousYearMatch.customs_registration_date,
-          customs_document_type: previousYearMatch.customs_document_type,
-          incoming_date: previousYearMatch.incoming_date,
-        };
-      }
-
-      // ======================================================================
-      // TIER 3: No match found
-      // ======================================================================
-      resolveLogger.debug('No suitable match found in any tier', {
+      const resolved = this.selectBestCandidate(incomingCandidates, outgoingDate);
+      resolveLogger.debug(resolved ? 'Resolved PPKEK' : 'No suitable match found in any tier', {
         candidateCount: incomingCandidates.length,
-        outgoingYear,
+        outgoingYear: new Date(outgoingDate).getFullYear(),
       });
-      return null;
+      return resolved;
     } catch (error) {
       resolveLogger.error('Error resolving PPKEK', { error });
       return null;
@@ -183,11 +189,18 @@ export class PPKEKResolutionService {
 
     batchLogger.info('Starting batch PPKEK resolution', { itemCount: ppkekNumbers.length });
 
+    const resolvedByKey = await this.resolveMany(
+      ppkekNumbers.map((ppkek) => ({ ppkekNumber: ppkek, itemCode })),
+      companyCode,
+      outgoingDate
+    );
     const results = new Map<string, ResolvedPPKEK | null>();
 
     for (const ppkek of ppkekNumbers) {
-      const resolved = await this.resolve(ppkek, itemCode, companyCode, outgoingDate);
-      results.set(ppkek, resolved);
+      results.set(
+        ppkek,
+        resolvedByKey.get(makePPKEKResolutionKey(ppkek, itemCode, companyCode, outgoingDate)) || null
+      );
     }
 
     const successCount = Array.from(results.values()).filter((v) => v !== null).length;
@@ -195,6 +208,65 @@ export class PPKEKResolutionService {
       total: results.size,
       resolved: successCount,
       unresolved: results.size - successCount,
+    });
+
+    return results;
+  }
+
+  async resolveMany(
+    keys: PPKEKResolutionKey[],
+    companyCode: number,
+    outgoingDate: Date
+  ): Promise<Map<string, ResolvedPPKEK | null>> {
+    const uniqueKeys = Array.from(
+      new Map(
+        keys
+          .filter((key) => key.ppkekNumber.trim().length > 0)
+          .map((key) => [
+            makePPKEKResolutionKey(key.ppkekNumber, key.itemCode, companyCode, outgoingDate),
+            { ppkekNumber: key.ppkekNumber, itemCode: key.itemCode },
+          ])
+      ).values()
+    );
+    const results = new Map<string, ResolvedPPKEK | null>();
+
+    if (uniqueKeys.length === 0) {
+      return results;
+    }
+
+    const ppkekNumbers = Array.from(new Set(uniqueKeys.map((key) => key.ppkekNumber)));
+    const rows = await prisma.$queryRaw<IncomingCandidate[]>`
+      SELECT id, ppkek_number, customs_registration_date, customs_document_type::text AS customs_document_type, incoming_date
+      FROM incoming_goods
+      WHERE ppkek_number IN (${Prisma.join(ppkekNumbers)})
+        AND company_code = ${companyCode}
+        AND COALESCE(is_non_facility, false) = false
+        AND customs_document_type IS NOT NULL
+        AND customs_registration_date IS NOT NULL
+        AND deleted_at IS NULL
+      ORDER BY ppkek_number ASC, incoming_date ASC
+    `;
+
+    const candidatesByPPKEK = new Map<string, IncomingCandidate[]>();
+    for (const row of rows) {
+      const candidates = candidatesByPPKEK.get(row.ppkek_number) || [];
+      candidates.push(row);
+      candidatesByPPKEK.set(row.ppkek_number, candidates);
+    }
+
+    for (const key of uniqueKeys) {
+      const mapKey = makePPKEKResolutionKey(key.ppkekNumber, key.itemCode, companyCode, outgoingDate);
+      results.set(
+        mapKey,
+        this.selectBestCandidate(candidatesByPPKEK.get(key.ppkekNumber) || [], outgoingDate)
+      );
+    }
+
+    this.logger.debug('Batch PPKEK resolution completed', {
+      requested: keys.length,
+      uniqueKeys: uniqueKeys.length,
+      uniquePPKEKs: ppkekNumbers.length,
+      resolved: Array.from(results.values()).filter(Boolean).length,
     });
 
     return results;

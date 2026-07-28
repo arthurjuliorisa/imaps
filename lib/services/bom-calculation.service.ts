@@ -9,10 +9,27 @@ export interface MaterialAllocation {
   work_order_number: string;
   material_item_code: string;
   material_item_name: string;
+  material_uom: string;
   material_qty_allocated: Prisma.Decimal;
   consumption_ratio: Prisma.Decimal;
   component_demand_qty: Prisma.Decimal;
   planned_production_qty: Prisma.Decimal | null;
+  detail_rows: MaterialAllocationDetail[];
+}
+
+export interface MaterialAllocationDetail {
+  source_material_usage_item_id: number;
+  source_material_usage_wms_id: string;
+  trace_row_type: 'NORMAL' | 'REVERSAL';
+  display_ppkek_number: string | null;
+  ppkek_bucket_key: string;
+  actual_qty: Prisma.Decimal;
+  signed_qty: Prisma.Decimal;
+  material_net_usage_total: Prisma.Decimal;
+  raw_allocated_qty: Prisma.Decimal;
+  final_allocated_qty: Prisma.Decimal;
+  rounding_adjustment: Prisma.Decimal;
+  material_uom: string;
 }
 
 /**
@@ -29,9 +46,88 @@ export interface BOMCalculationResult {
 type ConsolidatedMaterial = {
   item_code: string;
   item_name: string;
+  uom: string;
   component_demand_qty: Prisma.Decimal;
-  ppkek_number: string | null;
+  detail_rows: SourceMaterialUsageRow[];
 };
+
+type SourceMaterialUsageRow = {
+  id: number;
+  item_code: string;
+  item_name: string;
+  uom: string;
+  qty: Prisma.Decimal;
+  component_demand_qty: Prisma.Decimal | null;
+  ppkek_number: string | null;
+  work_order_number: string;
+  transaction_date: Date;
+  timestamp: Date;
+  wms_id: string;
+  reversal: string | null;
+};
+
+export function classifyPPKEK(ppkek: string | null | undefined): { display: string | null; bucket: string } {
+  const value = ppkek?.trim();
+
+  if (!value) {
+    return { display: null, bucket: 'BLANK' };
+  }
+
+  if (value === 'N') {
+    return { display: 'N', bucket: 'LITERAL_N' };
+  }
+
+  return { display: value, bucket: `PPKEK:${value}` };
+}
+
+export function roundToScale(value: Prisma.Decimal, scale: number): Prisma.Decimal {
+  return value.toDecimalPlaces(scale, Prisma.Decimal.ROUND_HALF_UP);
+}
+
+function compareDetailRowsForResidual(a: MaterialAllocationDetail, b: MaterialAllocationDetail): number {
+  const absCompare = b.raw_allocated_qty.abs().cmp(a.raw_allocated_qty.abs());
+  if (absCompare !== 0) return absCompare;
+
+  const materialCompare = a.source_material_usage_wms_id.localeCompare(b.source_material_usage_wms_id);
+  if (materialCompare !== 0) return materialCompare;
+
+  if (a.material_uom !== b.material_uom) return a.material_uom.localeCompare(b.material_uom);
+  if (a.ppkek_bucket_key !== b.ppkek_bucket_key) return a.ppkek_bucket_key.localeCompare(b.ppkek_bucket_key);
+  if (a.trace_row_type !== b.trace_row_type) return a.trace_row_type === 'NORMAL' ? -1 : 1;
+
+  return a.source_material_usage_item_id - b.source_material_usage_item_id;
+}
+
+export function applyThreeDecimalRounding(
+  rows: MaterialAllocationDetail[],
+  materialAllocatedTotalRaw: Prisma.Decimal
+): { roundedTotal: Prisma.Decimal; rows: MaterialAllocationDetail[] } {
+  const roundedTotal = roundToScale(materialAllocatedTotalRaw, 3);
+  const roundedRows = rows.map((row) => ({
+    ...row,
+    final_allocated_qty: roundToScale(row.raw_allocated_qty, 3),
+    rounding_adjustment: new Prisma.Decimal(0),
+  }));
+
+  const sumRoundedRows = roundedRows.reduce(
+    (sum, row) => sum.add(row.final_allocated_qty),
+    new Prisma.Decimal(0)
+  );
+  const roundingDifference = roundedTotal.minus(sumRoundedRows);
+
+  if (!roundingDifference.isZero()) {
+    const targetRow = [...roundedRows]
+      .filter((row) => row.raw_allocated_qty.abs().gt(0))
+      .sort(compareDetailRowsForResidual)[0];
+
+    if (targetRow) {
+      targetRow.final_allocated_qty = targetRow.final_allocated_qty.plus(roundingDifference);
+      targetRow.rounding_adjustment = roundingDifference;
+    }
+  }
+
+  return { roundedTotal, rows: roundedRows };
+}
 
 /**
  * BOM Calculation Service
@@ -79,20 +175,26 @@ export class BOMCalculationService {
     try {
       const qtyFG = new Prisma.Decimal(qtyFGExported.toString());
 
-      // ========================================================================
-      // STEP 1: Get Production Output Item (for identify_product flag & planned qty)
-      // ========================================================================
-      const productionOutputItem = await prisma.production_output_items.findFirst({
-        where: {
-          item_code: fgItemCode,
-          work_order_number: workOrderNumber,
-        },
-        select: {
-          planned_production_qty: true,
-          identify_product: true,
-        },
-        orderBy: { production_output_date: 'desc' },
-      });
+      const productionOutputRows = await prisma.$queryRaw<any[]>`
+        SELECT
+          poi.planned_production_qty,
+          poi.identify_product
+        FROM production_output_items poi
+        JOIN production_outputs po ON
+          poi.production_output_id = po.id
+          AND poi.production_output_company = po.company_code
+          AND poi.production_output_date = po.transaction_date
+        WHERE poi.item_code = ${fgItemCode}
+          AND poi.work_order_number = ${workOrderNumber}
+          AND po.company_code = ${companyCode}
+          AND poi.deleted_at IS NULL
+          AND po.deleted_at IS NULL
+          AND COALESCE(po.reversal, '') <> 'Y'
+        ORDER BY po.transaction_date DESC, po.timestamp DESC, po.id DESC, poi.id DESC
+        LIMIT 1
+      `;
+
+      const productionOutputItem = productionOutputRows[0];
 
       if (!productionOutputItem) {
         calculationLogger.warn('Production output item not found', { fgItemCode, workOrderNumber });
@@ -105,10 +207,6 @@ export class BOMCalculationService {
         };
       }
 
-      // ========================================================================
-      // STEP 2: Check identify_product Flag
-      // ========================================================================
-      // Flag to indicate if consumption should be zero (identified_product != 'Y')
       const useZeroConsumption = productionOutputItem.identify_product !== 'Y';
       
       if (useZeroConsumption) {
@@ -117,9 +215,6 @@ export class BOMCalculationService {
         });
       }
 
-      // For zero consumption case, we still need planned_production_qty to fetch materials
-      // But it's not used in calculation
-      // For normal case, we need it for ratio calculation
       if (productionOutputItem.identify_product === 'Y' && !productionOutputItem.planned_production_qty) {
         calculationLogger.warn('Planned production qty is NULL, cannot calculate ratio');
         return {
@@ -131,58 +226,20 @@ export class BOMCalculationService {
         };
       }
 
-      // ========================================================================
-      // STEP 3: Get Latest Material Usage for Work Order
-      // ========================================================================
-      // Query: First get the latest transmission date
-      const latestDateResult = await prisma.$queryRaw<any[]>`
-        SELECT DISTINCT mu.transaction_date
-        FROM material_usages mu
-        WHERE mu.work_order_number = ${workOrderNumber}
-          AND mu.company_code = ${companyCode}
-          AND mu.deleted_at IS NULL
-        ORDER BY mu.transaction_date DESC
-        LIMIT 1
-      `;
-
-      if (!latestDateResult || latestDateResult.length === 0) {
-        calculationLogger.warn('No material usage found for work order', {
-          workOrderNumber,
-          companyCode,
-        });
-        return {
-          work_order_number: workOrderNumber,
-          identify_product: productionOutputItem.identify_product,
-          allocations: [],
-          calculation_status: 'not_found',
-          error_message: `No material usage found for work order ${workOrderNumber}`,
-        };
-      }
-
-      const latestDate = latestDateResult[0].transaction_date;
-
-      // Convert Date to YYYY-MM-DD string to match DATABASE DATE column format
-      // This ensures proper comparison without timezone issues
-      const latestDateStr = new Date(latestDate).toISOString().split('T')[0];
-
-      calculationLogger.debug('Using latest material usage transmission', {
-        latestDate: latestDate.toString(),
-        latestDateStr, // Use this string for SQL query
-      });
-
-      // Now get all materials from this latest transmission date only.
-      // Note: May include multiple wms_ids if they share same transaction_date.
       const materialUsagesRaw = await prisma.$queryRaw<any[]>`
         SELECT 
           mui.id,
           mui.item_code,
           mui.item_name,
+          mui.uom,
           mui.qty,
           mui.component_demand_qty,
           mui.ppkek_number,
           mu.work_order_number,
           mu.transaction_date,
-          mu.wms_id
+          mu.timestamp,
+          mu.wms_id,
+          mu.reversal
         FROM material_usage_items mui
         JOIN material_usages mu ON 
           mui.material_usage_id = mu.id 
@@ -190,19 +247,16 @@ export class BOMCalculationService {
           AND mui.material_usage_date = mu.transaction_date
         WHERE mu.work_order_number = ${workOrderNumber}
           AND mu.company_code = ${companyCode}
-          AND mu.transaction_date = ${latestDateStr}::date
           AND mui.item_type IN ('ROH', 'HALB')
-          AND mui.component_demand_qty IS NOT NULL
           AND mui.deleted_at IS NULL
           AND mu.deleted_at IS NULL
-        ORDER BY mu.wms_id, mui.item_code
+        ORDER BY mui.item_code ASC, mui.uom ASC, mu.transaction_date ASC, mu.timestamp ASC, mu.id ASC, mui.id ASC
       `;
 
       if (!materialUsagesRaw || materialUsagesRaw.length === 0) {
-        calculationLogger.warn('No material usage items found for latest transmission', {
+        calculationLogger.warn('No material usage items found for work order', {
           workOrderNumber,
           companyCode,
-          latestDate,
         });
         return {
           work_order_number: workOrderNumber,
@@ -213,99 +267,68 @@ export class BOMCalculationService {
         };
       }
 
-      calculationLogger.debug('Retrieved material usage items from latest transmission', {
+      const sourceRows: SourceMaterialUsageRow[] = materialUsagesRaw.map((row) => ({
+        id: Number(row.id),
+        item_code: row.item_code,
+        item_name: row.item_name,
+        uom: row.uom,
+        qty: new Prisma.Decimal(row.qty.toString()),
+        component_demand_qty: row.component_demand_qty === null || row.component_demand_qty === undefined
+          ? null
+          : new Prisma.Decimal(row.component_demand_qty.toString()),
+        ppkek_number: row.ppkek_number,
+        work_order_number: row.work_order_number,
+        transaction_date: row.transaction_date,
+        timestamp: row.timestamp,
+        wms_id: row.wms_id,
+        reversal: row.reversal,
+      }));
+
+      calculationLogger.debug('Retrieved material usage items for consolidated work order', {
         itemCount: materialUsagesRaw.length,
-        items: materialUsagesRaw.map(m => ({ item_code: m.item_code, wms_id: m.wms_id })),
+        items: materialUsagesRaw.map(m => ({ item_code: m.item_code, uom: m.uom, wms_id: m.wms_id })),
       });
-
-      // Get the latest transmission items (all rows are from the same transmission date)
-      const latestTransmissionItems = materialUsagesRaw;
-
-      // ========================================================================
-      // STEP 4: Consolidate Materials with Same Item Code
-      // ========================================================================
-      // Prefer PPKEK consumption totals from work_order_material_consumption.
-      // component_demand_qty can be repeated on each PPKEK material usage row,
-      // so blindly summing it can inflate the material allocation for outgoing
-      // traceability. qty_consumed is the per-PPKEK material issue basis.
-      const consumptionTotalsRaw = await prisma.$queryRaw<any[]>`
-        SELECT
-          womc.item_code,
-          SUM(womc.qty_consumed) AS qty_consumed
-        FROM work_order_material_consumption womc
-        JOIN material_usages mu ON
-          womc.material_usage_wms_id = mu.wms_id
-          AND womc.company_code = mu.company_code
-          AND womc.work_order_number = mu.work_order_number
-        WHERE womc.work_order_number = ${workOrderNumber}
-          AND womc.company_code = ${companyCode}
-          AND womc.trx_date = ${latestDateStr}::date
-          AND mu.transaction_date = ${latestDateStr}::date
-          AND mu.deleted_at IS NULL
-        GROUP BY womc.item_code
-      `;
-
-      const consumptionTotalByItemCode = new Map<string, Prisma.Decimal>();
-      for (const row of consumptionTotalsRaw || []) {
-        if (!row.item_code || row.qty_consumed === null || row.qty_consumed === undefined) {
-          continue;
-        }
-
-        consumptionTotalByItemCode.set(
-          row.item_code,
-          new Prisma.Decimal(row.qty_consumed.toString())
-        );
-      }
 
       const consolidatedMaterials = new Map<string, ConsolidatedMaterial>();
 
-      for (const material of latestTransmissionItems) {
-        const key = material.item_code;
-        
-        if (consolidatedMaterials.has(key)) {
-          // Material already exists. Sum component demand as the legacy
-          // fallback, then replace it below with PPKEK consumption totals when
-          // work_order_material_consumption is available.
-          const existing = consolidatedMaterials.get(key);
-          if (!existing) continue;
-          const currentQty = new Prisma.Decimal(existing.component_demand_qty.toString());
-          const addQty = new Prisma.Decimal(material.component_demand_qty.toString());
-          existing.component_demand_qty = currentQty.plus(addQty);
-          
-          calculationLogger.debug('Consolidated duplicate material from transmission', {
-            materialItemCode: key,
-            addedComponentDemandQty: addQty.toString(),
-            newComponentDemandQty: existing.component_demand_qty.toString(),
-            fromWmsId: material.wms_id,
-          });
-        } else {
-          // First occurrence, add to map
-          consolidatedMaterials.set(key, {
-            item_code: material.item_code,
-            item_name: material.item_name,
-            component_demand_qty: new Prisma.Decimal(material.component_demand_qty.toString()),
-            ppkek_number: material.ppkek_number || null,
-          });
-          
-          calculationLogger.debug('Added new material to consolidation map', {
-            materialItemCode: key,
-            componentDemandQty: material.component_demand_qty.toString(),
-            fromWmsId: material.wms_id,
-          });
-        }
-      }
+      for (const material of sourceRows) {
+        const key = `${material.item_code}|${material.uom}`;
+        const existing = consolidatedMaterials.get(key);
 
-      for (const [itemCode, qtyConsumed] of consumptionTotalByItemCode.entries()) {
-        const material = consolidatedMaterials.get(itemCode);
-        if (!material) {
+        if (existing) {
+          existing.detail_rows.push(material);
           continue;
         }
 
-        material.component_demand_qty = qtyConsumed;
+        const latestNormalPlanningRow = sourceRows
+          .filter((row) =>
+            row.item_code === material.item_code &&
+            row.uom === material.uom &&
+            row.reversal !== 'Y' &&
+            row.component_demand_qty !== null
+          )
+          .sort((a, b) => {
+            const trxCompare = b.transaction_date.getTime() - a.transaction_date.getTime();
+            if (trxCompare !== 0) return trxCompare;
+            const timestampCompare = b.timestamp.getTime() - a.timestamp.getTime();
+            if (timestampCompare !== 0) return timestampCompare;
+            return b.id - a.id;
+          })[0];
 
-        calculationLogger.debug('Using work order material consumption total for allocation basis', {
-          materialItemCode: itemCode,
-          qtyConsumed: qtyConsumed.toString(),
+        if (!latestNormalPlanningRow?.component_demand_qty) {
+          calculationLogger.warn('No latest normal component demand found for material', {
+            materialItemCode: material.item_code,
+            materialUom: material.uom,
+          });
+          continue;
+        }
+
+        consolidatedMaterials.set(key, {
+          item_code: material.item_code,
+          item_name: latestNormalPlanningRow.item_name || material.item_name,
+          uom: material.uom,
+          component_demand_qty: latestNormalPlanningRow.component_demand_qty,
+          detail_rows: [material],
         });
       }
 
@@ -314,9 +337,6 @@ export class BOMCalculationService {
         consolidatedItemCount: consolidatedMaterials.size,
       });
 
-      // ========================================================================
-      // STEP 5: Calculate Allocations for Each Consolidated Material
-      // ========================================================================
       const allocations: MaterialAllocation[] = [];
 
       for (const material of consolidatedMaterials.values()) {
@@ -325,32 +345,74 @@ export class BOMCalculationService {
           ? new Prisma.Decimal(productionOutputItem.planned_production_qty.toString())
           : new Prisma.Decimal(1); // Default to 1 to avoid division by zero for zero consumption case
 
-        // Verify we can do the calculation
+        if (!useZeroConsumption && plannedProdQty.isZero()) {
+          calculationLogger.warn('Planned production qty is 0, cannot calculate ratio', {
+            materialItemCode: material.item_code,
+          });
+          return {
+            work_order_number: workOrderNumber,
+            identify_product: productionOutputItem.identify_product,
+            allocations: [],
+            calculation_status: 'error',
+            error_message: 'Planned production quantity is 0, cannot calculate consumption ratio',
+          };
+        }
+
         if (componentDemandQty.isZero()) {
           calculationLogger.debug('Component demand qty is 0, allocation will be 0', {
             materialItemCode: material.item_code,
           });
         }
 
-        // Calculate consumption ratio
-        // If identify_product = 'N', ratio = 0 (zero consumption)
-        // If identify_product = 'Y', ratio = component_demand_qty / planned_production_qty
         const consumptionRatio = useZeroConsumption 
           ? new Prisma.Decimal(0)
           : componentDemandQty.dividedBy(plannedProdQty);
 
-        // Calculate allocated qty = qty_fg_exported × consumption_ratio
-        // If identify_product = 'N', this will be 0
-        const allocatedQty = qtyFG.mul(consumptionRatio);
+        const materialAllocatedTotalRaw = qtyFG.mul(consumptionRatio);
+        const materialNetUsageTotal = material.detail_rows.reduce((sum, row) => {
+          const signedQty = row.reversal === 'Y' ? row.qty.negated() : row.qty;
+          return sum.add(signedQty);
+        }, new Prisma.Decimal(0));
+
+        const rawDetailRows: MaterialAllocationDetail[] = material.detail_rows.map((row) => {
+          const traceRowType = row.reversal === 'Y' ? 'REVERSAL' : 'NORMAL';
+          const { display, bucket } = classifyPPKEK(row.ppkek_number);
+          const signedQty = traceRowType === 'REVERSAL' ? row.qty.negated() : row.qty;
+          const rawAllocatedQty = materialNetUsageTotal.isZero()
+            ? new Prisma.Decimal(0)
+            : materialAllocatedTotalRaw.mul(signedQty).div(materialNetUsageTotal);
+
+          return {
+            source_material_usage_item_id: row.id,
+            source_material_usage_wms_id: row.wms_id,
+            trace_row_type: traceRowType,
+            display_ppkek_number: display,
+            ppkek_bucket_key: bucket,
+            actual_qty: row.qty,
+            signed_qty: signedQty,
+            material_net_usage_total: materialNetUsageTotal,
+            raw_allocated_qty: rawAllocatedQty,
+            final_allocated_qty: new Prisma.Decimal(0),
+            rounding_adjustment: new Prisma.Decimal(0),
+            material_uom: row.uom,
+          };
+        });
+
+        const { roundedTotal, rows: detailRows } = applyThreeDecimalRounding(
+          rawDetailRows,
+          materialAllocatedTotalRaw
+        );
 
         allocations.push({
           work_order_number: workOrderNumber,
           material_item_code: material.item_code,
           material_item_name: material.item_name,
-          material_qty_allocated: allocatedQty,
+          material_uom: material.uom,
+          material_qty_allocated: roundedTotal,
           consumption_ratio: consumptionRatio,
           component_demand_qty: componentDemandQty,
           planned_production_qty: plannedProdQty,
+          detail_rows: detailRows,
         });
 
         calculationLogger.debug('Calculated allocation for material', {
@@ -359,8 +421,10 @@ export class BOMCalculationService {
           plannedProdQty: plannedProdQty.toString(),
           consumptionRatio: consumptionRatio.toString(),
           qtyFGExported: qtyFG.toString(),
-          allocatedQty: allocatedQty.toString(),
+          allocatedQty: roundedTotal.toString(),
           identifiedProductFlag: productionOutputItem.identify_product,
+          detailRowCount: detailRows.length,
+          materialNetUsageTotal: materialNetUsageTotal.toString(),
         });
       }
 
@@ -455,13 +519,24 @@ export class BOMCalculationService {
     });
 
     try {
-      // 1. Check production output exists
-      const prodOutput = await prisma.production_output_items.findFirst({
-        where: {
-          item_code: fgItemCode,
-          work_order_number: workOrderNumber,
-        },
-      });
+      // 1. Check latest normal production output exists
+      const prodOutputRows = await prisma.$queryRaw<any[]>`
+        SELECT poi.planned_production_qty, poi.identify_product
+        FROM production_output_items poi
+        JOIN production_outputs po ON
+          poi.production_output_id = po.id
+          AND poi.production_output_company = po.company_code
+          AND poi.production_output_date = po.transaction_date
+        WHERE poi.item_code = ${fgItemCode}
+          AND poi.work_order_number = ${workOrderNumber}
+          AND po.company_code = ${companyCode}
+          AND poi.deleted_at IS NULL
+          AND po.deleted_at IS NULL
+          AND COALESCE(po.reversal, '') <> 'Y'
+        ORDER BY po.transaction_date DESC, po.timestamp DESC, po.id DESC, poi.id DESC
+        LIMIT 1
+      `;
+      const prodOutput = prodOutputRows[0];
 
       if (!prodOutput) {
         errors.push(
@@ -493,6 +568,8 @@ export class BOMCalculationService {
           AND mu.company_code = ${companyCode}
           AND mui.component_demand_qty IS NOT NULL
           AND mui.deleted_at IS NULL
+          AND mu.deleted_at IS NULL
+          AND COALESCE(mu.reversal, '') <> 'Y'
       `;
 
       if (materialUsage && materialUsage[0] && materialUsage[0].count === '0') {
