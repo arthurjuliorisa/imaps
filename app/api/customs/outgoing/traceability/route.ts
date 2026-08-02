@@ -47,6 +47,124 @@ function successResponse<T>(data: T, status = 200): NextResponse<ApiSuccessRespo
   );
 }
 
+function isAdminRole(role?: string | null): boolean {
+  return role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'SUPERADMIN';
+}
+
+function formatDisplayPPKEK(displayValue: string | null, bucketKey: string | null): string {
+  const normalizedDisplayValue = displayValue?.trim();
+  const normalizedDisplayKey = normalizedDisplayValue?.toLowerCase();
+
+  if (
+    !normalizedDisplayValue ||
+    normalizedDisplayKey === 'n' ||
+    normalizedDisplayKey === 'blank ppkek' ||
+    bucketKey === 'LITERAL_N' ||
+    bucketKey === 'BLANK' ||
+    !bucketKey
+  ) {
+    return '-';
+  }
+
+  return normalizedDisplayValue;
+}
+
+function applyNetSummaryToLegacyItems(
+  items: TraceabilityItem[],
+  summaryRows: TraceabilitySummaryRow[]
+): TraceabilityItem[] {
+  const summaryByOutgoingItemId = new Map<number, TraceabilitySummaryRow[]>();
+
+  for (const row of summaryRows) {
+    const rows = summaryByOutgoingItemId.get(row.outgoing_good_item_id) || [];
+    rows.push(row);
+    summaryByOutgoingItemId.set(row.outgoing_good_item_id, rows);
+  }
+
+  return items.map((item) => {
+    if (item.source_type !== 'production' || !item.outgoing_good_item_id) {
+      return item;
+    }
+
+    const itemSummaryRows = summaryByOutgoingItemId.get(item.outgoing_good_item_id);
+    if (!itemSummaryRows || itemSummaryRows.length === 0) {
+      return item;
+    }
+
+    const existingWorkOrders = new Map(
+      (item.work_orders || []).map((wo) => [wo.work_order_number, wo])
+    );
+    const existingMaterials = new Map(
+      (item.work_orders || []).flatMap((wo) =>
+        (wo.materials || []).map((material) => [
+          `${wo.work_order_number}|${material.material_item_code}|${material.material_item_name}`,
+          material,
+        ] as const)
+      )
+    );
+
+    const materialRowsByWorkOrder = new Map<string, TraceabilitySummaryRow[]>();
+
+    for (const row of itemSummaryRows) {
+      const workOrderNumber = row.work_order_number || '';
+      const rows = materialRowsByWorkOrder.get(workOrderNumber) || [];
+      rows.push(row);
+      materialRowsByWorkOrder.set(workOrderNumber, rows);
+    }
+
+    const workOrders = Array.from(materialRowsByWorkOrder.entries())
+      .map(([workOrderNumber, rows]) => {
+        const materialsByKey = new Map<string, TraceabilitySummaryRow[]>();
+
+        for (const row of rows) {
+          const materialKey = [
+            row.material_item_code || '',
+            row.material_item_name || '',
+            row.material_uom || '',
+          ].join('|');
+          const materialRows = materialsByKey.get(materialKey) || [];
+          materialRows.push(row);
+          materialsByKey.set(materialKey, materialRows);
+        }
+
+        const materials = Array.from(materialsByKey.entries())
+          .map(([materialKey, materialRows]) => {
+            const [materialCode, materialName, materialUom] = materialKey.split('|');
+            const existingMaterial =
+              existingMaterials.get(`${workOrderNumber}|${materialCode}|${materialName}`) ||
+              existingMaterials.get(`${workOrderNumber}|${materialCode}|`);
+
+            return {
+              material_item_code: materialCode,
+              material_item_name: materialName,
+              consumption_ratio: existingMaterial?.consumption_ratio || 0,
+              ppkeks: materialRows.map((row) => ({
+                ppkek_number: formatDisplayPPKEK(row.display_ppkek_number, row.ppkek_bucket_key),
+                customs_registration_date: row.customs_registration_date || '',
+                customs_document_type: row.customs_document_type || '',
+                incoming_date: row.incoming_date || '',
+                qty_allocated: row.final_allocated_qty,
+                qty_uom: row.material_uom || materialUom,
+              })),
+            };
+          })
+          .sort((a, b) => a.material_item_code.localeCompare(b.material_item_code));
+
+        return {
+          work_order_number: workOrderNumber,
+          qty_per_wo: existingWorkOrders.get(workOrderNumber)?.qty_per_wo || 0,
+          materials,
+        };
+      })
+      .sort((a, b) => a.work_order_number.localeCompare(b.work_order_number));
+
+    return {
+      ...item,
+      work_orders: workOrders,
+    };
+  });
+}
+
 // ============================================================================
 // GET - Get traceability data for outgoing items
 // ============================================================================
@@ -58,6 +176,7 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return errorResponse('Unauthorized', 'UNAUTHORIZED', 401);
     }
+    const canViewMaterialTraceabilityDetails = isAdminRole(session.user?.role);
 
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams;
@@ -104,9 +223,10 @@ export async function GET(request: NextRequest) {
       traceabilityRepository.getTraceabilityDetailsByOutgoingItemIds(itemIds, companyCode),
     ]);
     const traceabilitySummary = traceabilityRepository.buildTraceabilitySummary(traceabilityDetails);
+    const legacyTraceabilityData = applyNetSummaryToLegacyItems(traceabilityData, traceabilitySummary);
 
     // Group by item code to merge items with same code (if multiple outgoing items same code)
-    const groupedData = traceabilityData.reduce(
+    const groupedData = legacyTraceabilityData.reduce(
       (acc, item) => {
         const existing = acc.find((i) => i.item_code === item.item_code);
         if (existing) {
@@ -156,15 +276,17 @@ export async function GET(request: NextRequest) {
       items: TraceabilityItem[];
       traceability_details: TraceabilityDetailRow[];
       traceability_summary: TraceabilitySummaryRow[];
+      can_view_material_traceability_details: boolean;
       count: number;
       detail_count: number;
       summary_count: number;
     }>({
       items: groupedData,
-      traceability_details: traceabilityDetails,
+      traceability_details: canViewMaterialTraceabilityDetails ? traceabilityDetails : [],
       traceability_summary: traceabilitySummary,
+      can_view_material_traceability_details: canViewMaterialTraceabilityDetails,
       count: groupedData.length,
-      detail_count: traceabilityDetails.length,
+      detail_count: canViewMaterialTraceabilityDetails ? traceabilityDetails.length : 0,
       summary_count: traceabilitySummary.length,
     });
   } catch (error) {

@@ -59,6 +59,7 @@ export interface TraceabilityIncomingPPKEK extends TraceabilityPPKEKDetail {
 // ============================================================================
 
 export interface TraceabilityItem {
+  outgoing_good_item_id?: number;
   // Level 1: Item details
   item_code: string;
   item_name: string;
@@ -98,12 +99,16 @@ export interface TraceabilityDetailRow {
 }
 
 export interface TraceabilitySummaryRow {
+  outgoing_good_item_id: number;
   work_order_number: string | null;
   material_item_code: string | null;
   material_item_name: string | null;
   material_uom: string | null;
   display_ppkek_number: string | null;
   ppkek_bucket_key: string | null;
+  customs_document_type: string | null;
+  customs_registration_date: string | null;
+  incoming_date: string | null;
   normal_actual_qty: number;
   reversal_actual_qty: number;
   net_usage_qty: number;
@@ -233,6 +238,7 @@ export class TraceabilityRepository {
 
     for (const detail of details) {
       const key = [
+        detail.outgoing_good_item_id,
         detail.work_order_number || '',
         detail.material_item_code || '',
         detail.material_uom || '',
@@ -240,12 +246,16 @@ export class TraceabilityRepository {
       ].join('|');
 
       const current = summaryByKey.get(key) || {
+        outgoing_good_item_id: detail.outgoing_good_item_id,
         work_order_number: detail.work_order_number,
         material_item_code: detail.material_item_code,
         material_item_name: detail.material_item_name,
         material_uom: detail.material_uom,
         display_ppkek_number: detail.display_ppkek_number,
         ppkek_bucket_key: detail.ppkek_bucket_key,
+        customs_document_type: detail.customs_document_type,
+        customs_registration_date: detail.customs_registration_date,
+        incoming_date: detail.incoming_date,
         normal_actual_qty: 0,
         reversal_actual_qty: 0,
         net_usage_qty: 0,
@@ -398,6 +408,7 @@ export class TraceabilityRepository {
 
         return {
           item_code: outgoingItem.item_code,
+          outgoing_good_item_id: outgoingItem.id,
           item_name: outgoingItem.item_name,
           qty: outgoingItem.qty ? Number(outgoingItem.qty.toString()) : 0,
           item_type: outgoingItem.item_type,
@@ -425,6 +436,7 @@ export class TraceabilityRepository {
         // Return item with empty work orders
         return {
           item_code: outgoingItem.item_code,
+          outgoing_good_item_id: outgoingItem.id,
           item_name: outgoingItem.item_name,
           qty: Number(outgoingItem.qty),
           item_type: outgoingItem.item_type,
@@ -674,6 +686,7 @@ export class TraceabilityRepository {
 
       const result: TraceabilityItem = {
         item_code: outgoingItem.item_code,
+        outgoing_good_item_id: outgoingItem.id,
         item_name: outgoingItem.item_name,
         qty: outgoingItem.qty ? Number(outgoingItem.qty.toString()) : 0,
         item_type: outgoingItem.item_type,

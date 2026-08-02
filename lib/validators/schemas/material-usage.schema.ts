@@ -74,12 +74,21 @@ const companyCodeSchema = z
  * NEW in v3.5.0: Supports multiple PPKEKs per item
  */
 export const traceabilityEntrySchema = z.object({
-  ppkek_number: z
-    .string()
-    .trim()
-    .max(255, 'PPKEK number must not exceed 255 characters')
-    .nullable()
-    .optional(),
+  ppkek_number: z.preprocess(
+    (value) => {
+      if (value === null || value === undefined) {
+        return null;
+      }
+
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : null;
+      }
+
+      return value;
+    },
+    z.string().max(255, 'PPKEK number must not exceed 255 characters').nullable()
+  ),
   
   qty: z
     .number()

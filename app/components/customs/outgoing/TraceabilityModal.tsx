@@ -26,6 +26,7 @@ import {
   Chip,
 } from '@mui/material';
 import { Close, Search } from '@mui/icons-material';
+import { useSession } from 'next-auth/react';
 import { useToast } from '@/app/components/ToastProvider';
 
 // ============================================================================
@@ -94,20 +95,6 @@ interface TraceabilityDetailRow {
   incoming_date: string | null;
 }
 
-interface TraceabilitySummaryRow {
-  work_order_number: string | null;
-  material_item_code: string | null;
-  material_item_name: string | null;
-  material_uom: string | null;
-  display_ppkek_number: string | null;
-  ppkek_bucket_key: string | null;
-  normal_actual_qty: number;
-  reversal_actual_qty: number;
-  net_usage_qty: number;
-  final_allocated_qty: number;
-  rounding_adjustment_total: number;
-}
-
 interface TraceabilityModalProps {
   open: boolean;
   onClose: () => void;
@@ -165,26 +152,6 @@ function filterTraceabilityDetails(
       detail.display_ppkek_number,
       detail.ppkek_bucket_key,
       detail.customs_document_type,
-    ].some((value) => includesSearch(value, search))
-  );
-}
-
-function filterTraceabilitySummary(
-  summary: TraceabilitySummaryRow[],
-  search: string
-): TraceabilitySummaryRow[] {
-  if (!search) {
-    return summary;
-  }
-
-  return summary.filter((row) =>
-    [
-      row.work_order_number,
-      row.material_item_code,
-      row.material_item_name,
-      row.material_uom,
-      row.display_ppkek_number,
-      row.ppkek_bucket_key,
     ].some((value) => includesSearch(value, search))
   );
 }
@@ -323,15 +290,19 @@ export function TraceabilityModal({
 }: TraceabilityModalProps) {
   const theme = useTheme();
   const toast = useToast();
+  const { data: session } = useSession();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TraceabilityItem[]>([]);
   const [traceabilityDetails, setTraceabilityDetails] = useState<TraceabilityDetailRow[]>([]);
-  const [traceabilitySummary, setTraceabilitySummary] = useState<TraceabilitySummaryRow[]>([]);
+  const [canViewMaterialTraceabilityDetails, setCanViewMaterialTraceabilityDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tabValue, setTabValue] = useState<'production' | 'incoming'>('production');
   const [companyType, setCompanyType] = useState<string>('');
   const [traceabilitySearch, setTraceabilitySearch] = useState('');
   const normalizedSearch = traceabilitySearch.trim().toLowerCase();
+  const userRole = session?.user?.role;
+  const isAdminUser =
+    userRole === 'ADMIN' || userRole === 'SUPER_ADMIN' || userRole === 'SUPERADMIN';
 
   /**
    * Determine if Qty Allocated and UOM columns should be shown
@@ -371,7 +342,7 @@ export function TraceabilityModal({
 
         setData(result.data.items || []);
         setTraceabilityDetails(result.data.traceability_details || []);
-        setTraceabilitySummary(result.data.traceability_summary || []);
+        setCanViewMaterialTraceabilityDetails(Boolean(result.data.can_view_material_traceability_details));
 
         // Fetch company type
         if (companyCode) {
@@ -418,13 +389,9 @@ export function TraceabilityModal({
     () => filterTraceabilityDetails(traceabilityDetails, normalizedSearch),
     [traceabilityDetails, normalizedSearch]
   );
-  const filteredTraceabilitySummary = useMemo(
-    () => filterTraceabilitySummary(traceabilitySummary, normalizedSearch),
-    [traceabilitySummary, normalizedSearch]
-  );
 
   const renderTraceabilityDetailsTable = () => {
-    if (traceabilityDetails.length === 0) {
+    if (!isAdminUser || !canViewMaterialTraceabilityDetails || traceabilityDetails.length === 0) {
       return null;
     }
 
@@ -449,7 +416,6 @@ export function TraceabilityModal({
                   <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Actual Qty</TableCell>
                   <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Signed Qty</TableCell>
                   <TableCell sx={{ fontWeight: 700, minWidth: 120, textAlign: 'right' }}>Final Allocated</TableCell>
-                  <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Rounding Adj.</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -480,64 +446,6 @@ export function TraceabilityModal({
                     <TableCell align="right">{formatQty(detail.actual_qty)}</TableCell>
                     <TableCell align="right">{formatQty(detail.signed_qty)}</TableCell>
                     <TableCell align="right">{formatQty(detail.final_allocated_qty)}</TableCell>
-                    <TableCell align="right">
-                      {detail.rounding_adjustment ? formatQty(detail.rounding_adjustment) : '-'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </Box>
-    );
-  };
-
-  const renderTraceabilitySummaryTable = () => {
-    if (traceabilitySummary.length === 0) {
-      return null;
-    }
-
-    return (
-      <Box sx={{ mt: 3 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
-          PPKEK Bucket Summary
-        </Typography>
-        {filteredTraceabilitySummary.length === 0 ? (
-          <Alert severity="info">No matching summary rows found.</Alert>
-        ) : (
-          <TableContainer sx={{ maxHeight: '360px' }}>
-            <Table stickyHeader size="small">
-              <TableHead>
-                <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.12) }}>
-                  <TableCell sx={{ fontWeight: 700, minWidth: 120 }}>Work Order</TableCell>
-                  <TableCell sx={{ fontWeight: 700, minWidth: 220 }}>Material</TableCell>
-                  <TableCell sx={{ fontWeight: 700, minWidth: 70 }}>UOM</TableCell>
-                  <TableCell sx={{ fontWeight: 700, minWidth: 130 }}>PPKEK Bucket</TableCell>
-                  <TableCell sx={{ fontWeight: 700, minWidth: 110, textAlign: 'right' }}>Normal Usage</TableCell>
-                  <TableCell sx={{ fontWeight: 700, minWidth: 110, textAlign: 'right' }}>Reversal Usage</TableCell>
-                  <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Net Usage</TableCell>
-                  <TableCell sx={{ fontWeight: 700, minWidth: 120, textAlign: 'right' }}>Final Allocated</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredTraceabilitySummary.map((row, index) => (
-                  <TableRow key={`${row.work_order_number}-${row.material_item_code}-${row.ppkek_bucket_key}-${index}`}>
-                    <TableCell>{row.work_order_number || '-'}</TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {row.material_item_code || '-'}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        {row.material_item_name || '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{row.material_uom || '-'}</TableCell>
-                    <TableCell>{formatPPKEK(row.display_ppkek_number, row.ppkek_bucket_key)}</TableCell>
-                    <TableCell align="right">{formatQty(row.normal_actual_qty)}</TableCell>
-                    <TableCell align="right">{formatQty(row.reversal_actual_qty)}</TableCell>
-                    <TableCell align="right">{formatQty(row.net_usage_qty)}</TableCell>
-                    <TableCell align="right">{formatQty(row.final_allocated_qty)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -844,7 +752,6 @@ export function TraceabilityModal({
               <>
                 {renderProductionTable()}
                 {renderTraceabilityDetailsTable()}
-                {renderTraceabilitySummaryTable()}
               </>
             )}
             {tabValue === 'incoming' && renderIncomingTable()}
