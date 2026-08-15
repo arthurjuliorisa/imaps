@@ -957,6 +957,8 @@ model outgoing_fg_production_traceability {
   material_item_name       String?   @db.VarChar(200) // ROH/HALB name
   material_qty_allocated   Decimal?  @db.Decimal(15, 3)   // Result of: qty_per_wo × ratio
   consumption_ratio        Decimal?  @db.Decimal(15, 8)   // Result of: component_demand / planned_qty
+  component_demand_qty     Decimal?  @db.Decimal(15, 3)   // Snapshot used to calculate consumption_ratio
+  planned_production_qty   Decimal?  @db.Decimal(15, 3)   // Snapshot used to calculate consumption_ratio
   ppkek_number_incoming    String?   @db.VarChar(50)     // PPKEK from incoming goods
   incoming_goods_id        Int?      // FK to incoming_goods
   customs_registration_date DateTime? @db.Date           // From incoming_goods

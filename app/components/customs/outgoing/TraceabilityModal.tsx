@@ -24,10 +24,13 @@ import {
   TextField,
   InputAdornment,
   Chip,
+  Collapse,
+  IconButton,
 } from '@mui/material';
-import { Close, Search } from '@mui/icons-material';
+import { Close, ExpandLess, ExpandMore, Search } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
 import { useToast } from '@/app/components/ToastProvider';
+import { formatTraceabilityQty, formatTraceabilityRatio } from '@/lib/utils/traceability-format';
 
 // ============================================================================
 // INTERFACES - Match lib/repositories/traceability.repository.ts
@@ -77,6 +80,11 @@ interface TraceabilityDetailRow {
   material_item_code: string | null;
   material_item_name: string | null;
   material_uom: string | null;
+  consumption_ratio: number | null;
+  allocated_qty: number | null;
+  material_qty_allocated: number | null;
+  component_demand_qty: number | null;
+  planned_production_qty: number | null;
   source_material_usage_wms_id: string | null;
   source_material_usage_item_id: number | null;
   trace_row_type: string | null;
@@ -106,30 +114,16 @@ function includesSearch(value: unknown, search: string): boolean {
   return String(value ?? '').toLowerCase().includes(search);
 }
 
-function formatQty(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+const formatQty = formatTraceabilityQty;
+const formatRatio = formatTraceabilityRatio;
+
+function formatPPKEK(displayValue: string | null | undefined, bucketKey?: string | null): string {
+  const normalized = displayValue?.trim().toLowerCase();
+  if (!displayValue?.trim() || normalized === 'n' || normalized === 'blank ppkek' || bucketKey === 'LITERAL_N' || bucketKey === 'BLANK' || !bucketKey) {
     return '-';
   }
 
-  return Number(value).toLocaleString(undefined, {
-    maximumFractionDigits: 3,
-  });
-}
-
-function formatPPKEK(displayValue: string | null | undefined, bucketKey?: string | null): string {
-  if (displayValue === 'N' || bucketKey === 'LITERAL_N') {
-    return 'N';
-  }
-
-  if (displayValue && displayValue.trim().length > 0) {
-    return displayValue;
-  }
-
-  if (bucketKey === 'BLANK' || !bucketKey) {
-    return 'Blank PPKEK';
-  }
-
-  return displayValue || bucketKey;
+  return displayValue;
 }
 
 function filterTraceabilityDetails(
@@ -299,6 +293,7 @@ export function TraceabilityModal({
   const [tabValue, setTabValue] = useState<'production' | 'incoming'>('production');
   const [companyType, setCompanyType] = useState<string>('');
   const [traceabilitySearch, setTraceabilitySearch] = useState('');
+  const [expandedTraceabilityRow, setExpandedTraceabilityRow] = useState<string | null>(null);
   const normalizedSearch = traceabilitySearch.trim().toLowerCase();
   const userRole = session?.user?.role;
   const isAdminUser =
@@ -373,6 +368,7 @@ export function TraceabilityModal({
   useEffect(() => {
     if (!open) {
       setTraceabilitySearch('');
+      setExpandedTraceabilityRow(null);
     }
   }, [open]);
 
@@ -413,41 +409,94 @@ export function TraceabilityModal({
                   <TableCell sx={{ fontWeight: 700, minWidth: 220 }}>Material</TableCell>
                   <TableCell sx={{ fontWeight: 700, minWidth: 70 }}>UOM</TableCell>
                   <TableCell sx={{ fontWeight: 700, minWidth: 130 }}>PPKEK</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 140, textAlign: 'right' }}>Component Demand</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 150, textAlign: 'right' }}>Planned Production</TableCell>
                   <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Actual Qty</TableCell>
-                  <TableCell sx={{ fontWeight: 700, minWidth: 100, textAlign: 'right' }}>Signed Qty</TableCell>
                   <TableCell sx={{ fontWeight: 700, minWidth: 120, textAlign: 'right' }}>Final Allocated</TableCell>
+                  <TableCell sx={{ fontWeight: 700, width: 76, textAlign: 'center' }}>Details</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredTraceabilityDetails.map((detail, index) => (
-                  <TableRow
-                    key={`${detail.outgoing_good_item_id}-${detail.source_material_usage_item_id}-${detail.ppkek_bucket_key}-${index}`}
-                  >
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={detail.trace_row_type || 'NORMAL'}
-                        color={detail.trace_row_type === 'REVERSAL' ? 'warning' : 'default'}
-                        variant={detail.trace_row_type === 'REVERSAL' ? 'filled' : 'outlined'}
-                      />
-                    </TableCell>
-                    <TableCell>{detail.source_material_usage_wms_id || '-'}</TableCell>
-                    <TableCell>{detail.work_order_number || '-'}</TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {detail.material_item_code || '-'}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        {detail.material_item_name || '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{detail.material_uom || '-'}</TableCell>
-                    <TableCell>{formatPPKEK(detail.display_ppkek_number, detail.ppkek_bucket_key)}</TableCell>
-                    <TableCell align="right">{formatQty(detail.actual_qty)}</TableCell>
-                    <TableCell align="right">{formatQty(detail.signed_qty)}</TableCell>
-                    <TableCell align="right">{formatQty(detail.final_allocated_qty)}</TableCell>
-                  </TableRow>
-                ))}
+                {filteredTraceabilityDetails.map((detail, index) => {
+                  const rowKey = `${detail.outgoing_good_item_id}-${detail.source_material_usage_item_id}-${detail.ppkek_bucket_key}-${index}`;
+                  const isExpanded = expandedTraceabilityRow === rowKey;
+
+                  return (
+                    <React.Fragment key={rowKey}>
+                      <TableRow>
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            label={detail.trace_row_type || 'NORMAL'}
+                            color={detail.trace_row_type === 'REVERSAL' ? 'warning' : 'default'}
+                            variant={detail.trace_row_type === 'REVERSAL' ? 'filled' : 'outlined'}
+                          />
+                        </TableCell>
+                        <TableCell>{detail.source_material_usage_wms_id || '-'}</TableCell>
+                        <TableCell>{detail.work_order_number || '-'}</TableCell>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            {detail.material_item_code || '-'}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                            {detail.material_item_name || '-'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>{detail.material_uom || '-'}</TableCell>
+                        <TableCell>{formatPPKEK(detail.display_ppkek_number, detail.ppkek_bucket_key)}</TableCell>
+                        <TableCell align="right">{formatQty(detail.component_demand_qty)}</TableCell>
+                        <TableCell align="right">{formatQty(detail.planned_production_qty)}</TableCell>
+                        <TableCell align="right">{formatQty(detail.actual_qty)}</TableCell>
+                        <TableCell align="right">{formatQty(detail.final_allocated_qty)}</TableCell>
+                        <TableCell align="center">
+                          <IconButton
+                            aria-label={isExpanded ? 'Hide calculation basis' : 'Show calculation basis'}
+                            aria-expanded={isExpanded}
+                            size="small"
+                            onClick={() => setExpandedTraceabilityRow(isExpanded ? null : rowKey)}
+                          >
+                            {isExpanded ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell colSpan={11} sx={{ p: 0, borderBottom: isExpanded ? undefined : 0 }}>
+                          <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                            <Box sx={{ p: 2, bgcolor: alpha(theme.palette.primary.main, 0.035) }}>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.25 }}>
+                                Calculation Basis
+                              </Typography>
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 2 }}>
+                                <Box>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: 'text.secondary', mb: 0.5 }}>Planning</Typography>
+                                  <Typography variant="body2">Consumption Ratio: {formatRatio(detail.consumption_ratio)}</Typography>
+                                </Box>
+                                <Box>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: 'text.secondary', mb: 0.5 }}>Outgoing Allocation</Typography>
+                                  <Typography variant="body2">WO Allocation Qty: {formatQty(detail.allocated_qty)}</Typography>
+                                  <Typography variant="body2">Material Allocated Qty: {formatQty(detail.material_qty_allocated)} {detail.material_uom || ''}</Typography>
+                                  <Typography variant="body2">Final Allocated Qty: {formatQty(detail.final_allocated_qty)} {detail.material_uom || ''}</Typography>
+                                </Box>
+                                <Box>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: 'text.secondary', mb: 0.5 }}>Usage Distribution</Typography>
+                                  <Typography variant="body2">Actual Usage Qty: {formatQty(detail.actual_qty)} {detail.material_uom || ''}</Typography>
+                                  <Typography variant="body2">Signed Qty: {formatQty(detail.signed_qty)} {detail.material_uom || ''}</Typography>
+                                  <Typography variant="body2">Material Net Usage Total: {formatQty(detail.material_net_usage_total)} {detail.material_uom || ''}</Typography>
+                                  <Typography variant="body2">Raw Allocated Qty: {formatRatio(detail.raw_allocated_qty)} {detail.material_uom || ''}</Typography>
+                                </Box>
+                                <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: 'text.secondary', mb: 0.5 }}>Source</Typography>
+                                  <Typography variant="body2">Source MU WMS ID: {detail.source_material_usage_wms_id || '-'}</Typography>
+                                  <Typography variant="body2">Source PO WMS ID: {detail.production_wms_id || '-'}</Typography>
+                                </Box>
+                              </Box>
+                            </Box>
+                          </Collapse>
+                        </TableCell>
+                      </TableRow>
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </TableContainer>

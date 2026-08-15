@@ -80,6 +80,11 @@ export interface TraceabilityDetailRow {
   material_item_code: string | null;
   material_item_name: string | null;
   material_uom: string | null;
+  consumption_ratio: number | null;
+  allocated_qty: number | null;
+  material_qty_allocated: number | null;
+  component_demand_qty: number | null;
+  planned_production_qty: number | null;
   source_material_usage_wms_id: string | null;
   source_material_usage_item_id: number | null;
   trace_row_type: string | null;
@@ -131,6 +136,11 @@ type TraceabilityDetailRecord = {
   material_item_code: string | null;
   material_item_name: string | null;
   material_uom: string | null;
+  consumption_ratio: Prisma.Decimal | null;
+  allocated_qty: Prisma.Decimal | null;
+  material_qty_allocated: Prisma.Decimal | null;
+  component_demand_qty: Prisma.Decimal | null;
+  planned_production_qty: Prisma.Decimal | null;
   source_material_usage_wms_id: string | null;
   source_material_usage_item_id: number | null;
   trace_row_type: string | null;
@@ -177,6 +187,11 @@ export class TraceabilityRepository {
         "material_item_code",
         "material_item_name",
         "material_uom",
+        "consumption_ratio",
+        "allocated_qty",
+        "material_qty_allocated",
+        "component_demand_qty",
+        "planned_production_qty",
         "source_material_usage_wms_id",
         "source_material_usage_item_id",
         "trace_row_type",
@@ -214,6 +229,11 @@ export class TraceabilityRepository {
       material_item_code: row.material_item_code,
       material_item_name: row.material_item_name,
       material_uom: row.material_uom,
+      consumption_ratio: decimalToNumber(row.consumption_ratio),
+      allocated_qty: decimalToNumber(row.allocated_qty),
+      material_qty_allocated: decimalToNumber(row.material_qty_allocated),
+      component_demand_qty: decimalToNumber(row.component_demand_qty),
+      planned_production_qty: decimalToNumber(row.planned_production_qty),
       source_material_usage_wms_id: row.source_material_usage_wms_id,
       source_material_usage_item_id: row.source_material_usage_item_id,
       trace_row_type: row.trace_row_type,
