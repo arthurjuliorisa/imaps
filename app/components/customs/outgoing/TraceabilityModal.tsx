@@ -30,6 +30,7 @@ import {
 import { Close, ExpandLess, ExpandMore, Search } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
 import { useToast } from '@/app/components/ToastProvider';
+import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { formatTraceabilityQty, formatTraceabilityRatio } from '@/lib/utils/traceability-format';
 
 // ============================================================================
@@ -108,6 +109,7 @@ interface TraceabilityModalProps {
   onClose: () => void;
   outgoingItemIds: number[];
   companyCode: number;
+  outgoingGoodId: number;
 }
 
 function includesSearch(value: unknown, search: string): boolean {
@@ -281,6 +283,7 @@ export function TraceabilityModal({
   onClose,
   outgoingItemIds,
   companyCode,
+  outgoingGoodId,
 }: TraceabilityModalProps) {
   const theme = useTheme();
   const toast = useToast();
@@ -294,6 +297,9 @@ export function TraceabilityModal({
   const [companyType, setCompanyType] = useState<string>('');
   const [traceabilitySearch, setTraceabilitySearch] = useState('');
   const [expandedTraceabilityRow, setExpandedTraceabilityRow] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [recalculateConfirmOpen, setRecalculateConfirmOpen] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
   const normalizedSearch = traceabilitySearch.trim().toLowerCase();
   const userRole = session?.user?.role;
   const isAdminUser =
@@ -363,7 +369,7 @@ export function TraceabilityModal({
     };
 
     fetchTraceability();
-  }, [open, outgoingItemIds, companyCode, toast]);
+  }, [open, outgoingItemIds, companyCode, toast, refreshToken]);
 
   useEffect(() => {
     if (!open) {
@@ -371,6 +377,29 @@ export function TraceabilityModal({
       setExpandedTraceabilityRow(null);
     }
   }, [open]);
+
+  const handleRecalculate = async () => {
+    setRecalculating(true);
+    try {
+      const response = await fetch('/api/customs/outgoing/traceability/recalculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outgoing_good_id: outgoingGoodId, company_code: companyCode }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to recalculate traceability');
+      }
+      toast.success(`Traceability recalculated (${result.data.oldRowCount} rows replaced with ${result.data.newRowCount}).`);
+      setRecalculateConfirmOpen(false);
+      setRefreshToken((value) => value + 1);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      toast.error(`Failed to recalculate traceability: ${message}`);
+    } finally {
+      setRecalculating(false);
+    }
+  };
 
   // ============================================================================
   // RENDER: PRODUCTION-BASED TABLE
@@ -809,10 +838,31 @@ export function TraceabilityModal({
       </DialogContent>
 
       <DialogActions>
+        {isAdminUser && (
+          <Button
+            onClick={() => setRecalculateConfirmOpen(true)}
+            disabled={loading || recalculating || outgoingGoodId <= 0}
+            variant="contained"
+            color="warning"
+          >
+            {recalculating ? 'Recalculating...' : 'Recalculate'}
+          </Button>
+        )}
         <Button onClick={onClose} variant="outlined">
           Close
         </Button>
       </DialogActions>
+      <ConfirmDialog
+        open={recalculateConfirmOpen}
+        title="Recalculate traceability?"
+        message="This will replace the current traceability calculation result using the latest Material Usage and Production Output data. Existing traceability detail rows for this outgoing transaction will be deleted and rebuilt. This will not change outgoing goods, stock snapshot, or INSW transmission."
+        confirmText="Recalculate"
+        cancelText="Cancel"
+        onConfirm={handleRecalculate}
+        onCancel={() => setRecalculateConfirmOpen(false)}
+        severity="warning"
+        loading={recalculating}
+      />
     </Dialog>
   );
 }

@@ -418,6 +418,7 @@ export default function OutgoingDetailPage() {
         onClose={() => setTraceabilityOpen(false)}
         outgoingItemIds={selectedItemIds}
         companyCode={data.header.company_code}
+        outgoingGoodId={data.header.id}
       />
     </Container>
   );

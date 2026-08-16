@@ -30,6 +30,120 @@ export class OutgoingGoodsRepository extends BaseTransactionRepository {
   }
 
   /**
+   * Rebuild the persisted traceability snapshot for exactly one outgoing
+   * transaction. This deliberately only writes the traceability table: it
+   * never re-posts the outgoing transaction or queues stock/INSW work.
+   */
+  async recalculateTraceabilityForOutgoing(
+    outgoingGoodId: number,
+    companyCode: number
+  ): Promise<{ outgoingWmsId: string; oldRowCount: number; newRowCount: number }> {
+    const repositoryLogger = logger.child({
+      repository: 'OutgoingGoodsRepository',
+      method: 'recalculateTraceabilityForOutgoing',
+      outgoingGoodId,
+      companyCode,
+    });
+
+    const outgoing = await prisma.outgoing_goods.findFirst({
+      where: { id: outgoingGoodId, company_code: companyCode, deleted_at: null },
+      include: {
+        items: {
+          where: { deleted_at: null },
+          include: { outgoing_work_order_allocations: true },
+          orderBy: { id: 'asc' },
+        },
+      },
+    });
+
+    if (!outgoing) {
+      throw new Error('Outgoing transaction not found');
+    }
+    const outgoingItemIds = outgoing.items.map((item) => item.id);
+
+    // Direct PPKEK allocations are not normalized into the work-order table.
+    // Keep their persisted quantity split as the rebuild input, which is the
+    // same representation used by the original outgoing write.
+    const existingRows = await prisma.outgoing_fg_production_traceability.findMany({
+      where: {
+        outgoing_wms_id: outgoing.wms_id,
+        company_code: companyCode,
+        outgoing_good_item_id: { in: outgoingItemIds },
+      },
+      select: {
+        outgoing_good_item_id: true,
+        production_wms_id: true,
+        ppkek_number_incoming: true,
+        allocated_qty: true,
+        material_item_code: true,
+      },
+    });
+    const directAllocationsByItem = new Map<number, Array<{ ppkek_number: string; qty: number }>>();
+    const directKeys = new Set<string>();
+    for (const row of existingRows) {
+      if (!row.production_wms_id.startsWith('INCOMING_') || !row.ppkek_number_incoming || row.material_item_code) continue;
+      const key = `${row.outgoing_good_item_id}|${row.ppkek_number_incoming}`;
+      if (directKeys.has(key)) continue;
+      directKeys.add(key);
+      const allocations = directAllocationsByItem.get(row.outgoing_good_item_id) || [];
+      allocations.push({ ppkek_number: row.ppkek_number_incoming, qty: Number(row.allocated_qty || 0) });
+      directAllocationsByItem.set(row.outgoing_good_item_id, allocations);
+    }
+
+    const rebuildInput = {
+      wms_id: outgoing.wms_id,
+      company_code: companyCode,
+      items: outgoing.items.map((item) => {
+        const workOrderAllocations = item.outgoing_work_order_allocations.map((allocation) => ({
+          work_order_number: allocation.work_order_number,
+          qty: Number(allocation.qty),
+        }));
+        const directAllocations = directAllocationsByItem.get(item.id) || [];
+        return {
+          item_type: item.item_type,
+          item_code: item.item_code,
+          work_order_allocations: [...workOrderAllocations, ...directAllocations],
+        };
+      }),
+    } as OutgoingGoodRequestInput;
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Delete only after all target/input reads have succeeded; transaction
+      // rollback preserves the active snapshot if rebuilding fails.
+      const deleted = await tx.outgoing_fg_production_traceability.deleteMany({
+        where: {
+          outgoing_wms_id: outgoing.wms_id,
+          company_code: companyCode,
+          outgoing_good_item_id: { in: outgoingItemIds },
+        },
+      });
+      const newRowCount = await this.processTraceabilityAfterCoreCommit(
+        tx,
+        rebuildInput,
+        outgoing.outgoing_date,
+        outgoing.items,
+        repositoryLogger
+      );
+      const inserted = await tx.outgoing_fg_production_traceability.count({
+        where: {
+          outgoing_wms_id: outgoing.wms_id,
+          company_code: companyCode,
+          outgoing_good_item_id: { in: outgoingItemIds },
+        },
+      });
+      repositoryLogger.info('Outgoing traceability recalculated', {
+        outgoingWmsId: outgoing.wms_id,
+        oldRowCount: deleted.count,
+        traceabilityWriteCount: newRowCount,
+        newRowCount: inserted,
+      });
+      return { oldRowCount: deleted.count, newRowCount: inserted };
+    });
+
+    return { outgoingWmsId: outgoing.wms_id, ...result };
+  }
+
+  /**
    * Enrich traceability record with BOM calculation and PPKEK resolution
    *
    * This method:
