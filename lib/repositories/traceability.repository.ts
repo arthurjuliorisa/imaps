@@ -103,6 +103,12 @@ export interface TraceabilityDetailRow {
   incoming_date: string | null;
 }
 
+export interface TraceabilityRecalculationStatus {
+  has_recalculated: boolean;
+  last_recalculated_at: string | null;
+  last_recalculated_by: string | null;
+}
+
 export interface TraceabilitySummaryRow {
   outgoing_good_item_id: number;
   work_order_number: string | null;
@@ -251,6 +257,39 @@ export class TraceabilityRepository {
       customs_registration_date: dateToISODate(row.customs_registration_date),
       incoming_date: dateToISODate(row.incoming_date),
     }));
+  }
+
+  /**
+   * Reads the latest successful Phase 4F recalculate event for one outgoing
+   * transaction. This status belongs to the modal, not an individual detail
+   * row, so it remains a single targeted query.
+   */
+  async getRecalculationStatus(
+    outgoingGoodId: number,
+    companyCode: number
+  ): Promise<TraceabilityRecalculationStatus> {
+    const latestEvent = await prisma.activity_logs.findFirst({
+      where: {
+        company_code: companyCode,
+        action: 'OUTGOING_TRACEABILITY_RECALCULATE',
+        status: 'success',
+        metadata: {
+          path: ['outgoing_good_id'],
+          equals: outgoingGoodId,
+        },
+      },
+      orderBy: { created_at: 'desc' },
+      select: {
+        created_at: true,
+        users: { select: { full_name: true, username: true } },
+      },
+    });
+
+    return {
+      has_recalculated: Boolean(latestEvent),
+      last_recalculated_at: latestEvent?.created_at.toISOString() ?? null,
+      last_recalculated_by: latestEvent?.users?.full_name || latestEvent?.users?.username || null,
+    };
   }
 
   buildTraceabilitySummary(details: TraceabilityDetailRow[]): TraceabilitySummaryRow[] {

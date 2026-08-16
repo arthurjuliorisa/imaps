@@ -104,6 +104,12 @@ interface TraceabilityDetailRow {
   incoming_date: string | null;
 }
 
+interface TraceabilityRecalculationStatus {
+  has_recalculated: boolean;
+  last_recalculated_at: string | null;
+  last_recalculated_by: string | null;
+}
+
 interface TraceabilityModalProps {
   open: boolean;
   onClose: () => void;
@@ -118,6 +124,15 @@ function includesSearch(value: unknown, search: string): boolean {
 
 const formatQty = formatTraceabilityQty;
 const formatRatio = formatTraceabilityRatio;
+
+function formatRecalculatedAt(value: string | null): string | null {
+  if (!value) return null;
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? null
+    : date.toLocaleString('en-US', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
 
 function formatPPKEK(displayValue: string | null | undefined, bucketKey?: string | null): string {
   const normalized = displayValue?.trim().toLowerCase();
@@ -291,6 +306,11 @@ export function TraceabilityModal({
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TraceabilityItem[]>([]);
   const [traceabilityDetails, setTraceabilityDetails] = useState<TraceabilityDetailRow[]>([]);
+  const [recalculationStatus, setRecalculationStatus] = useState<TraceabilityRecalculationStatus>({
+    has_recalculated: false,
+    last_recalculated_at: null,
+    last_recalculated_by: null,
+  });
   const [canViewMaterialTraceabilityDetails, setCanViewMaterialTraceabilityDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tabValue, setTabValue] = useState<'production' | 'incoming'>('production');
@@ -328,7 +348,7 @@ export function TraceabilityModal({
       try {
         const itemIds = outgoingItemIds.join(',');
         const response = await fetch(
-          `/api/customs/outgoing/traceability?item_ids=${itemIds}&company_code=${companyCode}`
+          `/api/customs/outgoing/traceability?item_ids=${itemIds}&company_code=${companyCode}&outgoing_good_id=${outgoingGoodId}`
         );
 
         if (!response.ok) {
@@ -343,6 +363,11 @@ export function TraceabilityModal({
 
         setData(result.data.items || []);
         setTraceabilityDetails(result.data.traceability_details || []);
+        setRecalculationStatus(result.data.recalculation_status || {
+          has_recalculated: false,
+          last_recalculated_at: null,
+          last_recalculated_by: null,
+        });
         setCanViewMaterialTraceabilityDetails(Boolean(result.data.can_view_material_traceability_details));
 
         // Fetch company type
@@ -369,7 +394,7 @@ export function TraceabilityModal({
     };
 
     fetchTraceability();
-  }, [open, outgoingItemIds, companyCode, toast, refreshToken]);
+  }, [open, outgoingItemIds, companyCode, outgoingGoodId, toast, refreshToken]);
 
   useEffect(() => {
     if (!open) {
@@ -422,9 +447,23 @@ export function TraceabilityModal({
 
     return (
       <Box sx={{ mt: 3 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
-          Material Traceability Details
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+            Material Traceability Details
+          </Typography>
+          <Chip
+            size="small"
+            label={recalculationStatus.has_recalculated ? 'Recalculated' : 'Original'}
+            color={recalculationStatus.has_recalculated ? 'primary' : 'default'}
+            variant={recalculationStatus.has_recalculated ? 'filled' : 'outlined'}
+          />
+          {recalculationStatus.has_recalculated && formatRecalculatedAt(recalculationStatus.last_recalculated_at) && (
+            <Typography variant="caption" color="text.secondary">
+              Last recalculated: {formatRecalculatedAt(recalculationStatus.last_recalculated_at)}
+              {recalculationStatus.last_recalculated_by ? ` by ${recalculationStatus.last_recalculated_by}` : ''}
+            </Typography>
+          )}
+        </Box>
         {filteredTraceabilityDetails.length === 0 ? (
           <Alert severity="info">No matching detail rows found.</Alert>
         ) : (
@@ -493,31 +532,55 @@ export function TraceabilityModal({
                           <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                             <Box sx={{ p: 2, bgcolor: alpha(theme.palette.primary.main, 0.035) }}>
                               <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.25 }}>
-                                Calculation Basis
+                                Calculation Detail
                               </Typography>
-                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 2 }}>
-                                <Box>
-                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: 'text.secondary', mb: 0.5 }}>Planning</Typography>
-                                  <Typography variant="body2">Consumption Ratio: {formatRatio(detail.consumption_ratio)}</Typography>
-                                </Box>
-                                <Box>
-                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: 'text.secondary', mb: 0.5 }}>Outgoing Allocation</Typography>
-                                  <Typography variant="body2">WO Allocation Qty: {formatQty(detail.allocated_qty)}</Typography>
-                                  <Typography variant="body2">Material Allocated Qty: {formatQty(detail.material_qty_allocated)} {detail.material_uom || ''}</Typography>
-                                  <Typography variant="body2">Final Allocated Qty: {formatQty(detail.final_allocated_qty)} {detail.material_uom || ''}</Typography>
-                                </Box>
-                                <Box>
-                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: 'text.secondary', mb: 0.5 }}>Usage Distribution</Typography>
-                                  <Typography variant="body2">Actual Usage Qty: {formatQty(detail.actual_qty)} {detail.material_uom || ''}</Typography>
-                                  <Typography variant="body2">Signed Qty: {formatQty(detail.signed_qty)} {detail.material_uom || ''}</Typography>
-                                  <Typography variant="body2">Material Net Usage Total: {formatQty(detail.material_net_usage_total)} {detail.material_uom || ''}</Typography>
-                                  <Typography variant="body2">Raw Allocated Qty: {formatRatio(detail.raw_allocated_qty)} {detail.material_uom || ''}</Typography>
-                                </Box>
-                                <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
-                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: 'text.secondary', mb: 0.5 }}>Source</Typography>
-                                  <Typography variant="body2">Source MU WMS ID: {detail.source_material_usage_wms_id || '-'}</Typography>
-                                  <Typography variant="body2">Source PO WMS ID: {detail.production_wms_id || '-'}</Typography>
-                                </Box>
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' }, gap: 2 }}>
+                                {[
+                                  ['Traceability Context', [
+                                    ['Work Order', detail.work_order_number],
+                                    ['Material Code', detail.material_item_code],
+                                    ['Material Name', detail.material_item_name],
+                                    ['Material UOM', detail.material_uom],
+                                    ['Trace Row Type', detail.trace_row_type || 'NORMAL'],
+                                    ['Display PPKEK', formatPPKEK(detail.display_ppkek_number, detail.ppkek_bucket_key)],
+                                    ['Internal PPKEK Bucket', detail.ppkek_bucket_key],
+                                  ]],
+                                  ['Calculation Basis', [
+                                    ['Component Demand', formatQty(detail.component_demand_qty)],
+                                    ['Planned Production', formatQty(detail.planned_production_qty)],
+                                    ['Consumption Ratio', formatRatio(detail.consumption_ratio)],
+                                    ['WO Allocation Qty', formatQty(detail.allocated_qty)],
+                                    ['Material Allocated Qty', formatQty(detail.material_qty_allocated)],
+                                  ]],
+                                  ['Material Usage Contribution', [
+                                    ['Actual Qty', formatQty(detail.actual_qty)],
+                                    ['Signed Qty', formatQty(detail.signed_qty)],
+                                    ['Material Net Usage Total', formatQty(detail.material_net_usage_total)],
+                                    ['Source MU WMS ID', detail.source_material_usage_wms_id],
+                                  ]],
+                                  ['Allocation Result', [
+                                    ['Raw Allocated Qty', formatQty(detail.raw_allocated_qty)],
+                                    ['Final Allocated Qty', formatQty(detail.final_allocated_qty)],
+                                    ['Rounding Adjustment', formatQty(detail.rounding_adjustment)],
+                                  ]],
+                                  ['Production Source', [
+                                    ['Source Production Output WMS ID', detail.production_wms_id],
+                                  ]],
+                                ].map(([title, fields]) => (
+                                  <Box key={title as string}>
+                                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: 'text.secondary', mb: 0.75 }}>
+                                      {title as string}
+                                    </Typography>
+                                    <Box sx={{ display: 'grid', gap: 0.5 }}>
+                                      {(fields as [string, string | number | null | undefined][]).map(([label, value]) => (
+                                        <Typography key={label} variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                                          <Box component="span" sx={{ color: 'text.secondary' }}>{label}: </Box>
+                                          {value === null || value === undefined || value === '' ? '-' : value}
+                                        </Typography>
+                                      ))}
+                                    </Box>
+                                  </Box>
+                                ))}
                               </Box>
                             </Box>
                           </Collapse>

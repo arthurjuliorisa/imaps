@@ -21,6 +21,7 @@ export function formatTraceabilityRatio(value: number | null | undefined): strin
   }
 
   return Number(value).toLocaleString(undefined, {
+    minimumFractionDigits: 6,
     maximumFractionDigits: 6,
   });
 }

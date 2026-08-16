@@ -14,6 +14,7 @@ import {
   traceabilityRepository,
   type TraceabilityDetailRow,
   type TraceabilityItem,
+  type TraceabilityRecalculationStatus,
   type TraceabilitySummaryRow,
 } from '@/lib/repositories/traceability.repository';
 import type { ApiSuccessResponse, ApiErrorResponse } from '@/types/core';
@@ -182,6 +183,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const itemIdsParam = searchParams.get('item_ids');
     const companyCodeParam = searchParams.get('company_code');
+    const outgoingGoodIdParam = searchParams.get('outgoing_good_id');
 
     // Validate parameters
     if (!itemIdsParam || !companyCodeParam) {
@@ -216,11 +218,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const outgoingGoodId = outgoingGoodIdParam ? parseInt(outgoingGoodIdParam, 10) : null;
+    if (outgoingGoodIdParam && (outgoingGoodId === null || !Number.isInteger(outgoingGoodId) || outgoingGoodId <= 0)) {
+      return errorResponse(
+        'Invalid outgoing_good_id. Expected a positive integer.',
+        'INVALID_PARAMS',
+        400
+      );
+    }
+
     // Get traceability data. Keep the existing grouped hierarchy for current UI
     // compatibility, and add the Phase 2 persisted detail read model alongside it.
-    const [traceabilityData, traceabilityDetails] = await Promise.all([
+    const [traceabilityData, traceabilityDetails, recalculationStatus] = await Promise.all([
       traceabilityRepository.getTraceabilityByOutgoingItemIds(itemIds, companyCode),
       traceabilityRepository.getTraceabilityDetailsByOutgoingItemIds(itemIds, companyCode),
+      outgoingGoodId !== null
+        ? traceabilityRepository.getRecalculationStatus(outgoingGoodId, companyCode)
+        : Promise.resolve<TraceabilityRecalculationStatus>({
+            has_recalculated: false,
+            last_recalculated_at: null,
+            last_recalculated_by: null,
+          }),
     ]);
     const traceabilitySummary = traceabilityRepository.buildTraceabilitySummary(traceabilityDetails);
     const legacyTraceabilityData = applyNetSummaryToLegacyItems(traceabilityData, traceabilitySummary);
@@ -276,6 +294,7 @@ export async function GET(request: NextRequest) {
       items: TraceabilityItem[];
       traceability_details: TraceabilityDetailRow[];
       traceability_summary: TraceabilitySummaryRow[];
+      recalculation_status: TraceabilityRecalculationStatus;
       can_view_material_traceability_details: boolean;
       count: number;
       detail_count: number;
@@ -284,6 +303,7 @@ export async function GET(request: NextRequest) {
       items: groupedData,
       traceability_details: canViewMaterialTraceabilityDetails ? traceabilityDetails : [],
       traceability_summary: traceabilitySummary,
+      recalculation_status: recalculationStatus,
       can_view_material_traceability_details: canViewMaterialTraceabilityDetails,
       count: groupedData.length,
       detail_count: canViewMaterialTraceabilityDetails ? traceabilityDetails.length : 0,
