@@ -3,6 +3,12 @@ import { getServerSession } from 'next-auth';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth';
+import { isCompanyInUserScope } from '@/lib/user-company-scope';
+import {
+  getRequestedCompanyCode,
+  hasCompanyCodeChanged,
+  hasRoleChanged,
+} from '@/lib/user-update-authorization';
 import {
   handleApiError,
   validateRequiredFields,
@@ -33,7 +39,7 @@ export async function GET(
     }
 
     const userRole = (session.user as any)?.role;
-    const userCompanyCode = (session.user as any)?.companyCode;
+    const sessionCompanyCode = (session.user as any)?.companyCode;
     const isSuperAdmin = userRole === 'SUPER_ADMIN';
 
     const { id } = await params;
@@ -62,7 +68,7 @@ export async function GET(
 
     // ===================== COMPANY AUTHORIZATION =====================
     // Non-SUPER_ADMIN can only view users from their company
-    if (!isSuperAdmin && user.company_code !== userCompanyCode) {
+    if (!isSuperAdmin && !isCompanyInUserScope(sessionCompanyCode, user.company_code)) {
       return NextResponse.json(
         { error: 'You can only view users from your assigned company' },
         { status: 403 }
@@ -104,16 +110,16 @@ export async function PUT(
     }
 
     const userRole = (session.user as any)?.role;
-    const userCompanyCode = (session.user as any)?.companyCode;
+    const sessionCompanyCode = (session.user as any)?.companyCode;
     const isSuperAdmin = userRole === 'SUPER_ADMIN';
 
     const { id } = await params;
     const body = await request.json();
 
-    // Fetch the target user first to check company
+    // Fetch the target user once for company scope and protected-field changes.
     const targetUser = await prisma.users.findUnique({
       where: { id },
-      select: { company_code: true },
+      select: { company_code: true, role: true },
     });
 
     if (!targetUser) {
@@ -125,7 +131,7 @@ export async function PUT(
 
     // ===================== COMPANY AUTHORIZATION =====================
     // Non-SUPER_ADMIN can only update users from their company
-    if (!isSuperAdmin && targetUser.company_code !== userCompanyCode) {
+    if (!isSuperAdmin && !isCompanyInUserScope(sessionCompanyCode, targetUser.company_code)) {
       return NextResponse.json(
         { error: 'You can only update users from your assigned company' },
         { status: 403 }
@@ -169,8 +175,16 @@ export async function PUT(
       updated_at: new Date(),
     };
 
-    // Update role if provided (only SUPER_ADMIN can modify roles)
-    if (body.role) {
+    // A full edit form submits the current role and company code even when they
+    // are unchanged. Restrict actual transitions, not field presence.
+    const roleChanged = hasRoleChanged(body.role, targetUser.role);
+    const companyChanged = hasCompanyCodeChanged(
+      body.company_code,
+      targetUser.company_code
+    );
+
+    // Only SUPER_ADMIN can modify roles.
+    if (roleChanged) {
       if (!isSuperAdmin) {
         return NextResponse.json(
           { error: 'Only SUPER_ADMIN can change user roles' },
@@ -180,17 +194,15 @@ export async function PUT(
       updateData.role = body.role;
     }
 
-    // Update company_code if provided (only SUPER_ADMIN can modify company)
-    if (body.company_code !== undefined) {
+    // Only SUPER_ADMIN can modify company assignment.
+    if (companyChanged) {
       if (!isSuperAdmin) {
         return NextResponse.json(
           { error: 'Only SUPER_ADMIN can change user company assignment' },
           { status: 403 }
         );
       }
-      updateData.company_code = body.company_code
-        ? parseInt(body.company_code, 10)
-        : null;
+      updateData.company_code = getRequestedCompanyCode(body.company_code);
     }
 
     // If password is provided, validate and hash it
@@ -247,7 +259,7 @@ export async function DELETE(
     }
 
     const userRole = (session.user as any)?.role;
-    const userCompanyCode = (session.user as any)?.companyCode;
+    const sessionCompanyCode = (session.user as any)?.companyCode;
     const isSuperAdmin = userRole === 'SUPER_ADMIN';
 
     const { id } = await params;
@@ -267,7 +279,7 @@ export async function DELETE(
 
     // ===================== COMPANY AUTHORIZATION =====================
     // Non-SUPER_ADMIN can only delete users from their company
-    if (!isSuperAdmin && targetUser.company_code !== userCompanyCode) {
+    if (!isSuperAdmin && !isCompanyInUserScope(sessionCompanyCode, targetUser.company_code)) {
       return NextResponse.json(
         { error: 'You can only delete users from your assigned company' },
         { status: 403 }

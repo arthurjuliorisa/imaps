@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 import { authOptions } from '@/lib/auth';
+import { isCompanyInUserScope, normalizeCompanyCode } from '@/lib/user-company-scope';
 import {
   handleApiError,
   validateRequiredFields,
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
     }
 
     const userRole = (session.user as any)?.role;
-    const userCompanyCode = (session.user as any)?.companyCode;
+    const userCompanyCode = normalizeCompanyCode((session.user as any)?.companyCode);
     const isSuperAdmin = userRole === 'SUPER_ADMIN';
 
     const searchParams = request.nextUrl.searchParams;
@@ -58,10 +59,14 @@ export async function GET(request: NextRequest) {
     // ===================== COMPANY FILTERING LOGIC =====================
     // SUPER_ADMIN can see all users
     // Other roles can only see users from their company
-    const companyFilter =
-      !isSuperAdmin && userCompanyCode
-        ? { company_code: parseInt(userCompanyCode, 10) }
-        : {};
+    if (!isSuperAdmin && userCompanyCode === null) {
+      return NextResponse.json(
+        { error: 'You do not have a company assigned' },
+        { status: 403 }
+      );
+    }
+
+    const companyFilter = !isSuperAdmin ? { company_code: userCompanyCode } : {};
 
     const where = {
       ...searchWhere,
@@ -130,7 +135,8 @@ export async function POST(request: NextRequest) {
     }
 
     const userRole = (session.user as any)?.role;
-    const userCompanyCode = (session.user as any)?.companyCode;
+    const sessionCompanyCode = (session.user as any)?.companyCode;
+    const userCompanyCode = normalizeCompanyCode(sessionCompanyCode);
     const isSuperAdmin = userRole === 'SUPER_ADMIN';
 
     const body = await request.json();
@@ -165,21 +171,19 @@ export async function POST(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
     // Parse company_code to integer
-    const requestedCompanyCode = body.company_code
-      ? parseInt(body.company_code, 10)
-      : null;
+    const requestedCompanyCode = normalizeCompanyCode(body.company_code);
 
     // ===================== COMPANY AUTHORIZATION =====================
     // Non-SUPER_ADMIN can only create users in their own company
     if (!isSuperAdmin) {
-      if (!userCompanyCode) {
+      if (userCompanyCode === null) {
         return NextResponse.json(
           { error: 'You do not have a company assigned' },
           { status: 403 }
         );
       }
 
-      if (requestedCompanyCode !== userCompanyCode) {
+      if (!isCompanyInUserScope(sessionCompanyCode, requestedCompanyCode)) {
         return NextResponse.json(
           {
             error: `You can only create users in your assigned company (${userCompanyCode})`,
