@@ -18,6 +18,7 @@ import {
   type TraceabilitySummaryRow,
 } from '@/lib/repositories/traceability.repository';
 import type { ApiSuccessResponse, ApiErrorResponse } from '@/types/core';
+import { traceabilityFreshnessService } from '@/lib/services/traceability-freshness.service';
 
 /**
  * Build error response
@@ -227,6 +228,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // View access is sufficient for this system freshness check. It intentionally
+    // emits no activity log; explicit Manual Recalculate remains a separate path.
+    if (outgoingGoodId !== null) {
+      await traceabilityFreshnessService.ensureFreshTraceability(outgoingGoodId, companyCode);
+    }
+
     // Get traceability data. Keep the existing grouped hierarchy for current UI
     // compatibility, and add the Phase 2 persisted detail read model alongside it.
     const [traceabilityData, traceabilityDetails, recalculationStatus] = await Promise.all([
@@ -312,7 +319,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching traceability data:', error);
     return errorResponse(
-      error instanceof Error ? error.message : 'Failed to fetch traceability data',
+      'Failed to load latest traceability data. Please try again.',
       'FETCH_ERROR',
       500
     );

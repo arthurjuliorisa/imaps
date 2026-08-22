@@ -851,8 +851,18 @@ export function TraceabilityModal({
         )}
 
         {loading && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1.5,
+              py: 4,
+            }}
+          >
             <CircularProgress />
+            <Typography color="text.secondary">Loading latest traceability...</Typography>
           </Box>
         )}
 
