@@ -6,6 +6,7 @@ import { MaterialUsageRepository } from '@/lib/repositories/material-usage.repos
 import { OutgoingGoodsRepository } from '@/lib/repositories/outgoing-goods.repository';
 import { ProductionOutputRepository } from '@/lib/repositories/production-output.repository';
 import { WipBalanceRepository } from '@/lib/repositories/wip-balance.repository';
+import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import type { WipBalanceRecord } from '@/lib/types/wip-balance.types';
 import {
   checkAdjustmentDuplicates,
@@ -64,6 +65,26 @@ const retryableActions: Record<string, RetryableWmsTransactionType> = {
 };
 
 const retryableTypes = new Set<RetryableWmsTransactionType>(Object.values(retryableActions));
+
+const inswTransactionTypes: Partial<Record<RetryableWmsTransactionType, string>> = {
+  incoming_goods: 'incoming',
+  outgoing_goods: 'outgoing',
+  material_usage: 'material_usage',
+  production_output: 'production_output',
+  adjustments: 'adjustment',
+};
+
+export type PersistedWmsTransaction = {
+  id: number;
+  companyCode: number;
+  wmsId: string;
+};
+
+export type WmsRetryInswResult = {
+  attempted: boolean;
+  status: 'not_applicable' | 'skipped' | 'success' | 'failed';
+  message: string;
+};
 
 type ValidationErrorLike = { field: string; message: string };
 
@@ -336,6 +357,136 @@ export async function reprocessWmsPayload(
       };
     }
   }
+}
+
+/**
+ * Finds the exact persisted WMS transaction. A matching WMS ID on another
+ * transaction date is deliberately rejected: repository replay paths can
+ * treat that as a date-change update, which is unsafe for a retry.
+ */
+export async function findPersistedWmsTransaction(
+  transactionType: RetryableWmsTransactionType,
+  payload: unknown
+): Promise<PersistedWmsTransaction | null> {
+  const data = payload as { company_code: number; wms_id: string; incoming_date?: string | Date; outgoing_date?: string | Date; transaction_date?: string | Date };
+  const companyCode = data.company_code;
+  const wmsId = data.wms_id;
+  if (!Number.isInteger(companyCode) || !wmsId) {
+    throw new Error('local_exists_check: retry payload does not contain a resolvable company_code and wms_id');
+  }
+
+  if (transactionType === 'wip_balance') return null;
+
+  const dateValue = transactionType === 'incoming_goods'
+    ? data.incoming_date
+    : transactionType === 'outgoing_goods'
+      ? data.outgoing_date
+      : data.transaction_date;
+  const transactionDate = dateValue ? new Date(dateValue) : null;
+  if (!transactionDate || Number.isNaN(transactionDate.getTime())) {
+    throw new Error('local_exists_check: retry payload does not contain a valid transaction date');
+  }
+
+  const assertSingleExactMatch = <T extends { id: number }>(records: T[]): T | null => {
+    if (records.length > 1) {
+      throw new Error('local_exists_check: multiple active local transactions match this WMS identity');
+    }
+    return records[0] ?? null;
+  };
+
+  let record: { id: number } | null;
+  let activeCount: number;
+  switch (transactionType) {
+    case 'incoming_goods': {
+      const rows = await prisma.incoming_goods.findMany({ where: { company_code: companyCode, wms_id: wmsId, deleted_at: null }, select: { id: true, incoming_date: true } });
+      activeCount = rows.length;
+      record = assertSingleExactMatch(rows.filter(row => row.incoming_date.getTime() === transactionDate.getTime()));
+      break;
+    }
+    case 'outgoing_goods': {
+      const rows = await prisma.outgoing_goods.findMany({ where: { company_code: companyCode, wms_id: wmsId, deleted_at: null }, select: { id: true, outgoing_date: true } });
+      activeCount = rows.length;
+      record = assertSingleExactMatch(rows.filter(row => row.outgoing_date.getTime() === transactionDate.getTime()));
+      break;
+    }
+    case 'material_usage': {
+      const rows = await prisma.material_usages.findMany({ where: { company_code: companyCode, wms_id: wmsId, deleted_at: null }, select: { id: true, transaction_date: true } });
+      activeCount = rows.length;
+      record = assertSingleExactMatch(rows.filter(row => row.transaction_date.getTime() === transactionDate.getTime()));
+      break;
+    }
+    case 'production_output': {
+      const rows = await prisma.production_outputs.findMany({ where: { company_code: companyCode, wms_id: wmsId, deleted_at: null }, select: { id: true, transaction_date: true } });
+      activeCount = rows.length;
+      record = assertSingleExactMatch(rows.filter(row => row.transaction_date.getTime() === transactionDate.getTime()));
+      break;
+    }
+    case 'adjustments': {
+      const rows = await prisma.adjustments.findMany({ where: { company_code: companyCode, wms_id: wmsId, deleted_at: null }, select: { id: true, transaction_date: true } });
+      activeCount = rows.length;
+      record = assertSingleExactMatch(rows.filter(row => row.transaction_date.getTime() === transactionDate.getTime()));
+      break;
+    }
+    default:
+      return null;
+  }
+
+  // A same-domain WMS ID with a different date is ambiguous for retry and
+  // must not be handed to repositories that implement date-change mutation.
+  if (!record) {
+    if (activeCount > 0) {
+      throw new Error('local_exists_check: WMS ID exists locally with a different transaction date; refusing destructive replay');
+    }
+    return null;
+  }
+  return { id: record.id, companyCode, wmsId };
+}
+
+export async function continueWmsRetryToInsw(
+  transactionType: RetryableWmsTransactionType,
+  transaction: PersistedWmsTransaction
+): Promise<WmsRetryInswResult> {
+  const inswTransactionType = inswTransactionTypes[transactionType];
+  if (!inswTransactionType) {
+    return { attempted: false, status: 'not_applicable', message: 'This WMS transaction type does not auto-transmit to INSW' };
+  }
+
+  const company = await prisma.companies.findUnique({
+    where: { code: transaction.companyCode },
+    select: { company_type: true },
+  });
+  if (company?.company_type !== 'SEZ') {
+    return { attempted: false, status: 'not_applicable', message: 'Local recovery complete; company is not SEZ' };
+  }
+
+  const previousSuccess = await prisma.insw_tracking_log.findFirst({
+    where: {
+      company_code: transaction.companyCode,
+      transaction_type: inswTransactionType,
+      insw_status: 'SUCCESS',
+      ...(transactionType === 'outgoing_goods'
+        ? { wms_id: transaction.wmsId }
+        : { transaction_id: transaction.id }),
+    },
+    select: { id: true },
+  });
+  if (previousSuccess) {
+    return { attempted: false, status: 'skipped', message: 'A successful INSW transmission is already recorded for this transaction' };
+  }
+
+  const service = new INSWTransmissionService();
+  let result;
+  switch (transactionType) {
+    case 'incoming_goods': result = await service.transmitIncomingGoods(transaction.companyCode, [transaction.id]); break;
+    case 'outgoing_goods': result = await service.transmitOutgoingGoodsByWmsIds(transaction.companyCode, [transaction.wmsId]); break;
+    case 'material_usage': result = await service.transmitMaterialUsage(transaction.companyCode, [transaction.id], [transaction.wmsId]); break;
+    case 'production_output': result = await service.transmitProductionOutput(transaction.companyCode, [transaction.id], [transaction.wmsId]); break;
+    case 'adjustments': result = await service.transmitAdjustment(transaction.companyCode, transaction.id, transaction.wmsId); break;
+    default: return { attempted: false, status: 'not_applicable', message: 'This WMS transaction type does not auto-transmit to INSW' };
+  }
+  return result.status === 'success'
+    ? { attempted: true, status: 'success', message: result.message }
+    : { attempted: true, status: 'failed', message: result.message };
 }
 
 export async function createWmsRetryAttemptLog(params: {

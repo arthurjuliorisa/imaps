@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import {
   createWmsRetryAttemptLog,
+  continueWmsRetryToInsw,
+  findPersistedWmsTransaction,
   getRetryableWmsTransactionType,
   reprocessWmsPayload,
   validateWmsRetryPayload,
@@ -143,8 +145,39 @@ export async function POST(
       wmsId: log.wms_id,
     });
 
-    const result = await reprocessWmsPayload(transactionType, payload);
-    const summary = `${result.message} via WMS log retry`;
+    let persistedTransaction = await findPersistedWmsTransaction(transactionType, payload);
+    const localAlreadyPersisted = Boolean(persistedTransaction);
+    const result = persistedTransaction
+      ? {
+          itemCount: itemCount || 0,
+          message: 'Local transaction was already persisted; repository replay was skipped',
+        }
+      : await reprocessWmsPayload(transactionType, payload);
+
+    // Persistence is confirmed before any INSW work. Re-read after repository
+    // completion because repository return shapes differ by transaction type.
+    persistedTransaction ??= await findPersistedWmsTransaction(transactionType, payload);
+    if (transactionType !== 'wip_balance' && !persistedTransaction) {
+      throw new Error('local_persistence: repository completed without a resolvable persisted transaction');
+    }
+
+    let inswResult = null;
+    if (persistedTransaction) {
+      try {
+        inswResult = await continueWmsRetryToInsw(transactionType, persistedTransaction);
+      } catch (inswError) {
+        // Local recovery remains successful. INSW service methods normally log
+        // failures themselves; this protects the WMS state if setup fails first.
+        console.error('[WMS retry] INSW continuation failed after local recovery:', {
+          logId: logId.toString(), transactionType, wmsId: log.wms_id, error: inswError,
+        });
+        inswResult = { attempted: true, status: 'failed' as const, message: getSafeErrorMessage(inswError) };
+      }
+    }
+
+    const summary = `${result.message} via WMS log retry${
+      inswResult ? `; INSW ${inswResult.status}: ${inswResult.message}` : ''
+    }`;
     let retryAttemptLogId: string | null = null;
 
     try {
@@ -183,6 +216,8 @@ export async function POST(
             status: 'success',
             retried_at: new Date().toISOString(),
             retry_attempt_log_id: retryAttemptLogId,
+            local_persistence: localAlreadyPersisted ? 'already_persisted' : 'persisted_on_retry',
+            insw: inswResult,
           },
         },
         item_count: result.itemCount || itemCount,
@@ -193,6 +228,8 @@ export async function POST(
       success: true,
       message: summary,
       transaction_type: transactionType,
+      local_persistence: localAlreadyPersisted ? 'already_persisted' : 'persisted_on_retry',
+      insw: inswResult,
     });
   } catch (error) {
     const safeMessage = getSafeErrorMessage(error);
