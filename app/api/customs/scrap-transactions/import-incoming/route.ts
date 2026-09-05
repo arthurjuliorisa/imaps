@@ -387,7 +387,7 @@ export async function POST(request: NextRequest) {
         // Collect unique items for snapshot calculation
         const uniqueItems = new Map<string, { date: Date; itemName: string; uom: string }>();
         for (const header of transactionHeaders) {
-          const key = `${header._item.scrapCode}-${header._date.toISOString()}`;
+          const key = [companyCode, 'SCRAP', header._item.scrapCode, header._item.uom, header._date.toISOString()].join('|');
           if (!uniqueItems.has(key)) {
             uniqueItems.set(key, {
               date: header._date,
@@ -453,10 +453,11 @@ export async function POST(request: NextRequest) {
             // Step 2: Cascade recalculate snapshots for all future dates
             // This ensures all forward-looking balance updates when importing past transactions
             await prisma.$executeRawUnsafe(
-              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
               companyCode,
               item.itemType,
               item.itemCode,
+              item.uom,
               item.date
             );
             console.log(

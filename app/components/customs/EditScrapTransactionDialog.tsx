@@ -143,6 +143,7 @@ export function EditScrapTransactionDialog({
             {
               itemCode: transaction.itemCode,
               itemType: transaction.itemType,
+              uom: transaction.unit,
               qtyRequested: qtyDifference,
             },
           ],

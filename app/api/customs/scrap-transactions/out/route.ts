@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
-import { checkStockAvailability } from '@/lib/utils/stock-checker';
+import { acquireStockIdentityLocks, checkStockAvailability, type StockCheckResult } from '@/lib/utils/stock-checker';
 import { logActivity } from '@/lib/log-activity';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { z } from 'zod';
@@ -54,6 +54,12 @@ const OutgoingScrapSchema = z.object({
 });
 
 type OutgoingScrapInput = z.infer<typeof OutgoingScrapSchema>;
+
+class InsufficientScrapStockError extends Error {
+  constructor(public readonly stockCheck: StockCheckResult) {
+    super('INSUFFICIENT_SCRAP_STOCK');
+  }
+}
 
 /**
  * Generate unique WMS ID for outgoing scrap transaction
@@ -173,32 +179,25 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check stock availability
-    const stockCheck = await checkStockAvailability(
-      companyCode,
-      scrapCode,
-      'SCRAP',
-      qty,
-      date
-    );
-
-    if (!stockCheck.available) {
-      return NextResponse.json(
-        {
-          message: `Stock tidak cukup untuk ${scrapCode}. Tersedia: ${stockCheck.currentStock}, Diminta: ${qty}`,
-          data: {
-            itemCode: scrapCode,
-            currentStock: stockCheck.currentStock,
-            requestedQty: qty,
-            shortfall: stockCheck.shortfall,
-          },
-        },
-        { status: 400 }
-      );
-    }
-
     // Execute transaction
     const result = await prisma.$transaction(async (tx) => {
+      await acquireStockIdentityLocks(tx, companyCode, [{ itemType: 'SCRAP', itemCode: scrapCode, uom }]);
+
+      const stockCheck = await checkStockAvailability(
+        companyCode,
+        scrapCode,
+        'SCRAP',
+        qty,
+        date,
+        undefined,
+        uom,
+        tx
+      );
+
+      if (!stockCheck.available) {
+        throw new InsufficientScrapStockError(stockCheck);
+      }
+
       // 1. Generate WMS ID and document number
       const wmsId = transactionNumber || generateWmsId();
       const documentNumber = transactionNumber || (() => {
@@ -277,6 +276,18 @@ export async function POST(request: Request) {
         },
       });
 
+      // Keep the snapshot current before releasing the stock-identity lock.
+      await tx.$executeRaw`
+        SELECT upsert_item_stock_snapshot(
+          ${companyCode}::INTEGER,
+          ${'SCRAP'}::VARCHAR,
+          ${scrapCode}::VARCHAR,
+          ${scrapName}::VARCHAR,
+          ${uom}::VARCHAR,
+          ${date}::DATE
+        )
+      `;
+
       // Return transaction details
       return {
         wmsId,
@@ -322,10 +333,11 @@ export async function POST(request: Request) {
         // FIX: Cascade recalculate snapshots for all future dates
         // This ensures forward-looking balance updates when a past transaction is inserted
         await prisma.$executeRawUnsafe(
-          'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+          'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
           companyCode,
           'SCRAP',
           result.scrapCode,
+          result.uom,
           result.date
         );
         console.log(
@@ -403,6 +415,23 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error('[API Error] Failed to create outgoing scrap transaction:', error);
+
+    if (error instanceof InsufficientScrapStockError) {
+      const stockCheck = error.stockCheck;
+      return NextResponse.json(
+        {
+          message: `Stock tidak cukup untuk ${stockCheck.itemCode}. Tersedia: ${stockCheck.currentStock}, Diminta: ${stockCheck.qtyRequested}`,
+          data: {
+            itemCode: stockCheck.itemCode,
+            uom: stockCheck.uom,
+            currentStock: stockCheck.currentStock,
+            requestedQty: stockCheck.qtyRequested,
+            shortfall: stockCheck.shortfall,
+          },
+        },
+        { status: 400 }
+      );
+    }
 
     // Handle specific Prisma errors
     if (error.code === 'P2002') {
@@ -648,10 +677,11 @@ export async function PUT(request: Request) {
 
         // Cascade recalculate snapshots for all future dates
         await prisma.$executeRawUnsafe(
-          'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+          'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
           companyCode,
           'SCRAP',
           result.scrapCode,
+          result.uom,
           result.date
         );
         console.log(

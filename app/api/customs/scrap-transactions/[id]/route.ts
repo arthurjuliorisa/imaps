@@ -2,11 +2,16 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
-import { checkStockAvailability, checkScrapInBalance } from '@/lib/utils/stock-checker';
+import { acquireStockIdentityLocks, checkStockAvailability, checkScrapInBalance, type StockCheckResult } from '@/lib/utils/stock-checker';
 import { logActivity } from '@/lib/log-activity';
 import { Prisma } from '@prisma/client';
 import { SCRAP_CUSTOMS_TYPES } from '@/lib/validators/constants/customs-document-types';
 
+class InsufficientScrapStockError extends Error {
+  constructor(public readonly stockCheck: StockCheckResult) {
+    super('INSUFFICIENT_SCRAP_STOCK');
+  }
+}
 
 
 /**
@@ -219,7 +224,9 @@ export async function PUT(
         existingItem.item_code,
         existingItem.item_type,
         qtyDifference,
-        transaction.outgoing_date
+        transaction.outgoing_date,
+        undefined,
+        existingItem.uom
       );
 
       if (!stockCheckResult.available) {
@@ -256,7 +263,9 @@ export async function PUT(
           existingItem.item_code,
           existingItem.item_type,
           Math.abs(qtyDifference),
-          transaction.outgoing_date
+          transaction.outgoing_date,
+          undefined,
+          existingItem.uom
         );
       } else {
         stockCheckResult = await checkStockAvailability(
@@ -264,7 +273,9 @@ export async function PUT(
           existingItem.item_code,
           existingItem.item_type,
           0,
-          transaction.outgoing_date
+          transaction.outgoing_date,
+          undefined,
+          existingItem.uom
         );
       }
     }
@@ -293,6 +304,36 @@ export async function PUT(
     
     await prisma.$transaction(
       async (tx) => {
+        if (sourceTable === 'outgoing_goods') {
+          await acquireStockIdentityLocks(tx, companyCode, [{
+            itemType: existingItem.item_type,
+            itemCode: existingItem.item_code,
+            uom: existingItem.uom,
+          }]);
+
+          const lockedItem = await tx.outgoing_good_items.findUniqueOrThrow({
+            where: { id: existingItem.id },
+            select: { qty: true },
+          });
+          const lockedQtyDifference = qty - Number(lockedItem.qty);
+
+          if (lockedQtyDifference > 0) {
+            const lockedStockCheck = await checkStockAvailability(
+              companyCode,
+              existingItem.item_code,
+              existingItem.item_type,
+              lockedQtyDifference,
+              transaction.outgoing_date,
+              undefined,
+              existingItem.uom,
+              tx
+            );
+            if (!lockedStockCheck.available) {
+              throw new InsufficientScrapStockError(lockedStockCheck);
+            }
+          }
+        }
+
         if (sourceTable === 'scrap_transactions') {
           // Update the scrap transaction
           // Note: transaction_date is part of compound key and cannot be updated
@@ -363,6 +404,19 @@ export async function PUT(
           console.error('❌ Error updating items:', error);
           throw error;
         }
+
+        if (sourceTable === 'outgoing_goods') {
+          await tx.$executeRaw`
+            SELECT upsert_item_stock_snapshot(
+              ${companyCode}::INTEGER,
+              ${existingItem.item_type}::VARCHAR,
+              ${existingItem.item_code}::VARCHAR,
+              ${existingItem.item_name}::VARCHAR,
+              ${existingItem.uom}::VARCHAR,
+              ${transaction.outgoing_date}::DATE
+            )
+          `;
+        }
       },
       {
         isolationLevel: 'Serializable',
@@ -402,10 +456,11 @@ export async function PUT(
               fromDate: item.date.toISOString().split('T')[0],
             });
             await prisma.$executeRawUnsafe(
-              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
               companyCode,
               item.itemType,
               item.itemCode,
+              item.uom,
               item.date
             );
             console.log('[API Info] Cascaded snapshot recalculation executed', {
@@ -470,6 +525,17 @@ export async function PUT(
   } catch (error) {
     console.error('[API Error] Failed to update scrap transaction:', error);
     console.error('Error details:', JSON.stringify(error, null, 2));
+    if (error instanceof InsufficientScrapStockError) {
+      const stockCheck = error.stockCheck;
+      return NextResponse.json(
+        {
+          message: `Stock tidak cukup untuk ${stockCheck.itemCode}. Tersedia: ${stockCheck.currentStock}, Diminta: ${stockCheck.qtyRequested}`,
+          errors: [{ field: 'qty', message: `Hanya tersedia ${stockCheck.currentStock} unit.` }],
+          data: stockCheck,
+        },
+        { status: 400 }
+      );
+    }
     return NextResponse.json(
       { message: 'Error updating transaction', error: error instanceof Error ? error.message : String(error) },
       { status: 500 }
@@ -667,10 +733,11 @@ export async function DELETE(
               // Cascade recalculate snapshots for all future dates
               // This ensures balance updates propagate forward when a past IN transaction is deleted
               await prisma.$executeRawUnsafe(
-                'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+                'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
                 companyCode,
                 snapItem.itemType,
                 snapItem.itemCode,
+                snapItem.uom,
                 snapItem.date
               );
               console.log('[API Info] Cascaded snapshot recalculation executed for SCRAP IN delete', {
@@ -818,10 +885,11 @@ export async function DELETE(
               // Step 2: Cascade recalculate snapshots for all future dates
               // This ensures balance updates propagate forward when a past OUT transaction is deleted
               await prisma.$executeRawUnsafe(
-                'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+                'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
                 companyCode,
                 snapItem.itemType,
                 snapItem.itemCode,
+                snapItem.uom,
                 snapItem.date
               );
               console.log('[API Info] Cascaded snapshot recalculation executed for SCRAP OUT delete', {

@@ -12,7 +12,16 @@ const StockCheckRequestSchema = z.object({
     z.object({
       itemCode: z.string().min(1, 'Item code is required'),
       itemType: z.string().min(1, 'Item type is required'),
+      uom: z.string().min(1, 'UOM is required').optional(),
       qtyRequested: z.number().positive('Quantity must be positive'),
+    }).superRefine((item, ctx) => {
+      if (item.itemType === 'SCRAP' && !item.uom) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['uom'],
+          message: 'UOM is required for SCRAP stock checks',
+        });
+      }
     })
   ).min(1, 'At least one item is required'),
   date: z.string().optional().or(z.date().optional()),

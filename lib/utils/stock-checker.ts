@@ -5,12 +5,14 @@ import { SnapshotRepository } from '@/lib/repositories/snapshot.repository';
 export interface StockCheckItem {
   itemCode: string;
   itemType: string;
+  uom?: string;
   qtyRequested: number;
 }
 
 export interface StockCheckResult {
   itemCode: string;
   itemType: string;
+  uom?: string;
   currentStock: number;
   qtyRequested: number;
   available: boolean;
@@ -25,6 +27,35 @@ export interface BatchStockCheckResult {
 
 // Initialize snapshot repository
 const snapshotRepo = new SnapshotRepository();
+type StockDbClient = typeof prisma | Prisma.TransactionClient;
+
+export interface StockIdentity {
+  itemType: string;
+  itemCode: string;
+  uom: string;
+}
+
+/**
+ * Serialize stock consumption for only the requested stock identities.
+ * The caller must invoke this inside an interactive transaction.
+ */
+export async function acquireStockIdentityLocks(
+  tx: Prisma.TransactionClient,
+  companyCode: number,
+  identities: StockIdentity[]
+): Promise<void> {
+  const lockKeys = [...new Set(identities.map(({ itemType, itemCode, uom }) =>
+    [companyCode, itemType, itemCode, uom].join('|')
+  ))].sort();
+
+  if (lockKeys.length === 0) return;
+
+  await tx.$executeRaw`
+    SELECT pg_advisory_xact_lock(hashtextextended(lock_key, 0))
+    FROM unnest(${lockKeys}::TEXT[]) AS locks(lock_key)
+    ORDER BY lock_key
+  `;
+}
 
 /**
  * Convert Date to YYYY-MM-DD string format for SQL comparison
@@ -80,7 +111,9 @@ export async function checkStockAvailability(
   itemType: string,
   qtyRequested: number,
   asOfDate: Date,
-  excludeWmsId?: string
+  excludeWmsId?: string,
+  uom?: string,
+  db: StockDbClient = prisma
 ): Promise<StockCheckResult> {
   let currentStock = 0;
 
@@ -96,7 +129,9 @@ export async function checkStockAvailability(
         itemCode,
         itemType,
         normalizedDate,
-        excludeWmsId
+        excludeWmsId,
+        uom,
+        db
       );
     } else {
       // Historical validation: use snapshot only for past dates
@@ -104,7 +139,9 @@ export async function checkStockAvailability(
         companyCode,
         itemCode,
         itemType,
-        normalizedDate
+        normalizedDate,
+        uom,
+        db
       );
       currentStock = snapshotBalance;
     }
@@ -115,6 +152,7 @@ export async function checkStockAvailability(
     return {
       itemCode,
       itemType,
+      uom,
       currentStock,
       qtyRequested,
       available,
@@ -140,17 +178,21 @@ async function getSnapshotBalance(
   companyCode: number,
   itemCode: string,
   itemType: string,
-  snapshotDate: Date
+  snapshotDate: Date,
+  uom?: string,
+  db: StockDbClient = prisma
 ): Promise<number> {
   const dateStr = formatDateForSql(snapshotDate);
+  const uomFilter = uom ? Prisma.sql`AND uom = ${uom}` : Prisma.empty;
   
   // First, try to find exact date
-  const exactResult = await prisma.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
+  const exactResult = await db.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
     SELECT closing_balance
     FROM stock_daily_snapshot
     WHERE company_code = ${companyCode}
       AND item_type = ${itemType}
       AND item_code = ${itemCode}
+      ${uomFilter}
       AND snapshot_date = ${dateStr}::DATE
     LIMIT 1
   `;
@@ -160,12 +202,13 @@ async function getSnapshotBalance(
   }
 
   // Fallback: Find nearest snapshot BEFORE the requested date
-  const nearestResult = await prisma.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
+  const nearestResult = await db.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
     SELECT closing_balance
     FROM stock_daily_snapshot
     WHERE company_code = ${companyCode}
       AND item_type = ${itemType}
       AND item_code = ${itemCode}
+      ${uomFilter}
       AND snapshot_date < ${dateStr}::DATE
     ORDER BY snapshot_date DESC
     LIMIT 1
@@ -197,17 +240,21 @@ async function calculateRealTimeStock(
   itemCode: string,
   itemType: string,
   currentDate: Date,
-  excludeWmsId?: string
+  excludeWmsId?: string,
+  uom?: string,
+  db: StockDbClient = prisma
 ): Promise<number> {
   const dateStr = formatDateForSql(currentDate);
+  const uomFilter = uom ? Prisma.sql`AND uom = ${uom}` : Prisma.empty;
 
   // First: Try to find snapshot for today
-  const todaySnapshot = await prisma.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
+  const todaySnapshot = await db.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
     SELECT closing_balance
     FROM stock_daily_snapshot
     WHERE company_code = ${companyCode}
       AND item_type = ${itemType}
       AND item_code = ${itemCode}
+      ${uomFilter}
       AND snapshot_date = ${dateStr}::DATE
     LIMIT 1
   `;
@@ -227,7 +274,9 @@ async function calculateRealTimeStock(
     companyCode,
     itemCode,
     itemType,
-    yesterdayDate
+    yesterdayDate,
+    uom,
+    db
   );
 
   // Get all today's transactions aggregated
@@ -236,7 +285,9 @@ async function calculateRealTimeStock(
     itemCode,
     itemType,
     dateStr,
-    excludeWmsId
+    excludeWmsId,
+    uom,
+    db
   );
 
   // Calculate balance: opening + net transactions
@@ -254,18 +305,22 @@ async function getOpeningBalance(
   companyCode: number,
   itemCode: string,
   itemType: string,
-  asOfDate: Date
+  asOfDate: Date,
+  uom?: string,
+  db: StockDbClient = prisma
 ): Promise<number> {
   const dateStr = formatDateForSql(asOfDate);
+  const uomFilter = uom ? Prisma.sql`AND uom = ${uom}` : Prisma.empty;
 
   try {
     // Try to find previous day's snapshot first (most recent)
-    const snapshotResult = await prisma.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
+    const snapshotResult = await db.$queryRaw<Array<{ closing_balance: Prisma.Decimal }>>`
       SELECT closing_balance
       FROM stock_daily_snapshot
       WHERE company_code = ${companyCode}
         AND item_type = ${itemType}
         AND item_code = ${itemCode}
+        ${uomFilter}
         AND snapshot_date <= ${dateStr}::DATE
       ORDER BY snapshot_date DESC
       LIMIT 1
@@ -276,12 +331,13 @@ async function getOpeningBalance(
     }
 
     // Fallback: Check beginning_balances table
-    const beginningResult = await prisma.$queryRaw<Array<{ qty: Prisma.Decimal }>>`
+    const beginningResult = await db.$queryRaw<Array<{ qty: Prisma.Decimal }>>`
       SELECT qty
       FROM beginning_balances
       WHERE company_code = ${companyCode}
         AND item_type = ${itemType}
         AND item_code = ${itemCode}
+        ${uomFilter}
     `;
 
     if (beginningResult.length > 0) {
@@ -316,13 +372,19 @@ async function getTodayTransactions(
   itemCode: string,
   itemType: string,
   dateStr: string,
-  excludeWmsId?: string
+  excludeWmsId?: string,
+  uom?: string,
+  db: StockDbClient = prisma
 ): Promise<number> {
   try {
     // Build query with or without excludeWmsId
     // We need to construct the WHERE clause carefully to avoid Prisma parameter counting issues
     let query: string;
     
+    const uomParam = uom ? '$5' : null;
+    const excludeParam = excludeWmsId ? (uom ? '$6' : '$5') : null;
+    const uomClause = (alias: string) => uomParam ? `AND ${alias}.uom = ${uomParam}` : '';
+
     if (excludeWmsId) {
       query = `
         WITH daily_txns AS (
@@ -335,10 +397,11 @@ async function getTodayTransactions(
           WHERE ig.company_code = $1
             AND igi.item_type = $2
             AND igi.item_code = $3
+            ${uomClause('igi')}
             AND ig.incoming_date = $4::DATE
             AND ig.deleted_at IS NULL
             AND igi.deleted_at IS NULL
-            AND ig.wms_id != $8
+            AND ig.wms_id != ${excludeParam}
           
           UNION ALL
           
@@ -351,10 +414,11 @@ async function getTodayTransactions(
           WHERE og.company_code = $1
             AND ogi.item_type = $2
             AND ogi.item_code = $3
+            ${uomClause('ogi')}
             AND og.outgoing_date = $4::DATE
             AND og.deleted_at IS NULL
             AND ogi.deleted_at IS NULL
-            AND og.wms_id != $8
+            AND og.wms_id != ${excludeParam}
           
           UNION ALL
           
@@ -369,10 +433,11 @@ async function getTodayTransactions(
           WHERE mu.company_code = $1
             AND mui.item_type = $2
             AND mui.item_code = $3
+            ${uomClause('mui')}
             AND mu.transaction_date = $4::DATE
             AND mu.deleted_at IS NULL
             AND mui.deleted_at IS NULL
-            AND mu.wms_id != $8
+            AND mu.wms_id != ${excludeParam}
           
           UNION ALL
           
@@ -387,10 +452,11 @@ async function getTodayTransactions(
           WHERE po.company_code = $1
             AND poi.item_type = $2
             AND poi.item_code = $3
+            ${uomClause('poi')}
             AND po.transaction_date = $4::DATE
             AND po.deleted_at IS NULL
             AND poi.deleted_at IS NULL
-            AND po.wms_id != $8
+            AND po.wms_id != ${excludeParam}
           
           UNION ALL
           
@@ -405,10 +471,11 @@ async function getTodayTransactions(
           WHERE a.company_code = $1
             AND ai.item_type = $2
             AND ai.item_code = $3
+            ${uomClause('ai')}
             AND a.transaction_date = $4::DATE
             AND a.deleted_at IS NULL
             AND ai.deleted_at IS NULL
-            AND a.wms_id != $8
+            AND a.wms_id != ${excludeParam}
           
           UNION ALL
           
@@ -423,10 +490,11 @@ async function getTodayTransactions(
           WHERE st.company_code = $1
             AND sti.item_type = $2
             AND sti.item_code = $3
+            ${uomClause('sti')}
             AND st.transaction_date = $4::DATE
             AND st.deleted_at IS NULL
             AND sti.deleted_at IS NULL
-            AND st.document_number != $8
+            AND st.document_number != ${excludeParam}
         )
         SELECT
           SUM(CASE WHEN type = 'incoming' THEN qty ELSE 0 END)::numeric as incoming_qty,
@@ -450,6 +518,7 @@ async function getTodayTransactions(
           WHERE ig.company_code = $1
             AND igi.item_type = $2
             AND igi.item_code = $3
+            ${uomClause('igi')}
             AND ig.incoming_date = $4::DATE
             AND ig.deleted_at IS NULL
             AND igi.deleted_at IS NULL
@@ -465,6 +534,7 @@ async function getTodayTransactions(
           WHERE og.company_code = $1
             AND ogi.item_type = $2
             AND ogi.item_code = $3
+            ${uomClause('ogi')}
             AND og.outgoing_date = $4::DATE
             AND og.deleted_at IS NULL
             AND ogi.deleted_at IS NULL
@@ -482,6 +552,7 @@ async function getTodayTransactions(
           WHERE mu.company_code = $1
             AND mui.item_type = $2
             AND mui.item_code = $3
+            ${uomClause('mui')}
             AND mu.transaction_date = $4::DATE
             AND mu.deleted_at IS NULL
             AND mui.deleted_at IS NULL
@@ -499,6 +570,7 @@ async function getTodayTransactions(
           WHERE po.company_code = $1
             AND poi.item_type = $2
             AND poi.item_code = $3
+            ${uomClause('poi')}
             AND po.transaction_date = $4::DATE
             AND po.deleted_at IS NULL
             AND poi.deleted_at IS NULL
@@ -516,6 +588,7 @@ async function getTodayTransactions(
           WHERE a.company_code = $1
             AND ai.item_type = $2
             AND ai.item_code = $3
+            ${uomClause('ai')}
             AND a.transaction_date = $4::DATE
             AND a.deleted_at IS NULL
             AND ai.deleted_at IS NULL
@@ -533,6 +606,7 @@ async function getTodayTransactions(
           WHERE st.company_code = $1
             AND sti.item_type = $2
             AND sti.item_code = $3
+            ${uomClause('sti')}
             AND st.transaction_date = $4::DATE
             AND st.deleted_at IS NULL
             AND sti.deleted_at IS NULL
@@ -551,11 +625,14 @@ async function getTodayTransactions(
 
     // Get all transaction types aggregated
     const params = [companyCode, itemType, itemCode, dateStr];
+    if (uom) {
+      params.push(uom);
+    }
     if (excludeWmsId) {
       params.push(excludeWmsId);
     }
 
-    const result = await prisma.$queryRawUnsafe<Array<{
+    const result = await db.$queryRawUnsafe<Array<{
       incoming_qty: Prisma.Decimal;
       outgoing_qty: Prisma.Decimal;
       material_usage_qty: Prisma.Decimal;
@@ -607,7 +684,8 @@ async function getTodayTransactions(
 export async function checkBatchStockAvailability(
   companyCode: number,
   items: StockCheckItem[],
-  asOfDate: Date
+  asOfDate: Date,
+  db: StockDbClient = prisma
 ): Promise<BatchStockCheckResult> {
   const results: StockCheckResult[] = [];
 
@@ -617,7 +695,10 @@ export async function checkBatchStockAvailability(
       item.itemCode,
       item.itemType,
       item.qtyRequested,
-      asOfDate
+      asOfDate,
+      undefined,
+      item.uom,
+      db
     );
     results.push(result);
   }

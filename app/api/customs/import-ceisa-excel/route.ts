@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { parseCeisa40Excel, validateParsedData, type ParsedCeisaData } from '@/lib/ceisa40ExcelParser';
-import { checkBatchStockAvailability } from '@/lib/utils/stock-checker';
+import { acquireStockIdentityLocks, checkBatchStockAvailability } from '@/lib/utils/stock-checker';
 import { logActivity } from '@/lib/log-activity';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -53,11 +53,17 @@ async function validateScrapItems(
   tx: any,
   items: Array<{ itemCode: string; itemName: string; unit: string }>
 ): Promise<void> {
+  const itemCodes = [...new Set(items.map(item => item.itemCode))];
+  const scrapItems = await tx.scrap_items.findMany({
+    where: { scrap_code: { in: itemCodes } },
+    select: { scrap_code: true, scrap_name: true, uom: true },
+  });
+  const scrapItemByCode = new Map<string, { scrap_code: string; scrap_name: string; uom: string }>(
+    scrapItems.map((item: { scrap_code: string; scrap_name: string; uom: string }) => [item.scrap_code, item])
+  );
+
   for (const item of items) {
-    const scrapItem = await tx.scrap_items.findUnique({
-      where: { scrap_code: item.itemCode },
-      select: { scrap_code: true, scrap_name: true, uom: true },
-    });
+    const scrapItem = scrapItemByCode.get(item.itemCode);
 
     if (!scrapItem) {
       throw new Error(
@@ -169,6 +175,29 @@ function aggregateItemsByCode(
           `Inconsistent unit for '${item.itemCode}': Row 1="${existing.unit}", This row="${item.unit}"`
         );
       }
+    }
+  }
+
+  return aggregated;
+}
+
+function aggregateScrapItemsByStockIdentity(
+  items: Array<{ itemCode: string; itemName: string; unit: string; quantity: number }>
+): Map<string, { itemCode: string; totalQty: number; itemName: string; unit: string }> {
+  const aggregated = new Map<string, { itemCode: string; totalQty: number; itemName: string; unit: string }>();
+
+  for (const item of items) {
+    const key = `${item.itemCode}|${item.unit}`;
+    const existing = aggregated.get(key);
+    if (existing) {
+      existing.totalQty += item.quantity;
+    } else {
+      aggregated.set(key, {
+        itemCode: item.itemCode,
+        totalQty: item.quantity,
+        itemName: item.itemName,
+        unit: item.unit,
+      });
     }
   }
 
@@ -388,10 +417,11 @@ export async function POST(request: Request) {
             // Step 2: Cascade recalculate snapshots for all future dates
             // This ensures all forward-looking balance updates when importing transactions
             await prisma.$executeRawUnsafe(
-              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
               companyCode,
               item.itemType,
               item.itemCode,
+              item.uom,
               docDate
             );
             console.log(
@@ -561,20 +591,29 @@ async function importScrapTransactions(
       };
     } else {
       // Aggregate items by itemCode to handle multiple rows with same item code
-      const aggregatedItems = aggregateItemsByCode(data.items);
+      const aggregatedItems = aggregateScrapItemsByStockIdentity(data.items);
+
+      const stockIdentities = Array.from(aggregatedItems.values()).map(item => ({
+        itemType: 'SCRAP',
+        itemCode: item.itemCode,
+        uom: item.unit,
+      }));
+      await acquireStockIdentityLocks(tx, companyCode, stockIdentities);
 
       // Validate stock availability for all items as of transaction date (all-or-nothing)
       // ✅ Now validates TOTAL qty across all rows with same itemCode
-      const itemsToValidate = Array.from(aggregatedItems.entries()).map(([itemCode, item]) => ({
-        itemCode,
+      const itemsToValidate = Array.from(aggregatedItems.values()).map(item => ({
+        itemCode: item.itemCode,
         itemType: 'SCRAP',
+        uom: item.unit,
         qtyRequested: item.totalQty,
       }));
 
       const stockValidation = await checkBatchStockAvailability(
         companyCode,
         itemsToValidate,
-        docDate  // ✅ Pass transaction date for historical stock validation
+        docDate,  // ✅ Pass transaction date for historical stock validation
+        tx
       );
 
       if (!stockValidation.allAvailable) {
@@ -660,6 +699,20 @@ async function importScrapTransactions(
         data: outgoingGoodItemsData,
       });
 
+      // Refresh every affected identity while its advisory lock is still held.
+      for (const item of aggregatedItems.values()) {
+        await tx.$executeRaw`
+          SELECT upsert_item_stock_snapshot(
+            ${companyCode}::INTEGER,
+            ${'SCRAP'}::VARCHAR,
+            ${item.itemCode}::VARCHAR,
+            ${item.itemName}::VARCHAR,
+            ${item.unit}::VARCHAR,
+            ${docDate}::DATE
+          )
+        `;
+      }
+
       // Collect snapshot items for direct calculation
       data.items.forEach(item => {
         importedItems.push({
@@ -667,16 +720,15 @@ async function importScrapTransactions(
           itemName: item.itemName,
           quantity: item.quantity,
         });
-        // Add to snapshot items if not already added (for aggregated items)
-        if (!snapshotItems.some(s => s.itemCode === item.itemCode)) {
-          snapshotItems.push({
-            itemType: 'SCRAP',
-            itemCode: item.itemCode,
-            itemName: item.itemName,
-            uom: item.unit,
-          });
-        }
       });
+      for (const item of aggregatedItems.values()) {
+        snapshotItems.push({
+          itemType: 'SCRAP',
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          uom: item.unit,
+        });
+      }
 
       return {
         wmsId,

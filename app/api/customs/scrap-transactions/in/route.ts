@@ -214,10 +214,11 @@ export async function POST(request: Request) {
             // FIX: Cascade recalculate snapshots for all future dates
             // This ensures forward-looking balance updates when a past transaction is inserted
             await prisma.$executeRawUnsafe(
-              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::date)',
+              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
               companyCode,
               item.itemType,
               item.itemCode,
+              item.uom,
               item.date
             );
             console.log('[API Info] Cascaded snapshot recalculation executed', {

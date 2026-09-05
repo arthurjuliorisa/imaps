@@ -122,8 +122,8 @@ export function AddOutScrapDialog({
     }
   };
 
-  const checkStockAvailability = async (itemCode: string, qty: number) => {
-    if (!itemCode || qty <= 0) {
+  const checkStockAvailability = async (itemCode: string, uom: string, qty: number) => {
+    if (!itemCode || !uom || qty <= 0) {
       setStockCheckResult(null);
       return;
     }
@@ -160,6 +160,7 @@ export function AddOutScrapDialog({
             {
               itemCode,
               itemType: 'SCRAP',
+              uom,
               qtyRequested: qty,
             },
           ],
@@ -190,11 +191,11 @@ export function AddOutScrapDialog({
   // Check stock when scrap item, quantity, or date changes
   useEffect(() => {
     if (formData.scrapCode && formData.qty > 0 && formData.date) {
-      checkStockAvailability(formData.scrapCode, formData.qty);
+      checkStockAvailability(formData.scrapCode, formData.uom, formData.qty);
     } else {
       setStockCheckResult(null);
     }
-  }, [formData.scrapCode, formData.qty, formData.date?.format('YYYY-MM-DD')]);
+  }, [formData.scrapCode, formData.uom, formData.qty, formData.date?.format('YYYY-MM-DD')]);
 
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
