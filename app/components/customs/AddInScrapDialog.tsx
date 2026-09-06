@@ -134,8 +134,8 @@ export function AddInScrapDialog({
       newErrors.amount = 'Amount must be non-negative';
     }
 
-    if (formData.remarks.length > 1000) {
-      newErrors.remarks = 'Remarks cannot exceed 1000 characters';
+    if (formData.remarks.length > 500) {
+      newErrors.remarks = 'Remarks cannot exceed 500 characters';
     }
 
     setErrors(newErrors);
@@ -224,7 +224,7 @@ export function AddInScrapDialog({
     formData.qty > 0 &&
     formData.currency !== '' &&
     formData.amount >= 0 &&
-    formData.remarks.length <= 1000;
+    formData.remarks.length <= 500;
 
   return (
     <Dialog
@@ -390,7 +390,7 @@ export function AddInScrapDialog({
               placeholder="Enter any additional notes (optional)"
               error={!!errors.remarks}
               helperText={
-                errors.remarks || `${formData.remarks.length}/1000 characters`
+                errors.remarks || `${formData.remarks.length}/500 characters`
               }
             />
 

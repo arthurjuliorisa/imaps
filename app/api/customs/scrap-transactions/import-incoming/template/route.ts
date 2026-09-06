@@ -148,6 +148,7 @@ export async function GET() {
       ['  - The unique code from scrap master (e.g., SCRAP-COMPOSITE-001)'],
       ['  - Required field'],
       ['  - Must exist in the Scrap Master data'],
+      ['  - Must belong to your company and be active (not deleted)'],
       ['  - Case sensitive'],
       [],
       ['Scrap Name:'],
@@ -164,7 +165,7 @@ export async function GET() {
       ['  - The quantity of incoming scrap'],
       ['  - Required field'],
       ['  - Must be a positive number greater than 0 (can include decimals)'],
-      ['  - Format: Number with up to 2 decimal places'],
+      ['  - Format: Number with up to 3 decimal places'],
       [],
       ['Currency:'],
       ['  - Currency code: USD, IDR, CNY, EUR, or JPY'],
@@ -175,16 +176,17 @@ export async function GET() {
       ['  - Transaction amount'],
       ['  - Required field'],
       ['  - Must be a non-negative number (≥ 0)'],
-      ['  - Format: Number with up to 2 decimal places'],
+      ['  - Format: Number with up to 4 decimal places'],
       [],
       ['Remarks:'],
       ['  - Optional notes about the transaction'],
-      ['  - Maximum 1000 characters'],
+      ['  - Maximum 500 characters'],
       ['  - Can be left empty'],
       [],
       ['Validation Rules:'],
       ['  - All required fields must be filled'],
       ['  - All Scrap Codes must exist in the Scrap Master data'],
+      ['  - Scrap Code, Scrap Name, and UOM must match an active Scrap Master for your company'],
       ['  - Quantity must be > 0'],
       ['  - Amount must be ≥ 0'],
       ['  - Currency must be valid (USD, IDR, CNY, EUR, JPY)'],
@@ -216,7 +218,7 @@ export async function GET() {
     instructionsWorksheet.getCell('A1').font = { bold: true, size: 14 };
 
     // Style section headers
-    const sectionHeaderRows = [3, 9, 11, 17, 23, 29, 35, 41, 47, 53, 59, 67, 71];
+    const sectionHeaderRows = [3, 9, 11, 17, 24, 29, 34, 40, 45, 51, 56, 65, 72];
     sectionHeaderRows.forEach(rowNumber => {
       instructionsWorksheet.getRow(rowNumber).font = { bold: true };
     });

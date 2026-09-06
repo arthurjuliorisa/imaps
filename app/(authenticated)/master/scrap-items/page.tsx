@@ -88,6 +88,7 @@ interface FormData {
   scrapName: string;
   scrapDescription: string;
   uom: string;
+  isActive: boolean;
   components: ScrapComponent[];
 }
 
@@ -96,6 +97,7 @@ const initialFormData: FormData = {
   scrapName: '',
   scrapDescription: '',
   uom: 'KG',
+  isActive: true,
   components: [],
 };
 
@@ -219,6 +221,7 @@ export default function ScrapMasterPage() {
         scrapName: item.scrapName,
         scrapDescription: item.scrapDescription || '',
         uom: item.uom,
+        isActive: item.isActive,
         components: item.components,
       });
     } else {
@@ -264,7 +267,7 @@ export default function ScrapMasterPage() {
 
   const handleSubmit = async () => {
     // Validation
-    if (!formData.scrapCode || !formData.scrapName || !formData.uom) {
+    if (!formData.scrapCode.trim() || !formData.scrapName.trim() || !formData.uom.trim()) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -276,7 +279,7 @@ export default function ScrapMasterPage() {
 
     // Validate all components
     for (const comp of formData.components) {
-      if (!comp.componentCode || !comp.componentName || !comp.uom || comp.quantity <= 0) {
+      if (!comp.componentCode.trim() || !comp.componentName.trim() || !comp.uom.trim() || !Number.isFinite(comp.quantity) || comp.quantity <= 0) {
         toast.error('All component fields are required');
         return;
       }
@@ -607,6 +610,16 @@ export default function ScrapMasterPage() {
               onChange={(e) => setFormData({ ...formData, uom: e.target.value })}
               required
               sx={{ width: 200 }}
+            />
+
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={formData.isActive}
+                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                />
+              }
+              label={formData.isActive ? 'Active' : 'Inactive'}
             />
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>

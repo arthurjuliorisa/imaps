@@ -7,6 +7,14 @@ import { acquireStockIdentityLocks, checkBatchStockAvailability } from '@/lib/ut
 import { logActivity } from '@/lib/log-activity';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
+import {
+  isScrapCurrency,
+  normalizeScrapDate,
+  utcToday,
+  validateScrapMasterIdentity,
+} from '@/lib/scrap-validation';
+
+class CeisaValidationError extends Error {}
 
 /**
  * Zod schema for import request validation
@@ -33,16 +41,11 @@ function generateWmsId(type: string, direction: string): string {
  * Normalize date to UTC midnight
  */
 function normalizeDate(dateStr: string): Date {
-  const parsed = new Date(dateStr);
-  if (isNaN(parsed.getTime())) {
-    throw new Error(`Invalid date format: ${dateStr}`);
+  const parsed = normalizeScrapDate(dateStr);
+  if (!parsed) {
+    throw new CeisaValidationError(`Invalid date format: ${dateStr}`);
   }
-  return new Date(Date.UTC(
-    parsed.getFullYear(),
-    parsed.getMonth(),
-    parsed.getDate(),
-    0, 0, 0, 0
-  ));
+  return parsed;
 }
 
 /**
@@ -51,37 +54,30 @@ function normalizeDate(dateStr: string): Date {
  */
 async function validateScrapItems(
   tx: any,
+  companyCode: number,
   items: Array<{ itemCode: string; itemName: string; unit: string }>
 ): Promise<void> {
   const itemCodes = [...new Set(items.map(item => item.itemCode))];
   const scrapItems = await tx.scrap_items.findMany({
-    where: { scrap_code: { in: itemCodes } },
-    select: { scrap_code: true, scrap_name: true, uom: true },
+    where: { company_code: companyCode, scrap_code: { in: itemCodes } },
+    select: { scrap_code: true, scrap_name: true, uom: true, is_active: true, deleted_at: true },
   });
-  const scrapItemByCode = new Map<string, { scrap_code: string; scrap_name: string; uom: string }>(
-    scrapItems.map((item: { scrap_code: string; scrap_name: string; uom: string }) => [item.scrap_code, item])
+  const scrapItemByCode = new Map<string, typeof scrapItems[number]>(
+    scrapItems.map((item: typeof scrapItems[number]) => [item.scrap_code, item])
   );
 
-  for (const item of items) {
-    const scrapItem = scrapItemByCode.get(item.itemCode);
-
-    if (!scrapItem) {
-      throw new Error(
-        `Scrap code '${item.itemCode}' tidak ditemukan di database scrap_items`
-      );
+  const errors: string[] = [];
+  items.forEach((item, index) => {
+    for (const error of validateScrapMasterIdentity(scrapItemByCode.get(item.itemCode), {
+      scrapCode: item.itemCode,
+      scrapName: item.itemName,
+      uom: item.unit,
+    })) {
+      errors.push(`Item ${index + 1}: ${error}`);
     }
-
-    if (scrapItem.scrap_name !== item.itemName) {
-      throw new Error(
-        `Scrap name tidak sesuai untuk kode '${item.itemCode}': Excel="${item.itemName}", Database="${scrapItem.scrap_name}"`
-      );
-    }
-
-    if (scrapItem.uom !== item.unit) {
-      throw new Error(
-        `UOM tidak sesuai untuk scrap '${item.itemCode}': Excel="${item.unit}", Database="${scrapItem.uom}"`
-      );
-    }
+  });
+  if (errors.length > 0) {
+    throw new CeisaValidationError(errors.join('; '));
   }
 }
 
@@ -346,17 +342,24 @@ export async function POST(request: Request) {
     const docDate = normalizeDate(parsedData.docDate);
     const regDate = normalizeDate(parsedData.regDate);
 
-    const now = new Date();
-    const today = new Date(Date.UTC(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      0, 0, 0, 0
-    ));
+    const today = utcToday();
 
     if (docDate > today) {
       return NextResponse.json(
         { message: 'Document date cannot be in the future' },
+        { status: 400 }
+      );
+    }
+    if (regDate > today) {
+      return NextResponse.json(
+        { message: 'Registration date cannot be in the future' },
+        { status: 400 }
+      );
+    }
+
+    if (validatedRequest.transactionType === 'SCRAP' && !isScrapCurrency(parsedData.currency)) {
+      return NextResponse.json(
+        { message: 'Currency must be one of: USD, IDR, CNY, EUR, JPY' },
         { status: 400 }
       );
     }
@@ -476,6 +479,10 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('[API Error] Failed to import Ceisa Excel:', error);
 
+    if (error instanceof CeisaValidationError) {
+      return NextResponse.json({ message: error.message, errors: error.message.split('; ') }, { status: 400 });
+    }
+
     // Handle specific Prisma errors
     if (error.code === 'P2002') {
       return NextResponse.json(
@@ -523,7 +530,7 @@ async function importScrapTransactions(
 
   const result = await prisma.$transaction(async (tx) => {
     // Validate scrap items against scrap_items table
-    await validateScrapItems(tx, data.items);
+    await validateScrapItems(tx, companyCode, data.items);
 
     const wmsId = generateWmsId('SCRAP', direction);
     const importedItems: any[] = [];

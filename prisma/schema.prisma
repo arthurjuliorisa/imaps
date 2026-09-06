@@ -275,7 +275,7 @@ model beginning_balance_ppkeks {
 model scrap_items {
   id                Int       @id @default(autoincrement())
   company_code      Int
-  scrap_code        String    @unique @db.VarChar(50)
+  scrap_code        String    @db.VarChar(50)
   scrap_name        String    @db.VarChar(200)
   scrap_description String?   @db.VarChar(500)
   uom               String    @db.VarChar(20)

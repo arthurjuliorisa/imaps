@@ -4,23 +4,25 @@ import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { logActivity } from '@/lib/log-activity';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 
 // Validation schema for scrap item creation/update
 const ScrapItemComponentSchema = z.object({
-  componentCode: z.string().min(1, 'Component code is required'),
-  componentName: z.string().min(1, 'Component name is required'),
-  componentType: z.string().min(1, 'Component type is required'),
-  uom: z.string().min(1, 'UOM is required'),
-  quantity: z.number().positive('Quantity must be positive'),
+  componentCode: z.string().trim().min(1, 'Component code is required').max(50),
+  componentName: z.string().trim().min(1, 'Component name is required').max(200),
+  componentType: z.string().trim().min(1, 'Component type is required').max(10),
+  uom: z.string().trim().min(1, 'UOM is required').max(20),
+  quantity: z.number().finite('Quantity must be a finite number').positive('Quantity must be positive'),
   percentage: z.number().min(0).max(100).optional(),
-  remarks: z.string().optional(),
+  remarks: z.string().max(500).optional(),
 });
 
 const ScrapItemSchema = z.object({
-  scrapCode: z.string().min(1, 'Scrap code is required').max(50),
-  scrapName: z.string().min(1, 'Scrap name is required').max(200),
-  scrapDescription: z.string().max(500).optional(),
-  uom: z.string().min(1, 'UOM is required').max(20),
+  scrapCode: z.string().trim().min(1, 'Scrap code is required').max(50),
+  scrapName: z.string().trim().min(1, 'Scrap name is required').max(200),
+  scrapDescription: z.string().trim().max(500).optional(),
+  uom: z.string().trim().min(1, 'UOM is required').max(20),
+  isActive: z.boolean(),
   components: z.array(ScrapItemComponentSchema).min(1, 'At least one component is required'),
 });
 
@@ -138,7 +140,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { scrapCode, scrapName, scrapDescription, uom, components } = validationResult.data;
+    const { scrapCode, scrapName, scrapDescription, uom, isActive, components } = validationResult.data;
 
     // Check if scrap code already exists for this company
     const existing = await prisma.scrap_items.findUnique({
@@ -166,7 +168,7 @@ export async function POST(request: Request) {
           scrap_name: scrapName,
           scrap_description: scrapDescription,
           uom,
-          is_active: true,
+          is_active: isActive,
           scrap_item_details: {
             create: components.map((comp) => ({
               component_code: comp.componentCode,
@@ -212,6 +214,9 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error('[API Error] Failed to create scrap item:', error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json({ message: 'Scrap code already exists for this company' }, { status: 400 });
+    }
     return NextResponse.json(
       { message: 'Error creating scrap item' },
       { status: 500 }

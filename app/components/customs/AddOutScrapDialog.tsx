@@ -234,8 +234,8 @@ export function AddOutScrapDialog({
       newErrors.recipientName = 'Recipient name is required';
     }
 
-    if (formData.remarks.length > 1000) {
-      newErrors.remarks = 'Remarks cannot exceed 1000 characters';
+    if (formData.remarks.length > 500) {
+      newErrors.remarks = 'Remarks cannot exceed 500 characters';
     }
 
     if (!formData.customsDocumentType) {
@@ -342,7 +342,7 @@ export function AddOutScrapDialog({
     formData.currency !== '' &&
     formData.amount >= 0 &&
     formData.recipientName.trim() !== '' &&
-    formData.remarks.length <= 1000 &&
+    formData.remarks.length <= 500 &&
     formData.customsDocumentType !== '' &&
     stockCheckResult?.available === true;
 
@@ -639,7 +639,7 @@ export function AddOutScrapDialog({
               placeholder="Enter any additional notes (optional)"
               error={!!errors.remarks}
               helperText={
-                errors.remarks || `${formData.remarks.length}/1000 characters`
+                errors.remarks || `${formData.remarks.length}/500 characters`
               }
             />
 

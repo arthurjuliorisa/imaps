@@ -4,15 +4,24 @@ import { prisma } from '@/lib/prisma';
 import { logActivity } from '@/lib/log-activity';
 import { Prisma } from '@prisma/client';
 import ExcelJS from 'exceljs';
+import { validateCompanyCode } from '@/lib/company-validation';
+import {
+  isScrapCurrency,
+  normalizeScrapDate,
+  normalizeScrapText,
+  parseFiniteScrapNumber,
+  utcToday,
+  validateScrapMasterIdentity,
+} from '@/lib/scrap-validation';
 
 interface ExcelRow {
   Date?: string | number;
   'Scrap Code'?: string;
   'Scrap Name'?: string;
   UOM?: string;
-  Quantity?: number;
+  Quantity?: unknown;
   Currency?: string;
-  Amount?: number;
+  Amount?: unknown;
   Remarks?: string;
 }
 
@@ -44,7 +53,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { session } = authCheck as { authenticated: true; session: any };
-    const companyCode = Number(session.user.companyCode);
+    const companyValidation = validateCompanyCode(session);
+    if (!companyValidation.success) return companyValidation.response;
+    const { companyCode } = companyValidation;
 
     // Parse FormData
     let formData: FormData;
@@ -156,25 +167,34 @@ export async function POST(request: NextRequest) {
 
     if (jsonData.length === 0) {
       return NextResponse.json(
-        { 
+        {
           message: 'Excel file is empty',
-          errors: ['No data rows found in the Excel file. Please add data starting from row 2.']
+          errors: ['No data rows found in the Excel file. Please add data starting from row 3.']
         },
         { status: 400 }
       );
     }
 
-    // Fetch all valid scrap items for this company
-    let validScrapItems: Array<{ scrap_code: string; scrap_name: string }> = [];
+    const requestedCodes = [...new Set(jsonData.map(row => normalizeScrapText(row['Scrap Code'])).filter(Boolean))];
+    let validScrapItems: Array<{
+      scrap_code: string;
+      scrap_name: string;
+      uom: string;
+      is_active: boolean;
+      deleted_at: Date | null;
+    }> = [];
     try {
       validScrapItems = await prisma.scrap_items.findMany({
         where: {
           company_code: companyCode,
-          is_active: true,
+          scrap_code: { in: requestedCodes },
         },
         select: {
           scrap_code: true,
           scrap_name: true,
+          uom: true,
+          is_active: true,
+          deleted_at: true,
         },
       });
     } catch (error) {
@@ -189,26 +209,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Create a map for quick lookup
-    const scrapItemMap = new Map(validScrapItems.map(item => [item.scrap_code, item.scrap_name]));
+    const scrapItemMap = new Map(validScrapItems.map(item => [item.scrap_code, item]));
 
     // Helper function to parse date values
     const parseExcelDate = (dateValue: any): Date | null => {
-      if (!dateValue) return null;
-
-      // ExcelJS returns Date objects for date cells
-      if (dateValue instanceof Date) {
-        return dateValue;
-      }
-
-      // If it's a string, try to parse it
-      if (typeof dateValue === 'string') {
-        const parsed = new Date(dateValue);
-        if (!isNaN(parsed.getTime())) {
-          return parsed;
-        }
-      }
-
-      return null;
+      return normalizeScrapDate(dateValue);
     };
 
     // Validate and transform data
@@ -220,65 +225,62 @@ export async function POST(request: NextRequest) {
 
       // Parse date
       const parsedDate = row.Date ? parseExcelDate(row.Date) : null;
+      const scrapCode = normalizeScrapText(row['Scrap Code']);
+      const scrapName = normalizeScrapText(row['Scrap Name']);
+      const uom = normalizeScrapText(row.UOM);
+      const currency = normalizeScrapText(row.Currency);
+      const qty = parseFiniteScrapNumber(row.Quantity);
+      const amount = parseFiniteScrapNumber(row.Amount);
 
       // Validate required fields
       if (!row.Date || !parsedDate) {
         validationErrors.push(`Row ${rowNumber}: Date is required or invalid`);
+      } else if (parsedDate > utcToday()) {
+        validationErrors.push(`Row ${rowNumber}: Date cannot be in the future`);
       }
-      if (!row['Scrap Code']) {
+      if (!scrapCode) {
         validationErrors.push(`Row ${rowNumber}: Scrap Code is required`);
       }
-      
-      // Validate scrap code exists in scrap_items
-      if (row['Scrap Code'] && !scrapItemMap.has(row['Scrap Code'])) {
-        validationErrors.push(
-          `Row ${rowNumber}: Scrap Code '${row['Scrap Code']}' does not exist in the system. Please add it to the Scrap Items master data first.`
-        );
-      }
-      
-      // Validate scrap name matches the one in database
-      if (row['Scrap Code'] && row['Scrap Name'] && scrapItemMap.has(row['Scrap Code'])) {
-        const expectedName = scrapItemMap.get(row['Scrap Code']);
-        if (row['Scrap Name'] !== expectedName) {
-          validationErrors.push(
-            `Row ${rowNumber}: Scrap Name '${row['Scrap Name']}' does not match the registered name '${expectedName}' for code '${row['Scrap Code']}'`
-          );
-        }
-      }
-      
-      if (!row['Scrap Name']) {
+      if (!scrapName) {
         validationErrors.push(`Row ${rowNumber}: Scrap Name is required`);
       }
-      if (!row.UOM) {
+      if (!uom) {
         validationErrors.push(`Row ${rowNumber}: UOM is required`);
       }
-      if (!row.Quantity || row.Quantity <= 0) {
-        validationErrors.push(`Row ${rowNumber}: Quantity must be greater than 0`);
+      if (scrapCode && scrapName && uom) {
+        for (const error of validateScrapMasterIdentity(scrapItemMap.get(scrapCode), { scrapCode, scrapName, uom })) {
+          validationErrors.push(`Row ${rowNumber}: ${error}`);
+        }
       }
-      if (!row.Currency) {
+      if (qty === null || qty <= 0) {
+        validationErrors.push(`Row ${rowNumber}: Quantity must be a finite number greater than 0`);
+      }
+      if (!currency) {
         validationErrors.push(`Row ${rowNumber}: Currency is required`);
       }
-      if (row.Amount === undefined || row.Amount === null || row.Amount < 0) {
-        validationErrors.push(`Row ${rowNumber}: Amount must be non-negative`);
+      if (amount === null || amount < 0) {
+        validationErrors.push(`Row ${rowNumber}: Amount must be a finite non-negative number`);
+      }
+      if (normalizeScrapText(row.Remarks).length > 500) {
+        validationErrors.push(`Row ${rowNumber}: Remarks cannot exceed 500 characters`);
       }
 
       // Validate currency
-      const validCurrencies = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
-      if (row.Currency && !validCurrencies.includes(row.Currency)) {
+      if (currency && !isScrapCurrency(currency)) {
         validationErrors.push(
-          `Row ${rowNumber}: Invalid currency. Must be one of: ${validCurrencies.join(', ')}`
+          `Row ${rowNumber}: Currency must be one of: USD, IDR, CNY, EUR, JPY`
         );
       }
 
       // Add to items array
       items.push({
         date: parsedDate ? parsedDate.toISOString() : '',
-        scrapCode: row['Scrap Code'] || '',
-        scrapName: row['Scrap Name'] || '',
-        uom: row.UOM || '',
-        qty: Number(row.Quantity) || 0,
-        currency: row.Currency || 'USD',
-        amount: Number(row.Amount) || 0,
+        scrapCode,
+        scrapName,
+        uom,
+        qty: qty ?? 0,
+        currency,
+        amount: amount ?? 0,
         remarks: row.Remarks || '',
       });
     });

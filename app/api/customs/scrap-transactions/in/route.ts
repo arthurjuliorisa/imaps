@@ -6,31 +6,33 @@ import { logActivity } from '@/lib/log-activity';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
+import {
+  normalizeScrapDate,
+  utcToday,
+  validateScrapMasterIdentity,
+} from '@/lib/scrap-validation';
+
+class ScrapInputValidationError extends Error {}
 
 /**
  * Zod schema for incoming scrap transaction validation
  */
 const IncomingScrapSchema = z.object({
-  date: z.string().or(z.date()).transform((val) => {
-    const parsed = new Date(val);
-    if (isNaN(parsed.getTime())) {
-      throw new Error('Invalid date format');
+  date: z.string().or(z.date()).transform((val, ctx) => {
+    const parsed = normalizeScrapDate(val);
+    if (!parsed) {
+      ctx.addIssue({ code: 'custom', message: 'Transaction date is invalid' });
+      return z.NEVER;
     }
-    // Normalize to UTC midnight
-    return new Date(Date.UTC(
-      parsed.getFullYear(),
-      parsed.getMonth(),
-      parsed.getDate(),
-      0, 0, 0, 0
-    ));
+    return parsed;
   }),
-  scrapCode: z.string().min(1, 'Scrap code is required').trim(),
-  scrapName: z.string().min(1, 'Scrap name is required').trim(),
-  uom: z.string().min(1, 'UOM is required').trim(),
-  qty: z.number().positive('Quantity must be positive'),
+  scrapCode: z.string().trim().min(1, 'Scrap Code is required'),
+  scrapName: z.string().trim().min(1, 'Scrap Name is required'),
+  uom: z.string().trim().min(1, 'UOM is required'),
+  qty: z.number().finite('Quantity must be a finite number').positive('Quantity must be greater than 0'),
   currency: z.enum(['USD', 'IDR', 'CNY', 'EUR', 'JPY']),
-  amount: z.number().nonnegative('Amount must be non-negative'),
-  remarks: z.string().optional().nullable(),
+  amount: z.number().finite('Amount must be a finite number').nonnegative('Amount must be non-negative'),
+  remarks: z.string().max(500, 'Remarks cannot exceed 500 characters').optional().nullable(),
 });
 
 type IncomingScrapInput = z.infer<typeof IncomingScrapSchema>;
@@ -113,13 +115,7 @@ export async function POST(request: Request) {
     const { date, scrapCode, scrapName, uom, qty, currency, amount, remarks } = validatedData;
 
     // Validate date is not in the future
-    const now = new Date();
-    const today = new Date(Date.UTC(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      0, 0, 0, 0
-    ));
+    const today = utcToday();
 
     if (date > today) {
       return NextResponse.json(
@@ -131,6 +127,13 @@ export async function POST(request: Request) {
     // Execute transaction
     const snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string; date: Date }> = [];
     const result = await prisma.$transaction(async (tx) => {
+      const master = await tx.scrap_items.findFirst({
+        where: { company_code: companyCode, scrap_code: scrapCode },
+        select: { scrap_code: true, scrap_name: true, uom: true, is_active: true, deleted_at: true },
+      });
+      const identityErrors = validateScrapMasterIdentity(master ?? undefined, { scrapCode, scrapName, uom });
+      if (identityErrors.length > 0) throw new ScrapInputValidationError(identityErrors.join('; '));
+
       // 1. Generate document number (using wms_id format for consistency)
       const timestamp = Date.now();
       const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
@@ -289,6 +292,10 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error('[API Error] Failed to create incoming scrap transaction:', error);
+
+    if (error instanceof ScrapInputValidationError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
 
     // Handle specific Prisma errors
     if (error.code === 'P2002') {

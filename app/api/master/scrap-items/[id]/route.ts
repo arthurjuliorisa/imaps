@@ -8,21 +8,21 @@ import { z } from 'zod';
 // Validation schema
 const ScrapItemComponentSchema = z.object({
   id: z.number().optional(),
-  componentCode: z.string().min(1, 'Component code is required'),
-  componentName: z.string().min(1, 'Component name is required'),
-  componentType: z.string().min(1, 'Component type is required'),
-  uom: z.string().min(1, 'UOM is required'),
-  quantity: z.number().positive('Quantity must be positive'),
+  componentCode: z.string().trim().min(1, 'Component code is required').max(50),
+  componentName: z.string().trim().min(1, 'Component name is required').max(200),
+  componentType: z.string().trim().min(1, 'Component type is required').max(10),
+  uom: z.string().trim().min(1, 'UOM is required').max(20),
+  quantity: z.number().finite('Quantity must be a finite number').positive('Quantity must be positive'),
   percentage: z.number().min(0).max(100).optional(),
-  remarks: z.string().optional(),
+  remarks: z.string().max(500).optional(),
 });
 
 const ScrapItemUpdateSchema = z.object({
-  scrapName: z.string().min(1, 'Scrap name is required').max(200).optional(),
-  scrapDescription: z.string().max(500).optional(),
-  uom: z.string().min(1, 'UOM is required').max(20).optional(),
-  isActive: z.boolean().optional(),
-  components: z.array(ScrapItemComponentSchema).optional(),
+  scrapName: z.string().trim().min(1, 'Scrap name is required').max(200),
+  scrapDescription: z.string().trim().max(500).optional(),
+  uom: z.string().trim().min(1, 'UOM is required').max(20),
+  isActive: z.boolean(),
+  components: z.array(ScrapItemComponentSchema).min(1, 'At least one component is required'),
 });
 
 /**
@@ -189,28 +189,19 @@ export async function PUT(
       });
 
       // If components are provided, update them
-      if (components) {
-        // Delete all existing components
-        await tx.scrap_item_details.deleteMany({
-          where: { scrap_item_id: id },
-        });
-
-        // Create new components
-        if (components.length > 0) {
-          await tx.scrap_item_details.createMany({
-            data: components.map((comp) => ({
-              scrap_item_id: id,
-              component_code: comp.componentCode,
-              component_name: comp.componentName,
-              component_type: comp.componentType,
-              uom: comp.uom,
-              quantity: comp.quantity,
-              percentage: comp.percentage,
-              remarks: comp.remarks,
-            })),
-          });
-        }
-      }
+      await tx.scrap_item_details.deleteMany({ where: { scrap_item_id: id } });
+      await tx.scrap_item_details.createMany({
+        data: components.map((comp) => ({
+          scrap_item_id: id,
+          component_code: comp.componentCode,
+          component_name: comp.componentName,
+          component_type: comp.componentType,
+          uom: comp.uom,
+          quantity: comp.quantity,
+          percentage: comp.percentage,
+          remarks: comp.remarks,
+        })),
+      });
 
       return item;
     });

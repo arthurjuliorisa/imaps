@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { isScrapCurrency } from './scrap-validation';
 
 /**
  * Interface for parsed Ceisa 4.0 Excel data
@@ -65,7 +66,7 @@ export async function parseCeisa40Excel(buffer: Buffer): Promise<ParsedCeisaData
     const docType = docTypeIndex >= 0 ? String(valueRow[docTypeIndex] || '') : '';
     const ppkekNumber = ppkekNumberIndex >= 0 ? String(valueRow[ppkekNumberIndex] || '') : '';
     const regDate = regDateIndex >= 0 ? parseExcelDate(valueRow[regDateIndex]) : '';
-    const currency = currencyIndex >= 0 ? String(valueRow[currencyIndex] || 'USD') : 'USD';
+    const currency = currencyIndex >= 0 ? String(valueRow[currencyIndex] || '').trim() : '';
 
     // Company Name: Try to get from ENTITAS sheet (code 8 or first entity)
     // Item Type: Will be determined from the context (default to SCRAP for scrap transactions)
@@ -205,20 +206,22 @@ export async function parseCeisa40Excel(buffer: Buffer): Promise<ParsedCeisaData
         continue;
       }
 
-      const itemCode = itemCodeIndex >= 0 ? String(row[itemCodeIndex] || '') : '';
-      const itemName = itemNameIndex >= 0 ? String(row[itemNameIndex] || '') : '';
-      const unit = unitIndex >= 0 ? String(row[unitIndex] || '') : '';
-      const quantity = quantityIndex >= 0 ? parseFloat(String(row[quantityIndex] || '0')) : 0;
-      const valueAmount = valueAmountIndex >= 0 ? parseFloat(String(row[valueAmountIndex] || '0')) : 0;
+      const itemCode = itemCodeIndex >= 0 ? String(row[itemCodeIndex] || '').trim() : '';
+      const itemName = itemNameIndex >= 0 ? String(row[itemNameIndex] || '').trim() : '';
+      const unit = unitIndex >= 0 ? String(row[unitIndex] || '').trim() : '';
+      const quantityText = quantityIndex >= 0 ? String(row[quantityIndex] ?? '').trim() : '';
+      const amountText = valueAmountIndex >= 0 ? String(row[valueAmountIndex] ?? '').trim() : '';
+      const quantity = quantityText === '' ? Number.NaN : Number(quantityText);
+      const valueAmount = amountText === '' ? Number.NaN : Number(amountText);
 
       // Only add items that have at least a code and name
       if (itemCode && itemName) {
         items.push({
           itemCode,
           itemName,
-          unit: unit || 'PCE', // Default unit
-          quantity: isNaN(quantity) ? 0 : quantity,
-          valueAmount: isNaN(valueAmount) ? 0 : valueAmount,
+          unit,
+          quantity,
+          valueAmount,
         });
       }
     }
@@ -409,6 +412,10 @@ export function validateParsedData(data: ParsedCeisaData): string[] {
     errors.push('Item Type is required');
   }
 
+  if (!isScrapCurrency(data.currency)) {
+    errors.push('Currency must be one of: USD, IDR, CNY, EUR, JPY');
+  }
+
   if (!data.items || data.items.length === 0) {
     errors.push('At least one item is required');
   }
@@ -423,8 +430,11 @@ export function validateParsedData(data: ParsedCeisaData): string[] {
     if (!item.unit) {
       errors.push(`Item ${index + 1}: Unit is required`);
     }
-    if (item.quantity <= 0) {
-      errors.push(`Item ${index + 1}: Quantity must be greater than 0`);
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+      errors.push(`Item ${index + 1}: Quantity must be a finite number greater than 0`);
+    }
+    if (!Number.isFinite(item.valueAmount) || item.valueAmount < 0) {
+      errors.push(`Item ${index + 1}: Amount must be a finite non-negative number`);
     }
   });
 

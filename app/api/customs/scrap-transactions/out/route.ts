@@ -7,46 +7,43 @@ import { logActivity } from '@/lib/log-activity';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
+import {
+  normalizeScrapDate,
+  utcToday,
+  validateScrapMasterIdentity,
+} from '@/lib/scrap-validation';
+
+class ScrapInputValidationError extends Error {}
 
 /**
  * Zod schema for outgoing scrap transaction validation
  */
 const OutgoingScrapSchema = z.object({
-  date: z.string().or(z.date()).transform((val) => {
-    const parsed = new Date(val);
-    if (isNaN(parsed.getTime())) {
-      throw new Error('Invalid date format');
+  date: z.string().or(z.date()).transform((val, ctx) => {
+    const parsed = normalizeScrapDate(val);
+    if (!parsed) {
+      ctx.addIssue({ code: 'custom', message: 'Transaction date is invalid' });
+      return z.NEVER;
     }
-    // Normalize to UTC midnight
-    return new Date(Date.UTC(
-      parsed.getFullYear(),
-      parsed.getMonth(),
-      parsed.getDate(),
-      0, 0, 0, 0
-    ));
+    return parsed;
   }),
-  scrapCode: z.string().min(1, 'Scrap code is required').trim(),
-  scrapName: z.string().min(1, 'Scrap name is required').trim(),
-  uom: z.string().min(1, 'UOM is required').trim(),
-  qty: z.number().positive('Quantity must be positive'),
+  scrapCode: z.string().trim().min(1, 'Scrap Code is required'),
+  scrapName: z.string().trim().min(1, 'Scrap Name is required'),
+  uom: z.string().trim().min(1, 'UOM is required'),
+  qty: z.number().finite('Quantity must be a finite number').positive('Quantity must be greater than 0'),
   currency: z.enum(['USD', 'IDR', 'CNY', 'EUR', 'JPY']),
-  amount: z.number().nonnegative('Amount must be non-negative'),
+  amount: z.number().finite('Amount must be a finite number').nonnegative('Amount must be non-negative'),
   recipientName: z.string().min(1, 'Recipient name is required').trim(),
-  remarks: z.string().optional().nullable(),
+  remarks: z.string().max(500, 'Remarks cannot exceed 500 characters').optional().nullable(),
   ppkekNumber: z.string().optional().nullable(),
-  registrationDate: z.string().or(z.date()).optional().nullable().transform((val) => {
+  registrationDate: z.string().or(z.date()).optional().nullable().transform((val, ctx) => {
     if (!val) return null;
-    const parsed = new Date(val);
-    if (isNaN(parsed.getTime())) {
-      throw new Error('Invalid registration date format');
+    const parsed = normalizeScrapDate(val);
+    if (!parsed) {
+      ctx.addIssue({ code: 'custom', message: 'Registration date is invalid' });
+      return z.NEVER;
     }
-    // Normalize to UTC midnight
-    return new Date(Date.UTC(
-      parsed.getFullYear(),
-      parsed.getMonth(),
-      parsed.getDate(),
-      0, 0, 0, 0
-    ));
+    return parsed;
   }),
   customsDocumentType: z.enum(['BC25', 'BC27', 'BC27OUT', 'BC41', 'BC261']),
   transactionNumber: z.string().optional().nullable(),
@@ -164,13 +161,7 @@ export async function POST(request: Request) {
     const { date, scrapCode, scrapName, uom, qty, currency, amount, recipientName, remarks, ppkekNumber, registrationDate, customsDocumentType, transactionNumber, incomingPpkekNumbers } = validatedData;
 
     // Validate date is not in the future
-    const now = new Date();
-    const today = new Date(Date.UTC(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      0, 0, 0, 0
-    ));
+    const today = utcToday();
 
     if (date > today) {
       return NextResponse.json(
@@ -178,9 +169,22 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    if (registrationDate && registrationDate > today) {
+      return NextResponse.json(
+        { message: 'Registration date cannot be in the future' },
+        { status: 400 }
+      );
+    }
 
     // Execute transaction
     const result = await prisma.$transaction(async (tx) => {
+      const master = await tx.scrap_items.findFirst({
+        where: { company_code: companyCode, scrap_code: scrapCode },
+        select: { scrap_code: true, scrap_name: true, uom: true, is_active: true, deleted_at: true },
+      });
+      const identityErrors = validateScrapMasterIdentity(master ?? undefined, { scrapCode, scrapName, uom });
+      if (identityErrors.length > 0) throw new ScrapInputValidationError(identityErrors.join('; '));
+
       await acquireStockIdentityLocks(tx, companyCode, [{ itemType: 'SCRAP', itemCode: scrapCode, uom }]);
 
       const stockCheck = await checkStockAvailability(
@@ -429,6 +433,10 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error('[API Error] Failed to create outgoing scrap transaction:', error);
+
+    if (error instanceof ScrapInputValidationError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
 
     if (error instanceof InsufficientScrapStockError) {
       const stockCheck = error.stockCheck;
