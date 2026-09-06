@@ -173,7 +173,7 @@ export async function GET(request: Request) {
       SELECT * FROM (
         -- SCRAP IN from scrap_transactions
         SELECT
-          'SCRAP_' || st.id as record_id,
+          'SCRAP_' || st.id || '_' || sti.id as record_id,
           st.id as source_id,
           st.document_number as wms_id,
           st.company_code,
@@ -216,7 +216,7 @@ export async function GET(request: Request) {
         
         -- SCRAP OUT from outgoing_goods
         SELECT
-          'OUTGOING_' || og.id as record_id,
+          'OUTGOING_' || og.id || '_' || ogi.id as record_id,
           og.id as source_id,
           og.wms_id,
           og.company_code,
@@ -241,7 +241,7 @@ export async function GET(request: Request) {
           og.created_at,
           og.outgoing_date as sort_date,
           og.customs_document_type::text as customs_doc_type,
-          og.wms_id as transaction_number,
+          og.outgoing_evidence_number as transaction_number,
           ogi.incoming_ppkek_numbers
         FROM outgoing_goods og
         JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
@@ -266,7 +266,7 @@ export async function GET(request: Request) {
     // Transform to expected format
     const transformedData = result.map((row: any, index: number) => ({
       no: offset + index + 1,
-      id: `${row.record_id}-${row.item_code}-${offset + index}`,
+      id: row.record_id,
       wmsId: row.wms_id,
       companyCode: row.company_code,
       companyName: row.company_name,

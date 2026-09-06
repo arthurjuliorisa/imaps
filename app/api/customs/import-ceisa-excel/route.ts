@@ -634,7 +634,7 @@ async function importScrapTransactions(
           recipient_name: data.recipientName || 'Unknown',
           disposal_method: 'Sold as scrap',
           remarks: null,
-          ppkek_number: data.ppkekNumber || null,
+          ppkek_number: data.ppkekNumber || 'N/A',
           customs_registration_date: regDate || null,
           customs_document_type: mapDocumentTypeToEnum(data.docType || '27') as any,
           timestamp: new Date(),
@@ -656,9 +656,25 @@ async function importScrapTransactions(
         scrap_reason: null,
       }));
 
-      await tx.scrap_transaction_items.createMany({
+      const createdScrapItems = await tx.scrap_transaction_items.createManyAndReturn({
         data: scrapTransactionItemsData,
+        select: { id: true, item_code: true, item_name: true, uom: true, qty: true, currency: true, amount: true },
       });
+      const lineKey = (item: { itemCode: string; itemName: string; unit: string; quantity: number; valueAmount: number }) =>
+        [item.itemCode, item.itemName, item.unit, new Prisma.Decimal(item.quantity).toString(), data.currency,
+          new Prisma.Decimal(item.valueAmount).toString()].join('\u0000');
+      const createdLineKey = (item: typeof createdScrapItems[number]) =>
+        [item.item_code, item.item_name, item.uom, item.qty.toString(), item.currency,
+          item.amount.toString()].join('\u0000');
+      const idsByLine = new Map<string, number[]>();
+      for (const item of createdScrapItems) {
+        const key = createdLineKey(item);
+        idsByLine.set(key, [...(idsByLine.get(key) || []), item.id].sort((a, b) => a - b));
+      }
+      const scrapItemIds = data.items.map(item => idsByLine.get(lineKey(item))?.shift());
+      if (scrapItemIds.some(id => id === undefined)) {
+        throw new Error('Failed to establish deterministic Scrap OUT line pairing');
+      }
 
       // Create outgoing_goods record (for WMS integration)
       const outgoingGood = await tx.outgoing_goods.create({
@@ -667,7 +683,7 @@ async function importScrapTransactions(
           company_code: companyCode,
           owner: companyCode,
           customs_document_type: mapDocumentTypeToEnum(data.docType || '27') as any,
-          ppkek_number: data.ppkekNumber,
+          ppkek_number: data.ppkekNumber || 'N/A',
           customs_registration_date: regDate,
           outgoing_evidence_number: data.docNumber,
           outgoing_date: docDate,
@@ -677,6 +693,13 @@ async function importScrapTransactions(
           timestamp: new Date(),
         },
       });
+      await tx.$executeRaw`
+        UPDATE outgoing_goods
+        SET scrap_transaction_id = ${scrapTransaction.id}
+        WHERE company_code = ${companyCode}
+          AND id = ${outgoingGood.id}
+          AND outgoing_date = ${docDate}::DATE
+      `;
 
       // Prepare all outgoing_good_items data
       const outgoingGoodItemsData = data.items.map(item => ({
@@ -695,9 +718,29 @@ async function importScrapTransactions(
       }));
 
       // Create all outgoing_good_items at once
-      await tx.outgoing_good_items.createMany({
+      const createdOutgoingItems = await tx.outgoing_good_items.createManyAndReturn({
         data: outgoingGoodItemsData,
+        select: { id: true, item_code: true, item_name: true, uom: true, qty: true, currency: true, amount: true },
       });
+      const outgoingIdsByLine = new Map<string, number[]>();
+      for (const item of createdOutgoingItems) {
+        const key = [item.item_code, item.item_name, item.uom, item.qty.toString(), item.currency,
+          item.amount.toString()].join('\u0000');
+        outgoingIdsByLine.set(key, [...(outgoingIdsByLine.get(key) || []), item.id].sort((a, b) => a - b));
+      }
+      const outgoingItemIds = data.items.map(item => outgoingIdsByLine.get(lineKey(item))?.shift());
+      if (outgoingItemIds.some(id => id === undefined)) {
+        throw new Error('Failed to establish deterministic Scrap OUT line pairing');
+      }
+      await tx.$executeRaw`
+        UPDATE outgoing_good_items ogi
+        SET scrap_transaction_item_id = pairs.scrap_item_id
+        FROM unnest(${outgoingItemIds as number[]}::INTEGER[], ${scrapItemIds as number[]}::INTEGER[])
+          AS pairs(outgoing_item_id, scrap_item_id)
+        WHERE ogi.id = pairs.outgoing_item_id
+          AND ogi.outgoing_good_company = ${companyCode}
+          AND ogi.outgoing_good_date = ${docDate}::DATE
+      `;
 
       // Refresh every affected identity while its advisory lock is still held.
       for (const item of aggregatedItems.values()) {

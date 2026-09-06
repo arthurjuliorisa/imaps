@@ -216,15 +216,15 @@ export async function POST(request: Request) {
           recipient_name: recipientName,
           disposal_method: 'Sold as scrap',
           remarks: remarks,
-          ppkek_number: ppkekNumber || null,
-          customs_registration_date: registrationDate || null,
+          ppkek_number: ppkekNumber || 'N/A',
+          customs_registration_date: registrationDate || date,
           customs_document_type: customsDocumentType,
           timestamp: new Date(),
         },
       });
 
       // 3. Create scrap_transaction_items record
-      await tx.scrap_transaction_items.create({
+      const scrapTransactionItem = await tx.scrap_transaction_items.create({
         data: {
           scrap_transaction_id: scrapTransaction.id,
           scrap_transaction_company: companyCode,
@@ -248,7 +248,7 @@ export async function POST(request: Request) {
           owner: companyCode,
           customs_document_type: mapDocumentTypeToEnum(customsDocumentType),
           ppkek_number: ppkekNumber || 'N/A',
-          customs_registration_date: registrationDate || new Date(),
+          customs_registration_date: registrationDate || date,
           outgoing_evidence_number: documentNumber,
           outgoing_date: date,
           invoice_number: documentNumber,
@@ -257,9 +257,16 @@ export async function POST(request: Request) {
           timestamp: new Date(),
         },
       });
+      await tx.$executeRaw`
+        UPDATE outgoing_goods
+        SET scrap_transaction_id = ${scrapTransaction.id}
+        WHERE company_code = ${companyCode}
+          AND id = ${outgoingGood.id}
+          AND outgoing_date = ${date}::DATE
+      `;
 
       // 5. Create outgoing_good_items record
-      await tx.outgoing_good_items.create({
+      const outgoingGoodItem = await tx.outgoing_good_items.create({
         data: {
           outgoing_good_id: outgoingGood.id,
           outgoing_good_company: companyCode,
@@ -275,6 +282,13 @@ export async function POST(request: Request) {
           amount: new Prisma.Decimal(amount),
         },
       });
+      await tx.$executeRaw`
+        UPDATE outgoing_good_items
+        SET scrap_transaction_item_id = ${scrapTransactionItem.id}
+        WHERE id = ${outgoingGoodItem.id}
+          AND outgoing_good_company = ${companyCode}
+          AND outgoing_good_date = ${date}::DATE
+      `;
 
       // Keep the snapshot current before releasing the stock-identity lock.
       await tx.$executeRaw`
@@ -471,306 +485,12 @@ export async function POST(request: Request) {
 }
 
 /**
- * PUT /api/customs/scrap-transactions/out?id=SCRAP_TRANS_ID
- * Update outgoing scrap transaction
+ * Legacy header-only edit is intentionally disabled. Mutations must use the
+ * line-addressable /api/customs/scrap-transactions/[id] endpoint.
  */
-export async function PUT(request: Request) {
-  try {
-    // Check authentication
-    const authCheck = await checkAuth();
-    if (!authCheck.authenticated) {
-      return authCheck.response;
-    }
-
-    const { session } = authCheck as { authenticated: true; session: any };
-
-    // Validate company code
-    const companyValidation = validateCompanyCode(session);
-    if (!companyValidation.success) {
-      return companyValidation.response;
-    }
-    const { companyCode } = companyValidation;
-
-    // Get transaction ID from URL query
-    const url = new URL(request.url);
-    const transactionId = url.searchParams.get('id');
-    if (!transactionId) {
-      return NextResponse.json(
-        { message: 'Transaction ID is required' },
-        { status: 400 }
-      );
-    }
-
-    // Parse and validate request body
-    const body = await request.json();
-    let validatedData: OutgoingScrapInput;
-
-    try {
-      validatedData = OutgoingScrapSchema.parse(body);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return NextResponse.json(
-          {
-            message: 'Validation failed',
-            errors: error.issues.map((e) => ({
-              field: e.path.join('.'),
-              message: e.message,
-            })),
-          },
-          { status: 400 }
-        );
-      }
-      throw error;
-    }
-
-    const { date, scrapCode, scrapName, uom, qty, currency, amount, recipientName, remarks, ppkekNumber, registrationDate, customsDocumentType, incomingPpkekNumbers } = validatedData;
-
-    // Validate date is not in the future
-    const now = new Date();
-    const today = new Date(Date.UTC(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      0, 0, 0, 0
-    ));
-
-    if (date > today) {
-      return NextResponse.json(
-        { message: 'Transaction date cannot be in the future' },
-        { status: 400 }
-      );
-    }
-
-    // Execute transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Find existing scrap_transaction
-      const existingTransaction = await tx.scrap_transactions.findUnique({
-        where: { id: parseInt(transactionId) },
-        include: {
-          items: true,
-        },
-      });
-
-      if (!existingTransaction) {
-        throw new Error(`Scrap transaction with ID ${transactionId} not found`);
-      }
-
-      // 2. Find associated outgoing_goods record
-      const existingItem = existingTransaction.items[0];
-      const outgoingGood = await tx.outgoing_goods.findFirst({
-        where: {
-          company_code: companyCode,
-          outgoing_evidence_number: existingTransaction.document_number,
-        },
-      });
-
-      if (!outgoingGood) {
-        throw new Error('Associated outgoing goods record not found');
-      }
-
-      // 3. Update scrap_transactions
-      // Map document type to ensure valid enum value
-      const mappedDocumentType = mapDocumentTypeToEnum(customsDocumentType);
-      
-      await tx.scrap_transactions.update({
-        where: { id: existingTransaction.id },
-        data: {
-          transaction_date: date,
-          recipient_name: recipientName,
-          remarks: remarks,
-          ppkek_number: ppkekNumber || null,
-          customs_registration_date: registrationDate || null,
-          customs_document_type: mappedDocumentType,
-        },
-      });
-
-      // 4. Update scrap_transaction_items
-      if (existingItem) {
-        await tx.scrap_transaction_items.update({
-          where: { id: existingItem.id },
-          data: {
-            scrap_transaction_date: date,
-            item_name: scrapName,
-            uom: uom,
-            qty: new Prisma.Decimal(qty),
-            currency: currency,
-            amount: new Prisma.Decimal(amount),
-            scrap_reason: remarks,
-          },
-        });
-      }
-
-      // 5. Update outgoing_goods (IMPORTANT: Must include customs_document_type)
-      await tx.outgoing_goods.update({
-        where: { id: outgoingGood.id },
-        data: {
-          customs_document_type: mappedDocumentType,
-          ppkek_number: ppkekNumber || outgoingGood.ppkek_number,
-          customs_registration_date: registrationDate || outgoingGood.customs_registration_date,
-          recipient_name: recipientName,
-          outgoing_date: date,
-          invoice_date: date,
-        },
-      });
-
-      // 6. Update outgoing_good_items
-      const outgoingItems = await tx.outgoing_good_items.findMany({
-        where: {
-          outgoing_good_id: outgoingGood.id,
-        },
-      });
-
-      if (outgoingItems.length > 0) {
-        await tx.outgoing_good_items.update({
-          where: { id: outgoingItems[0].id },
-          data: {
-            outgoing_good_date: date,
-            item_name: scrapName,
-            uom: uom,
-            qty: new Prisma.Decimal(qty),
-            currency: currency,
-            amount: new Prisma.Decimal(amount),
-            incoming_ppkek_numbers: incomingPpkekNumbers || outgoingItems[0].incoming_ppkek_numbers,
-          },
-        });
-      }
-
-      return {
-        transactionId: existingTransaction.id,
-        outgoingGoodId: outgoingGood.id,
-        documentNumber: existingTransaction.document_number,
-        date,
-        scrapCode,
-        scrapName,
-        uom,
-        qty,
-        currency,
-        amount,
-        recipientName,
-      };
-    }, {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      timeout: 30000,
-    });
-
-    // Execute snapshot recalculation (outside transaction, non-blocking)
-    (async () => {
-      try {
-        await prisma.$executeRawUnsafe(
-          'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
-          companyCode,
-          'SCRAP',
-          result.scrapCode,
-          result.scrapName,
-          result.uom,
-          result.date
-        );
-        console.log(
-          '[API Info] Snapshot recalculation executed for edit',
-          {
-            companyCode,
-            itemType: 'SCRAP',
-            itemCode: result.scrapCode,
-            date: result.date.toISOString().split('T')[0],
-          }
-        );
-
-        // Cascade recalculate snapshots for all future dates
-        await prisma.$executeRawUnsafe(
-          'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
-          companyCode,
-          'SCRAP',
-          result.scrapCode,
-          result.uom,
-          result.date
-        );
-        console.log(
-          '[API Info] Cascaded snapshot recalculation executed',
-          {
-            companyCode,
-            itemType: 'SCRAP',
-            itemCode: result.scrapCode,
-            fromDate: result.date.toISOString().split('T')[0],
-          }
-        );
-      } catch (snapshotError) {
-        console.error(
-          '[API Error] Snapshot calculation failed',
-          {
-            companyCode,
-            itemType: 'SCRAP',
-            itemCode: result.scrapCode,
-            date: result.date.toISOString().split('T')[0],
-            errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
-          }
-        );
-      }
-    })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
-
-    // Log activity
-    await logActivity({
-      action: 'EDIT_OUT_SCRAP_TRANSACTION',
-      description: `Updated outgoing scrap transaction: ${result.documentNumber} - ${result.scrapName} (${result.qty} ${result.uom}) to ${result.recipientName}`,
-      status: 'success',
-      metadata: {
-        transactionId: result.transactionId.toString(),
-        outgoingGoodId: result.outgoingGoodId.toString(),
-        documentNumber: result.documentNumber,
-        itemCode: result.scrapCode,
-        itemName: result.scrapName,
-        qty: result.qty,
-        currency: result.currency,
-        amount: result.amount,
-        recipientName: result.recipientName,
-        companyCode,
-      },
-    });
-
-    return NextResponse.json(
-      {
-        success: true,
-        message: 'Outgoing scrap transaction updated successfully',
-        data: result,
-      },
-      { status: 200 }
-    );
-
-  } catch (error: any) {
-    console.error('[API Error] Failed to update outgoing scrap transaction:', error);
-
-    // Handle specific Prisma errors
-    if (error.code === 'P2002') {
-      return NextResponse.json(
-        { message: 'Duplicate transaction detected', error: error.message },
-        { status: 400 }
-      );
-    }
-
-    if (error.code === 'P2003') {
-      return NextResponse.json(
-        { message: 'Foreign key constraint failed', error: error.message },
-        { status: 400 }
-      );
-    }
-
-    if (error.code === 'P2034') {
-      return NextResponse.json(
-        { message: 'Transaction conflict detected. Please retry.', error: error.message },
-        { status: 409 }
-      );
-    }
-
-    // Handle custom validation errors
-    if (error.message && error.message.includes('not found')) {
-      return NextResponse.json(
-        { message: error.message },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json(
-      { message: 'Error updating outgoing scrap transaction', error: error.message },
-      { status: 500 }
-    );
-  }
+export async function PUT() {
+  return NextResponse.json(
+    { message: 'Header-only Scrap OUT edit is no longer supported. Refresh the Scrap Transaction page and edit a specific line.' },
+    { status: 410 }
+  );
 }

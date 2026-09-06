@@ -1,946 +1,322 @@
 import { NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
-import { acquireStockIdentityLocks, checkStockAvailability, checkScrapInBalance, type StockCheckResult } from '@/lib/utils/stock-checker';
+import { acquireStockIdentityLocks, checkScrapInBalance, checkStockAvailability, type StockCheckResult } from '@/lib/utils/stock-checker';
+import { parseScrapRecordId } from '@/lib/utils/scrap-record-id';
 import { logActivity } from '@/lib/log-activity';
-import { Prisma } from '@prisma/client';
 import { SCRAP_CUSTOMS_TYPES } from '@/lib/validators/constants/customs-document-types';
 
+class PairIntegrityError extends Error {}
 class InsufficientScrapStockError extends Error {
   constructor(public readonly stockCheck: StockCheckResult) {
     super('INSUFFICIENT_SCRAP_STOCK');
   }
 }
 
+type RouteContext = { params: Promise<{ id: string }> };
 
-/**
- * PUT /api/customs/scrap-transactions/[id]
- * Update a scrap transaction
- *
- * Only scrap_transactions table records can be updated (ID starts with SCRAP_)
- * Outgoing_goods records should be updated from the outgoing page
- */
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
+function sameDay(a: Date, b: Date): boolean {
+  return a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+}
+
+function sharedLineIsConsistent(outgoingItem: any, scrapItem: any): boolean {
+  return outgoingItem.item_type === scrapItem.item_type
+    && outgoingItem.item_code === scrapItem.item_code
+    && outgoingItem.item_name === scrapItem.item_name
+    && outgoingItem.uom === scrapItem.uom
+    && outgoingItem.qty.equals(scrapItem.qty)
+    && outgoingItem.currency === scrapItem.currency
+    && outgoingItem.amount.equals(scrapItem.amount)
+    && sameDay(outgoingItem.outgoing_good_date, scrapItem.scrap_transaction_date);
+}
+
+async function refreshSnapshot(
+  tx: Prisma.TransactionClient,
+  companyCode: number,
+  item: { item_type: string; item_code: string; item_name: string; uom: string },
+  date: Date
 ) {
+  await tx.$executeRaw`
+    SELECT upsert_item_stock_snapshot(
+      ${companyCode}::INTEGER, ${item.item_type}::VARCHAR, ${item.item_code}::VARCHAR,
+      ${item.item_name}::VARCHAR, ${item.uom}::VARCHAR, ${date}::DATE
+    )
+  `;
+  await tx.$executeRaw`
+    SELECT recalculate_item_snapshots_from_date(
+      ${companyCode}::INTEGER, ${item.item_type}::VARCHAR, ${item.item_code}::VARCHAR,
+      ${item.uom}::VARCHAR, ${date}::DATE
+    )
+  `;
+}
+
+async function loadOutgoingPair(
+  tx: Prisma.TransactionClient,
+  companyCode: number,
+  headerId: number,
+  itemId: number
+) {
+  const outgoing = await tx.outgoing_goods.findFirst({
+    where: { id: headerId, company_code: companyCode, deleted_at: null },
+    include: { items: { where: { deleted_at: null } } },
+  });
+  const outgoingItem = outgoing?.items.find(item => item.id === itemId);
+  if (!outgoing || !outgoingItem) {
+    throw new PairIntegrityError('Selected Scrap OUT line was not found');
+  }
+
+  const [headerReference] = await tx.$queryRaw<Array<{ scrap_transaction_id: number | null }>>`
+    SELECT scrap_transaction_id
+    FROM outgoing_goods
+    WHERE company_code = ${companyCode}
+      AND id = ${headerId}
+      AND outgoing_date = ${outgoing.outgoing_date}::DATE
+  `;
+  if (!headerReference?.scrap_transaction_id) {
+    throw new PairIntegrityError('Scrap OUT header pair is missing');
+  }
+  const scrap = await tx.scrap_transactions.findFirst({
+    where: { id: headerReference.scrap_transaction_id },
+    include: { items: { where: { deleted_at: null } } },
+  });
+  if (!scrap) throw new PairIntegrityError('Scrap OUT header pair is missing');
+  if (scrap.company_code !== companyCode || scrap.transaction_type !== 'OUT' || scrap.deleted_at
+    || !sameDay(scrap.transaction_date, outgoing.outgoing_date)
+    || scrap.document_number !== outgoing.outgoing_evidence_number
+    || scrap.ppkek_number !== outgoing.ppkek_number
+    || (scrap.customs_registration_date && outgoing.customs_registration_date
+      ? !sameDay(scrap.customs_registration_date, outgoing.customs_registration_date)
+      : scrap.customs_registration_date !== outgoing.customs_registration_date)
+    || scrap.customs_document_type !== outgoing.customs_document_type
+    || scrap.recipient_name !== outgoing.recipient_name) {
+    throw new PairIntegrityError('Scrap OUT header pair is inconsistent');
+  }
+  const itemReferences = await tx.$queryRaw<Array<{ id: number; scrap_transaction_item_id: number | null }>>`
+    SELECT id, scrap_transaction_item_id
+    FROM outgoing_good_items
+    WHERE outgoing_good_company = ${companyCode}
+      AND outgoing_good_id = ${headerId}
+      AND outgoing_good_date = ${outgoing.outgoing_date}::DATE
+      AND deleted_at IS NULL
+  `;
+  const itemReference = itemReferences.find(reference => reference.id === itemId);
+  if (!itemReference?.scrap_transaction_item_id) {
+    throw new PairIntegrityError('Scrap OUT line pair is missing');
+  }
+  if (outgoing.items.length !== scrap.items.length || itemReferences.length !== outgoing.items.length) {
+    throw new PairIntegrityError('Paired Scrap OUT headers have different active line counts');
+  }
+  const scrapItemsById = new Map(scrap.items.map(item => [item.id, item]));
+  const referencesById = new Map(itemReferences.map(reference => [reference.id, reference.scrap_transaction_item_id]));
+  const allLinesConsistent = outgoing.items.every(item => {
+    const pairedId = referencesById.get(item.id);
+    const pairedItem = pairedId ? scrapItemsById.get(pairedId) : undefined;
+    return pairedItem?.scrap_transaction_id === scrap.id && sharedLineIsConsistent(item, pairedItem);
+  });
+  if (!allLinesConsistent || new Set(itemReferences.map(item => item.scrap_transaction_item_id)).size !== itemReferences.length) {
+    throw new PairIntegrityError('Scrap OUT line pairing is missing or inconsistent');
+  }
+  const scrapItem = scrap.items.find(item => item.id === itemReference.scrap_transaction_item_id);
+  if (!scrapItem || scrapItem.scrap_transaction_id !== scrap.id) {
+    throw new PairIntegrityError('Scrap OUT line pair does not belong to its paired header');
+  }
+  if (!sharedLineIsConsistent(outgoingItem, scrapItem)) {
+    throw new PairIntegrityError('Scrap OUT copies have diverged; no changes were applied');
+  }
+  return { outgoing, outgoingItem, scrap, scrapItem };
+}
+
+export async function PUT(request: Request, { params }: RouteContext) {
   try {
     const authCheck = await checkAuth();
-    if (!authCheck.authenticated) {
-      return authCheck.response;
-    }
-
-    const { session } = authCheck as { authenticated: true; session: any };
-
-    // Validate company code
-    const companyValidation = validateCompanyCode(session);
-    if (!companyValidation.success) {
-      return companyValidation.response;
-    }
+    if (!authCheck.authenticated) return authCheck.response;
+    const companyValidation = validateCompanyCode((authCheck as any).session);
+    if (!companyValidation.success) return companyValidation.response;
     const { companyCode } = companyValidation;
-
-    const { id } = await params;
-    const transactionId = id;
-
-    // Parse the ID to determine the source and extract the actual DB ID
-    let sourceTable: 'scrap_transactions' | 'outgoing_goods';
-    let actualId: number;
-
-    if (transactionId.startsWith('SCRAP_')) {
-      sourceTable = 'scrap_transactions';
-      // Extract ID from format: SCRAP_{id}-{item_code}-{index}
-      const parts = transactionId.replace('SCRAP_', '').split('-');
-      actualId = parseInt(parts[0], 10);
-    } else if (transactionId.startsWith('OUTGOING_')) {
-      sourceTable = 'outgoing_goods';
-      // Extract ID from format: OUTGOING_{id}-{item_code}-{index}
-      const parts = transactionId.replace('OUTGOING_', '').split('-');
-      actualId = parseInt(parts[0], 10);
-    } else {
-      return NextResponse.json(
-        { message: 'Invalid transaction ID format' },
-        { status: 400 }
-      );
+    const rawId = (await params).id;
+    const parsedId = parseScrapRecordId(rawId);
+    if (!parsedId) {
+      return NextResponse.json({ message: 'A stable header and line ID is required. Refresh and retry.' }, { status: 400 });
     }
 
-    if (isNaN(actualId)) {
-      return NextResponse.json(
-        { message: 'Invalid transaction ID' },
-        { status: 400 }
-      );
-    }
-
-    // Get the request body
     const body = await request.json();
-    const {
-      docDate,
-      qty,
-      currency,
-      amount,
-      recipientName,
-      remarks,
-      ppkekNumber,
-      registrationDate,
-      customsDocumentType,
-      transactionNumber,
-      incomingPpkekNumbers,
-    } = body;
-
-    if (customsDocumentType && !SCRAP_CUSTOMS_TYPES.includes(customsDocumentType)) {
-      return NextResponse.json(
-        { message: `Customs document type must be one of: ${SCRAP_CUSTOMS_TYPES.join(', ')}` },
-        { status: 400 }
-      );
+    const qty = Number(body.qty);
+    const amount = Number(body.amount);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return NextResponse.json({ message: 'Quantity must be a positive number' }, { status: 400 });
+    }
+    if (!Number.isFinite(amount) || amount < 0) {
+      return NextResponse.json({ message: 'Amount must be non-negative' }, { status: 400 });
+    }
+    if (!body.currency) return NextResponse.json({ message: 'Currency is required' }, { status: 400 });
+    if (body.customsDocumentType && !SCRAP_CUSTOMS_TYPES.includes(body.customsDocumentType)) {
+      return NextResponse.json({ message: `Customs document type must be one of: ${SCRAP_CUSTOMS_TYPES.join(', ')}` }, { status: 400 });
     }
 
-    // Validate qty is provided and is positive
-    if (!qty || qty <= 0) {
-      return NextResponse.json(
-        { message: 'Quantity must be a positive number' },
-        { status: 400 }
-      );
-    }
-
-    // Verify the transaction exists and belongs to the company
-    let transaction: any;
-    let existingItem: any;
-
-    if (sourceTable === 'scrap_transactions') {
-      const scrapTx = await prisma.scrap_transactions.findFirst({
-        where: {
-          id: actualId,
-          company_code: companyCode,
-          deleted_at: null,
-        },
-        include: {
-          items: {
-            where: {
-              deleted_at: null,
-            },
-          },
-        },
+    if (parsedId.source === 'scrap_transactions') {
+      const current = await prisma.scrap_transactions.findFirst({
+        where: { id: parsedId.headerId, company_code: companyCode, transaction_type: 'IN', deleted_at: null },
+        include: { items: { where: { id: parsedId.itemId, deleted_at: null } } },
       });
-
-      if (!scrapTx) {
-        return NextResponse.json(
-          { message: 'Transaction not found or already deleted' },
-          { status: 404 }
-        );
+      if (!current || current.items.length !== 1) {
+        return NextResponse.json({ message: 'Scrap IN line not found' }, { status: 404 });
       }
-
-      if (!scrapTx.items || scrapTx.items.length === 0) {
-        return NextResponse.json(
-          { message: 'Transaction item not found' },
-          { status: 404 }
-        );
+      const [item] = current.items;
+      const balance = await checkScrapInBalance(companyCode, item.item_code, item.item_type,
+        Number(item.qty), qty, current.transaction_date, current.id);
+      if (!balance.available) {
+        return NextResponse.json({ message: 'Stock would become negative', data: balance }, { status: 400 });
       }
-
-      transaction = scrapTx;
-      existingItem = scrapTx.items[0];
+      await prisma.$transaction(async tx => {
+        await tx.scrap_transactions.update({
+          where: { id: current.id },
+          data: {
+            ppkek_number: body.ppkekNumber || null,
+            customs_registration_date: body.registrationDate ? new Date(body.registrationDate) : null,
+            customs_document_type: body.customsDocumentType || null,
+            recipient_name: body.recipientName || null,
+            remarks: body.remarks || null,
+            ...(body.transactionNumber && { document_number: body.transactionNumber }),
+          },
+        });
+        await tx.scrap_transaction_items.update({
+          where: { id: item.id },
+          data: { qty: new Prisma.Decimal(qty), currency: body.currency, amount: new Prisma.Decimal(amount) },
+        });
+        await refreshSnapshot(tx, companyCode, item, current.transaction_date);
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30000 });
     } else {
-      // outgoing_goods
-      const outgoingTx = await prisma.outgoing_goods.findFirst({
-        where: {
-          id: actualId,
-          company_code: companyCode,
-          deleted_at: null,
-        },
-        include: {
-          items: {
-            where: {
-              deleted_at: null,
-            },
-          },
-        },
-      });
-
-      if (!outgoingTx) {
-        return NextResponse.json(
-          { message: 'Transaction not found or already deleted' },
-          { status: 404 }
+      await prisma.$transaction(async tx => {
+        const initial = await loadOutgoingPair(tx, companyCode, parsedId.headerId, parsedId.itemId);
+        await acquireStockIdentityLocks(tx, companyCode, [{
+          itemType: initial.outgoingItem.item_type,
+          itemCode: initial.outgoingItem.item_code,
+          uom: initial.outgoingItem.uom,
+        }]);
+        const { outgoing, outgoingItem, scrap, scrapItem } = await loadOutgoingPair(
+          tx, companyCode, parsedId.headerId, parsedId.itemId
         );
-      }
+        const difference = qty - Number(outgoingItem.qty);
+        if (difference > 0) {
+          const stock = await checkStockAvailability(companyCode, outgoingItem.item_code,
+            outgoingItem.item_type, difference, outgoing.outgoing_date, undefined, outgoingItem.uom, tx);
+          if (!stock.available) throw new InsufficientScrapStockError(stock);
+        }
 
-      if (!outgoingTx.items || outgoingTx.items.length === 0) {
-        return NextResponse.json(
-          { message: 'Transaction item not found' },
-          { status: 404 }
-        );
-      }
-
-      transaction = outgoingTx;
-      existingItem = outgoingTx.items[0];
+        const documentNumber = body.transactionNumber || outgoing.outgoing_evidence_number;
+        const ppkekNumber = body.ppkekNumber || outgoing.ppkek_number;
+        const sharedHeaderData = {
+          ppkek_number: ppkekNumber,
+          customs_registration_date: body.registrationDate ? new Date(body.registrationDate) : null,
+          customs_document_type: body.customsDocumentType || null,
+          recipient_name: body.recipientName || '',
+        };
+        await tx.outgoing_goods.update({
+          where: { id: outgoing.id },
+          data: { ...sharedHeaderData, outgoing_evidence_number: documentNumber },
+        });
+        await tx.scrap_transactions.update({
+          where: { id: scrap.id },
+          data: { ...sharedHeaderData, document_number: documentNumber, remarks: body.remarks || null },
+        });
+        const sharedItemData = {
+          qty: new Prisma.Decimal(qty), currency: body.currency, amount: new Prisma.Decimal(amount),
+        };
+        await tx.outgoing_good_items.update({
+          where: { id: outgoingItem.id },
+          data: { ...sharedItemData, incoming_ppkek_numbers: body.incomingPpkekNumbers || [] },
+        });
+        await tx.scrap_transaction_items.update({ where: { id: scrapItem.id }, data: sharedItemData });
+        await refreshSnapshot(tx, companyCode, outgoingItem, outgoing.outgoing_date);
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30000 });
     }
 
-    const qtyDifference = qty - Number(existingItem.qty);
-
-    // Validation for SCRAP IN: Check stock balance won't go negative
-    // Validation for SCRAP OUT: Check stock availability when qty increases
-    let stockCheckResult = null;
-    if (sourceTable === 'scrap_transactions') {
-      // For SCRAP IN, use balance check to ensure balance won't go negative
-      stockCheckResult = await checkScrapInBalance(
-        companyCode,
-        existingItem.item_code,
-        existingItem.item_type,
-        Number(existingItem.qty),
-        qty,
-        transaction.transaction_date,
-        actualId
-      );
-
-      // If balance would go negative, reject
-      if (!stockCheckResult.available) {
-        const qtyDecrease = Number(existingItem.qty) - qty;
-        return NextResponse.json(
-          {
-            success: false,
-            message: `Stock akan menjadi minus. Saat ini balance ${stockCheckResult.currentStock} unit. Anda mencoba mengurangi ${qtyDecrease} unit.`,
-            errors: [
-              {
-                field: 'qty',
-                message: `Mengurangi qty sebesar ${qtyDecrease} akan membuat balance minus ${stockCheckResult.shortfall} unit. Current balance: ${stockCheckResult.currentStock}`,
-              },
-            ],
-            data: {
-              itemCode: existingItem.item_code,
-              itemType: existingItem.item_type,
-              itemName: existingItem.item_name,
-              currentQty: Number(existingItem.qty),
-              newQty: qty,
-              qtyDifference: qtyDifference,
-              currentBalance: stockCheckResult.currentStock,
-              qtyReduction: qtyDecrease,
-              shortfall: stockCheckResult.shortfall,
-            },
-          },
-          { status: 400 }
-        );
-      }
-    } else if (sourceTable === 'outgoing_goods' && qtyDifference > 0) {
-      stockCheckResult = await checkStockAvailability(
-        companyCode,
-        existingItem.item_code,
-        existingItem.item_type,
-        qtyDifference,
-        transaction.outgoing_date,
-        undefined,
-        existingItem.uom
-      );
-
-      if (!stockCheckResult.available) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: `Stock tidak cukup untuk ${existingItem.item_code}. Tersedia: ${stockCheckResult.currentStock}, Diminta: ${qtyDifference}`,
-            errors: [
-              {
-                field: 'qty',
-                message: `Hanya tersedia ${stockCheckResult.currentStock} unit. Anda mencoba menambah ${qtyDifference} unit, kurang ${stockCheckResult.shortfall} unit`,
-              },
-            ],
-            data: {
-              itemCode: existingItem.item_code,
-              itemType: existingItem.item_type,
-              itemName: existingItem.item_name,
-              currentQty: Number(existingItem.qty),
-              newQty: qty,
-              qtyDifference: qtyDifference,
-              availableStock: stockCheckResult.currentStock,
-              requestedQty: qtyDifference,
-              shortfall: stockCheckResult.shortfall,
-            },
-          },
-          { status: 400 }
-        );
-      }
-    } else if (sourceTable === 'outgoing_goods') {
-      // For outgoing_goods OUT transactions, always fetch current stock info
-      if (qtyDifference < 0) {
-        stockCheckResult = await checkStockAvailability(
-          companyCode,
-          existingItem.item_code,
-          existingItem.item_type,
-          Math.abs(qtyDifference),
-          transaction.outgoing_date,
-          undefined,
-          existingItem.uom
-        );
-      } else {
-        stockCheckResult = await checkStockAvailability(
-          companyCode,
-          existingItem.item_code,
-          existingItem.item_type,
-          0,
-          transaction.outgoing_date,
-          undefined,
-          existingItem.uom
-        );
-      }
-    }
-
-    // Update transaction wrapped in a transaction with snapshot recalculation
-    // Collect item info BEFORE transaction for snapshot calculation (needed for both scrap and outgoing)
-    const itemsToSnapshot = [];
-    if (sourceTable === 'scrap_transactions') {
-      itemsToSnapshot.push({
-        itemType: existingItem.item_type,
-        itemCode: existingItem.item_code,
-        itemName: existingItem.item_name,
-        uom: existingItem.uom,
-        date: transaction.transaction_date,
-      });
-    } else {
-      // For outgoing_goods, collect the item being edited (existingItem already set above)
-      itemsToSnapshot.push({
-        itemType: existingItem.item_type,
-        itemCode: existingItem.item_code,
-        itemName: existingItem.item_name,
-        uom: existingItem.uom,
-        date: transaction.outgoing_date,
-      });
-    }
-    
-    await prisma.$transaction(
-      async (tx) => {
-        if (sourceTable === 'outgoing_goods') {
-          await acquireStockIdentityLocks(tx, companyCode, [{
-            itemType: existingItem.item_type,
-            itemCode: existingItem.item_code,
-            uom: existingItem.uom,
-          }]);
-
-          const lockedItem = await tx.outgoing_good_items.findUniqueOrThrow({
-            where: { id: existingItem.id },
-            select: { qty: true },
-          });
-          const lockedQtyDifference = qty - Number(lockedItem.qty);
-
-          if (lockedQtyDifference > 0) {
-            const lockedStockCheck = await checkStockAvailability(
-              companyCode,
-              existingItem.item_code,
-              existingItem.item_type,
-              lockedQtyDifference,
-              transaction.outgoing_date,
-              undefined,
-              existingItem.uom,
-              tx
-            );
-            if (!lockedStockCheck.available) {
-              throw new InsufficientScrapStockError(lockedStockCheck);
-            }
-          }
-        }
-
-        if (sourceTable === 'scrap_transactions') {
-          // Update the scrap transaction
-          // Note: transaction_date is part of compound key and cannot be updated
-          try {
-            await tx.scrap_transactions.update({
-              where: { id: actualId },
-              data: {
-                ppkek_number: ppkekNumber || '',
-                customs_registration_date: registrationDate ? new Date(registrationDate) : undefined,
-                customs_document_type: customsDocumentType || '',
-                recipient_name: recipientName || '',
-                remarks: remarks || '',
-                ...(transactionNumber && { document_number: transactionNumber }),
-              },
-            });
-            // console.log('✅ Parent transaction updated successfully');
-          } catch (error) {
-            // console.error('❌ Error updating parent transaction:', error);
-            throw error;
-          }
-        } else {
-          // Update outgoing_goods transaction
-          try {
-            await tx.outgoing_goods.update({
-              where: { id: actualId },
-              data: {
-                ppkek_number: ppkekNumber || '',
-                customs_registration_date: registrationDate ? new Date(registrationDate) : undefined,
-                customs_document_type: customsDocumentType || null,
-                recipient_name: recipientName || '',
-                ...(transactionNumber && { outgoing_evidence_number: transactionNumber }),
-              },
-            });
-          } catch (error) {
-            throw error;
-          }
-        }
-
-        // Update the transaction items
-        try {
-          if (sourceTable === 'scrap_transactions') {
-            await tx.scrap_transaction_items.update({
-              where: {
-                id: existingItem.id,
-              },
-              data: {
-                qty: new Prisma.Decimal(qty),
-                currency: currency,
-                amount: new Prisma.Decimal(amount),
-              },
-            });
-          } else {
-            // For outgoing_goods, update outgoing_good_items
-            await tx.outgoing_good_items.update({
-              where: {
-                id: existingItem.id,
-              },
-              data: {
-                qty: new Prisma.Decimal(qty),
-                currency: currency,
-                amount: new Prisma.Decimal(amount),
-                incoming_ppkek_numbers: incomingPpkekNumbers || [],
-              },
-            });
-          }
-          console.log('✅ Items updated successfully');
-        } catch (error) {
-          console.error('❌ Error updating items:', error);
-          throw error;
-        }
-
-        if (sourceTable === 'outgoing_goods') {
-          await tx.$executeRaw`
-            SELECT upsert_item_stock_snapshot(
-              ${companyCode}::INTEGER,
-              ${existingItem.item_type}::VARCHAR,
-              ${existingItem.item_code}::VARCHAR,
-              ${existingItem.item_name}::VARCHAR,
-              ${existingItem.uom}::VARCHAR,
-              ${transaction.outgoing_date}::DATE
-            )
-          `;
-        }
-      },
-      {
-        isolationLevel: 'Serializable',
-      }
-    );
-
-    // Execute direct snapshot calculation asynchronously (fire-and-forget)
-    if (itemsToSnapshot.length > 0) {
-      console.log('[EDIT] Starting snapshot recalculation for items:', itemsToSnapshot);
-      (async () => {
-        for (const item of itemsToSnapshot) {
-          try {
-            console.log('[EDIT] Processing item:', item);
-            // Step 1: Upsert snapshot for the edited transaction date
-            await prisma.$executeRawUnsafe(
-              'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
-              companyCode,
-              item.itemType,
-              item.itemCode,
-              item.itemName,
-              item.uom,
-              item.date
-            );
-            console.log('[API Info] Direct snapshot calculation executed', {
-              companyCode,
-              itemType: item.itemType,
-              itemCode: item.itemCode,
-              date: item.date.toISOString().split('T')[0],
-            });
-
-            // Step 2: Cascade recalculate snapshots for all future dates
-            // This ensures all forward-looking balance updates when qty is changed
-            console.log('[EDIT] Calling recalculate_item_snapshots_from_date for:', {
-              companyCode,
-              itemType: item.itemType,
-              itemCode: item.itemCode,
-              fromDate: item.date.toISOString().split('T')[0],
-            });
-            await prisma.$executeRawUnsafe(
-              'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
-              companyCode,
-              item.itemType,
-              item.itemCode,
-              item.uom,
-              item.date
-            );
-            console.log('[API Info] Cascaded snapshot recalculation executed', {
-              companyCode,
-              itemType: item.itemType,
-              itemCode: item.itemCode,
-              fromDate: item.date.toISOString().split('T')[0],
-            });
-          } catch (snapshotError) {
-            console.error('[API Error] Snapshot calculation failed', {
-              companyCode,
-              itemType: item.itemType,
-              itemCode: item.itemCode,
-              date: item.date.toISOString().split('T')[0],
-              errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
-            });
-          }
-        }
-      })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
-    } else {
-      console.log('[EDIT] No items to snapshot, itemsToSnapshot.length =', itemsToSnapshot.length);
-    }
-
-    // Log activity
-    await logActivity({
-      action: 'EDIT_SCRAP_TRANSACTION',
-      description: `Updated scrap transaction: ${transaction.document_number}. Qty changed from ${existingItem.qty} to ${qty}`,
-      status: 'success',
-      metadata: {
-        transactionId,
-        documentNumber: transaction.document_number,
-        oldQty: Number(existingItem.qty),
-        newQty: qty,
-        companyCode,
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: 'Transaction updated successfully',
-      data: {
-        transactionId,
-        documentNumber: sourceTable === 'scrap_transactions' ? transaction.document_number : transaction.outgoing_evidence_number,
-        itemCode: existingItem.item_code,
-        itemName: existingItem.item_name,
-        itemType: existingItem.item_type,
-        oldQty: Number(existingItem.qty),
-        newQty: qty,
-        qtyDifference: qtyDifference,
-        currency: currency,
-        amount: amount,
-        ...(sourceTable === 'outgoing_goods' && {
-          stockInfo: {
-            availableStock: stockCheckResult?.currentStock || 0,
-            qtyAfterUpdate: qtyDifference < 0 
-              ? `${stockCheckResult?.currentStock || 0} + ${Math.abs(qtyDifference)}` 
-              : `${stockCheckResult?.currentStock || 0} - ${qtyDifference}`,
-          },
-        }),
-      },
-    });
+    await logActivity({ action: 'EDIT_SCRAP_TRANSACTION', description: `Updated exact Scrap line: ${rawId}`,
+      status: 'success', metadata: { transactionId: rawId, companyCode } });
+    return NextResponse.json({ success: true, message: 'Transaction line updated successfully' });
   } catch (error) {
-    console.error('[API Error] Failed to update scrap transaction:', error);
-    console.error('Error details:', JSON.stringify(error, null, 2));
-    if (error instanceof InsufficientScrapStockError) {
-      const stockCheck = error.stockCheck;
-      return NextResponse.json(
-        {
-          message: `Stock tidak cukup untuk ${stockCheck.itemCode}. Tersedia: ${stockCheck.currentStock}, Diminta: ${stockCheck.qtyRequested}`,
-          errors: [{ field: 'qty', message: `Hanya tersedia ${stockCheck.currentStock} unit.` }],
-          data: stockCheck,
-        },
-        { status: 400 }
-      );
+    if (error instanceof PairIntegrityError) {
+      return NextResponse.json({ message: error.message, code: 'SCRAP_PAIR_INTEGRITY_ERROR' }, { status: 409 });
     }
-    return NextResponse.json(
-      { message: 'Error updating transaction', error: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
-    );
+    if (error instanceof InsufficientScrapStockError) {
+      return NextResponse.json({ message: 'Insufficient Scrap stock', data: error.stockCheck }, { status: 400 });
+    }
+    console.error('[Scrap edit]', error);
+    return NextResponse.json({ message: 'Error updating transaction' }, { status: 500 });
   }
 }
 
-/**
- * DELETE /api/customs/scrap-transactions/[id]
- * Soft delete a scrap transaction
- *
- * ID format:
- * - SCRAP_{id}-{item_code}-{index} for scrap_transactions
- * - OUTGOING_{id}-{item_code}-{index} for outgoing_goods
- */
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(_request: Request, { params }: RouteContext) {
   try {
     const authCheck = await checkAuth();
-    if (!authCheck.authenticated) {
-      return authCheck.response;
-    }
-
-    const { session } = authCheck as { authenticated: true; session: any };
-
-    // Validate company code
-    const companyValidation = validateCompanyCode(session);
-    if (!companyValidation.success) {
-      return companyValidation.response;
-    }
+    if (!authCheck.authenticated) return authCheck.response;
+    const companyValidation = validateCompanyCode((authCheck as any).session);
+    if (!companyValidation.success) return companyValidation.response;
     const { companyCode } = companyValidation;
-
-    const { id } = await params;
-    const transactionId = id;
-
-    // Parse the ID to determine the source and extract the actual DB ID
-    let sourceTable: 'scrap_transactions' | 'outgoing_goods';
-    let actualId: number;
-
-    if (transactionId.startsWith('SCRAP_')) {
-      sourceTable = 'scrap_transactions';
-      // Extract ID from format: SCRAP_{id}-{item_code}-{index}
-      const parts = transactionId.replace('SCRAP_', '').split('-');
-      actualId = parseInt(parts[0], 10);
-    } else if (transactionId.startsWith('OUTGOING_')) {
-      sourceTable = 'outgoing_goods';
-      // Extract ID from format: OUTGOING_{id}-{item_code}-{index}
-      const parts = transactionId.replace('OUTGOING_', '').split('-');
-      actualId = parseInt(parts[0], 10);
-    } else {
-      return NextResponse.json(
-        { message: 'Invalid transaction ID format' },
-        { status: 400 }
-      );
+    const rawId = (await params).id;
+    const parsedId = parseScrapRecordId(rawId);
+    if (!parsedId) {
+      return NextResponse.json({ message: 'A stable header and line ID is required. Refresh and retry.' }, { status: 400 });
     }
 
-    if (isNaN(actualId)) {
-      return NextResponse.json(
-        { message: 'Invalid transaction ID' },
-        { status: 400 }
-      );
-    }
-
-    console.log(`[DELETE] transactionId=${transactionId}, sourceTable=${sourceTable}, actualId=${actualId}`);
-
-    // Soft delete the record with snapshot recalculation
-    if (sourceTable === 'scrap_transactions') {
-      console.log(`[DELETE] Using scrap_transactions path`);
-      const transactionData = await prisma.scrap_transactions.findFirst({
-        where: {
-          id: actualId,
-          company_code: companyCode,
-          deleted_at: null,
-        },
-        include: {
-          items: {
-            where: {
-              deleted_at: null,
-            },
-          },
-        },
+    if (parsedId.source === 'scrap_transactions') {
+      const current = await prisma.scrap_transactions.findFirst({
+        where: { id: parsedId.headerId, company_code: companyCode, transaction_type: 'IN', deleted_at: null },
+        include: { items: { where: { id: parsedId.itemId, deleted_at: null } } },
       });
-
-      if (!transactionData) {
-        return NextResponse.json(
-          { message: 'Transaction not found or already deleted' },
-          { status: 404 }
-        );
+      if (!current || current.items.length !== 1) {
+        return NextResponse.json({ message: 'Scrap IN line not found' }, { status: 404 });
       }
-
-      if (!transactionData.items || transactionData.items.length === 0) {
-        return NextResponse.json(
-          { message: 'Transaction item not found' },
-          { status: 404 }
-        );
+      const [item] = current.items;
+      const balance = await checkScrapInBalance(companyCode, item.item_code, item.item_type,
+        Number(item.qty), 0, current.transaction_date, current.id);
+      if (!balance.available) {
+        return NextResponse.json({ message: 'Stock would become negative', data: balance }, { status: 400 });
       }
-
-      const item = transactionData.items[0];
-      const itemQty = Number(item.qty);
-
-      // Validation: Check stock balance won't go negative when deleting SCRAP IN
-      // When we delete a SCRAP IN transaction, balance will reduce by the qty
-      const stockCheckResult = await checkScrapInBalance(
-        companyCode,
-        item.item_code,
-        item.item_type,
-        itemQty,
-        0, // deleting means qty becomes 0
-        transactionData.transaction_date,
-        actualId
-      );
-
-      console.log(`[DELETE SCRAP IN] Validation result: available=${stockCheckResult.available}, currentStock=${stockCheckResult.currentStock}, shortfall=${stockCheckResult.shortfall}`);
-
-      if (!stockCheckResult.available) {
-        console.log(`[DELETE SCRAP IN] REJECTING - would make balance negative`);
-        return NextResponse.json(
-          {
-            success: false,
-            message: `Stock akan menjadi minus. Saat ini balance ${stockCheckResult.currentStock} unit. Anda mencoba menghapus ${itemQty} unit.`,
-            errors: [
-              {
-                field: 'delete',
-                message: `Menghapus qty sebesar ${itemQty} akan membuat balance minus ${stockCheckResult.shortfall} unit. Current balance: ${stockCheckResult.currentStock}`,
-              },
-            ],
-            data: {
-              itemCode: item.item_code,
-              itemType: item.item_type,
-              itemName: item.item_name,
-              deletingQty: itemQty,
-              currentBalance: stockCheckResult.currentStock,
-              shortfall: stockCheckResult.shortfall,
-            },
-          },
-          { status: 400 }
-        );
-      }
-
-      console.log(`[DELETE SCRAP IN] Validation passed - proceeding with delete`);
-
-      // Delete in transaction with snapshot recalculation
-      const snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string; date: Date }> = [];
-      await prisma.$transaction(
-        async (tx) => {
-          await tx.scrap_transactions.update({
-            where: { id: actualId },
-            data: { deleted_at: new Date() },
-          });
-
-          // Also soft-delete all scrap_transaction_items for this scrap_transaction
-          // For consistency with SCRAP OUT delete logic
-          await tx.scrap_transaction_items.updateMany({
-            where: { scrap_transaction_id: actualId },
-            data: { deleted_at: new Date() },
-          });
-
-          // Collect item for direct snapshot calculation
-          snapshotItems.push({
-            itemType: item.item_type,
-            itemCode: item.item_code,
-            itemName: item.item_name,
-            uom: item.uom,
-            date: transactionData.transaction_date,
-          });
-        },
-        {
-          isolationLevel: 'Serializable',
-        }
-      );
-
-      // Execute direct snapshot calculation asynchronously (fire-and-forget)
-      if (snapshotItems.length > 0) {
-        (async () => {
-          for (const snapItem of snapshotItems) {
-            try {
-              await prisma.$executeRawUnsafe(
-                'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
-                companyCode,
-                snapItem.itemType,
-                snapItem.itemCode,
-                snapItem.itemName,
-                snapItem.uom,
-                snapItem.date
-              );
-              console.log('[API Info] Direct snapshot calculation executed', {
-                companyCode,
-                itemType: snapItem.itemType,
-                itemCode: snapItem.itemCode,
-                date: snapItem.date.toISOString().split('T')[0],
-              });
-
-              // Cascade recalculate snapshots for all future dates
-              // This ensures balance updates propagate forward when a past IN transaction is deleted
-              await prisma.$executeRawUnsafe(
-                'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
-                companyCode,
-                snapItem.itemType,
-                snapItem.itemCode,
-                snapItem.uom,
-                snapItem.date
-              );
-              console.log('[API Info] Cascaded snapshot recalculation executed for SCRAP IN delete', {
-                companyCode,
-                itemType: snapItem.itemType,
-                itemCode: snapItem.itemCode,
-                fromDate: snapItem.date.toISOString().split('T')[0],
-              });
-            } catch (snapshotError) {
-              console.error('[API Error] Snapshot calculation failed', {
-                companyCode,
-                itemType: snapItem.itemType,
-                itemCode: snapItem.itemCode,
-                date: snapItem.date.toISOString().split('T')[0],
-                errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
-              });
-            }
-          }
-        })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
-      }
-    } else {
-      console.log(`[DELETE] Using outgoing_goods path`);
-      const transactionData = await prisma.outgoing_goods.findFirst({
-        where: {
-          id: actualId,
-          company_code: companyCode,
-          deleted_at: null,
-        },
-        include: {
-          items: {
-            where: {
-              deleted_at: null,
-            },
-          },
-        },
-      });
-
-      if (!transactionData) {
-        return NextResponse.json(
-          { message: 'Transaction not found or already deleted' },
-          { status: 404 }
-        );
-      }
-
-      if (!transactionData.items || transactionData.items.length === 0) {
-        return NextResponse.json(
-          { message: 'Transaction item not found' },
-          { status: 404 }
-        );
-      }
-
-      // Collect items for direct snapshot calculation BEFORE deletion
-      const snapshotItems: Array<{ itemType: string; itemCode: string; itemName: string; uom: string; date: Date }> = [];
-      for (const item of transactionData.items) {
-        snapshotItems.push({
-          itemType: item.item_type,
-          itemCode: item.item_code,
-          itemName: item.item_name,
-          uom: item.uom,
-          date: transactionData.outgoing_date,
+      await prisma.$transaction(async tx => {
+        const deletedAt = new Date();
+        await tx.scrap_transaction_items.update({ where: { id: item.id }, data: { deleted_at: deletedAt } });
+        const remaining = await tx.scrap_transaction_items.count({
+          where: { scrap_transaction_id: current.id, deleted_at: null },
         });
-      }
-
-      // Find and soft-delete corresponding scrap_transactions record (for dual-table consistency)
-      // SCRAP OUT is stored in BOTH outgoing_goods and scrap_transactions
-      const scrapTransaction = await prisma.scrap_transactions.findFirst({
-        where: {
-          company_code: companyCode,
-          transaction_type: 'OUT',
-          transaction_date: transactionData.outgoing_date,
-          deleted_at: null,
-        },
-        include: {
-          items: {
-            where: {
-              deleted_at: null,
-              item_type: 'SCRAP',
-            },
-          },
-        },
-      });
-
-      // Delete in transaction
-      await prisma.$transaction(
-        async (tx) => {
-          // Delete outgoing_goods and its items
-          await tx.outgoing_goods.update({
-            where: { id: actualId },
-            data: { deleted_at: new Date() },
-          });
-
-          // Also soft-delete all outgoing_good_items for this outgoing_good
-          await tx.outgoing_good_items.updateMany({
-            where: { outgoing_good_id: actualId },
-            data: { deleted_at: new Date() },
-          });
-
-          // Delete corresponding scrap_transactions record if found
-          if (scrapTransaction) {
-            await tx.scrap_transactions.update({
-              where: { id: scrapTransaction.id },
-              data: { deleted_at: new Date() },
-            });
-
-            // Also soft-delete all scrap_transaction_items for this scrap_transaction
-            await tx.scrap_transaction_items.updateMany({
-              where: { scrap_transaction_id: scrapTransaction.id },
-              data: { deleted_at: new Date() },
-            });
-
-            console.log('[DELETE] Soft-deleted corresponding scrap_transactions record and items:', {
-              scrapTransactionId: scrapTransaction.id,
-              outgoingGoodId: actualId,
-            });
-          }
-        },
-        {
-          isolationLevel: 'Serializable',
+        if (remaining === 0) {
+          await tx.scrap_transactions.update({ where: { id: current.id }, data: { deleted_at: deletedAt } });
         }
-      );
-
-      // Execute direct snapshot calculation and cascading recalculation asynchronously (fire-and-forget)
-      // This ensures balance updates propagate forward when a past OUT transaction is deleted
-      if (snapshotItems.length > 0) {
-        (async () => {
-          for (const snapItem of snapshotItems) {
-            try {
-              // Step 1: Upsert snapshot for the deleted transaction date
-              await prisma.$executeRawUnsafe(
-                'SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)',
-                companyCode,
-                snapItem.itemType,
-                snapItem.itemCode,
-                snapItem.itemName,
-                snapItem.uom,
-                snapItem.date
-              );
-              console.log('[API Info] Direct snapshot calculation executed for OUTGOING delete', {
-                companyCode,
-                itemType: snapItem.itemType,
-                itemCode: snapItem.itemCode,
-                date: snapItem.date.toISOString().split('T')[0],
-              });
-
-              // Step 2: Cascade recalculate snapshots for all future dates
-              // This ensures balance updates propagate forward when a past OUT transaction is deleted
-              await prisma.$executeRawUnsafe(
-                'SELECT recalculate_item_snapshots_from_date($1::int, $2::varchar, $3::varchar, $4::varchar, $5::date)',
-                companyCode,
-                snapItem.itemType,
-                snapItem.itemCode,
-                snapItem.uom,
-                snapItem.date
-              );
-              console.log('[API Info] Cascaded snapshot recalculation executed for SCRAP OUT delete', {
-                companyCode,
-                itemType: snapItem.itemType,
-                itemCode: snapItem.itemCode,
-                fromDate: snapItem.date.toISOString().split('T')[0],
-              });
-            } catch (snapshotError) {
-              console.error('[API Error] Snapshot calculation failed for OUTGOING delete', {
-                companyCode,
-                itemType: snapItem.itemType,
-                itemCode: snapItem.itemCode,
-                date: snapItem.date.toISOString().split('T')[0],
-                errorMessage: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
-              });
-            }
-          }
-        })().catch(err => console.error('[API Error] Background snapshot task failed:', err));
-      }
+        await refreshSnapshot(tx, companyCode, item, current.transaction_date);
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30000 });
+    } else {
+      await prisma.$transaction(async tx => {
+        const initial = await loadOutgoingPair(tx, companyCode, parsedId.headerId, parsedId.itemId);
+        await acquireStockIdentityLocks(tx, companyCode, [{
+          itemType: initial.outgoingItem.item_type,
+          itemCode: initial.outgoingItem.item_code,
+          uom: initial.outgoingItem.uom,
+        }]);
+        const { outgoing, outgoingItem, scrap, scrapItem } = await loadOutgoingPair(
+          tx, companyCode, parsedId.headerId, parsedId.itemId
+        );
+        const outgoingRemaining = outgoing.items.length - 1;
+        const deletedAt = new Date();
+        await tx.outgoing_good_items.update({ where: { id: outgoingItem.id }, data: { deleted_at: deletedAt } });
+        await tx.scrap_transaction_items.update({ where: { id: scrapItem.id }, data: { deleted_at: deletedAt } });
+        if (outgoingRemaining === 0) {
+          await tx.outgoing_goods.update({ where: { id: outgoing.id }, data: { deleted_at: deletedAt } });
+          await tx.scrap_transactions.update({ where: { id: scrap.id }, data: { deleted_at: deletedAt } });
+        }
+        await refreshSnapshot(tx, companyCode, outgoingItem, outgoing.outgoing_date);
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30000 });
     }
 
-    // Log activity
-    await logActivity({
-      action: 'DELETE_SCRAP_TRANSACTION',
-      description: `Deleted scrap transaction ID: ${transactionId} from ${sourceTable}`,
-      status: 'success',
-      metadata: {
-        transactionId,
-        sourceTable,
-        companyCode,
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: 'Transaction deleted successfully',
-      data: {
-        transactionId,
-        sourceTable,
-      },
-    });
+    await logActivity({ action: 'DELETE_SCRAP_TRANSACTION', description: `Deleted exact Scrap line: ${rawId}`,
+      status: 'success', metadata: { transactionId: rawId, sourceTable: parsedId.source, companyCode } });
+    return NextResponse.json({ success: true, message: 'Transaction line deleted successfully' });
   } catch (error) {
-    console.error('[API Error] Failed to delete scrap transaction:', error);
-    console.error('Error details:', JSON.stringify(error, null, 2));
-    return NextResponse.json(
-      { 
-        message: 'Error deleting transaction',
-        error: error instanceof Error ? error.message : String(error)
-      },
-      { status: 500 }
-    );
+    if (error instanceof PairIntegrityError) {
+      return NextResponse.json({ message: error.message, code: 'SCRAP_PAIR_INTEGRITY_ERROR' }, { status: 409 });
+    }
+    console.error('[Scrap delete]', error);
+    return NextResponse.json({ message: 'Error deleting transaction' }, { status: 500 });
   }
 }
