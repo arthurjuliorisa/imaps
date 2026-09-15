@@ -4,7 +4,6 @@ import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { acquireStockIdentityLocks, checkStockAvailability, type StockCheckResult } from '@/lib/utils/stock-checker';
 import { logActivity } from '@/lib/log-activity';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import {
@@ -12,6 +11,7 @@ import {
   utcToday,
   validateScrapMasterIdentity,
 } from '@/lib/scrap-validation';
+import { SCRAP_CUSTOMS_TYPES } from '@/lib/validators/constants/customs-document-types';
 
 class ScrapInputValidationError extends Error {}
 
@@ -45,7 +45,7 @@ const OutgoingScrapSchema = z.object({
     }
     return parsed;
   }),
-  customsDocumentType: z.enum(['BC25', 'BC27', 'BC27OUT', 'BC41', 'BC261']),
+  customsDocumentType: z.enum(SCRAP_CUSTOMS_TYPES),
   transactionNumber: z.string().optional().nullable(),
   incomingPpkekNumbers: z.array(z.string()).optional().nullable(),
 });
@@ -400,27 +400,6 @@ export async function POST(request: Request) {
         companyCode,
       },
     });
-
-    // Transmit to INSW via INSWTransmissionService (async, non-blocking, with tracking log)
-    // Only transmit if company type is SEZ
-    (async () => {
-      try {
-        const company = await prisma.companies.findUnique({
-          where: { code: companyCode },
-          select: { company_type: true },
-        });
-
-        if (company?.company_type === 'SEZ') {
-          const inswTransmission = new INSWTransmissionService();
-          const r = await inswTransmission.transmitScrapOut(companyCode, [result.transactionId]);
-          console.log('[INSW] Scrap OUT transmitted', { status: r.status, transactionId: result.transactionId });
-        } else {
-          console.log('[INSW] Scrap OUT NOT transmitted (non-SEZ company)', { companyCode, companyType: company?.company_type });
-        }
-      } catch (err) {
-        console.error('[INSW] Scrap OUT INSW error', { err });
-      }
-    })();
 
     return NextResponse.json(
       {

@@ -22,6 +22,12 @@ export interface ScrapTransaction {
   customsDocumentType?: string;
   transactionNumber?: string;
   incomingPpkekNumbers?: string[];
+  inswTransactionId?: number | null;
+  itemCount?: number;
+  inswStatus?: 'NOT_SENT' | 'PENDING' | 'FAILED' | 'SUCCESS';
+  isSez?: boolean;
+  /** A summary row represents a header; a detail row represents this exact line. */
+  view?: 'summary' | 'detail';
 }
 
 export interface CapitalGoodsTransaction {

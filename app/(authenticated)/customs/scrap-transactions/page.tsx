@@ -2,14 +2,16 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { Box, Stack, Button, CircularProgress, Typography, TextField, InputAdornment, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
+import { Box, Stack, Button, Chip, CircularProgress, Typography, TextField, InputAdornment, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Divider, Table, TableBody, TableCell, TableHead, TableRow, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import {
   Add as AddIcon,
   UploadFile as UploadFileIcon,
   RemoveCircleOutline as RemoveIcon,
   Search as SearchIcon,
   Edit as EditIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  Send as SendIcon,
+  Visibility as VisibilityIcon
 } from '@mui/icons-material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
@@ -20,10 +22,29 @@ import { AddOutScrapDialog } from '@/app/components/customs/AddOutScrapDialog';
 import { ImportCeisaExcelDialog } from '@/app/components/customs/ImportCeisaExcelDialog';
 import { ImportScrapIncomingExcelDialog } from '@/app/components/customs/ImportScrapIncomingExcelDialog';
 import { EditScrapTransactionDialog } from '@/app/components/customs/EditScrapTransactionDialog';
+import { EditScrapTransactionHeaderDialog } from '@/app/components/customs/EditScrapTransactionHeaderDialog';
 import { useToast } from '@/app/components/ToastProvider';
 import { exportToExcel, exportToPDF, formatDate } from '@/lib/exportUtils';
 import { formatQty, formatAmount } from '@/lib/utils/format';
 import type { ScrapTransaction } from '@/types/transaction';
+
+type ScrapTransactionDetails = {
+  companyName?: string;
+  transactionNumber: string;
+  transactionDate: string;
+  direction: 'IN' | 'OUT';
+  documentNumber: string;
+  documentDate: string;
+  documentType?: string | null;
+  registrationNumber?: string | null;
+  registrationDate?: string | null;
+  recipientName?: string | null;
+  remarks?: string | null;
+  items: Array<{ code: string; name: string; itemType: string; quantity: number; uom: string; currency?: string; valueAmount?: number }>;
+  isSez: boolean;
+  inswStatus?: 'NOT_SENT' | 'PENDING' | 'FAILED' | 'SUCCESS';
+  lastAttempt?: { status: string; at: string; message?: string | null } | null;
+};
 
 export default function ScrapTransactionsPage() {
   const toast = useToast();
@@ -49,10 +70,19 @@ export default function ScrapTransactionsPage() {
   const [importIncomingDialogOpen, setImportIncomingDialogOpen] = useState(false);
   const [importOutgoingDialogOpen, setImportOutgoingDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [headerEditDialogOpen, setHeaderEditDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'summary' | 'detail'>('summary');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<ScrapTransaction | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [companyType, setCompanyType] = useState<string | null>(null);
+  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [transactionDetails, setTransactionDetails] = useState<ScrapTransactionDetails | null>(null);
 
+  const isSezCompany = companyType === 'SEZ';
   const columns: GridColDef[] = [
     {
       field: 'no',
@@ -64,126 +94,108 @@ export default function ScrapTransactionsPage() {
       },
     },
     {
-      field: 'companyName',
-      headerName: 'Company Name',
-      flex: 1,
-      minWidth: 130,
+      field: 'transactionDate',
+      headerName: 'Transaction Date',
+      width: 125,
+      valueFormatter: (value) => value ? formatDate(value) : '',
     },
     {
       field: 'transactionType',
-      headerName: 'Type',
+      headerName: viewMode === 'summary' ? 'Transaction Code' : 'Direction',
       width: 70,
-    },
-    {
-      field: 'docType',
-      headerName: 'Doc Type',
-      width: 90,
-    },
-    {
-      field: 'ppkekNumber',
-      headerName: 'Nomor Pendaftaran',
-      flex: 1,
-      minWidth: 120,
-    },
-    {
-      field: 'regDate',
-      headerName: 'Reg Date',
-      width: 100,
-      valueFormatter: (value) => value ? formatDate(value) : '',
     },
     {
       field: 'docNumber',
-      headerName: 'Doc Number',
+      headerName: 'Document Number',
       flex: 1,
-      minWidth: 110,
+      minWidth: 170,
     },
-    {
-      field: 'docDate',
-      headerName: 'Doc Date',
-      width: 100,
-      valueFormatter: (value) => value ? formatDate(value) : '',
-    },
-    {
-      field: 'transactionDate',
-      headerName: 'Transaction Date',
-      width: 120,
-      valueFormatter: (value) => value ? formatDate(value) : '',
-    },
-    {
-      field: 'recipientName',
-      headerName: 'Recipient Name',
-      flex: 1,
-      minWidth: 120,
-    },
-    {
-      field: 'itemType',
-      headerName: 'Item Type',
-      width: 100,
-    },
-    {
-      field: 'itemCode',
-      headerName: 'Item Code',
-      width: 100,
-    },
-    {
+    ...(viewMode === 'summary' ? [
+      { field: 'companyName', headerName: 'Company', minWidth: 150, flex: 1 },
+      { field: 'ppkekNumber', headerName: 'Registration Number', minWidth: 150 },
+      { field: 'regDate', headerName: 'Registration Date', width: 125, valueFormatter: (value: string) => value ? formatDate(value) : '' },
+      { field: 'docType', headerName: 'Custom Doc Type', width: 130 },
+      { field: 'recipientName', headerName: 'Recipient', minWidth: 140, flex: 1 },
+    ] : []),
+    ...(viewMode === 'detail' ? [{
       field: 'itemName',
-      headerName: 'Item Name',
+      headerName: 'Scrap Code / Name',
       flex: 1,
-      minWidth: 150,
-    },
-    {
+      minWidth: 200,
+      renderCell: (params: GridRenderCellParams) => <>{params.row.itemCode} / {params.value}</>,
+    }, {
+      field: 'quantity',
+      headerName: 'Quantity',
+      width: 110,
+      renderCell: (params: GridRenderCellParams) => formatQty(params.row.inQty || params.row.outQty || 0),
+    }, {
       field: 'unit',
-      headerName: 'Unit',
-      width: 70,
-    },
-    {
-      field: 'inQty',
-      headerName: 'In',
-      width: 80,
-      type: 'number',
-      valueFormatter: (value: number) => value ? formatQty(value) : '0',
-    },
-    {
-      field: 'outQty',
-      headerName: 'Out',
-      width: 80,
-      type: 'number',
-      valueFormatter: (value: number) => value ? formatQty(value) : '0',
-    },
-    {
-      field: 'currency',
-      headerName: 'Currency',
-      width: 90,
-    },
-    {
-      field: 'valueAmount',
-      headerName: 'Value Amount',
+      headerName: 'UOM',
+      width: 85,
+    }, {
+      field: 'currency', headerName: 'Currency', width: 90,
+    }, {
+      field: 'valueAmount', headerName: 'Amount', width: 130,
+      renderCell: (params: GridRenderCellParams) => `${params.row.currency || ''} ${formatAmount(params.value || 0)}`,
+    }] : [{
+      field: 'itemCount',
+      headerName: 'Items Count',
       width: 120,
-      type: 'number',
-      valueFormatter: (value: number) => value ? formatAmount(value) : '0',
-    },
+      renderCell: (params: GridRenderCellParams) => (
+        <Tooltip title={`This row belongs to one transaction header containing ${params.row.itemCount || 1} active item(s).`}>
+          <Chip size="small" label={`${params.row.itemCount || 1} item${(params.row.itemCount || 1) === 1 ? '' : 's'}`} />
+        </Tooltip>
+      ),
+    }]),
+    ...(isSezCompany ? [{
+      field: 'inswStatus',
+      headerName: 'INSW Status',
+      width: 115,
+      renderCell: (params: GridRenderCellParams) => (
+        <Chip
+          size="small"
+          label={(params.row.inswStatus || 'NOT_SENT').replace('_', ' ')}
+          color={params.row.inswStatus === 'SUCCESS' ? 'success' : params.row.inswStatus === 'FAILED' ? 'error' : params.row.inswStatus === 'PENDING' ? 'warning' : 'default'}
+        />
+      ),
+    }] : []),
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 100,
+      width: viewMode === 'summary' ? 330 : 220,
       sortable: false,
       filterable: false,
       align: 'center',
       headerAlign: 'center',
       renderCell: (params: GridRenderCellParams) => (
         <Box sx={{ display: 'flex', gap: 1 }}>
-          {isAdmin && (
+          <Tooltip title="View transaction details">
+            <Button size="small" variant="text" startIcon={<VisibilityIcon />} onClick={() => handleView(params.row)}>View</Button>
+          </Tooltip>
+          {viewMode === 'summary' && isSezCompany && (params.row.inswStatus === 'NOT_SENT' || params.row.inswStatus === 'FAILED') && params.row.inswTransactionId && (
+            <Tooltip title={`Send the entire document header and all ${params.row.itemCount || 1} active item(s) to INSW`}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<SendIcon />}
+                onClick={() => handleSendClick(params.row)}
+              >
+                {params.row.inswStatus === 'FAILED' ? 'Retry' : 'Send'}
+              </Button>
+            </Tooltip>
+          )}
+          {isAdmin && params.row.inswStatus !== 'PENDING' && params.row.inswStatus !== 'SUCCESS' && (
             <>
-              <Tooltip title="Edit">
+              <Tooltip title={viewMode === 'summary' ? 'Edit Transaction' : 'Edit Item'}>
                 <IconButton
                   size="small"
                   color="primary"
-                  onClick={() => handleEdit(params.row)}
+                  onClick={() => viewMode === 'summary' ? handleHeaderEdit(params.row) : handleEdit(params.row)}
                 >
                   <EditIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
-              <Tooltip title="Delete">
+              {viewMode === 'detail' && <Tooltip title="Delete Item">
                 <IconButton
                   size="small"
                   color="error"
@@ -191,7 +203,16 @@ export default function ScrapTransactionsPage() {
                 >
                   <DeleteIcon fontSize="small" />
                 </IconButton>
-              </Tooltip>
+              </Tooltip>}
+              {viewMode === 'summary' && <Tooltip title="Delete Transaction">
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={() => handleDeleteClick(params.row)}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>}
             </>
           )}
         </Box>
@@ -208,6 +229,7 @@ export default function ScrapTransactionsPage() {
         page: String(paginationModel.page + 1),
         pageSize: String(paginationModel.pageSize),
         ...(searchQuery.trim() && { search: searchQuery.trim() }),
+        view: viewMode,
       });
 
       const response = await fetch(`/api/customs/scrap-transactions?${params}`);
@@ -219,6 +241,7 @@ export default function ScrapTransactionsPage() {
       const result = await response.json();
       setData(result.data || []);
       setRowCount(result.pagination?.totalRecords || 0);
+      setCompanyType(result.companyType || null);
     } catch (error) {
       console.error('Error fetching scrap transactions:', error);
       toast.error('Failed to load scrap transaction data');
@@ -227,7 +250,7 @@ export default function ScrapTransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, paginationModel.page, paginationModel.pageSize, searchQuery, toast]);
+  }, [startDate, endDate, paginationModel.page, paginationModel.pageSize, searchQuery, viewMode, toast]);
 
   useEffect(() => {
     fetchData();
@@ -258,6 +281,32 @@ export default function ScrapTransactionsPage() {
     setEditDialogOpen(true);
   };
 
+  const handleHeaderEdit = (transaction: ScrapTransaction) => {
+    setSelectedTransaction(transaction);
+    setHeaderEditDialogOpen(true);
+  };
+
+  const handleViewMode = (_event: React.MouseEvent<HTMLElement>, next: 'summary' | 'detail' | null) => {
+    if (next) { setViewMode(next); setPaginationModel(current => ({ ...current, page: 0 })); }
+  };
+
+  const handleView = async (transaction: ScrapTransaction) => {
+    setDetailsDialogOpen(true);
+    setTransactionDetails(null);
+    setDetailsLoading(true);
+    try {
+      const response = await fetch(`/api/customs/scrap-transactions/${transaction.id}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Failed to load transaction details');
+      setTransactionDetails(result.data);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to load transaction details');
+      setDetailsDialogOpen(false);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
   const handleDeleteClick = (transaction: ScrapTransaction) => {
     setSelectedTransaction(transaction);
     setDeleteDialogOpen(true);
@@ -268,7 +317,7 @@ export default function ScrapTransactionsPage() {
 
     setDeleting(true);
     try {
-      const response = await fetch(`/api/customs/scrap-transactions/${selectedTransaction.id}`, {
+      const response = await fetch(`/api/customs/scrap-transactions/${selectedTransaction.id}?scope=${viewMode === 'summary' ? 'header' : 'item'}`, {
         method: 'DELETE',
       });
 
@@ -292,6 +341,36 @@ export default function ScrapTransactionsPage() {
   const handleDeleteCancel = () => {
     setDeleteDialogOpen(false);
     setSelectedTransaction(null);
+  };
+
+  const handleSendClick = (transaction: ScrapTransaction) => {
+    setSelectedTransaction(transaction);
+    setSendDialogOpen(true);
+  };
+
+  const handleSendConfirm = async () => {
+    if (!selectedTransaction?.inswTransactionId) return;
+    setSending(true);
+    try {
+      const response = await fetch(`/api/customs/scrap-transactions/${selectedTransaction.inswTransactionId}/transmit-insw`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || result.data?.message || 'Failed to send transaction to INSW');
+      if (result.status === 'PENDING') {
+        toast.info('INSW transmission is pending. The transaction is locked until it is resolved.');
+      } else {
+        toast.success('Scrap transaction sent to INSW successfully');
+      }
+      setSendDialogOpen(false);
+      setSelectedTransaction(null);
+      await fetchData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to send transaction to INSW');
+      await fetchData();
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -396,6 +475,7 @@ export default function ScrapTransactionsPage() {
       subtitle="Scrap transaction records"
       actions={
         <Stack spacing={2}>
+          <Typography variant="body2" color="text.secondary">Filters by Transaction Date</Typography>
           <DateRangeFilter
             startDate={startDate}
             endDate={endDate}
@@ -451,7 +531,11 @@ export default function ScrapTransactionsPage() {
       }
     >
       <Box sx={{ width: '100%', mt: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3, px: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, px: 3, gap: 2, flexWrap: 'wrap' }}>
+          <ToggleButtonGroup value={viewMode} exclusive onChange={handleViewMode} size="small" aria-label="Scrap transaction view mode">
+            <ToggleButton value="summary">List by Summary</ToggleButton>
+            <ToggleButton value="detail">List by Detail</ToggleButton>
+          </ToggleButtonGroup>
           <TextField
             placeholder="Search transactions..."
             value={searchQuery}
@@ -553,6 +637,47 @@ export default function ScrapTransactionsPage() {
         onSuccess={handleDialogSuccess}
       />
 
+      <EditScrapTransactionHeaderDialog
+        open={headerEditDialogOpen}
+        transaction={selectedTransaction}
+        onClose={() => { setHeaderEditDialogOpen(false); setSelectedTransaction(null); }}
+        onSuccess={handleDialogSuccess}
+      />
+
+      <Dialog open={detailsDialogOpen} onClose={() => !detailsLoading && setDetailsDialogOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle>Transaction Details</DialogTitle>
+        <DialogContent dividers>
+          {detailsLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}><CircularProgress /></Box> : transactionDetails && (
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="subtitle1" fontWeight={600}>Transaction</Typography>
+                <Typography variant="body2">Company: {transactionDetails.companyName || '-'}</Typography>
+                <Typography variant="body2">Transaction Number / Reference: {transactionDetails.transactionNumber}</Typography>
+                <Typography variant="body2">Transaction Date: {formatDate(transactionDetails.transactionDate)}</Typography>
+                <Typography variant="body2">Direction: {transactionDetails.direction}</Typography>
+                <Typography variant="body2">Document Number: {transactionDetails.documentNumber}</Typography>
+                <Typography variant="body2">Document Date: {formatDate(transactionDetails.documentDate)}</Typography>
+                <Typography variant="body2">Registration Number: {transactionDetails.registrationNumber || '-'}</Typography>
+                <Typography variant="body2">Registration Date: {transactionDetails.registrationDate ? formatDate(transactionDetails.registrationDate) : '-'}</Typography>
+                <Typography variant="body2">Custom Doc Type: {transactionDetails.documentType || '-'}</Typography>
+                <Typography variant="body2">Recipient: {transactionDetails.direction === 'OUT' ? (transactionDetails.recipientName || '-') : '-'}</Typography>
+                <Typography variant="body2">Remarks: {transactionDetails.remarks || '-'}</Typography>
+              </Box>
+              <Divider />
+              <Box>
+                <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Item / Items</Typography>
+                <Table size="small" aria-label="Scrap transaction items">
+                  <TableHead><TableRow><TableCell>#</TableCell><TableCell>Scrap Code</TableCell><TableCell>Scrap Name</TableCell><TableCell>Item Type</TableCell><TableCell align="right">Quantity</TableCell><TableCell>UOM</TableCell><TableCell>Currency</TableCell><TableCell align="right">Amount</TableCell></TableRow></TableHead>
+                  <TableBody>{transactionDetails.items.map((item, index) => <TableRow key={`${item.code}-${index}`}><TableCell>{index + 1}</TableCell><TableCell>{item.code}</TableCell><TableCell>{item.name}</TableCell><TableCell>{item.itemType}</TableCell><TableCell align="right">{formatQty(item.quantity)}</TableCell><TableCell>{item.uom}</TableCell><TableCell>{item.currency || '-'}</TableCell><TableCell align="right">{formatAmount(item.valueAmount || 0)}</TableCell></TableRow>)}</TableBody>
+                </Table>
+              </Box>
+              {transactionDetails.isSez && <><Divider /><Box><Typography variant="subtitle1" fontWeight={600}>INSW</Typography><Typography variant="body2">INSW Status: {transactionDetails.inswStatus?.replace('_', ' ') || 'NOT SENT'}</Typography>{transactionDetails.lastAttempt && <Typography variant="body2">Last attempt: {formatDate(transactionDetails.lastAttempt.at)} — {transactionDetails.lastAttempt.status}{transactionDetails.lastAttempt.message ? ` (${transactionDetails.lastAttempt.message})` : ''}</Typography>}</Box></>}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setDetailsDialogOpen(false)} disabled={detailsLoading}>Close</Button></DialogActions>
+      </Dialog>
+
       <Dialog
         open={deleteDialogOpen}
         onClose={handleDeleteCancel}
@@ -560,7 +685,7 @@ export default function ScrapTransactionsPage() {
         <DialogTitle>Confirm Delete</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to delete this scrap transaction?
+            Are you sure you want to delete this {viewMode === 'summary' ? 'scrap transaction and all of its active items' : 'scrap item'}?
             {selectedTransaction && (
               <>
                 <br /><br />
@@ -577,6 +702,24 @@ export default function ScrapTransactionsPage() {
           </Button>
           <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={deleting}>
             {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={sendDialogOpen} onClose={() => !sending && setSendDialogOpen(false)}>
+        <DialogTitle>Confirm INSW Finalization</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Send document <strong>{selectedTransaction?.docNumber}</strong> and all{' '}
+            <strong>{selectedTransaction?.itemCount || 1} active item(s)</strong> to INSW?
+            <br /><br />
+            After successful transmission to INSW, this Scrap transaction can no longer be edited or deleted.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setSendDialogOpen(false); setSelectedTransaction(null); }} disabled={sending}>Cancel</Button>
+          <Button onClick={handleSendConfirm} variant="contained" startIcon={sending ? <CircularProgress size={16} /> : <SendIcon />} disabled={sending}>
+            {sending ? 'Sending...' : 'Confirm & Send'}
           </Button>
         </DialogActions>
       </Dialog>

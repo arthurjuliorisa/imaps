@@ -25,6 +25,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { Save, Close } from '@mui/icons-material';
 import { useToast } from '@/app/components/ToastProvider';
 import { formatQty } from '@/lib/utils/format';
+import { SCRAP_CUSTOMS_TYPES } from '@/lib/validators/constants/customs-document-types';
 
 interface ScrapItem {
   id: number;
@@ -60,7 +61,6 @@ interface AddOutScrapDialogProps {
 }
 
 const CURRENCIES = ['USD', 'IDR', 'CNY', 'EUR', 'JPY'];
-const CUSTOMS_DOCUMENT_TYPES = ['BC25', 'BC27', 'BC27OUT', 'BC41', 'BC261'];
 
 export function AddOutScrapDialog({
   open,
@@ -422,7 +422,7 @@ export function AddOutScrapDialog({
                   error={!!errors.customsDocumentType}
                   helperText={errors.customsDocumentType || 'Select customs document type'}
                 >
-                  {CUSTOMS_DOCUMENT_TYPES.map((docType) => (
+                  {SCRAP_CUSTOMS_TYPES.map((docType) => (
                     <MenuItem key={docType} value={docType}>
                       {docType}
                     </MenuItem>

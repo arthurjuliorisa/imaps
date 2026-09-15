@@ -4,7 +4,10 @@ export type ScrapRecordId = {
   itemId: number;
 };
 
-/** Parse the stable, line-addressable IDs emitted by the Scrap list API. */
+/** Parse the stable, line-addressable IDs emitted by the Scrap list API.
+ * Summary rows deliberately retain one active line ID so that the existing
+ * header-detail endpoint can resolve the header without an ambiguous lookup.
+ */
 export function parseScrapRecordId(value: string): ScrapRecordId | null {
   const match = /^(SCRAP|OUTGOING)_(\d+)_(\d+)$/.exec(value);
   if (!match) return null;

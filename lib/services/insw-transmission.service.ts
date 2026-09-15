@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { excludeTechnicalScrapClaims } from '@/lib/insw-log-visibility';
 import { INSWHelper } from '@/lib/utils/insw-helper';
 import {
   INSWTransmissionStatus,
@@ -9,6 +10,15 @@ import { INSW_ENDPOINTS } from '@/lib/types/insw-api.types';
 import { logger } from '@/lib/utils/logger';
 import { resolveInswCompanyNpwp } from '@/lib/config/insw-company-config';
 import { createInswIntegrationService, createInswPayloadConverter } from '@/lib/services/insw-service.factory';
+
+export interface ScrapTransmissionAttempt {
+  trackingLogId: bigint;
+  metadata: Record<string, unknown>;
+}
+
+export interface ScrapTransmissionContext {
+  attempts: ReadonlyMap<number, ScrapTransmissionAttempt>;
+}
 
 export class INSWTransmissionService {
   private log = logger.child({ service: 'INSWTransmissionService' });
@@ -1107,11 +1117,11 @@ export class INSWTransmissionService {
     insw_response?: any;
     insw_error?: string;
     metadata?: any;
+    existing_tracking_log_id?: bigint;
   }) {
     try {
       const endpointUrl = this.getEndpointUrl(data.transaction_type, data.company_code);
-      await prisma.insw_tracking_log.create({
-        data: {
+      const logData = {
           transaction_type: data.transaction_type,
           transaction_id: data.transaction_id,
           wms_id: data.wms_id,
@@ -1126,12 +1136,36 @@ export class INSWTransmissionService {
           metadata: {
             ...(data.metadata || {}),
             endpoint_url: endpointUrl,
+            ...(data.existing_tracking_log_id ? { claim: false } : {}),
           },
-        },
-      });
+      };
+
+      if (data.existing_tracking_log_id) {
+        await prisma.insw_tracking_log.update({
+          where: { id: data.existing_tracking_log_id },
+          data: logData,
+        });
+      } else {
+        await prisma.insw_tracking_log.create({ data: logData });
+      }
     } catch (error) {
       this.log.error('Failed to log transmission', { error });
     }
+  }
+
+  private async attachPayloadToScrapAttempts(
+    context: ScrapTransmissionContext | undefined,
+    payload: any
+  ): Promise<void> {
+    if (!context || context.attempts.size === 0) return;
+
+    await prisma.insw_tracking_log.updateMany({
+      where: {
+        id: { in: Array.from(context.attempts.values(), attempt => attempt.trackingLogId) },
+        insw_status: INSWTransmissionStatus.PENDING,
+      },
+      data: { insw_request_payload: payload },
+    });
   }
 
   /**
@@ -1140,15 +1174,20 @@ export class INSWTransmissionService {
   async transmitScrapIn(
     companyCode: number,
     transactionIds: number[],
-    skipEndpointCheck: boolean = false
+    skipEndpointCheck: boolean = false,
+    context?: ScrapTransmissionContext
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting scrap IN transmission', { companyCode, transactionIds, skipEndpointCheck });
     const converter = createInswPayloadConverter();
 
     let payload: any = null;
+    let payloadError: unknown = null;
     try {
       payload = await converter.convertScrapInToINSW(companyCode, transactionIds);
-    } catch { /* payload remains null if generation fails */ }
+      await this.attachPayloadToScrapAttempts(context, payload);
+    } catch (error) {
+      payloadError = error;
+    }
 
     // Fetch scrap documents early (needed for all cases including endpoint disabled)
     let scrapInDocMap = new Map<number, string>();
@@ -1170,6 +1209,8 @@ export class INSWTransmissionService {
           insw_activity_code: '30',
           insw_request_payload: payload || undefined,
           insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+          existing_tracking_log_id: context?.attempts.get(id)?.trackingLogId,
+          metadata: context?.attempts.get(id)?.metadata,
         });
       }
       return {
@@ -1188,7 +1229,7 @@ export class INSWTransmissionService {
     let failedCount = 0;
 
     try {
-      if (!payload) payload = await converter.convertScrapInToINSW(companyCode, transactionIds);
+      if (payloadError) throw payloadError;
 
       const validation = INSWHelper.validateINSWPayload(payload);
       if (!validation.valid) {
@@ -1202,6 +1243,8 @@ export class INSWTransmissionService {
             insw_activity_code: '30',
             insw_request_payload: payload,
             insw_error: validation.errors.join('; '),
+            existing_tracking_log_id: context?.attempts.get(id)?.trackingLogId,
+            metadata: context?.attempts.get(id)?.metadata,
           });
           results.push({ id, wms_id: scrapInDocMap.get(id) || `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: validation.errors.join('; ') });
           failedCount++;
@@ -1214,13 +1257,13 @@ export class INSWTransmissionService {
 
       if (inswResponse.status) {
         for (const id of transactionIds) {
-          await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, wms_id: scrapInDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.SUCCESS, insw_activity_code: '30', insw_request_payload: payload, insw_response: inswResponse });
+          await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, wms_id: scrapInDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.SUCCESS, insw_activity_code: '30', insw_request_payload: payload, insw_response: inswResponse, existing_tracking_log_id: context?.attempts.get(id)?.trackingLogId, metadata: context?.attempts.get(id)?.metadata });
           results.push({ id, wms_id: scrapInDocMap.get(id) || `SCRAP-IN-${id}`, status: 'success', insw_status: INSWTransmissionStatus.SUCCESS, insw_response: inswResponse });
           successCount++;
         }
       } else {
         for (const id of transactionIds) {
-          await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, wms_id: scrapInDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '30', insw_request_payload: payload, insw_response: inswResponse, insw_error: inswResponse.message });
+          await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, wms_id: scrapInDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '30', insw_request_payload: payload, insw_response: inswResponse, insw_error: inswResponse.message, existing_tracking_log_id: context?.attempts.get(id)?.trackingLogId, metadata: context?.attempts.get(id)?.metadata });
           results.push({ id, wms_id: scrapInDocMap.get(id) || `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: inswResponse.message });
           failedCount++;
         }
@@ -1230,7 +1273,7 @@ export class INSWTransmissionService {
     } catch (error: any) {
       this.log.error('Error transmitting scrap IN', { error: error.message });
       for (const id of transactionIds) {
-        await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, wms_id: scrapInDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '30', insw_error: error.message });
+        await this.logTransmission({ transaction_type: 'scrap_in', transaction_id: id, wms_id: scrapInDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '30', insw_request_payload: payload || undefined, insw_error: error.message, existing_tracking_log_id: context?.attempts.get(id)?.trackingLogId, metadata: context?.attempts.get(id)?.metadata });
         results.push({ id, wms_id: scrapInDocMap.get(id) || `SCRAP-IN-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
       }
       return { status: 'failed', message: error.message, total: transactionIds.length, success_count: 0, failed_count: transactionIds.length, skipped_count: 0, results };
@@ -1243,15 +1286,20 @@ export class INSWTransmissionService {
   async transmitScrapOut(
     companyCode: number,
     transactionIds: number[],
-    skipEndpointCheck: boolean = false
+    skipEndpointCheck: boolean = false,
+    context?: ScrapTransmissionContext
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting scrap OUT transmission', { companyCode, transactionIds, skipEndpointCheck });
     const converter = createInswPayloadConverter();
 
     let payload: any = null;
+    let payloadError: unknown = null;
     try {
       payload = await converter.convertScrapOutToINSW(companyCode, transactionIds);
-    } catch { /* payload remains null if generation fails */ }
+      await this.attachPayloadToScrapAttempts(context, payload);
+    } catch (error) {
+      payloadError = error;
+    }
 
     // Fetch scrap documents early (needed for all cases including endpoint disabled)
     let scrapOutDocMap = new Map<number, string>();
@@ -1273,6 +1321,8 @@ export class INSWTransmissionService {
           insw_activity_code: '31',
           insw_request_payload: payload || undefined,
           insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
+          existing_tracking_log_id: context?.attempts.get(id)?.trackingLogId,
+          metadata: context?.attempts.get(id)?.metadata,
         });
       }
       return {
@@ -1291,12 +1341,12 @@ export class INSWTransmissionService {
     let failedCount = 0;
 
     try {
-      if (!payload) payload = await converter.convertScrapOutToINSW(companyCode, transactionIds);
+      if (payloadError) throw payloadError;
 
       const validation = INSWHelper.validateINSWPayload(payload);
       if (!validation.valid) {
         for (const id of transactionIds) {
-          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_error: validation.errors.join('; ') });
+          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_error: validation.errors.join('; '), existing_tracking_log_id: context?.attempts.get(id)?.trackingLogId, metadata: context?.attempts.get(id)?.metadata });
           results.push({ id, wms_id: scrapOutDocMap.get(id) || `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: validation.errors.join('; ') });
           failedCount++;
         }
@@ -1308,13 +1358,13 @@ export class INSWTransmissionService {
 
       if (inswResponse.status) {
         for (const id of transactionIds) {
-          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.SUCCESS, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse });
+          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.SUCCESS, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse, existing_tracking_log_id: context?.attempts.get(id)?.trackingLogId, metadata: context?.attempts.get(id)?.metadata });
           results.push({ id, wms_id: scrapOutDocMap.get(id) || `SCRAP-OUT-${id}`, status: 'success', insw_status: INSWTransmissionStatus.SUCCESS, insw_response: inswResponse });
           successCount++;
         }
       } else {
         for (const id of transactionIds) {
-          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse, insw_error: inswResponse.message });
+          await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload, insw_response: inswResponse, insw_error: inswResponse.message, existing_tracking_log_id: context?.attempts.get(id)?.trackingLogId, metadata: context?.attempts.get(id)?.metadata });
           results.push({ id, wms_id: scrapOutDocMap.get(id) || `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: inswResponse.message });
           failedCount++;
         }
@@ -1324,7 +1374,7 @@ export class INSWTransmissionService {
     } catch (error: any) {
       this.log.error('Error transmitting scrap OUT', { error: error.message });
       for (const id of transactionIds) {
-        await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_error: error.message });
+        await this.logTransmission({ transaction_type: 'scrap_out', transaction_id: id, wms_id: scrapOutDocMap.get(id), company_code: companyCode, insw_status: INSWTransmissionStatus.FAILED, insw_activity_code: '31', insw_request_payload: payload || undefined, insw_error: error.message, existing_tracking_log_id: context?.attempts.get(id)?.trackingLogId, metadata: context?.attempts.get(id)?.metadata });
         results.push({ id, wms_id: scrapOutDocMap.get(id) || `SCRAP-OUT-${id}`, status: 'failed', insw_status: INSWTransmissionStatus.FAILED, error: error.message });
       }
       return { status: 'failed', message: error.message, total: transactionIds.length, success_count: 0, failed_count: transactionIds.length, skipped_count: 0, results };
@@ -1776,9 +1826,11 @@ export class INSWTransmissionService {
     date_from?: string;
     date_to?: string;
   }) {
+    const visibilityFilter = await excludeTechnicalScrapClaims(filters.company_code);
     return await prisma.insw_tracking_log.findMany({
       where: {
         company_code: filters.company_code,
+        ...visibilityFilter,
         ...(filters.transaction_type && {
           transaction_type: filters.transaction_type,
         }),
@@ -1805,9 +1857,11 @@ export class INSWTransmissionService {
     date_from?: string;
     date_to?: string;
   }) {
+    const visibilityFilter = await excludeTechnicalScrapClaims(filters.company_code);
     return await prisma.insw_tracking_log.count({
       where: {
         company_code: filters.company_code,
+        ...visibilityFilter,
         ...(filters.transaction_type && {
           transaction_type: filters.transaction_type,
         }),

@@ -3,7 +3,6 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { logActivity } from '@/lib/log-activity';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import {
@@ -146,6 +145,8 @@ export async function POST(request: Request) {
           transaction_date: date,
           transaction_type: 'IN',
           document_number: documentNumber,
+          // Manual Scrap IN does not originate from a customs document.
+          customs_document_type: null,
           source: remarks || `Scrap incoming - ${currency} ${amount}`,
           remarks: remarks,
           timestamp: new Date(),
@@ -259,27 +260,6 @@ export async function POST(request: Request) {
         companyCode,
       },
     });
-
-    // Transmit to INSW via INSWTransmissionService (async, non-blocking, with tracking log)
-    // Only transmit if company type is SEZ
-    (async () => {
-      try {
-        const company = await prisma.companies.findUnique({
-          where: { code: companyCode },
-          select: { company_type: true },
-        });
-
-        if (company?.company_type === 'SEZ') {
-          const inswTransmission = new INSWTransmissionService();
-          const r = await inswTransmission.transmitScrapIn(companyCode, [result.transactionId]);
-          console.log('[INSW] Scrap IN transmitted', { status: r.status, transactionId: result.transactionId });
-        } else {
-          console.log('[INSW] Scrap IN NOT transmitted (non-SEZ company)', { companyCode, companyType: company?.company_type });
-        }
-      } catch (err) {
-        console.error('[INSW] Scrap IN INSW error', { err });
-      }
-    })();
 
     return NextResponse.json(
       {

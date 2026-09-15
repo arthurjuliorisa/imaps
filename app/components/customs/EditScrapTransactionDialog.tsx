@@ -286,12 +286,12 @@ export function EditScrapTransactionDialog({
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
         <DialogTitle>
-          Edit Scrap Transaction
+          Edit Item
         </DialogTitle>
         <DialogContent>
           {isOutgoingGoodsRecord && (
             <Alert severity="warning" sx={{ mb: 2 }}>
-              This transaction is from the outgoing goods record. Some fields cannot be edited here.
+              This item is from the outgoing goods record. Some fields cannot be edited here.
               Please edit from the Outgoing Goods page for full control.
             </Alert>
           )}
@@ -377,34 +377,6 @@ export function EditScrapTransactionDialog({
 
             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
               <TextField
-                label="Document Type *"
-                select
-                value={formData.customsDocumentType}
-                onChange={(e) => setFormData({ ...formData, customsDocumentType: e.target.value })}
-                error={!!errors.customsDocumentType}
-                helperText={errors.customsDocumentType}
-                disabled={loading}
-                fullWidth
-              >
-                {CUSTOMS_DOCUMENT_TYPES.map((docType) => (
-                  <MenuItem key={docType} value={docType}>
-                    {docType}
-                  </MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                label="Transaction Number"
-                value={formData.transactionNumber}
-                onChange={(e) => setFormData({ ...formData, transactionNumber: e.target.value })}
-                disabled={loading}
-                fullWidth
-                placeholder="Auto-generated if empty"
-                helperText="Optional: Override auto-generated number"
-              />
-            </Box>
-
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-              <TextField
                 label="Currency *"
                 select
                 value={formData.currency}
@@ -433,38 +405,6 @@ export function EditScrapTransactionDialog({
               />
             </Box>
 
-            {transaction.transactionType === 'OUT' && (
-              <TextField
-                label="Recipient Name *"
-                value={formData.recipientName}
-                onChange={(e) => setFormData({ ...formData, recipientName: e.target.value })}
-                error={!!errors.recipientName}
-                helperText={errors.recipientName}
-                disabled={loading}
-                fullWidth
-              />
-            )}
-
-            <TextField
-              label="Nomor Daftar"
-              value={formData.ppkekNumber}
-              onChange={(e) => setFormData({ ...formData, ppkekNumber: e.target.value })}
-              disabled={loading}
-              fullWidth
-            />
-
-            <DatePicker
-              label="Registration Date"
-              value={formData.registrationDate}
-              onChange={(newValue) => setFormData({ ...formData, registrationDate: newValue })}
-              slotProps={{
-                textField: {
-                  fullWidth: true,
-                  disabled: loading,
-                },
-              }}
-            />
-
             <Autocomplete
               multiple
               freeSolo
@@ -484,15 +424,6 @@ export function EditScrapTransactionDialog({
               )}
             />
 
-            <TextField
-              label="Remarks"
-              value={formData.remarks}
-              onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-              disabled={loading}
-              multiline
-              rows={3}
-              fullWidth
-            />
           </Stack>
         </DialogContent>
         <DialogActions>

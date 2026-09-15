@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 import { validateCompanyCode } from '@/lib/company-validation';
+import { buildScrapTransactionListProjection } from '@/lib/scrap-transaction-list-projection';
 
 /**
  * GET /api/customs/scrap-transactions
@@ -50,6 +51,7 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const search = searchParams.get('search')?.trim();
+    const view = searchParams.get('view') === 'summary' ? 'summary' : 'detail';
     const rawPage = parseInt(searchParams.get('page') || '1', 10);
     const rawPageSize = parseInt(searchParams.get('pageSize') || '50', 10);
     const page = Number.isFinite(rawPage) ? rawPage : 1;
@@ -112,26 +114,34 @@ export async function GET(request: Request) {
     }
 
     if (startDate) {
-      const startDateObj = new Date(startDate);
-      dateFilterScrap += ` AND st.transaction_date >= $${paramIndex}`;
-      dateFilterOutgoing += ` AND og.outgoing_date >= $${paramIndex}`;
-      params.push(startDateObj);
+      // These columns are PostgreSQL DATE columns. Bind the supplied calendar
+      // date directly rather than parsing it as a JavaScript timestamp, which
+      // can shift dates across time zones.
+      dateFilterScrap += ` AND st.transaction_date >= $${paramIndex}::date`;
+      dateFilterOutgoing += ` AND og.outgoing_date >= $${paramIndex}::date`;
+      params.push(startDate);
       paramIndex++;
     }
 
     if (endDate) {
-      const endDateObj = new Date(endDate);
-      dateFilterScrap += ` AND st.transaction_date <= $${paramIndex}`;
-      dateFilterOutgoing += ` AND og.outgoing_date <= $${paramIndex}`;
-      params.push(endDateObj);
+      dateFilterScrap += ` AND st.transaction_date <= $${paramIndex}::date`;
+      dateFilterOutgoing += ` AND og.outgoing_date <= $${paramIndex}::date`;
+      params.push(endDate);
       paramIndex++;
     }
 
+    // Summary pagination is by document header; detail pagination is by active
+    // item.  Keeping this decision in SQL prevents a page of headers from
+    // being expanded into an incomplete, misleading list of child lines.
+    const countSelect = view === 'summary'
+      ? "COUNT(DISTINCT header_key)"
+      : 'COUNT(*)';
+
     // Count total records from both scrap_transactions (IN) and outgoing_goods (OUT with SCRAP items)
     const countQuery = `
-      SELECT COUNT(*) as total FROM (
+      SELECT ${countSelect} as total FROM (
         -- SCRAP IN from scrap_transactions
-        SELECT st.id
+        SELECT 'IN:' || st.id AS header_key
         FROM scrap_transactions st
         JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
           AND st.id = sti.scrap_transaction_id
@@ -147,7 +157,7 @@ export async function GET(request: Request) {
         UNION ALL
         
         -- SCRAP OUT from outgoing_goods
-        SELECT og.id
+        SELECT 'OUT:' || og.id AS header_key
         FROM outgoing_goods og
         JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
           AND og.id = ogi.outgoing_good_id
@@ -168,13 +178,45 @@ export async function GET(request: Request) {
     );
     const totalRecords = Number(countResult[0]?.total || 0);
 
-    // Fetch paginated data from both SCRAP IN and SCRAP OUT sources
+    // Company type is constant for this authenticated company. Return it once
+    // so the client can omit INSW UI for BZ companies without per-row lookups.
+    const company = await prisma.companies.findUnique({
+      where: { code: companyCode },
+      select: { company_type: true },
+    });
+
+    const listProjection = buildScrapTransactionListProjection(view);
+
+    // Fetch paginated data from both SCRAP IN and SCRAP OUT sources. Summary
+    // uses one deterministic active line merely as an addressable header
+    // reference; it never exposes that line as the document's item content.
     const dataQuery = `
-      SELECT * FROM (
+      WITH tracking AS (
+        SELECT transaction_type, transaction_id,
+          COALESCE(bool_or(insw_status = 'SUCCESS'), false) AS has_success,
+          (array_agg(insw_status ORDER BY created_at DESC, id DESC))[1] AS latest_status
+        FROM insw_tracking_log
+        WHERE company_code = $1
+          AND transaction_type IN ('scrap_in', 'scrap_out')
+        GROUP BY transaction_type, transaction_id
+      ), scrap_item_counts AS (
+        SELECT scrap_transaction_company AS company_code, scrap_transaction_id AS transaction_id,
+          COUNT(*)::integer AS item_count
+        FROM scrap_transaction_items
+        WHERE scrap_transaction_company = $1 AND deleted_at IS NULL
+        GROUP BY scrap_transaction_company, scrap_transaction_id
+      ), outgoing_item_counts AS (
+        SELECT outgoing_good_company AS company_code, outgoing_good_id,
+          COUNT(*)::integer AS item_count
+        FROM outgoing_good_items
+        WHERE outgoing_good_company = $1 AND item_type = 'SCRAP' AND deleted_at IS NULL
+        GROUP BY outgoing_good_company, outgoing_good_id
+      ), combined AS (
         -- SCRAP IN from scrap_transactions
         SELECT
           'SCRAP_' || st.id || '_' || sti.id as record_id,
           st.id as source_id,
+          st.id as insw_transaction_id,
           st.document_number as wms_id,
           st.company_code,
           c.name as company_name,
@@ -185,7 +227,9 @@ export async function GET(request: Request) {
           st.document_number as doc_number,
           st.transaction_date as doc_date,
           st.transaction_date as transaction_date,
-          COALESCE(st.source, 'Scrap Collection') as recipient_name,
+          -- Scrap IN has no recipient. source is provenance only and must
+          -- never be presented as a recipient (it can contain manual remarks).
+          NULL::text as recipient_name,
           sti.item_type,
           sti.item_code,
           sti.item_name,
@@ -199,12 +243,22 @@ export async function GET(request: Request) {
           st.transaction_date as sort_date,
           st.customs_document_type::text as customs_doc_type,
           st.document_number as transaction_number,
-          CAST(ARRAY[]::text[] AS text[]) as incoming_ppkek_numbers
+          CAST(ARRAY[]::text[] AS text[]) as incoming_ppkek_numbers,
+          ic.item_count,
+          CASE
+            WHEN ti.has_success THEN 'SUCCESS'
+            WHEN ti.latest_status = 'FAILED' THEN 'FAILED'
+            WHEN ti.latest_status IS NULL THEN 'NOT_SENT'
+            ELSE 'PENDING'
+          END as insw_status,
+          (c.company_type = 'SEZ') as is_sez
         FROM scrap_transactions st
         JOIN scrap_transaction_items sti ON st.company_code = sti.scrap_transaction_company
           AND st.id = sti.scrap_transaction_id
           AND st.transaction_date = sti.scrap_transaction_date
         JOIN companies c ON st.company_code = c.code
+        LEFT JOIN tracking ti ON ti.transaction_type = 'scrap_in' AND ti.transaction_id = st.id
+        JOIN scrap_item_counts ic ON ic.company_code = st.company_code AND ic.transaction_id = st.id
         WHERE st.company_code = $1
           AND st.transaction_type = 'IN'
           AND st.deleted_at IS NULL
@@ -218,6 +272,7 @@ export async function GET(request: Request) {
         SELECT
           'OUTGOING_' || og.id || '_' || ogi.id as record_id,
           og.id as source_id,
+          og.scrap_transaction_id as insw_transaction_id,
           og.wms_id,
           og.company_code,
           c.name as company_name,
@@ -242,19 +297,30 @@ export async function GET(request: Request) {
           og.outgoing_date as sort_date,
           og.customs_document_type::text as customs_doc_type,
           og.outgoing_evidence_number as transaction_number,
-          ogi.incoming_ppkek_numbers
+          ogi.incoming_ppkek_numbers,
+          oc.item_count,
+          CASE
+            WHEN ot.has_success THEN 'SUCCESS'
+            WHEN ot.latest_status = 'FAILED' THEN 'FAILED'
+            WHEN ot.latest_status IS NULL THEN 'NOT_SENT'
+            ELSE 'PENDING'
+          END as insw_status,
+          (c.company_type = 'SEZ') as is_sez
         FROM outgoing_goods og
         JOIN outgoing_good_items ogi ON og.company_code = ogi.outgoing_good_company
           AND og.id = ogi.outgoing_good_id
           AND og.outgoing_date = ogi.outgoing_good_date
         JOIN companies c ON og.company_code = c.code
+        LEFT JOIN tracking ot ON ot.transaction_type = 'scrap_out' AND ot.transaction_id = og.scrap_transaction_id
+        JOIN outgoing_item_counts oc ON oc.company_code = og.company_code AND oc.outgoing_good_id = og.id
         WHERE og.company_code = $1
           AND ogi.item_type = 'SCRAP'
           AND og.deleted_at IS NULL
           AND ogi.deleted_at IS NULL
           ${searchFilterOutgoing}
           ${dateFilterOutgoing}
-      ) combined
+      )
+      ${listProjection}
       ORDER BY sort_date DESC, record_id DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
@@ -291,11 +357,16 @@ export async function GET(request: Request) {
       createdAt: row.created_at,
       customsDocumentType: row.customs_doc_type || '',
       transactionNumber: row.transaction_number || '',
+      inswTransactionId: row.insw_transaction_id ? Number(row.insw_transaction_id) : null,
+      itemCount: Number(row.item_count || 0),
+      inswStatus: row.insw_status,
+      isSez: Boolean(row.is_sez),
     }));
 
     return NextResponse.json(
       serializeBigInt({
         data: transformedData,
+        companyType: company?.company_type ?? null,
         pagination: {
           page,
           pageSize,

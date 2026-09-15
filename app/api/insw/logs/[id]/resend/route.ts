@@ -3,6 +3,50 @@ import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { prisma } from '@/lib/prisma';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
+import { acquireScrapInswLock, getEffectiveScrapInswStatus, trackingType, type ScrapInswDirection } from '@/lib/scrap-insw-finalization';
+
+class ScrapResendConflictError extends Error {}
+
+async function claimScrapResend(
+  companyCode: number,
+  transactionId: number,
+  direction: ScrapInswDirection,
+  sourceLogId: bigint,
+  sourceStatus: string,
+  wmsId: string | null
+) {
+  return prisma.$transaction(async tx => {
+    await acquireScrapInswLock(tx, companyCode, transactionId);
+    const effectiveStatus = await getEffectiveScrapInswStatus(tx, companyCode, transactionId, direction);
+    if (effectiveStatus === 'SUCCESS') throw new ScrapResendConflictError('This Scrap transaction has already been finalized in INSW.');
+
+    if (sourceStatus === 'PENDING') {
+      const claimed = await tx.insw_tracking_log.updateMany({
+        where: { id: sourceLogId, company_code: companyCode, insw_status: 'PENDING' },
+        data: { insw_status: 'RETRYING' },
+      });
+      if (claimed.count !== 1) throw new ScrapResendConflictError('This pending Scrap transmission is already being resolved.');
+    } else if (effectiveStatus === 'PENDING') {
+      throw new ScrapResendConflictError('An INSW transmission is already pending for this Scrap transaction.');
+    }
+
+    const metadata = {
+      source: 'scrap_log_resend',
+      claim: true,
+      attempt_lifecycle: true,
+      source_log_id: sourceLogId.toString(),
+    };
+    const trackingLog = await tx.insw_tracking_log.create({
+      data: {
+        transaction_type: trackingType(direction), transaction_id: transactionId,
+        wms_id: wmsId, company_code: companyCode, insw_status: 'PENDING',
+        insw_activity_code: direction === 'IN' ? '30' : '31', sent_at: new Date(),
+        metadata,
+      },
+    });
+    return { trackingLogId: trackingLog.id, metadata };
+  }, { timeout: 30000 });
+}
 
 export async function POST(
   request: Request,
@@ -101,7 +145,10 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitScrapIn(logCompanyCode, [transactionId], skipEndpointCheck);
+        const scrapInAttempt = await claimScrapResend(logCompanyCode, transactionId, 'IN', logId, log.insw_status, wmsId);
+        result = await service.transmitScrapIn(logCompanyCode, [transactionId], skipEndpointCheck, {
+          attempts: new Map([[transactionId, scrapInAttempt]]),
+        });
         break;
 
       case 'scrap_out':
@@ -111,7 +158,10 @@ export async function POST(
             { status: 400 }
           );
         }
-        result = await service.transmitScrapOut(logCompanyCode, [transactionId], skipEndpointCheck);
+        const scrapOutAttempt = await claimScrapResend(logCompanyCode, transactionId, 'OUT', logId, log.insw_status, wmsId);
+        result = await service.transmitScrapOut(logCompanyCode, [transactionId], skipEndpointCheck, {
+          attempts: new Map([[transactionId, scrapOutAttempt]]),
+        });
         break;
 
       case 'capital_goods_out':
@@ -161,6 +211,9 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
+    if (error instanceof ScrapResendConflictError) {
+      return NextResponse.json({ success: false, message: error.message }, { status: 409 });
+    }
     console.error('Error resending INSW log:', error);
     return NextResponse.json(
       { success: false, message: error.message || 'Gagal mengirim ulang data ke INSW' },
