@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -45,13 +45,13 @@ interface INSWLog {
   company_code: number;
   insw_status: string;
   insw_activity_code: string | null;
-  insw_request_payload: any;
-  insw_response: any;
+  insw_request_payload?: any;
+  insw_response?: any;
   insw_error: string | null;
   sent_at: string | null;
   retry_count: number;
   created_at: string;
-  metadata: { endpoint_url?: string } | null;
+  metadata?: { endpoint_url?: string } | null;
 }
 
 interface ChartDataPoint {
@@ -289,14 +289,21 @@ export default function INSWLogsPage() {
   const [error, setError] = useState<string | null>(null);
   const [transactionTypeFilter, setTransactionTypeFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [transactionTypes, setTransactionTypes] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<string[]>([]);
+  const [wmsIdDraft, setWmsIdDraft] = useState('');
+  const [wmsIdSearch, setWmsIdSearch] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<INSWLog | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const detailRequestVersion = useRef(0);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const [dateFrom, setDateFrom] = useState(dayjs().subtract(1, 'month').format('YYYY-MM-DD'));
+  const [dateFrom, setDateFrom] = useState(dayjs().subtract(7, 'day').format('YYYY-MM-DD'));
   const [dateTo, setDateTo] = useState(dayjs().format('YYYY-MM-DD'));
 
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -422,12 +429,12 @@ export default function INSWLogsPage() {
   ];
 
   useEffect(() => {
-    setPage(0);
-  }, [transactionTypeFilter, statusFilter, dateFrom, dateTo]);
+    fetchLogs();
+  }, [transactionTypeFilter, statusFilter, wmsIdSearch, dateFrom, dateTo, page, rowsPerPage]);
 
   useEffect(() => {
-    fetchLogs();
-  }, [transactionTypeFilter, statusFilter, dateFrom, dateTo, page, rowsPerPage]);
+    fetchFilterMetadata();
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     fetchChartData();
@@ -440,9 +447,10 @@ export default function INSWLogsPage() {
         page: String(page + 1),
         limit: String(rowsPerPage),
         ...(dateFrom && { date_from: dateFrom }),
-        ...(dateTo && { date_to: dateTo + 'T23:59:59' }),
+        ...(dateTo && { date_to: dateTo }),
         ...(transactionTypeFilter !== 'ALL' && { transaction_type: transactionTypeFilter }),
         ...(statusFilter !== 'ALL' && { insw_status: statusFilter }),
+        ...(wmsIdSearch && { wms_id: wmsIdSearch }),
       });
 
       const response = await fetch(`/api/insw/logs?${params}`);
@@ -464,6 +472,23 @@ export default function INSWLogsPage() {
       setError('Failed to fetch INSW logs');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchFilterMetadata = async () => {
+    try {
+      const params = new URLSearchParams({
+        ...(dateFrom && { date_from: dateFrom }),
+        ...(dateTo && { date_to: dateTo }),
+      });
+      const response = await fetch(`/api/insw/logs/metadata?${params}`);
+      const result = await response.json();
+      if (result.success) {
+        setTransactionTypes(result.data?.transactionTypes || []);
+        setStatuses(result.data?.statuses || []);
+      }
+    } catch (err) {
+      console.error('Error fetching INSW log filter metadata:', err);
     }
   };
 
@@ -491,7 +516,13 @@ export default function INSWLogsPage() {
   };
 
   const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
+    const nextRowsPerPage = Number(event.target.value);
+    setRowsPerPage([5, 10, 25, 50].includes(nextRowsPerPage) ? nextRowsPerPage : 10);
+    setPage(0);
+  };
+
+  const handleSearch = () => {
+    setWmsIdSearch(wmsIdDraft.trim());
     setPage(0);
   };
 
@@ -504,22 +535,47 @@ export default function INSWLogsPage() {
   const handleExportExcel = () => {
     const params = new URLSearchParams({
       ...(dateFrom && { date_from: dateFrom }),
-      ...(dateTo && { date_to: dateTo + 'T23:59:59' }),
+      ...(dateTo && { date_to: dateTo }),
       ...(transactionTypeFilter !== 'ALL' && { transaction_type: transactionTypeFilter }),
       ...(statusFilter !== 'ALL' && { insw_status: statusFilter }),
     });
     window.open(`/api/insw/logs/export?${params}`, '_blank');
   };
 
-  const handleViewDetails = (log: INSWLog) => {
-    setSelectedLog(log);
+  const handleViewDetails = async (log: INSWLog) => {
+    const logId = String(log.id);
+    const requestVersion = ++detailRequestVersion.current;
+    setSelectedLogId(logId);
+    // List rows intentionally omit payloads. Clear the previous detail before
+    // loading so it cannot be shown under the newly selected row.
+    setSelectedLog(null);
     setDetailDialogOpen(true);
+    setDetailLoading(true);
+    try {
+      const response = await fetch(`/api/insw/logs/${encodeURIComponent(logId)}`);
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || 'Failed to load log details');
+      if (String(result.data?.id) !== logId) throw new Error('Loaded log detail does not match the selected row');
+      if (detailRequestVersion.current !== requestVersion) return;
+      setSelectedLog(result.data);
+    } catch (err: any) {
+      if (detailRequestVersion.current === requestVersion) {
+        toast.error(err.message || 'Failed to load log details');
+      }
+    } finally {
+      if (detailRequestVersion.current === requestVersion) {
+        setDetailLoading(false);
+      }
+    }
   };
 
   const handleCloseDetailDialog = () => {
+    detailRequestVersion.current += 1;
     setDetailDialogOpen(false);
+    setSelectedLogId(null);
     setSelectedLog(null);
     setCopiedKey(null);
+    setDetailLoading(false);
   };
 
   const handleCopy = (key: string, value: any) => {
@@ -822,7 +878,7 @@ export default function INSWLogsPage() {
               label="Dari Tanggal"
               type="date"
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(0); }}
               size="small"
               InputLabelProps={{ shrink: true }}
               sx={{ minWidth: 160 }}
@@ -831,7 +887,7 @@ export default function INSWLogsPage() {
               label="Sampai Tanggal"
               type="date"
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              onChange={(e) => { setDateTo(e.target.value); setPage(0); }}
               size="small"
               InputLabelProps={{ shrink: true }}
               sx={{ minWidth: 160 }}
@@ -840,29 +896,37 @@ export default function INSWLogsPage() {
               select
               label="Transaction Type"
               value={transactionTypeFilter}
-              onChange={(e) => setTransactionTypeFilter(e.target.value)}
+              onChange={(e) => { setTransactionTypeFilter(e.target.value); setPage(0); }}
               size="small"
               sx={{ minWidth: 180 }}
             >
               <MenuItem value="ALL">All Types</MenuItem>
-              <MenuItem value="incoming">Incoming</MenuItem>
-              <MenuItem value="outgoing">Outgoing</MenuItem>
+              {transactionTypes.map((type) => (
+                <MenuItem key={type} value={type}>{type.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())}</MenuItem>
+              ))}
             </TextField>
             <TextField
               select
               label="Status"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
               size="small"
               sx={{ minWidth: 150 }}
             >
               <MenuItem value="ALL">All Status</MenuItem>
-              <MenuItem value="SUCCESS">Success</MenuItem>
-              <MenuItem value="FAILED">Failed</MenuItem>
-              <MenuItem value="PENDING">Pending</MenuItem>
-              <MenuItem value="PENDING_RESOLVED">Pending Resolved</MenuItem>
-              <MenuItem value="SENT">Sent</MenuItem>
+              {statuses.map((status) => (
+                <MenuItem key={status} value={status}>{status.replace(/_/g, ' ')}</MenuItem>
+              ))}
             </TextField>
+            <TextField
+              label="Search WMS ID"
+              value={wmsIdDraft}
+              onChange={(e) => setWmsIdDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearch(); } }}
+              placeholder="Press Enter to search"
+              size="small"
+              sx={{ width: { xs: '100%', sm: 260 }, maxWidth: '100%' }}
+            />
           </Stack>
         </CardContent>
       </Card>
@@ -892,7 +956,12 @@ export default function INSWLogsPage() {
           Transmission Details
         </DialogTitle>
         <DialogContent dividers>
-          {selectedLog && (
+          {detailLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+              <CircularProgress size={24} />
+            </Box>
+          )}
+          {selectedLog && selectedLogId === String(selectedLog.id) && !detailLoading && (
             <Box>
               <Stack spacing={2}>
                 <Box>

@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 import { excludeTechnicalScrapClaims } from '@/lib/insw-log-visibility';
 import { INSWHelper } from '@/lib/utils/insw-helper';
 import {
@@ -1814,64 +1815,118 @@ export class INSWTransmissionService {
     }
   }
 
-  /**
-   * Get transmission logs
-   */
+  /** Date-only filters use the application's local calendar convention. */
+  private buildLogWhere(filters: {
+    company_code: number;
+    transaction_type?: string;
+    insw_status?: string;
+    date_from?: string;
+    date_to?: string;
+    wms_id?: string;
+  }, visibilityFilter: Prisma.insw_tracking_logWhereInput): Prisma.insw_tracking_logWhereInput {
+    const dateFilter = filters.date_from || filters.date_to ? {
+      ...(filters.date_from && { gte: new Date(`${filters.date_from}T00:00:00`) }),
+      ...(filters.date_to && {
+        // An exclusive start-of-next-day boundary includes sub-second records.
+        lt: new Date(new Date(`${filters.date_to}T00:00:00`).setDate(new Date(`${filters.date_to}T00:00:00`).getDate() + 1)),
+      }),
+    } : undefined;
+
+    return {
+      company_code: filters.company_code,
+      ...visibilityFilter,
+      ...(filters.transaction_type && { transaction_type: filters.transaction_type }),
+      ...(filters.insw_status && { insw_status: filters.insw_status }),
+      ...(filters.wms_id && { wms_id: { contains: filters.wms_id, mode: 'insensitive' } }),
+      ...(dateFilter && { sent_at: dateFilter }),
+    };
+  }
+
+  private readonly listSelect = {
+    id: true,
+    transaction_type: true,
+    transaction_id: true,
+    wms_id: true,
+    company_code: true,
+    insw_status: true,
+    insw_activity_code: true,
+    insw_error: true,
+    sent_at: true,
+    retry_count: true,
+    created_at: true,
+  } as const;
+
+  async getTransmissionLogPage(filters: {
+    company_code: number;
+    transaction_type?: string;
+    insw_status?: string;
+    wms_id?: string;
+    date_from?: string;
+    date_to?: string;
+    limit: number;
+    offset: number;
+  }) {
+    const visibilityFilter = await excludeTechnicalScrapClaims(filters.company_code);
+    const where = this.buildLogWhere(filters, visibilityFilter);
+    const [total, logs] = await Promise.all([
+      prisma.insw_tracking_log.count({ where }),
+      prisma.insw_tracking_log.findMany({
+        where,
+        select: this.listSelect,
+        orderBy: { created_at: 'desc' },
+        take: filters.limit,
+        skip: filters.offset,
+      }),
+    ]);
+    return { total, logs };
+  }
+
+  async getTransmissionLogMetadata(filters: {
+    company_code: number;
+    date_from?: string;
+    date_to?: string;
+  }) {
+    const visibilityFilter = await excludeTechnicalScrapClaims(filters.company_code);
+    const where = this.buildLogWhere(filters, visibilityFilter);
+    const [transactionTypes, statuses] = await Promise.all([
+      prisma.insw_tracking_log.findMany({ where, distinct: ['transaction_type'], select: { transaction_type: true }, orderBy: { transaction_type: 'asc' } }),
+      prisma.insw_tracking_log.findMany({ where, distinct: ['insw_status'], select: { insw_status: true }, orderBy: { insw_status: 'asc' } }),
+    ]);
+    return {
+      transactionTypes: transactionTypes.map(row => row.transaction_type),
+      statuses: statuses.map(row => row.insw_status),
+    };
+  }
+
   async getTransmissionLogs(filters: {
     company_code: number;
     transaction_type?: string;
     insw_status?: string;
+    wms_id?: string;
     limit?: number;
     offset?: number;
     date_from?: string;
     date_to?: string;
   }) {
-    const visibilityFilter = await excludeTechnicalScrapClaims(filters.company_code);
-    return await prisma.insw_tracking_log.findMany({
-      where: {
-        company_code: filters.company_code,
-        ...visibilityFilter,
-        ...(filters.transaction_type && {
-          transaction_type: filters.transaction_type,
-        }),
-        ...(filters.insw_status && { insw_status: filters.insw_status }),
-        ...(filters.date_from && filters.date_to && {
-          sent_at: {
-            gte: new Date(filters.date_from),
-            lte: new Date(filters.date_to),
-          },
-        }),
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
-      take: filters.limit || 100,
-      skip: filters.offset || 0,
+    const page = await this.getTransmissionLogPage({
+      ...filters,
+      limit: filters.limit || 100,
+      offset: filters.offset || 0,
     });
+    return page.logs;
   }
 
-  async countTransmissionLogs(filters: {
-    company_code: number;
-    transaction_type?: string;
-    insw_status?: string;
-    date_from?: string;
-    date_to?: string;
-  }) {
-    const visibilityFilter = await excludeTechnicalScrapClaims(filters.company_code);
-    return await prisma.insw_tracking_log.count({
+  async getTransmissionLogDetail(companyCode: number, id: bigint) {
+    const visibilityFilter = await excludeTechnicalScrapClaims(companyCode);
+    return prisma.insw_tracking_log.findFirst({
+      // Keep the requested ID and visibility constraints as separate predicates.
+      // Spreading visibilityFilter here would overwrite `id` when it contains
+      // `{ id: { notIn: [...] } }`, causing findFirst to return another log.
       where: {
-        company_code: filters.company_code,
-        ...visibilityFilter,
-        ...(filters.transaction_type && {
-          transaction_type: filters.transaction_type,
-        }),
-        ...(filters.insw_status && { insw_status: filters.insw_status }),
-        ...(filters.date_from && filters.date_to && {
-          sent_at: {
-            gte: new Date(filters.date_from),
-            lte: new Date(filters.date_to),
-          },
-        }),
+        AND: [
+          { id, company_code: companyCode },
+          visibilityFilter,
+        ],
       },
     });
   }
