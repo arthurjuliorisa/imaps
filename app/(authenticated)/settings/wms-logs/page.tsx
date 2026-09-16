@@ -68,6 +68,13 @@ export default function WMSTransmissionLogsPage() {
   const [actionFilter, setActionFilter] = useState('ALL');
   const [errorTypeFilter, setErrorTypeFilter] = useState('ALL');
   const [transmissionStatusFilter, setTransmissionStatusFilter] = useState('ALL');
+  const [wmsIdSearch, setWmsIdSearch] = useState('');
+  const [appliedWmsIdSearch, setAppliedWmsIdSearch] = useState('');
+  const [filterOptions, setFilterOptions] = useState({
+    actions: [] as string[],
+    transmissionStatuses: [] as string[],
+    errorTypes: [] as string[],
+  });
   const [companyCodeFilter, setCompanyCodeFilter] = useState<string>('ALL');
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedLog, setSelectedLog] = useState<WMSTransmissionLog | null>(null);
@@ -249,12 +256,15 @@ export default function WMSTransmissionLogsPage() {
   }, [isSuperAdmin, userCompanyCode]);
 
   useEffect(() => {
-    setPage(0);
-  }, [actionFilter, errorTypeFilter, transmissionStatusFilter, companyCodeFilter, dateFrom, dateTo]);
-
-  useEffect(() => {
     fetchLogs();
-  }, [actionFilter, errorTypeFilter, transmissionStatusFilter, companyCodeFilter, dateFrom, dateTo, page, rowsPerPage]);
+  }, [appliedWmsIdSearch, actionFilter, errorTypeFilter, transmissionStatusFilter, companyCodeFilter, dateFrom, dateTo, page, rowsPerPage]);
+
+  // Dropdown options apply to the authorized date/company dataset rather than
+  // the current page or selected row filters, so refresh them only when that
+  // dataset changes.
+  useEffect(() => {
+    fetchFilterMetadata();
+  }, [companyCodeFilter, dateFrom, dateTo]);
 
   const fetchCompanies = async () => {
     try {
@@ -276,10 +286,12 @@ export default function WMSTransmissionLogsPage() {
         limit: String(rowsPerPage),
         ...(dateFrom && { date_from: dateFrom }),
         ...(dateTo && { date_to: dateTo + 'T23:59:59' }),
+        ...(appliedWmsIdSearch && { wms_id: appliedWmsIdSearch }),
         ...(actionFilter !== 'ALL' && { action: actionFilter }),
         ...(errorTypeFilter !== 'ALL' && { error_type: errorTypeFilter }),
         ...(transmissionStatusFilter !== 'ALL' && { transmission_status: transmissionStatusFilter }),
         ...(companyCodeFilter !== 'ALL' && { company_code: companyCodeFilter }),
+        include_filters: 'false',
       });
 
       const response = await fetch(`/api/settings/wms-transmission-logs?${params}`);
@@ -304,12 +316,55 @@ export default function WMSTransmissionLogsPage() {
     }
   };
 
+  const fetchFilterMetadata = async () => {
+    try {
+      const params = new URLSearchParams({
+        metadata_only: 'true',
+        ...(dateFrom && { date_from: dateFrom }),
+        ...(dateTo && { date_to: dateTo + 'T23:59:59' }),
+        ...(companyCodeFilter !== 'ALL' && { company_code: companyCodeFilter }),
+      });
+      const response = await fetch(`/api/settings/wms-transmission-logs?${params}`);
+      const result = await response.json();
+
+      if (result.success) {
+        setFilterOptions({
+          actions: result.filters?.actions || [],
+          transmissionStatuses: result.filters?.transmissionStatuses || [],
+          errorTypes: result.filters?.errorTypes || [],
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching WMS transmission log filter metadata:', err);
+    }
+  };
+
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
   };
 
   const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  const handleSearch = () => {
+    setAppliedWmsIdSearch(wmsIdSearch.trim());
+    setPage(0);
+  };
+
+  const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    handleSearch();
+  };
+
+  const handleFilterChange = (setter: (value: string) => void) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    setter(event.target.value);
+    setPage(0);
+  };
+
+  const handleDateChange = (setter: (value: string) => void) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    setter(event.target.value);
     setPage(0);
   };
 
@@ -357,11 +412,6 @@ export default function WMSTransmissionLogsPage() {
     } finally {
       setRetryingId(null);
     }
-  };
-
-  const getActionOptions = () => {
-    const actions = new Set(logs.map((log) => log.action));
-    return Array.from(actions).sort();
   };
 
   return (
@@ -446,12 +496,12 @@ export default function WMSTransmissionLogsPage() {
       {/* Filter Card */}
       <Card sx={{ mb: 3, boxShadow: 1 }}>
         <CardContent>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <Stack component="form" direction={{ xs: 'column', sm: 'row' }} spacing={2} onSubmit={handleSearchSubmit}>
             <TextField
               label="Dari Tanggal"
               type="date"
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              onChange={handleDateChange(setDateFrom)}
               size="small"
               InputLabelProps={{ shrink: true }}
               sx={{ minWidth: 160 }}
@@ -460,21 +510,38 @@ export default function WMSTransmissionLogsPage() {
               label="Sampai Tanggal"
               type="date"
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              onChange={handleDateChange(setDateTo)}
               size="small"
               InputLabelProps={{ shrink: true }}
               sx={{ minWidth: 160 }}
             />
             <TextField
+              label="Search WMS ID"
+              value={wmsIdSearch}
+              onChange={(e) => setWmsIdSearch(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  handleSearch();
+                }
+              }}
+              size="small"
+              sx={{
+                width: { xs: '100%', sm: '20rem' },
+                maxWidth: '100%',
+                flex: { xs: '0 0 auto', sm: '0 1 20rem' },
+              }}
+            />
+            <TextField
               select
               label="Action"
               value={actionFilter}
-              onChange={(e) => setActionFilter(e.target.value)}
+              onChange={handleFilterChange(setActionFilter)}
               size="small"
               sx={{ minWidth: 200 }}
             >
               <MenuItem value="ALL">All Actions</MenuItem>
-              {getActionOptions().map((action) => (
+              {filterOptions.actions.map((action) => (
                 <MenuItem key={action} value={action}>
                   {action.replace('WMS_', '').replace('_ERROR', '')}
                 </MenuItem>
@@ -484,35 +551,34 @@ export default function WMSTransmissionLogsPage() {
               select
               label="Transmission Status"
               value={transmissionStatusFilter}
-              onChange={(e) => setTransmissionStatusFilter(e.target.value)}
+              onChange={handleFilterChange(setTransmissionStatusFilter)}
               size="small"
               sx={{ minWidth: 180 }}
             >
-              <MenuItem value="ALL">All Status</MenuItem>
-              <MenuItem value="SUCCESS">Success</MenuItem>
-              <MenuItem value="FAILED">Failed</MenuItem>
-              <MenuItem value="ERROR">Error</MenuItem>
-              <MenuItem value="RETRYING">Retrying</MenuItem>
+              <MenuItem value="ALL">All Statuses</MenuItem>
+              {filterOptions.transmissionStatuses.map((status) => (
+                <MenuItem key={status} value={status}>{status}</MenuItem>
+              ))}
             </TextField>
             <TextField
               select
               label="Error Type"
               value={errorTypeFilter}
-              onChange={(e) => setErrorTypeFilter(e.target.value)}
+              onChange={handleFilterChange(setErrorTypeFilter)}
               size="small"
               sx={{ minWidth: 180 }}
             >
               <MenuItem value="ALL">All Error Types</MenuItem>
-              <MenuItem value="VALIDATION_ERROR">Validation Error</MenuItem>
-              <MenuItem value="BUSINESS_LOGIC_ERROR">Business Logic Error</MenuItem>
-              <MenuItem value="SYSTEM_ERROR">System Error</MenuItem>
+              {filterOptions.errorTypes.map((errorType) => (
+                <MenuItem key={errorType} value={errorType}>{errorType}</MenuItem>
+              ))}
             </TextField>
             {isSuperAdmin && (
               <TextField
                 select
                 label="Company Code"
                 value={companyCodeFilter}
-                onChange={(e) => setCompanyCodeFilter(e.target.value)}
+                onChange={handleFilterChange(setCompanyCodeFilter)}
                 size="small"
                 sx={{ minWidth: 180 }}
               >

@@ -3,6 +3,9 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 
+const ALLOWED_PAGE_SIZES = [5, 10, 25, 50] as const;
+const DEFAULT_PAGE_SIZE = 10;
+
 export async function GET(request: NextRequest) {
   try {
     const authCheck = await checkAuth();
@@ -17,17 +20,24 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const rawPage = parseInt(searchParams.get('page') || '1', 10);
-    const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
+    const rawLimit = parseInt(searchParams.get('limit') || '', 10);
     const dateFrom = searchParams.get('date_from');
     const dateTo = searchParams.get('date_to');
     const actionFilter = searchParams.get('action');
     const errorTypeFilter = searchParams.get('error_type');
     const transmissionStatusFilter = searchParams.get('transmission_status');
     const companyCodeFilter = searchParams.get('company_code');
+    const wmsIdSearch = searchParams.get('wms_id')?.trim();
+    // Keep the existing response behavior by default. The logs page opts out on
+    // normal list requests and fetches this stable dropdown data separately.
+    const metadataOnly = searchParams.get('metadata_only') === 'true';
+    const includeFilterMetadata = metadataOnly || searchParams.get('include_filters') !== 'false';
 
     // Pagination parameters
     const page = Math.max(rawPage, 1);
-    const limit = Math.min(Math.max(rawLimit, 10), 500);
+    const limit = ALLOWED_PAGE_SIZES.includes(rawLimit as typeof ALLOWED_PAGE_SIZES[number])
+      ? rawLimit
+      : DEFAULT_PAGE_SIZE;
     const offset = (page - 1) * limit;
 
     // Build where clause
@@ -39,8 +49,12 @@ export async function GET(request: NextRequest) {
       if (dateTo) where.created_at.lte = new Date(dateTo);
     }
 
+    if (wmsIdSearch) {
+      where.wms_id = { contains: wmsIdSearch, mode: 'insensitive' };
+    }
+
     if (actionFilter && actionFilter !== 'ALL') {
-      where.action = { contains: actionFilter };
+      where.action = actionFilter;
     }
 
     if (errorTypeFilter && errorTypeFilter !== 'ALL') {
@@ -72,7 +86,85 @@ export async function GET(request: NextRequest) {
     }
     // SUPER_ADMIN with no company filter: see all company logs (no where clause)
 
-    // Fetch logs
+    // Filter options use the authorized date/company dataset, independently of
+    // the current page and selected list filters.
+    const filterMetadataWhere = { ...where };
+    delete filterMetadataWhere.wms_id;
+    delete filterMetadataWhere.action;
+    delete filterMetadataWhere.error_type;
+    delete filterMetadataWhere.transmission_status;
+
+    if (metadataOnly) {
+      const [actions, transmissionStatuses, errorTypes] = await Promise.all([
+        prisma.wms_transmission_logs.findMany({
+          where: filterMetadataWhere,
+          distinct: ['action'],
+          select: { action: true },
+        }),
+        prisma.wms_transmission_logs.findMany({
+          where: filterMetadataWhere,
+          distinct: ['transmission_status'],
+          select: { transmission_status: true },
+        }),
+        prisma.wms_transmission_logs.findMany({
+          where: { ...filterMetadataWhere, error_type: { not: null } },
+          distinct: ['error_type'],
+          select: { error_type: true },
+        }),
+      ]);
+
+      return NextResponse.json({
+        success: true,
+        filters: {
+          actions: actions.map(({ action }) => action).sort(),
+          transmissionStatuses: transmissionStatuses
+            .map(({ transmission_status }) => transmission_status)
+            .sort(),
+          errorTypes: errorTypes
+            .map(({ error_type }) => error_type)
+            .filter((errorType): errorType is string => errorType !== null)
+            .sort(),
+        },
+      });
+    }
+
+    // Preserve the original combined response for callers that do not opt out.
+    if (includeFilterMetadata) {
+      const [logs, total, actions, transmissionStatuses, errorTypes] = await Promise.all([
+        prisma.wms_transmission_logs.findMany({
+          where,
+          take: limit,
+          skip: offset,
+          orderBy: { created_at: 'desc' },
+        }),
+        prisma.wms_transmission_logs.count({ where }),
+        prisma.wms_transmission_logs.findMany({ where: filterMetadataWhere, distinct: ['action'], select: { action: true } }),
+        prisma.wms_transmission_logs.findMany({ where: filterMetadataWhere, distinct: ['transmission_status'], select: { transmission_status: true } }),
+        prisma.wms_transmission_logs.findMany({ where: { ...filterMetadataWhere, error_type: { not: null } }, distinct: ['error_type'], select: { error_type: true } }),
+      ]);
+      const totalPages = Math.ceil(total / limit);
+
+      return NextResponse.json({
+        success: true,
+        data: serializeBigInt(logs),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1,
+        },
+        filters: {
+          actions: actions.map(({ action }) => action).sort(),
+          transmissionStatuses: transmissionStatuses.map(({ transmission_status }) => transmission_status).sort(),
+          errorTypes: errorTypes.map(({ error_type }) => error_type).filter((errorType): errorType is string => errorType !== null).sort(),
+        },
+      });
+    }
+
+    // Normal pagination needs only the page and its filtered count. The UI
+    // fetches stable dropdown metadata separately.
     const [logs, total] = await Promise.all([
       prisma.wms_transmission_logs.findMany({
         where,
