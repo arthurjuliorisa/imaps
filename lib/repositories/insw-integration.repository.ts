@@ -76,6 +76,7 @@ export interface ScrapTransactionData {
 export interface MaterialUsageData {
   transaction_id: number;
   wms_id: string;
+  reversal: string | null;
   company_code: number;
   company_name: string;
   transaction_date: Date;
@@ -91,6 +92,7 @@ export interface MaterialUsageData {
 export interface ProductionOutputData {
   transaction_id: number;
   wms_id: string;
+  reversal: string | null;
   company_code: number;
   company_name: string;
   transaction_date: Date;
@@ -326,6 +328,7 @@ export class INSWIntegrationRepository {
       SELECT
         mu.id as transaction_id,
         mu.wms_id,
+        mu.reversal,
         mu.company_code,
         c.name as company_name,
         mu.transaction_date,
@@ -371,6 +374,7 @@ export class INSWIntegrationRepository {
       SELECT
         po.id as transaction_id,
         po.wms_id,
+        po.reversal,
         po.company_code,
         c.name as company_name,
         po.transaction_date,

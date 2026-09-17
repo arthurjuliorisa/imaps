@@ -7,7 +7,7 @@ import {
   INSWTransmitResult,
   INSWTransmitResponse,
 } from '@/lib/types/insw-transmission.types';
-import { INSW_ENDPOINTS } from '@/lib/types/insw-api.types';
+import { INSWActivityCode, INSW_ENDPOINTS, type INSWTransaksiPayload } from '@/lib/types/insw-api.types';
 import { logger } from '@/lib/utils/logger';
 import { resolveInswCompanyNpwp } from '@/lib/config/insw-company-config';
 import { createInswIntegrationService, createInswPayloadConverter } from '@/lib/services/insw-service.factory';
@@ -618,9 +618,116 @@ export class INSWTransmissionService {
     }
   }
 
-  /**
-   * Transmit material usage to INSW
-   */
+  /** Transmit a single reversal-aware Material Usage or Production Output transaction. */
+  private async transmitReversalAware(
+    companyCode: number,
+    ids: number[],
+    wmsIds: string[],
+    skipEndpointCheck: boolean,
+    transactionType: 'material_usage' | 'production_output',
+    settingKey: 'MATERIAL_USAGE' | 'PRODUCTION_OUTPUT',
+    convert: () => Promise<INSWTransaksiPayload>
+  ): Promise<INSWTransmitResponse> {
+    let payload: INSWTransaksiPayload | null = null;
+    let conversionError: unknown;
+    try {
+      payload = await convert();
+    } catch (error) {
+      conversionError = error;
+    }
+
+    const id = ids[0];
+    const wmsId = wmsIds[0];
+    const activity = payload?.data[0]?.kdKegiatan || '';
+    const responseFor = (success: boolean, message: string, response?: unknown): INSWTransmitResponse => ({
+      status: success ? 'success' : 'failed',
+      message: success
+        ? `${transactionType === 'material_usage' ? 'Material usage' : 'Production output'} successfully transmitted to INSW`
+        : message,
+      total: 1,
+      success_count: success ? 1 : 0,
+      failed_count: success ? 0 : 1,
+      skipped_count: 0,
+      results: [{
+        id,
+        wms_id: wmsId,
+        status: success ? 'success' : 'failed',
+        insw_status: success ? INSWTransmissionStatus.SUCCESS : INSWTransmissionStatus.FAILED,
+        ...(success ? { insw_response: response } : { error: message }),
+      }],
+    });
+    const logResult = async (
+      status: INSWTransmissionStatus,
+      request?: INSWTransaksiPayload,
+      response?: unknown,
+      error?: string
+    ) => {
+      await this.logTransmission({
+        transaction_type: transactionType,
+        transaction_id: id,
+        wms_id: wmsId,
+        company_code: companyCode,
+        insw_status: status,
+        insw_activity_code: activity,
+        insw_request_payload: request,
+        insw_response: response,
+        insw_error: error,
+      });
+    };
+
+    if (!skipEndpointCheck && !(await this.isEndpointEnabled(settingKey))) {
+      await logResult(INSWTransmissionStatus.PENDING, payload || undefined, undefined,
+        'Endpoint dinonaktifkan pada pengaturan integrasi');
+      return {
+        status: 'success',
+        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
+        total: 1,
+        success_count: 0,
+        failed_count: 0,
+        skipped_count: 1,
+        results: [],
+      };
+    }
+
+    if (!payload) {
+      const message = conversionError instanceof Error ? conversionError.message : 'INSW payload conversion failed';
+      this.log.error('Error converting transaction to INSW', { transactionType, error: message });
+      await logResult(INSWTransmissionStatus.FAILED, undefined, undefined, message);
+      return responseFor(false, message);
+    } else {
+      const validation = INSWHelper.validateINSWPayload(payload);
+      if (!validation.valid) {
+        const message = validation.errors.join('; ');
+        this.log.error('Validation failed', { errors: validation.errors });
+        await logResult(INSWTransmissionStatus.FAILED, payload, undefined, message);
+        return responseFor(false, 'Validation failed');
+      }
+
+      try {
+        const service = createInswIntegrationService(companyCode);
+        const response = activity === INSWActivityCode.PEMASUKAN
+          ? await service.postPemasukan(payload)
+          : activity === INSWActivityCode.PENGELUARAN
+            ? await service.postPengeluaran(payload)
+            : (() => { throw new Error(`Unsupported INSW activity: ${activity}`); })();
+        await logResult(
+          response.status ? INSWTransmissionStatus.SUCCESS : INSWTransmissionStatus.FAILED,
+          payload, response, response.status ? undefined : response.message
+        );
+        return responseFor(
+          response.status,
+          `Failed to transmit ${transactionType === 'material_usage' ? 'material usage' : 'production output'} to INSW`,
+          response
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.log.error('Error transmitting transaction to INSW', { transactionType, error: message });
+        await logResult(INSWTransmissionStatus.FAILED, payload, undefined, message);
+        return responseFor(false, message);
+      }
+    }
+  }
+
   async transmitMaterialUsage(
     companyCode: number,
     ids: number[],
@@ -629,375 +736,22 @@ export class INSWTransmissionService {
   ): Promise<INSWTransmitResponse> {
     this.log.info('Starting material usage transmission', { companyCode, ids, skipEndpointCheck });
     const converter = createInswPayloadConverter();
-
-    let payload: any = null;
-    try {
-      payload = await converter.convertMaterialUsageToINSW(companyCode, ids);
-    } catch { /* payload remains null if generation fails */ }
-
-    if (!skipEndpointCheck && !(await this.isEndpointEnabled('MATERIAL_USAGE'))) {
-      for (let i = 0; i < ids.length; i++) {
-        await this.logTransmission({
-          transaction_type: 'material_usage',
-          transaction_id: ids[i],
-          wms_id: wmsIds[i],
-          company_code: companyCode,
-          insw_status: INSWTransmissionStatus.PENDING,
-          insw_activity_code: '30',
-          insw_request_payload: payload || undefined,
-          insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
-        });
-      }
-      return {
-        status: 'success',
-        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
-        total: ids.length,
-        success_count: 0,
-        failed_count: 0,
-        skipped_count: ids.length,
-        results: [],
-      };
-    }
-
-    const results: INSWTransmitResult[] = [];
-    let successCount = 0;
-    let failedCount = 0;
-
-    try {
-      // Convert to INSW format
-      if (!payload) payload = await converter.convertMaterialUsageToINSW(companyCode, ids);
-
-      // Validate payload
-      const validation = INSWHelper.validateINSWPayload(payload);
-      if (!validation.valid) {
-        this.log.error('Validation failed', { errors: validation.errors });
-
-        // Log each failed record
-        for (let i = 0; i < ids.length; i++) {
-          await this.logTransmission({
-            transaction_type: 'material_usage',
-            transaction_id: ids[i],
-            wms_id: wmsIds[i],
-            company_code: companyCode,
-            insw_status: INSWTransmissionStatus.FAILED,
-            insw_activity_code: '31',
-            insw_request_payload: payload,
-            insw_error: validation.errors.join('; '),
-          });
-
-          results.push({
-            id: ids[i],
-            wms_id: wmsIds[i],
-            status: 'failed',
-            insw_status: INSWTransmissionStatus.FAILED,
-            error: validation.errors.join('; '),
-          });
-          failedCount++;
-        }
-
-        return {
-          status: 'failed',
-          message: 'Validation failed',
-          total: ids.length,
-          success_count: 0,
-          failed_count: failedCount,
-          skipped_count: 0,
-          results,
-        };
-      }
-
-      // Send to INSW
-      const inswService = createInswIntegrationService(companyCode);
-      const inswResponse = await inswService.postPengeluaran(payload);
-
-      // Process response
-      if (inswResponse.status) {
-        for (let i = 0; i < ids.length; i++) {
-          await this.logTransmission({
-            transaction_type: 'material_usage',
-            transaction_id: ids[i],
-            wms_id: wmsIds[i],
-            company_code: companyCode,
-            insw_status: INSWTransmissionStatus.SUCCESS,
-            insw_activity_code: '31',
-            insw_request_payload: payload,
-            insw_response: inswResponse,
-          });
-
-          results.push({
-            id: ids[i],
-            wms_id: wmsIds[i],
-            status: 'success',
-            insw_status: INSWTransmissionStatus.SUCCESS,
-            insw_response: inswResponse,
-          });
-          successCount++;
-        }
-      } else {
-        for (let i = 0; i < ids.length; i++) {
-          await this.logTransmission({
-            transaction_type: 'material_usage',
-            transaction_id: ids[i],
-            wms_id: wmsIds[i],
-            company_code: companyCode,
-            insw_status: INSWTransmissionStatus.FAILED,
-            insw_activity_code: '31',
-            insw_request_payload: payload,
-            insw_response: inswResponse,
-            insw_error: inswResponse.message,
-          });
-
-          results.push({
-            id: ids[i],
-            wms_id: wmsIds[i],
-            status: 'failed',
-            insw_status: INSWTransmissionStatus.FAILED,
-            error: inswResponse.message,
-          });
-          failedCount++;
-        }
-      }
-
-      return {
-        status: successCount > 0 ? 'success' : 'failed',
-        message:
-          successCount > 0
-            ? 'Material usage successfully transmitted to INSW'
-            : 'Failed to transmit material usage to INSW',
-        total: ids.length,
-        success_count: successCount,
-        failed_count: failedCount,
-        skipped_count: 0,
-        results,
-      };
-    } catch (error: any) {
-      this.log.error('Error transmitting material usage to INSW', {
-        error: error.message,
-      });
-
-      for (let i = 0; i < ids.length; i++) {
-        await this.logTransmission({
-          transaction_type: 'material_usage',
-          transaction_id: ids[i],
-          wms_id: wmsIds[i],
-          company_code: companyCode,
-          insw_status: INSWTransmissionStatus.FAILED,
-          insw_activity_code: '31',
-          insw_error: error.message,
-        });
-
-        results.push({
-          id: ids[i],
-          wms_id: wmsIds[i],
-          status: 'failed',
-          insw_status: INSWTransmissionStatus.FAILED,
-          error: error.message,
-        });
-      }
-
-      return {
-        status: 'failed',
-        message: error.message,
-        total: ids.length,
-        success_count: 0,
-        failed_count: ids.length,
-        skipped_count: 0,
-        results,
-      };
-    }
+    return this.transmitReversalAware(companyCode, ids, wmsIds, skipEndpointCheck,
+      'material_usage', 'MATERIAL_USAGE',
+      () => converter.convertMaterialUsageToINSW(companyCode, ids));
   }
 
-  /**
-   * Transmit production output to INSW
-   */
   async transmitProductionOutput(
     companyCode: number,
     ids: number[],
     wmsIds: string[],
     skipEndpointCheck: boolean = false
   ): Promise<INSWTransmitResponse> {
-    this.log.info('Starting production output transmission', {
-      companyCode,
-      ids,
-      skipEndpointCheck,
-    });
+    this.log.info('Starting production output transmission', { companyCode, ids, skipEndpointCheck });
     const converter = createInswPayloadConverter();
-
-    let payload: any = null;
-    try {
-      payload = await converter.convertProductionOutputToINSW(companyCode, ids);
-    } catch { /* payload remains null if generation fails */ }
-
-    if (!skipEndpointCheck && !(await this.isEndpointEnabled('PRODUCTION_OUTPUT'))) {
-      for (let i = 0; i < ids.length; i++) {
-        await this.logTransmission({
-          transaction_type: 'production_output',
-          transaction_id: ids[i],
-          wms_id: wmsIds[i],
-          company_code: companyCode,
-          insw_status: INSWTransmissionStatus.PENDING,
-          insw_activity_code: '30',
-          insw_request_payload: payload || undefined,
-          insw_error: 'Endpoint dinonaktifkan pada pengaturan integrasi',
-        });
-      }
-      return {
-        status: 'success',
-        message: 'Transmisi ke INSW dinonaktifkan untuk endpoint ini',
-        total: ids.length,
-        success_count: 0,
-        failed_count: 0,
-        skipped_count: ids.length,
-        results: [],
-      };
-    }
-
-    const results: INSWTransmitResult[] = [];
-    let successCount = 0;
-    let failedCount = 0;
-
-    try {
-      // Convert to INSW format
-      if (!payload) payload = await converter.convertProductionOutputToINSW(companyCode, ids);
-
-      // Validate payload
-      const validation = INSWHelper.validateINSWPayload(payload);
-      if (!validation.valid) {
-        this.log.error('Validation failed', { errors: validation.errors });
-
-        // Log each failed record
-        for (let i = 0; i < ids.length; i++) {
-          await this.logTransmission({
-            transaction_type: 'production_output',
-            transaction_id: ids[i],
-            wms_id: wmsIds[i],
-            company_code: companyCode,
-            insw_status: INSWTransmissionStatus.FAILED,
-            insw_activity_code: '30',
-            insw_request_payload: payload,
-            insw_error: validation.errors.join('; '),
-          });
-
-          results.push({
-            id: ids[i],
-            wms_id: wmsIds[i],
-            status: 'failed',
-            insw_status: INSWTransmissionStatus.FAILED,
-            error: validation.errors.join('; '),
-          });
-          failedCount++;
-        }
-
-        return {
-          status: 'failed',
-          message: 'Validation failed',
-          total: ids.length,
-          success_count: 0,
-          failed_count: failedCount,
-          skipped_count: 0,
-          results,
-        };
-      }
-
-      // Send to INSW
-      const inswService = createInswIntegrationService(companyCode);
-      const inswResponse = await inswService.postPemasukan(payload);
-
-      // Process response
-      if (inswResponse.status) {
-        for (let i = 0; i < ids.length; i++) {
-          await this.logTransmission({
-            transaction_type: 'production_output',
-            transaction_id: ids[i],
-            wms_id: wmsIds[i],
-            company_code: companyCode,
-            insw_status: INSWTransmissionStatus.SUCCESS,
-            insw_activity_code: '30',
-            insw_request_payload: payload,
-            insw_response: inswResponse,
-          });
-
-          results.push({
-            id: ids[i],
-            wms_id: wmsIds[i],
-            status: 'success',
-            insw_status: INSWTransmissionStatus.SUCCESS,
-            insw_response: inswResponse,
-          });
-          successCount++;
-        }
-      } else {
-        for (let i = 0; i < ids.length; i++) {
-          await this.logTransmission({
-            transaction_type: 'production_output',
-            transaction_id: ids[i],
-            wms_id: wmsIds[i],
-            company_code: companyCode,
-            insw_status: INSWTransmissionStatus.FAILED,
-            insw_activity_code: '30',
-            insw_request_payload: payload,
-            insw_response: inswResponse,
-            insw_error: inswResponse.message,
-          });
-
-          results.push({
-            id: ids[i],
-            wms_id: wmsIds[i],
-            status: 'failed',
-            insw_status: INSWTransmissionStatus.FAILED,
-            error: inswResponse.message,
-          });
-          failedCount++;
-        }
-      }
-
-      return {
-        status: successCount > 0 ? 'success' : 'failed',
-        message:
-          successCount > 0
-            ? 'Production output successfully transmitted to INSW'
-            : 'Failed to transmit production output to INSW',
-        total: ids.length,
-        success_count: successCount,
-        failed_count: failedCount,
-        skipped_count: 0,
-        results,
-      };
-    } catch (error: any) {
-      this.log.error('Error transmitting production output to INSW', {
-        error: error.message,
-      });
-
-      for (let i = 0; i < ids.length; i++) {
-        await this.logTransmission({
-          transaction_type: 'production_output',
-          transaction_id: ids[i],
-          wms_id: wmsIds[i],
-          company_code: companyCode,
-          insw_status: INSWTransmissionStatus.FAILED,
-          insw_activity_code: '30',
-          insw_error: error.message,
-        });
-
-        results.push({
-          id: ids[i],
-          wms_id: wmsIds[i],
-          status: 'failed',
-          insw_status: INSWTransmissionStatus.FAILED,
-          error: error.message,
-        });
-      }
-
-      return {
-        status: 'failed',
-        message: error.message,
-        total: ids.length,
-        success_count: 0,
-        failed_count: ids.length,
-        skipped_count: 0,
-        results,
-      };
-    }
+    return this.transmitReversalAware(companyCode, ids, wmsIds, skipEndpointCheck,
+      'production_output', 'PRODUCTION_OUTPUT',
+      () => converter.convertProductionOutputToINSW(companyCode, ids));
   }
 
   async transmitAdjustment(

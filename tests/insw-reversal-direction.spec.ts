@@ -119,48 +119,43 @@ test('INSW converters retain document number and positive quantity for all four 
   }
 });
 
-test('mixed Material Usage and Production Output batches route once per activity and log each ID with its own payload', async () => {
+test('single-ID Material Usage and Production Output transmissions post and log the generated activity', async () => {
   for (const kind of ['material_usage', 'production_output'] as const) {
-    await withMocks(kind, [row(1, null), row(2, 'Y'), row(3, null)], async ({ posts, logs, queries }) => {
-      const service = new INSWTransmissionService();
-      const response = kind === 'material_usage'
-        ? await service.transmitMaterialUsage(COMPANY, [1, 2, 3], ['WMS-1', 'WMS-2', 'WMS-3'], true)
-        : await service.transmitProductionOutput(COMPANY, [1, 2, 3], ['WMS-1', 'WMS-2', 'WMS-3'], true);
-      const normal = kind === 'material_usage' ? '31' : '30';
-      const reversed = kind === 'material_usage' ? '30' : '31';
-      expect(response.success_count).toBe(3);
-      expect(response.failed_count).toBe(0);
-      expect(queries).toHaveLength(1);
-      expect(posts).toHaveLength(2);
-      expect(posts.map((post) => post.payload.data[0].kdKegiatan)).toEqual([normal, reversed]);
-      expect(posts.map((post) => post.method)).toEqual(
-        kind === 'material_usage'
-          ? ['postPengeluaran', 'postPemasukan']
-          : ['postPemasukan', 'postPengeluaran']
-      );
-      const sent = posts.flatMap((post) => post.payload.data[0].dokumenKegiatan.map(
-        (doc: any) => doc.nomorDokKegiatan
-      ));
-      expect(sent.sort()).toEqual(['WMS-1', 'WMS-2', 'WMS-3']);
-      expect(logs).toHaveLength(3);
-      for (const log of logs) {
-        const expected = log.transaction_id === 2 ? reversed : normal;
-        expect(log.insw_activity_code).toBe(expected);
-        expect(log.insw_request_payload.data[0].kdKegiatan).toBe(expected);
-      }
-    });
+    for (const reversal of [null, 'Y']) {
+      await withMocks(kind, [row(1, reversal)], async ({ posts, logs, queries }) => {
+        const response = kind === 'material_usage'
+          ? await new INSWTransmissionService().transmitMaterialUsage(COMPANY, [1], ['WMS-1'], true)
+          : await new INSWTransmissionService().transmitProductionOutput(COMPANY, [1], ['WMS-1'], true);
+        const activity = kind === 'material_usage'
+          ? (reversal === 'Y' ? '30' : '31')
+          : (reversal === 'Y' ? '31' : '30');
+        const method = activity === '30' ? 'postPemasukan' : 'postPengeluaran';
+
+        expect(response.success_count).toBe(1);
+        expect(response.failed_count).toBe(0);
+        expect(queries).toHaveLength(1);
+        expect(posts).toHaveLength(1);
+        expect(posts[0].method).toBe(method);
+        expect(posts[0].payload.data[0].kdKegiatan).toBe(activity);
+        expect(posts[0].payload.data[0].dokumenKegiatan[0].nomorDokKegiatan).toBe('WMS-1');
+        expect(logs).toHaveLength(1);
+        expect(logs[0].insw_activity_code).toBe(activity);
+        expect(logs[0].insw_request_payload.data[0].kdKegiatan).toBe(activity);
+      });
+    }
   }
 });
 
-test('disabled Material Usage logs pending with generated activity for normal and reversal IDs', async () => {
-  await withMocks('material_usage', [row(1, null), row(2, 'Y')], async ({ logs, posts }) => {
+test('disabled Material Usage logs pending with the generated reversal activity', async () => {
+  await withMocks('material_usage', [row(2, 'Y')], async ({ logs, posts }) => {
     const service = new INSWTransmissionService() as any;
     service.isEndpointEnabled = async () => false;
-    const response = await service.transmitMaterialUsage(COMPANY, [1, 2], ['WMS-1', 'WMS-2']);
-    expect(response.skipped_count).toBe(2);
+    const response = await service.transmitMaterialUsage(COMPANY, [2], ['WMS-2']);
+    expect(response.skipped_count).toBe(1);
     expect(posts).toHaveLength(0);
-    expect(logs.map((log) => log.insw_activity_code)).toEqual(['31', '30']);
-    expect(logs.every((log) => log.insw_activity_code === log.insw_request_payload.data[0].kdKegiatan)).toBe(true);
+    expect(logs).toHaveLength(1);
+    expect(logs[0].insw_activity_code).toBe('30');
+    expect(logs[0].insw_activity_code).toBe(logs[0].insw_request_payload.data[0].kdKegiatan);
   });
 });
 

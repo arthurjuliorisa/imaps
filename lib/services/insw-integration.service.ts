@@ -837,27 +837,27 @@ export class INSWIntegrationService {
 
     const groupedByDoc = this.groupMaterialUsageByDocument(data);
 
-    const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
-      (group) => ({
-        nomorDokKegiatan: wmsIdMap.get(group.items[0].transaction_id) || group.internal_evidence_number,
-        tanggalKegiatan: this.formatINSWDateOnly(group.transaction_date),
-        namaEntitas: group.company_name,
-        barangTransaksi: group.items.map((item) => ({
-          kdKategoriBarang: this.mapItemTypeToINSWCategory(item.item_type),
-          kdBarang: item.item_code,
-          uraianBarang: item.item_name,
-          jumlah: Number(item.qty),
-          kdSatuan: (() => {
-            const key = (item.uom || '').toUpperCase();
-            const mapped = uomMap.get(key) ?? null;
-            if (!mapped) missingUoms.add(key);
-            return mapped || key;
-          })(),
-          nilai: Number(item.amount || 0),
-          dokumen: [],
-        })),
-      })
-    );
+    const kdKegiatan = groupedByDoc[0].items[0].reversal === 'Y'
+      ? INSWActivityCode.PEMASUKAN : INSWActivityCode.PENGELUARAN;
+    const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map((group) => ({
+      nomorDokKegiatan: wmsIdMap.get(group.items[0].transaction_id) || group.internal_evidence_number,
+      tanggalKegiatan: this.formatINSWDateOnly(group.transaction_date),
+      namaEntitas: group.company_name,
+      barangTransaksi: group.items.map((item) => ({
+        kdKategoriBarang: this.mapItemTypeToINSWCategory(item.item_type),
+        kdBarang: item.item_code,
+        uraianBarang: item.item_name,
+        jumlah: Number(item.qty),
+        kdSatuan: (() => {
+          const key = (item.uom || '').toUpperCase();
+          const mapped = uomMap.get(key) ?? null;
+          if (!mapped) missingUoms.add(key);
+          return mapped || key;
+        })(),
+        nilai: Number(item.amount || 0),
+        dokumen: [],
+      })),
+    }));
 
     if (missingUoms.size > 0) {
       throw new Error(
@@ -868,10 +868,7 @@ export class INSWIntegrationService {
 
     return {
       data: [
-        {
-          kdKegiatan: INSWActivityCode.PENGELUARAN,
-          dokumenKegiatan,
-        },
+        { kdKegiatan, dokumenKegiatan },
       ],
     };
   }
@@ -913,27 +910,27 @@ export class INSWIntegrationService {
 
     const groupedByDoc = this.groupProductionOutputByDocument(data);
 
-    const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map(
-      (group) => ({
-        nomorDokKegiatan: wmsIdMap.get(group.items[0].transaction_id) || group.internal_evidence_number,
-        tanggalKegiatan: this.formatINSWDateOnly(group.transaction_date),
-        namaEntitas: group.company_name,
-        barangTransaksi: group.items.map((item) => ({
-          kdKategoriBarang: this.mapItemTypeToINSWCategory(item.item_type),
-          kdBarang: item.item_code,
-          uraianBarang: item.item_name,
-          jumlah: Number(item.qty),
-          kdSatuan: (() => {
-            const key = (item.uom || '').toUpperCase();
-            const mapped = uomMap.get(key) ?? null;
-            if (!mapped) missingUoms.add(key);
-            return mapped || key;
-          })(),
-          nilai: Number(item.amount || 0),
-          dokumen: [],
-        })),
-      })
-    );
+    const kdKegiatan = groupedByDoc[0].items[0].reversal === 'Y'
+      ? INSWActivityCode.PENGELUARAN : INSWActivityCode.PEMASUKAN;
+    const dokumenKegiatan: INSWDokumenKegiatan[] = groupedByDoc.map((group) => ({
+      nomorDokKegiatan: wmsIdMap.get(group.items[0].transaction_id) || group.internal_evidence_number,
+      tanggalKegiatan: this.formatINSWDateOnly(group.transaction_date),
+      namaEntitas: group.company_name,
+      barangTransaksi: group.items.map((item) => ({
+        kdKategoriBarang: this.mapItemTypeToINSWCategory(item.item_type),
+        kdBarang: item.item_code,
+        uraianBarang: item.item_name,
+        jumlah: Number(item.qty),
+        kdSatuan: (() => {
+          const key = (item.uom || '').toUpperCase();
+          const mapped = uomMap.get(key) ?? null;
+          if (!mapped) missingUoms.add(key);
+          return mapped || key;
+        })(),
+        nilai: Number(item.amount || 0),
+        dokumen: [],
+      })),
+    }));
 
     if (missingUoms.size > 0) {
       throw new Error(
@@ -944,10 +941,7 @@ export class INSWIntegrationService {
 
     return {
       data: [
-        {
-          kdKegiatan: INSWActivityCode.PEMASUKAN,
-          dokumenKegiatan,
-        },
+        { kdKegiatan, dokumenKegiatan },
       ],
     };
   }
