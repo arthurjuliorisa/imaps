@@ -13,6 +13,10 @@ import {
   BEGINNING_BALANCE_UPLOAD_DB_BATCH_SIZE,
   BEGINNING_BALANCE_UPLOAD_MAX_ROWS,
 } from '@/lib/constants/beginning-balance-upload';
+import {
+  BeginningBalanceSnapshotError,
+  createRequiredBeginningBalanceSnapshots,
+} from '@/lib/services/beginning-balance-snapshot.service';
 
 function chunkArray<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
@@ -383,14 +387,17 @@ export async function POST(request: Request) {
             const createdRecordId = createdRecordMap.get(
               `${record.itemCode}|${record.uom}|${record.balanceDate.getTime()}`
             );
-            if (createdRecordId) {
-              ppkekInsertData.push(
-                ...record.ppkekNumbers.map(ppkek => ({
-                  beginning_balance_id: createdRecordId,
-                  ppkek_number: ppkek,
-                }))
+            if (!createdRecordId) {
+              throw new Error(
+                `Unable to resolve imported beginning balance for PPKEK association at row ${record.row}`
               );
             }
+            ppkekInsertData.push(
+              ...record.ppkekNumbers.map(ppkek => ({
+                beginning_balance_id: createdRecordId,
+                ppkek_number: ppkek,
+              }))
+            );
           }
         }
 
@@ -399,6 +406,18 @@ export async function POST(request: Request) {
             data: batch,
           });
         }
+
+        await createRequiredBeginningBalanceSnapshots(
+          tx,
+          companyCodeInt,
+          validRecords.map((record) => ({
+            item_type: record.itemType,
+            item_code: record.itemCode,
+            item_name: record.itemName,
+            uom: record.uom,
+            snapshot_date: record.balanceDate,
+          }))
+        );
 
         successCount = validRecords.length;
 
@@ -426,6 +445,29 @@ export async function POST(request: Request) {
             errors,
           },
           { status: 400 }
+        );
+      }
+
+      if (error instanceof BeginningBalanceSnapshotError) {
+        console.error('[API Error] Required beginning balance snapshots failed:', {
+          companyCode: companyCodeInt,
+          requested: validRecords.length,
+          failed: error.failedIdentities.length,
+          failedIdentities: error.failedIdentities,
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Beginning balances were not imported because required baseline snapshots could not be created',
+            successCount: 0,
+            errorCount: error.failedIdentities.length,
+            errors: error.failedIdentities.map((item) => ({
+              row: 0,
+              field: 'Snapshot',
+              error: `${item.item_type}/${item.item_code}/${item.uom} on ${item.snapshot_date.toISOString().slice(0, 10)}`,
+            })),
+          },
+          { status: 500 }
         );
       }
 
@@ -467,51 +509,6 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
-
-    // Execute item-level snapshot calculation for each unique item and date combination.
-    // This is intentionally non-blocking for large imports so the HTTP request is not
-    // held open by thousands of snapshot function calls.
-    void (async () => {
-      // Create a map of item to (itemName, UOM) for quick lookup
-      const itemDetailsMap = new Map<string, { itemName: string; uom: string }>();
-      for (const record of validRecords) {
-        const key = `${record.itemType}|${record.itemCode}`;
-        if (!itemDetailsMap.has(key)) {
-          itemDetailsMap.set(key, { itemName: record.itemName, uom: record.uom });
-        }
-      }
-
-      // Get unique item-date combinations
-      const uniqueItemDates = new Set<string>();
-      for (const record of validRecords) {
-        uniqueItemDates.add(`${record.itemType}|${record.itemCode}|${record.balanceDate.getTime()}`);
-      }
-
-      for (const itemDateKey of uniqueItemDates) {
-        const [itemType, itemCode, dateTime] = itemDateKey.split('|');
-        const date = new Date(parseInt(dateTime));
-        const itemDetails = itemDetailsMap.get(`${itemType}|${itemCode}`);
-        
-        try {
-          await prisma.$executeRawUnsafe(
-            `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
-            companyCodeInt,
-            itemType,
-            itemCode,
-            itemDetails?.itemName || itemCode,
-            itemDetails?.uom || '',
-            date
-          );
-        } catch (snapshotError) {
-          // Non-blocking: log silently and continue to next item
-          // Snapshot calculation errors don't prevent data import
-        }
-      }
-    })().catch((error) => {
-      // Non-blocking: snapshot calculation is best-effort
-      // Data import succeeded even if snapshots couldn't be calculated
-      console.error('[API Warning] Beginning balance snapshot calculation failed:', error);
-    });
 
     // Log activity
     await logActivity({

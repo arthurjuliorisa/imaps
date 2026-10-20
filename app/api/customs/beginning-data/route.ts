@@ -11,6 +11,10 @@ import {
   ValidationError,
 } from '@/lib/api-utils';
 import { validateBeginningBalanceItem } from '@/lib/beginning-data-validation';
+import {
+  BeginningBalanceSnapshotError,
+  createRequiredBeginningBalanceSnapshots,
+} from '@/lib/services/beginning-balance-snapshot.service';
 
 /**
  * GET /api/customs/beginning-data
@@ -225,6 +229,7 @@ export async function GET(request: Request) {
  */
 
 export async function POST(request: Request) {
+  let companyCodeForError: number | undefined;
   try {
     const authCheck = await checkAuth();
     if (!authCheck.authenticated) {
@@ -299,6 +304,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    companyCodeForError = companyCode;
 
     // Validate item: check for duplicates and existing transactions
     const validation = await validateBeginningBalanceItem(
@@ -318,52 +324,44 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create new beginning balance record
-    const newRecord = await prisma.beginning_balances.create({
-      data: {
-        company_code: companyCode,
-        item_type: itemType,
-        item_code: String(itemCode).trim(),
-        item_name: String(itemName).trim(),
-        uom: String(uom).trim(),
-        qty: qtyValue,
-        balance_date: normalizedDate,
-        remarks: sanitizedRemarks,
-      },
-    });
+    // The beginning balance and its required baseline snapshot commit together.
+    const newRecord = await prisma.$transaction(async (tx) => {
+      const created = await tx.beginning_balances.create({
+        data: {
+          company_code: companyCode,
+          item_type: itemType,
+          item_code: String(itemCode).trim(),
+          item_name: String(itemName).trim(),
+          uom: String(uom).trim(),
+          qty: qtyValue,
+          balance_date: normalizedDate,
+          remarks: sanitizedRemarks,
+        },
+      });
 
-    // Insert PPKEK numbers if provided
-    if (ppkekNumbers && Array.isArray(ppkekNumbers) && ppkekNumbers.length > 0) {
-      const ppkekRecords = ppkekNumbers
-        .filter((num: string) => num && String(num).trim() !== '')
-        .map((ppkekNumber: string) => ({
-          beginning_balance_id: newRecord.id,
-          ppkek_number: String(ppkekNumber).trim(),
-        }));
+      if (ppkekNumbers && Array.isArray(ppkekNumbers) && ppkekNumbers.length > 0) {
+        const ppkekRecords = ppkekNumbers
+          .filter((num: string) => num && String(num).trim() !== '')
+          .map((ppkekNumber: string) => ({
+            beginning_balance_id: created.id,
+            ppkek_number: String(ppkekNumber).trim(),
+          }));
 
-      if (ppkekRecords.length > 0) {
-        await prisma.beginning_balance_ppkeks.createMany({
-          data: ppkekRecords,
-          skipDuplicates: true,
-        });
+        if (ppkekRecords.length > 0) {
+          await tx.beginning_balance_ppkeks.createMany({ data: ppkekRecords, skipDuplicates: true });
+        }
       }
-    }
 
-    // Execute item-level snapshot calculation (synchronous execution)
-    try {
-      await prisma.$executeRawUnsafe(
-        `SELECT upsert_item_stock_snapshot($1::int, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::date)`,
-        companyCode,
-        newRecord.item_type,
-        newRecord.item_code,
-        newRecord.item_name,
-        newRecord.uom,
-        normalizedDate
-      );
-    } catch (snapshotError) {
-      // Snapshot calculation is non-blocking - continue even if it fails
-      // Data is created successfully regardless
-    }
+      await createRequiredBeginningBalanceSnapshots(tx, companyCode, [{
+        item_type: created.item_type,
+        item_code: created.item_code,
+        item_name: created.item_name,
+        uom: created.uom,
+        snapshot_date: normalizedDate,
+      }]);
+
+      return created;
+    });
 
     // Fetch the created record with ppkeks to return complete data
     const recordWithPpkeks = await prisma.beginning_balances.findUnique({
@@ -416,6 +414,17 @@ export async function POST(request: Request) {
     return NextResponse.json(transformedRecord, { status: 201 });
   } catch (error: any) {
     console.error('[API Error] Failed to create beginning balance record:', error);
+
+    if (error instanceof BeginningBalanceSnapshotError) {
+      console.error('[API Error] Required beginning balance snapshot failed:', {
+        companyCode: companyCodeForError,
+        failedIdentities: error.failedIdentities,
+      });
+      return NextResponse.json(
+        { message: 'Beginning balance was not created because its required baseline snapshot could not be created' },
+        { status: 500 }
+      );
+    }
 
     // Handle validation errors
     if (error instanceof ValidationError) {
