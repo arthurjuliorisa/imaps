@@ -1,5 +1,6 @@
 import { integer } from '../insw-queue/contracts';
 import { verifiedPayload } from './safety';
+import { Classification, classifyResponse, classifyTransportFailure, classifyLocalFailure } from './classification';
 
 export type Delivery = 'NOT_STARTED' | 'POSSIBLY_STARTED' | 'KNOWN_SUCCESS';
 export type Outcome = {
@@ -13,6 +14,7 @@ export type Outcome = {
   requestInvokedAt: number | null;
   endedAt: number;
   autoRetry: false;
+  classification: Classification;
 };
 // Deliberately injected: no default fetch, URL, headers, credentials, proxy or sender.
 // A future reviewed adapter must preserve company mode/proxy/toggles and persist
@@ -26,10 +28,11 @@ export async function executeFrozenRequest(input: {
   integer(input.timeoutMs, 'request timeout', 1, 300000);
   const now = input.now ?? Date.now;
   const base: Outcome = { phase: 'PREFLIGHT', errorClass: null, delivery: 'NOT_STARTED', httpCode: null,
-    businessCode: null, retryAfter: null, requestInvokedAt: null, endedAt: now(), autoRetry: false };
+    businessCode: null, retryAfter: null, requestInvokedAt: null, endedAt: now(), autoRetry: false,
+    classification: { kind: 'UNKNOWN', reasonCode: 'NOT_STARTED', retryCandidate: false } };
   let body: string;
   try { body = verifiedPayload(input.payload, input.sha256); }
-  catch { return { ...base, errorClass: 'INVALID_PAYLOAD', endedAt: now() }; }
+  catch { return { ...base, errorClass: 'INVALID_PAYLOAD', classification: classifyLocalFailure('DATA'), endedAt: now() }; }
   if (input.signal?.aborted) return { ...base, errorClass: 'CANCELLED', endedAt: now() };
   const controller = new AbortController();
   let timedOut = false;
@@ -59,7 +62,9 @@ export async function executeFrozenRequest(input: {
     base.phase = 'RESPONSE';
     let parsed: unknown;
     try { parsed = JSON.parse(raw); }
-    catch { return { ...base, errorClass: response.ok ? 'INVALID_JSON' : 'HTTP_ERROR', endedAt: now() }; }
+    catch { return { ...base, errorClass: response.ok ? 'INVALID_JSON' : 'HTTP_ERROR', classification: classifyResponse(response.status, undefined, input.payload), endedAt: now() }; }
+    // Use the exact verified request JSON, never rebuild from mutable sources.
+    base.classification = classifyResponse(response.status, parsed, JSON.parse(body));
     const record = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
     const code = record?.code;
     base.businessCode = typeof code === 'number' && Number.isFinite(code) ? String(code)
@@ -74,7 +79,7 @@ export async function executeFrozenRequest(input: {
     const errorClass = timedOut ? 'TIMEOUT' : input.signal?.aborted ? 'CANCELLED'
       : base.phase === 'REQUEST' && ['ENOTFOUND', 'EAI_AGAIN'].includes(code ?? '') ? 'DNS'
       : base.phase === 'REQUEST' && ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT'].includes(code ?? '') ? 'CONNECTION' : 'NETWORK';
-    return { ...base, errorClass, endedAt: now() };
+    return { ...base, errorClass, classification: classifyTransportFailure(errorClass, code), endedAt: now() };
   } finally {
     clearTimeout(timer);
     input.signal?.removeEventListener('abort', cancel);

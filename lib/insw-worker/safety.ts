@@ -27,7 +27,8 @@ export function earliestNextStart(last: { startedAt: number; finishedAt: number;
   return Math.max(last.finishedAt, last.startedAt + Math.max(last.intervalAtAdmission, currentInterval));
 }
 
-// Pure future retry contract. No current HTTP/business code provides this evidence.
+// Restrictive legacy Phase B known-failure contract, kept for regression.
+// The revised C1 candidate/ambiguous-delivery policy is in retry.ts.
 // This function does not requeue, allocate a tail, or interpret remote error codes.
 export function retryDisposition(input: { delivery: string; confirmedSafeRetry: boolean; retryIndex: number; maxAutoRetrySnapshot: number }): 'RETRY_TO_TAIL' | 'HOLD' | 'STOP' {
   const withinBudget = retryAllowed(input.retryIndex, input.maxAutoRetrySnapshot, input.delivery);

@@ -47,7 +47,7 @@ test.beforeAll(async () => {
   writeFileSync(schemaFile, schema);
   const baseline = execFileSync('node_modules/.bin/prisma', ['migrate', 'diff', '--from-empty', '--to-schema-datamodel', schemaFile, '--script'], { env: { ...process.env, DATABASE_URL: url }, encoding: 'utf8' });
   const sqlFile = join(directory, 'bootstrap.sql');
-  writeFileSync(sqlFile, baseline + `\nINSERT INTO insw_tracking_log (id, transaction_type, company_code, insw_status, metadata, updated_at) VALUES (77, 'incoming', 1370, 'LEGACY_CUSTOM', '{"legacy":true}', CURRENT_TIMESTAMP);\n` + migration + '\nCREATE TABLE phase_b_test_source (id integer PRIMARY KEY);');
+  writeFileSync(sqlFile, baseline + `\nINSERT INTO insw_tracking_log (id, transaction_type, company_code, insw_status, metadata, updated_at) VALUES (77, 'incoming', 1370, 'LEGACY_CUSTOM', '{"legacy":true}', CURRENT_TIMESTAMP);\n` + migration + readFileSync('prisma/migrations/20261022010000_insw_worker_recovery/migration.sql', 'utf8') + '\nCREATE TABLE phase_b_test_source (id integer PRIMARY KEY);');
   execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-f', sqlFile], { stdio: 'pipe' });
 });
 test.afterAll(async () => { await Promise.all([a?.$disconnect(), b?.$disconnect()]); });

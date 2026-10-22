@@ -1313,6 +1313,20 @@ model insw_dispatch_gate {
   last_started_at DateTime? @db.Timestamptz(6)
   owner_token     String?   @db.Uuid
   lease_until     DateTime? @db.Timestamptz(6)
+  prior_interval_ms Int?
+  recovery_barrier_at DateTime? @db.Timestamptz(6)
+  busy_attempt_id String? @db.Uuid
+  process_identity Json?
+}
+
+// Maintenance history is separate from policy history; no public reset endpoint.
+model insw_worker_recovery {
+  id String @id @default(uuid()) @db.Uuid
+  old_owner_token String @db.Uuid
+  operator String @db.VarChar(100)
+  evidence String @db.VarChar(500)
+  process_identity Json
+  recovered_at DateTime @default(now()) @db.Timestamptz(6)
 }
 
 model insw_queue_cycle {
