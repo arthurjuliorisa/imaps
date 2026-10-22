@@ -1,6 +1,5 @@
 import { beginningBalanceUploadErrors, normalizeBeginningBalanceItemCode, parseBeginningBalanceDate, parseBeginningBalanceQty } from '@/lib/beginning-balance-upload-validation';
 import { NextResponse } from 'next/server';
-import { inspect } from 'node:util';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { logActivity } from '@/lib/log-activity';
@@ -433,7 +432,7 @@ export async function POST(request: Request) {
       }
 
       if (error instanceof BeginningBalanceSnapshotError) {
-        console.error('[API Error] Required beginning balance snapshots failed:', inspect({
+        console.error('[API Error] Required beginning balance snapshots failed:', JSON.stringify({
           companyCode: companyCodeInt,
           requested: validRecords.length,
           failed: error.failedIdentities.length,
@@ -442,7 +441,7 @@ export async function POST(request: Request) {
           cause: error.cause instanceof Error
             ? { name: error.cause.name, message: error.cause.message.slice(0, 500) }
             : undefined,
-        }, { depth: null, maxArrayLength: 5, colors: false }));
+        }, null, 2));
         return NextResponse.json(
           {
             success: false,

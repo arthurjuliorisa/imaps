@@ -712,7 +712,8 @@ DECLARE
     v_item_code VARCHAR(50);
     v_item_name VARCHAR(200);
     v_uom VARCHAR(20);
-    v_result RECORD;
+    v_opening_balance NUMERIC;
+    v_closing_balance NUMERIC;
 BEGIN
     -- Loop through each item in the JSONB array
     FOR v_item IN SELECT jsonb_array_elements(p_items)
@@ -724,7 +725,8 @@ BEGIN
 
         BEGIN
             -- Call upsert_item_stock_snapshot untuk setiap item
-            SELECT * INTO v_result
+            SELECT s.opening_balance, s.closing_balance
+            INTO STRICT v_opening_balance, v_closing_balance
             FROM upsert_item_stock_snapshot(
                 p_company_code,
                 v_item_type,
@@ -732,18 +734,24 @@ BEGIN
                 v_item_name,
                 v_uom,
                 p_snapshot_date
-            );
+            ) AS s;
+
+            IF v_opening_balance IS NULL OR v_closing_balance IS NULL
+               OR v_opening_balance::TEXT IN ('NaN', 'Infinity', '-Infinity')
+               OR v_closing_balance::TEXT IN ('NaN', 'Infinity', '-Infinity') THEN
+                RAISE EXCEPTION 'Snapshot balances must be finite and non-null';
+            END IF;
 
             RETURN QUERY SELECT
-                v_item_code,
-                (v_result)."opening_balance",
-                (v_result)."closing_balance",
+                v_item_code::VARCHAR(50),
+                v_opening_balance::NUMERIC(15,3),
+                v_closing_balance::NUMERIC(15,3),
                 'SUCCESS'::VARCHAR(20),
                 format('Item %s snapshot calculated', v_item_code)::TEXT;
 
         EXCEPTION WHEN OTHERS THEN
             RETURN QUERY SELECT
-                v_item_code,
+                v_item_code::VARCHAR(50),
                 NULL::NUMERIC(15,3),
                 NULL::NUMERIC(15,3),
                 'ERROR'::VARCHAR(20),
