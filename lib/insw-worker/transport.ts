@@ -1,0 +1,85 @@
+import { integer } from '../insw-queue/contracts';
+import { verifiedPayload } from './safety';
+
+export type Delivery = 'NOT_STARTED' | 'POSSIBLY_STARTED' | 'KNOWN_SUCCESS';
+export type Outcome = {
+  phase: 'PREFLIGHT' | 'REQUEST' | 'BODY' | 'RESPONSE';
+  errorClass: 'INVALID_PAYLOAD' | 'TIMEOUT' | 'CANCELLED' | 'DNS' | 'CONNECTION' | 'NETWORK' | 'HTTP_ERROR' | 'INVALID_JSON' | 'INVALID_RESPONSE' | 'BUSINESS_REJECTION' | null;
+  delivery: Delivery;
+  httpCode: number | null;
+  businessCode: string | null;
+  retryAfter: string | null;
+  // Invocation timestamps, not proof of bytes on the wire or remote execution.
+  requestInvokedAt: number | null;
+  endedAt: number;
+  autoRetry: false;
+};
+// Deliberately injected: no default fetch, URL, headers, credentials, proxy or sender.
+// A future reviewed adapter must preserve company mode/proxy/toggles and persist
+// POSSIBLY_STARTED under proven global ownership BEFORE invoking this primitive.
+export type RequestPrimitive = (body: string, signal: AbortSignal) => Promise<Response>;
+
+export async function executeFrozenRequest(input: {
+  payload: unknown; sha256: string; timeoutMs: number; request: RequestPrimitive;
+  signal?: AbortSignal; now?: () => number;
+}): Promise<Outcome> {
+  integer(input.timeoutMs, 'request timeout', 1, 300000);
+  const now = input.now ?? Date.now;
+  const base: Outcome = { phase: 'PREFLIGHT', errorClass: null, delivery: 'NOT_STARTED', httpCode: null,
+    businessCode: null, retryAfter: null, requestInvokedAt: null, endedAt: now(), autoRetry: false };
+  let body: string;
+  try { body = verifiedPayload(input.payload, input.sha256); }
+  catch { return { ...base, errorClass: 'INVALID_PAYLOAD', endedAt: now() }; }
+  if (input.signal?.aborted) return { ...base, errorClass: 'CANCELLED', endedAt: now() };
+  const controller = new AbortController();
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancel!: () => void;
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    cancel = () => { controller.abort(); reject(new Error('INTERRUPTED')); };
+    timer = setTimeout(() => { timedOut = true; cancel(); }, input.timeoutMs);
+  });
+  // Consume rejection even when cancellation wins before invocation.
+  void interrupted.catch(() => undefined);
+  input.signal?.addEventListener('abort', cancel, { once: true });
+  // Close the race between the initial check and listener installation.
+  if (input.signal?.aborted) cancel();
+  try {
+    if (controller.signal.aborted) return { ...base, errorClass: 'CANCELLED', endedAt: now() };
+    base.phase = 'REQUEST';
+    base.delivery = 'POSSIBLY_STARTED';
+    base.requestInvokedAt = now();
+    const response = await Promise.race([input.request(body, controller.signal), interrupted]);
+    base.httpCode = response.status;
+    const retryAfter = response.headers.get('retry-after');
+    // No arbitrary headers, response bodies, exception messages or secrets returned.
+    base.retryAfter = retryAfter && /^[\x20-\x7e]{1,100}$/.test(retryAfter) ? retryAfter : null;
+    base.phase = 'BODY';
+    const raw = await Promise.race([response.text(), interrupted]);
+    base.phase = 'RESPONSE';
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); }
+    catch { return { ...base, errorClass: response.ok ? 'INVALID_JSON' : 'HTTP_ERROR', endedAt: now() }; }
+    const record = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+    const code = record?.code;
+    base.businessCode = typeof code === 'number' && Number.isFinite(code) ? String(code)
+      : typeof code === 'string' && /^[a-zA-Z0-9_.-]{1,100}$/.test(code) ? code : null;
+    // HTTP status takes precedence over a contradictory {status:true} body.
+    if (!response.ok) return { ...base, errorClass: 'HTTP_ERROR', endedAt: now() };
+    if (!record || typeof record.status !== 'boolean') return { ...base, errorClass: 'INVALID_RESPONSE', endedAt: now() };
+    if (!record.status) return { ...base, errorClass: 'BUSINESS_REJECTION', endedAt: now() };
+    return { ...base, delivery: 'KNOWN_SUCCESS', endedAt: now() };
+  } catch (error) {
+    const code = (error as { cause?: { code?: string } } | null)?.cause?.code;
+    const errorClass = timedOut ? 'TIMEOUT' : input.signal?.aborted ? 'CANCELLED'
+      : base.phase === 'REQUEST' && ['ENOTFOUND', 'EAI_AGAIN'].includes(code ?? '') ? 'DNS'
+      : base.phase === 'REQUEST' && ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT'].includes(code ?? '') ? 'CONNECTION' : 'NETWORK';
+    return { ...base, errorClass, endedAt: now() };
+  } finally {
+    clearTimeout(timer);
+    input.signal?.removeEventListener('abort', cancel);
+    // Abort cannot prove delivery failure. Never release a global stream lease
+    // merely because this bounded local wait ended: the primitive may still run.
+    controller.abort();
+  }
+}

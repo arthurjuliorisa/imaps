@@ -64,7 +64,9 @@ test('foundation is not imported by live code or runtime entry points', () => {
   function walk(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
   }
-  const paths = [...walk('app'), ...walk('lib').filter(p => !p.startsWith('lib/insw-queue/')), 'ecosystem.config.js'];
+  // C1's isolated, non-activatable worker may reuse contracts. Its own scope
+  // guard proves live code does not import the worker.
+  const paths = [...walk('app'), ...walk('lib').filter(p => !p.startsWith('lib/insw-queue/') && !p.startsWith('lib/insw-worker/')), 'ecosystem.config.js'];
   for (const path of paths.filter(p => /\.(tsx?|js)$/.test(p))) expect(readFileSync(path, 'utf8'), path).not.toMatch(/insw-queue|insw_queue_cycle|insw_transmission_policy/);
   for (const path of walk('lib/insw-queue')) expect(readFileSync(path, 'utf8'), path).not.toMatch(/\bfetch\s*\(|setInterval\s*\(|setTimeout\s*\(|INSWIntegrationService/);
 });
