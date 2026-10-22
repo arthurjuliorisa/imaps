@@ -24,7 +24,7 @@ import {
 } from '@mui/material';
 import { UploadFile, Close, Save, CheckCircle, Error as ErrorIcon, Download } from '@mui/icons-material';
 import ExcelJS from 'exceljs';
-import dayjs from 'dayjs';
+import { normalizeBeginningBalanceItemCode, normalizeBeginningBalanceText, parseBeginningBalanceQty, validateBeginningBalanceUploadRecord } from '@/lib/beginning-balance-upload-validation';
 import { useToast } from '../ToastProvider';
 import { formatQty } from '@/lib/utils/format';
 import {
@@ -154,56 +154,14 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
   const validateRecord = (row: any, itemTypesList: string[]): { isValid: boolean; errors: string[] } => {
     const errors: string[] = [];
 
-    // Required field validation
-    if (!row['Item Type']) {
-      errors.push('Item Type is required');
-    } else {
-      // Validate Item Type exists in valid types (must check against the list)
-      const itemTypeValue = String(row['Item Type']).trim();
-      if (itemTypesList.length > 0) {
-        if (!itemTypesList.includes(itemTypeValue)) {
-          errors.push(`Invalid Item Type '${itemTypeValue}'. Valid types: ${itemTypesList.join(', ')}`);
-        }
-      }
-    }
-    
-    if (!row['Item Code']) errors.push('Item Code is required');
-    if (!row['Item Name']) errors.push('Item Name is required');
-    if (!row['UOM']) errors.push('UOM is required');
-    if (!row['Qty'] && row['Qty'] !== 0) errors.push('Qty is required');
-    if (!row['Balance Date']) errors.push('Balance Date is required');
-
-    // Qty validation
-    if (row['Qty'] !== undefined && row['Qty'] !== '') {
-      const value = parseFloat(row['Qty']);
-      if (isNaN(value)) {
-        errors.push('Qty must be a number');
-      } else if (value <= 0) {
-        errors.push('Qty must be greater than 0');
-      }
-    }
-
-    // Date validation
-    if (row['Balance Date']) {
-      const date = dayjs(row['Balance Date']);
-      if (!date.isValid()) {
-        errors.push('Invalid date format');
-      } else if (date.isAfter(dayjs(), 'day')) {
-        errors.push('Balance date cannot be in the future');
-      }
-    }
-
-    // PPKEK Numbers validation (optional)
-    if (row['PPKEK Numbers']) {
-      const ppkekStr = row['PPKEK Numbers'].toString().trim();
-      if (ppkekStr && ppkekStr.length > 0) {
-        // Validate that each ppkek number (separated by comma) is not empty
-        const ppkeks = ppkekStr.split(',').map((p: string) => p.trim());
-        const invalidPpkeks = ppkeks.some((p: string) => !p);
-        if (invalidPpkeks) {
-          errors.push('PPKEK Numbers format invalid (comma-separated values)');
-        }
-      }
+    errors.push(...validateBeginningBalanceUploadRecord({
+      itemType: row['Item Type'], itemCode: row['Item Code'], itemName: row['Item Name'],
+      uom: row['UOM'], qty: row['Qty'], balanceDate: row['Balance Date'],
+      remarks: row['Remarks'], ppkekNumbers: row['PPKEK Numbers'],
+    }).map(issue => issue.error));
+    const itemTypeValue = normalizeBeginningBalanceText(row['Item Type']);
+    if (itemTypesList.length && !itemTypesList.includes(itemTypeValue)) {
+      errors.push(`Invalid Item Type '${itemTypeValue}'. Valid types: ${itemTypesList.join(', ')}`);
     }
 
     return {
@@ -255,7 +213,10 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
           row.eachCell((cell, colNumber) => {
             const header = headers[colNumber - 1];
             if (header) {
-              rowData[header] = cell.value;
+              const value = cell.value;
+              rowData[header] = header === 'Balance Date' && value instanceof Date && Number.isFinite(value.getTime())
+                ? `${String(value.getUTCMonth() + 1).padStart(2, '0')}/${String(value.getUTCDate()).padStart(2, '0')}/${value.getUTCFullYear()}`
+                : value;
             }
           });
           if (Object.keys(rowData).length > 0) {
@@ -281,23 +242,26 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
       // Process and validate records using fetched item types
       const processedRecords: ImportedRecord[] = jsonData.map((row: any) => {
         const validation = validateRecord(row, itemTypesList);
-        const qty = parseFloat(row['Qty']) || 0;
+        let qty = 0;
+        try { qty = parseBeginningBalanceQty(row['Qty']); } catch { /* Row remains invalid. */ }
+        let itemCode = '';
+        try { itemCode = normalizeBeginningBalanceItemCode(row['Item Code']); } catch { /* Row retains the field validation error. */ }
         
         // Parse PPKEK Numbers (comma-separated)
-        const ppkekStr = row['PPKEK Numbers'] ? row['PPKEK Numbers'].toString().trim() : '';
+        const ppkekStr = normalizeBeginningBalanceText(row['PPKEK Numbers']);
         const ppkekNumbers = ppkekStr
           ? ppkekStr.split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
           : [];
 
         return {
-          itemType: row['Item Type'] || '',
-          itemCode: row['Item Code'] || '',
-          itemName: row['Item Name'] || '',
-          uom: row['UOM'] || '',
+          itemType: normalizeBeginningBalanceText(row['Item Type']),
+          itemCode,
+          itemName: normalizeBeginningBalanceText(row['Item Name']),
+          uom: normalizeBeginningBalanceText(row['UOM']),
           qty,
-          balanceDate: row['Balance Date'] ? dayjs(row['Balance Date']).format('MM/DD/YYYY') : '',
+          balanceDate: normalizeBeginningBalanceText(row['Balance Date']),
           ppkekNumbers,
-          remarks: row['Remarks'] || '',
+          remarks: normalizeBeginningBalanceText(row['Remarks']),
           isValid: validation.isValid,
           errors: validation.errors,
         };
@@ -315,7 +279,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            records: processedRecords.map((r) => ({
+            records: processedRecords.filter(r => r.isValid).map((r) => ({
               itemCode: r.itemCode,
               itemName: r.itemName,
               itemType: r.itemType,
@@ -345,9 +309,12 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
             return record;
           });
         }
-        // Fail silently if validation endpoint has issues - show only client-side errors
+        else {
+          throw new Error('Server validation failed. Please retry preview before importing.');
+        }
       } catch (validationError) {
-        // Don't fail file loading if validation endpoint has issues
+        setParseError('Server validation failed. Please retry preview before importing.');
+        finalRecords = processedRecords.map(record => ({ ...record, isValid: false, errors: [...record.errors, 'Server validation unavailable'] }));
       }
 
       // Set records once with all validation results

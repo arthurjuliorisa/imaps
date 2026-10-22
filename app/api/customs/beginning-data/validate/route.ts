@@ -1,3 +1,4 @@
+import { beginningBalanceUploadErrors } from '@/lib/beginning-balance-upload-validation';
 import { NextResponse } from 'next/server';
 import { checkAuth } from '@/lib/api-auth';
 import { validateBeginningBalanceItemsBatch } from '@/lib/beginning-data-validation';
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
 
     const { session } = authCheck as { authenticated: true; session: any };
     const body = await request.json();
-    const { records } = body;
+    const { records } = body ?? {};
 
     if (!records || !Array.isArray(records)) {
       return NextResponse.json(
@@ -80,6 +81,9 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    const errors = beginningBalanceUploadErrors(records, false);
+    if (errors.length) return NextResponse.json({ success: false, message: 'Invalid upload values', errors }, { status: 400 });
 
     // Validate records using the batch validation function
     const validationResults = await validateBeginningBalanceItemsBatch(

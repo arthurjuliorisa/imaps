@@ -1,10 +1,11 @@
+import { beginningBalanceUploadErrors, normalizeBeginningBalanceItemCode, parseBeginningBalanceDate, parseBeginningBalanceQty } from '@/lib/beginning-balance-upload-validation';
 import { NextResponse } from 'next/server';
+import { inspect } from 'node:util';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { logActivity } from '@/lib/log-activity';
 import { Prisma } from '@prisma/client';
 import {
-  validatePositiveNumber,
   ValidationError,
   getTodayUTC,
 } from '@/lib/api-utils';
@@ -24,27 +25,6 @@ function chunkArray<T>(items: T[], size: number): T[][] {
     chunks.push(items.slice(i, i + size));
   }
   return chunks;
-}
-
-/**
- * Parse MM/DD/YYYY format to Date
- */
-function parseMMDDYYYY(dateStr: string): Date {
-  const parts = dateStr.split('/');
-  if (parts.length !== 3) {
-    throw new Error('Invalid date format. Expected MM/DD/YYYY');
-  }
-
-  const month = parseInt(parts[0], 10) - 1; // Months are 0-indexed
-  const day = parseInt(parts[1], 10);
-  const year = parseInt(parts[2], 10);
-
-  if (isNaN(day) || isNaN(month) || isNaN(year)) {
-    throw new Error('Invalid date format. Expected MM/DD/YYYY');
-  }
-
-  // Create UTC date
-  return new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
 }
 
 /**
@@ -82,7 +62,7 @@ export async function POST(request: Request) {
 
     const { session } = authCheck as { authenticated: true; session: any };
     const body = await request.json();
-    const { records } = body;
+    const { records } = body ?? {};
 
     if (!records || !Array.isArray(records)) {
       return NextResponse.json(
@@ -123,6 +103,9 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    const inputErrors = beginningBalanceUploadErrors(records);
+    if (inputErrors.length) return NextResponse.json({ success: false, message: 'Invalid upload values', successCount: 0, errorCount: inputErrors.length, errors: inputErrors }, { status: 400 });
 
     // Fetch valid item types from database (dynamic validation)
     // Only fetch ACTIVE item types
@@ -175,7 +158,8 @@ export async function POST(request: Request) {
       }
 
       // Validate Item Code (required)
-      if (!row.itemCode || String(row.itemCode).trim() === '') {
+      const itemCode = normalizeBeginningBalanceItemCode(row.itemCode);
+      if (!itemCode) {
         errors.push({ row: rowNum, field: 'Item Code', error: 'Item Code is required' });
         continue;
       }
@@ -200,7 +184,7 @@ export async function POST(request: Request) {
 
       let qtyValue: number;
       try {
-        qtyValue = validatePositiveNumber(row.qty, 'Qty');
+        qtyValue = parseBeginningBalanceQty(row.qty);
       } catch (error: any) {
         errors.push({ row: rowNum, field: 'Qty', error: error.message });
         continue;
@@ -215,7 +199,7 @@ export async function POST(request: Request) {
       let dateValue: Date;
       try {
         const dateStr = String(row.balanceDate).trim();
-        dateValue = parseMMDDYYYY(dateStr);
+        dateValue = parseBeginningBalanceDate(dateStr);
 
         // Validate date is not in future
         if (dateValue > today) {
@@ -248,7 +232,7 @@ export async function POST(request: Request) {
       validRecords.push({
         row: rowNum,
         itemType: itemTypeCode,
-        itemCode: String(row.itemCode).trim(),
+        itemCode,
         itemName: String(row.itemName).trim(),
         uom: String(row.uom).trim(),
         qty: qtyValue,
@@ -433,7 +417,7 @@ export async function POST(request: Request) {
         timeout: 60000, // Allow larger 10,000-row bulk operations to complete
       });
     } catch (error: any) {
-      console.error('[API Error] Transaction failed during import:', error);
+      if (!(error instanceof BeginningBalanceSnapshotError)) console.error('[API Error] Transaction failed during import:', error);
 
       if (error instanceof ValidationError) {
         return NextResponse.json(
@@ -449,19 +433,23 @@ export async function POST(request: Request) {
       }
 
       if (error instanceof BeginningBalanceSnapshotError) {
-        console.error('[API Error] Required beginning balance snapshots failed:', {
+        console.error('[API Error] Required beginning balance snapshots failed:', inspect({
           companyCode: companyCodeInt,
           requested: validRecords.length,
           failed: error.failedIdentities.length,
-          failedIdentities: error.failedIdentities,
-        });
+          failedSample: error.failedIdentities.slice(0, 5),
+          diagnostics: error.diagnostics,
+          cause: error.cause instanceof Error
+            ? { name: error.cause.name, message: error.cause.message.slice(0, 500) }
+            : undefined,
+        }, { depth: null, maxArrayLength: 5, colors: false }));
         return NextResponse.json(
           {
             success: false,
             message: 'Beginning balances were not imported because required baseline snapshots could not be created',
             successCount: 0,
             errorCount: error.failedIdentities.length,
-            errors: error.failedIdentities.map((item) => ({
+            errors: error.failedIdentities.slice(0, 5).map((item) => ({
               row: 0,
               field: 'Snapshot',
               error: `${item.item_type}/${item.item_code}/${item.uom} on ${item.snapshot_date.toISOString().slice(0, 10)}`,

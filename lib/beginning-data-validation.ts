@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { error } from 'console';
+import { normalizeBeginningBalanceItemCode, normalizeBeginningBalanceText, validateBeginningBalanceUploadRecord } from './beginning-balance-upload-validation';
 
 /**
  * Validation error details for beginning balance validation
@@ -19,7 +19,7 @@ export interface BeginningBalanceValidationResult {
 
 /**
  * Normalized item data for validation
- * All string fields are trimmed and multiple spaces reduced to single space
+ * All text fields are trimmed; internal whitespace and leading zeros are preserved
  */
 interface NormalizedItemData {
   itemCode: string;
@@ -31,23 +31,24 @@ interface NormalizedItemData {
 /**
  * Normalizes whitespace in all string fields
  * - Trims leading/trailing spaces
- * - Reduces multiple consecutive spaces to single space
+ * - Preserves internal whitespace in identities
  *
  * @param data - Item data to normalize
  * @returns Normalized item data
  */
 function normalizeItemData(data: {
-  itemCode: string;
+  itemCode: string | number;
   itemName: string;
   itemType: string;
   uom: string;
 }): NormalizedItemData {
-  const normalizeString = (str: string): string => {
-    return str.trim().replace(/\s+/g, ' ');
-  };
+  const normalizeString = normalizeBeginningBalanceText;
+  let itemCode = '';
+  // Invalid inputs receive shared validation errors; never coerce them into keys.
+  try { itemCode = normalizeBeginningBalanceItemCode(data.itemCode); } catch { /* Validated below. */ }
 
   return {
-    itemCode: normalizeString(data.itemCode),
+    itemCode,
     itemName: normalizeString(data.itemName),
     itemType: normalizeString(data.itemType),
     uom: normalizeString(data.uom),
@@ -76,7 +77,7 @@ function normalizeItemData(data: {
  */
 export async function validateBeginningBalanceItem(
   companyCode: number,
-  itemCode: string,
+  itemCode: string | number,
   itemName: string,
   itemType: string,
   uom: string
@@ -90,6 +91,9 @@ export async function validateBeginningBalanceItem(
     itemType,
     uom,
   });
+
+  const inputErrors = validateBeginningBalanceUploadRecord({ itemCode, itemName, itemType, uom }, false);
+  if (inputErrors.length) return { valid: false, errors: inputErrors.map(e => ({ itemCode: normalized.itemCode, reason: e.error })) };
 
   // Check 1: Check for existing beginning balance with identical data
   const identicalRecord = await prisma.beginning_balances.findFirst({
@@ -203,7 +207,7 @@ export async function validateBeginningBalanceItem(
 export async function validateBeginningBalanceItemsBatch(
   companyCode: number,
   items: Array<{
-    itemCode: string;
+    itemCode: string | number;
     itemName: string;
     itemType: string;
     uom: string;
@@ -219,7 +223,7 @@ export async function validateBeginningBalanceItemsBatch(
 
   // Normalize all items
   const normalizedItems = items.map((item, index) => ({
-    ...normalizeItemData(item),
+    ...normalizeItemData(item ?? {} as NormalizedItemData),
     originalIndex: index,
   }));
 
@@ -332,7 +336,8 @@ export async function validateBeginningBalanceItemsBatch(
   // Validate each item
   for (const normalizedItem of normalizedItems) {
     const key = createKey(normalizedItem);
-    const errors: BeginningBalanceValidationError[] = [];
+    const errors: BeginningBalanceValidationError[] = validateBeginningBalanceUploadRecord(items[normalizedItem.originalIndex], false)
+      .map(e => ({ itemCode: normalizedItem.itemCode, reason: e.error }));
 
     // Check if this item has batch duplicates
     if (batchDuplicateKeys.has(key)) {

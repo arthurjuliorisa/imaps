@@ -22,7 +22,8 @@ export class BeginningBalanceSnapshotError extends Error {
   constructor(
     public readonly failedIdentities: Array<Pick<BeginningBalanceSnapshotItem, 'item_type' | 'item_code' | 'uom' | 'snapshot_date'>>,
     message: string,
-    public readonly cause?: unknown
+    public readonly cause?: unknown,
+    public readonly diagnostics?: { requested: number; returned: number; errors: number; sample: Array<{ item_code: string; status: string; message: string }> }
   ) {
     super(message);
     this.name = 'BeginningBalanceSnapshotError';
@@ -85,7 +86,14 @@ export async function createRequiredBeginningBalanceSnapshots(
       if (failedIdentities.length > 0) {
         throw new BeginningBalanceSnapshotError(
           failedIdentities,
-          'Required beginning balance snapshot processing did not complete'
+          'Required beginning balance snapshot processing did not complete',
+          undefined,
+          {
+            requested: batch.length, returned: results.length,
+            errors: results.filter(result => result.status !== 'SUCCESS').length,
+            sample: results.filter((result, i) => result.status !== 'SUCCESS' || result.item_code !== batch[i]?.item_code)
+              .slice(0, 5).map(result => ({ item_code: result.item_code, status: result.status, message: String(result.message).slice(0, 500) })),
+          }
         );
       }
 

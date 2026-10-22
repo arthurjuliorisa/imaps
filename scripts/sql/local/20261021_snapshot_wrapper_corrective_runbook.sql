@@ -1,0 +1,103 @@
+-- DOCUMENTATION ONLY: all lines intentionally commented; commands are user-run only.
+-- # Beginning Balance snapshot batch wrapper corrective — 2026-10-21
+--
+-- **NOT APPLIED / PRODUCTION NOT AUTHORIZED.** Bounded corrective within the existing permanent snapshot lifecycle verification phase. Normal 5,004-row upload must pass before controlled failure injection. All commands below are for the user on the local clone; Codex has not executed database SQL.
+--
+-- ## Evidence and functional change
+--
+-- The completed diagnostic proved SQLSTATE **42703**, `could not identify column "opening_balance" in record data type`, at `upsert_items_stock_snapshot(integer,jsonb,date) line 34 at RETURN QUERY`. The item was `FERT / SG70P5652L06-1310 / Silverado Slim7LEDC / CAR`. Its transaction ended with rows, definition and metadata restored. This supersedes the evidence-gap status in the earlier diagnostic runbook; do not rerun that instrumentation after applying this fix.
+--
+-- The saved catalog copy at `/tmp/imaps-record-functions.json` was compared offline to the repository wrapper: source matches exactly, MD5 `f7e4c494f3577d10d5ee1b236cc744e0`. Saved metadata: owner imapsuser, ACL NULL, SECURITY INVOKER, VOLATILE, PARALLEL UNSAFE, CALLED ON NULL INPUT, cost 100, rows 1000, config NULL. This is prior diagnostic evidence, not a fresh database inspection.
+--
+-- New artifact: `scripts/sql/production/20261021_snapshot_batch_typed_result_hotfix.sql`.
+--
+-- | Before | After / effect |
+-- | --- | --- |
+-- | `v_result RECORD`; `SELECT * INTO v_result` | Two NUMERIC locals populated by `SELECT s.opening_balance, s.closing_balance INTO STRICT ... FROM upsert_item_stock_snapshot(...) AS s` |
+-- | `(v_result)."opening_balance"`, `(v_result)."closing_balance"` in RETURN QUERY | Typed scalar locals with explicit `NUMERIC(15,3)` casts; no record-field descriptor to resolve |
+-- | No cardinality/finite guard before SUCCESS | Zero/multiple rows raise inside the same per-item exception subtransaction. NULL, NaN, Infinity and -Infinity raise there too; negative finite balances remain allowed |
+-- | Five output columns | Same identity/signature, OUT names/types/order, SUCCESS/ERROR statuses and message formats; explicit `VARCHAR(50)` item-code casts in both result branches |
+--
+-- The existing per-item BEGIN/EXCEPTION boundary is retained, so a failed inner call or validation rolls back that item's inner writes and returns the existing ERROR row. The unchanged application rejects that result and rolls back the enclosing BB + PPKEK + snapshots transaction. This is the expected PostgreSQL behavior; runtime proof remains pending. No change to the per-item function, opening helper, formulas, reporting, schema, TypeScript, batch size, or application calls.
+--
+-- The artifact uses `pg_get_functiondef` to generate **CREATE OR REPLACE**, substituting only its body. It checks the exact proven source, or no-ops on the exact corrected source. It asserts equality of **every pg_proc field except prosrc**, including OID, identity/OUT types, owner, ACL, security, strictness, volatility, cost, rows, parallel and settings. Any unexpected metadata change raises and rolls back the statement. No DROP, ALTER OWNER, grants or comments are issued. Loopback, database and current-user guards restrict this artifact to `imaps_prod_repro` as `imapsuser`. Production use needs separate authorization and review.
+--
+-- ## Deployment ordering and rollback
+--
+-- Repository practice is manually versioned `scripts/sql/production/YYYYMMDD_..._hotfix.sql`; no verified policy requires a Prisma migration here. Historical base and description hotfix files stay unchanged. Prerequisite order, if rebuilding a clone separately: base `05_item_level_snapshot_functions.sql`, then `production/20260525_stock_snapshot_description_hotfix.sql`, **then this wrapper corrective**. For the already diagnosed clone, apply **only this corrective**.
+--
+-- `scripts/deploy-sql.ts` runs the base script and does not discover production hotfixes. Reapplying it will overwrite this wrapper. Do not run `deploy:sql` / `build:local` after correction; any separately authorized redeployment must reapply the relevant hotfixes in order and verify the wrapper before imports. This documented ordering is mandatory; the deploy runner is intentionally unchanged. Do not run the old diagnostic script against the corrected wrapper.
+--
+-- Stop other clone writers for comparable hashes. From the repository root, set only local connection variables; use your normal password mechanism:
+--
+-- ```sh
+-- export PGHOST=127.0.0.1 PGPORT=5432 PGDATABASE=imaps_prod_repro PGUSER=imapsuser
+-- psql -X -v ON_ERROR_STOP=1 -c 'SELECT current_database(), inet_server_addr(), current_user;'
+-- mkdir -p /tmp/imaps-wrapper-20261021-review
+-- ```
+--
+-- Confirm `imaps_prod_repro | 127.0.0.1 | imapsuser`. Use a fresh backup directory if these files already exist; do not overwrite the original definition after application.
+--
+-- ```sh
+-- psql -X -At -v ON_ERROR_STOP=1 -f scripts/sql/local/20261021_snapshot_record_state.sql > /tmp/imaps-wrapper-20261021-review/before-state.json
+-- psql -X -At -v ON_ERROR_STOP=1 -c "SELECT pg_get_functiondef('public.upsert_items_stock_snapshot(integer,jsonb,date)'::regprocedure);" > /tmp/imaps-wrapper-20261021-review/wrapper-before.sql
+-- psql -X -At -v ON_ERROR_STOP=1 -c "SELECT to_jsonb(p) FROM pg_proc p WHERE p.oid='public.upsert_items_stock_snapshot(integer,jsonb,date)'::regprocedure;" > /tmp/imaps-wrapper-20261021-review/catalog-before.json
+-- ```
+--
+-- Full-row fingerprints include all dates and soft-deleted rows for BB, PPKEK links and snapshots for **both 1310 and 1370**. Retain the originals. Prior observed counts were 1310: 0/0/0; 1370: 6,584 BB, 0 links, 6,589 snapshots. Fresh BEFORE values take precedence.
+--
+-- User-controlled application, explicit single transaction and error-stop; the final inspection is in that same transaction:
+--
+-- ```sh
+-- psql -X -v ON_ERROR_STOP=1 -1 -f scripts/sql/production/20261021_snapshot_batch_typed_result_hotfix.sql -c "SELECT p.oid::regprocedure, pg_get_function_result(p.oid), pg_get_functiondef(p.oid), to_jsonb(p)-'prosrc' AS metadata FROM pg_proc p WHERE p.oid='public.upsert_items_stock_snapshot(integer,jsonb,date)'::regprocedure;"
+-- psql -X -At -v ON_ERROR_STOP=1 -f scripts/sql/local/20261021_snapshot_record_state.sql > /tmp/imaps-wrapper-20261021-review/after-apply-state.json
+-- cmp /tmp/imaps-wrapper-20261021-review/before-state.json /tmp/imaps-wrapper-20261021-review/after-apply-state.json
+-- ```
+--
+-- Expected notice: `Wrapper result extraction corrected; all other pg_proc fields preserved`. Reapplication gives `Wrapper corrective already applied; no change`. Any source/metadata guard failure means stop and review; do not weaken it. The result declaration remains `(item_code character varying, opening_balance numeric, closing_balance numeric, status character varying, message text)`; PostgreSQL catalogs omit these return typmods. The body explicitly casts to the original declared precisions. `cmp` must exit 0 with no output.
+--
+-- For function rollback, first confirm the same local environment and stopped writers. Restore the saved definition in a single transaction:
+--
+-- ```sh
+-- psql -X -v ON_ERROR_STOP=1 -1 -f /tmp/imaps-wrapper-20261021-review/wrapper-before.sql
+-- psql -X -At -v ON_ERROR_STOP=1 -c "SELECT to_jsonb(p) FROM pg_proc p WHERE p.oid='public.upsert_items_stock_snapshot(integer,jsonb,date)'::regprocedure;" > /tmp/imaps-wrapper-20261021-review/catalog-restored.json
+-- cmp /tmp/imaps-wrapper-20261021-review/catalog-before.json /tmp/imaps-wrapper-20261021-review/catalog-restored.json
+-- ```
+--
+-- Expected catalog comparison: exit 0. CREATE OR REPLACE retains owner/ACL; the saved definition supplies the other attributes. If these changed independently, stop for explicit metadata restoration review; do not drop the function. Function rollback **does not undo a committed UI import**. No cleanup or data deletion is authorized.
+--
+-- ## User-run acceptance sequence
+--
+-- 1. Capture state, definition and metadata, then apply only the reviewed local corrective as above.
+-- 2. Run the one-item success probe below. Enter the **actual workbook quantity** and actual normalized PPKEK JSON string array. It stages the actual BB and links only inside its rollback transaction; an existing conflicting BB is rejected. It calls the corrected installed wrapper without instrumentation and checks exactly one result, SUCCESS, exact identity, opening=workbook qty, closing=persisted closing=movement formula, and exact PPKEK sets.
+--
+--    ```sh
+--    psql -X -v ON_ERROR_STOP=1 -f scripts/sql/local/20261021_snapshot_wrapper_success_probe.sql
+--    ```
+--
+--    Expected five-column row: `SG70P5652L06-1310 | <workbook qty> | <formula balance> | SUCCESS | Item SG70P5652L06-1310 snapshot calculated`. Do not assume closing=opening if movements exist. Then `ROLLBACK`, `all_rows_restored=t`, `definition_restored=t`, `metadata_restored=t`, and `PASS: one actual-item SUCCESS; rows, definition and metadata restored`. The input/result TEMP tables disappear. On SQL error, ON_ERROR_STOP closes psql and rolls back; capture the one returned status/message row, rerun the state file and compare against BEFORE, and inspect the definition/metadata. Sequence allocations can advance despite rollback; hashes prove row restoration, not sequence counters. Do not reset sequences.
+-- 3. Capture fresh BEFORE state. Perform **one normal UI upload** of the actual 5,004-row workbook for company 1310, date 2026-09-01. Require observed six snapshot batches `[1000,1000,1000,1000,1000,4]`. Use existing debugger/query observation if success logs do not expose batching; mocked tests do not prove the live batch sequence.
+-- 4. Require 5,004 BB rows if 1310 started empty; exact company+type+code+UOM+date snapshot identities; opening=BB qty, finite closing satisfying the persisted movement formula; exact workbook PPKEK sets; **unchanged 1370 fingerprints**. Use the trusted 5,004-row workbook manifest and audit query in `scripts/sql/local/20261021_snapshot_record_runbook.sql`, section “User-run test 2”. Its manifest checks must report 5,004 distinct identities, invalid=0 and bad_bb=bad_snapshot=bad_ppkek_sets=0. Also require total company/date BB and snapshot identity counts=5,004 when starting empty, to reject extras beyond the manifest. Any nonempty baseline needs explicit before/after identity reconciliation. Formula checks do not independently validate movement aggregation.
+-- 5. If import fails, retain at most five existing status/message diagnostics and counts, compare all six fingerprints to BEFORE, and stop. No repeated speculative uploads. Only after the normal path passes may separately controlled failure injection verify cardinality, invalid balances and rollback.
+--
+-- ## Verification and limits
+--
+-- This commented-SQL runbook follows the existing local diagnostic documentation convention. New Markdown and `/tests` files are ignored by repository policy, so the offline checker lives under `scripts/`. No ignore rules or existing tests were changed.
+--
+-- Offline commands (no database connection):
+--
+-- ```sh
+-- node scripts/check-snapshot-wrapper-corrective.cjs
+-- ./node_modules/.bin/playwright test tests/beginning-balance-snapshot-lifecycle.spec.ts tests/beginning-balance-upload-validation.spec.ts --project=chromium --reporter=line --output=/tmp/imaps-wrapper-corrective-tests
+-- git diff --check
+-- ```
+--
+-- The static check reverses the complete functional diff and compares to the old wrapper, checks the known source hash, qualified STRICT extraction, finite guard before SUCCESS within the exception block, typed result branches, unchanged message/exception contract, metadata/idempotence guards, and 1,000 batch constant. The existing tests cover mixed types/UOM identities, application ERROR propagation, mocked transactional rejection and 1,000/5,004 batching. These tests cannot prove PostgreSQL planning, CREATE OR REPLACE metadata behavior, actual subtransaction rollback, or live imports.
+--
+-- Pending runtime matrix after user application: one actual-item SUCCESS (probe above), mixed actual types/UOM, zero inner rows => one ERROR, multiple inner rows => one ERROR, inner SQL exception => one ERROR, either balance NULL/NaN/+Infinity/-Infinity => ERROR, negative finite => SUCCESS, five correctly typed columns for every returned row. Zero/multiple rows and synthetic balance cases need a separately reviewed isolated test harness **after normal upload passes**, never replacement of the real per-item calculation as an operational workaround. No fault-injection SQL is executed or installed here.
+--
+-- TypeScript checking is unnecessary for this correction: no TypeScript files are changed by it. Existing uncommitted application and diagnostic work is retained. Real PostgreSQL and UI acceptance remain **PENDING**; no runtime PASS or production readiness is claimed.
+--
+-- Executed results: the offline static checker passed; the existing suite reported **13 passed, 1 failed**. The sandbox first blocked the mocked import subprocess with EPERM; an authorized rerun reached the actual assertion failure. `tests/helpers/beginning-balance-upload-harness.cjs:148` expects `logs[*][1].diagnostics`, but the current uncommitted route uses `inspect(...)`, so its second log argument is a string and the lookup returns undefined. The harness had already passed its 1,000/5,000/5,004 success/batching/identity assertions and both failure/rollback/HTTP-redaction checks before this final logging assertion. No application or existing test files were changed to accommodate it. `git diff --check` passed; new deliverables were checked separately for whitespace because they are untracked.
+--
+-- Status: **PREPARED / NOT APPLIED**. Do not label the full verification READY FOR USER-CONTROLLED LOCAL APPLICATION while the required existing suite has a failure. The existing harness/log-format mismatch must be resolved and the suite rerun before declaring all required checks passed. This correction leaves that pre-existing harness and application work intact. All PostgreSQL/runtime acceptance remains pending regardless of offline results.
