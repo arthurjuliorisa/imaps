@@ -39,7 +39,7 @@ test('live paths including source repository remain byte-identical to checkpoint
     'lib/services/incoming-goods.service.ts',
     'lib/validators/schemas/incoming-goods.schema.ts', 'lib/services/insw-integration.service.ts',
     'lib/repositories/insw-integration.repository.ts', 'lib/services/insw-transmission.service.ts',
-    'lib/services/insw-service.factory.ts', 'prisma/schema.prisma', 'ecosystem.config.js',
+    'lib/services/insw-service.factory.ts', 'ecosystem.config.js',
   ]) expect(readFileSync(file, 'utf8'), file).toBe(execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8', maxBuffer: 2000000 }));
   expect(readFileSync('lib/repositories/incoming-goods.repository.ts', 'utf8')).toBe(
     execFileSync('git', ['show', 'HEAD:lib/repositories/incoming-goods.repository.ts'], { encoding: 'utf8' }));

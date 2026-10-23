@@ -1365,6 +1365,7 @@ model insw_queue_cycle {
   @@index([status, next_eligible_at, tail_key])
   @@index([status, lease_until])
   @@index([company_code, queued_at])
+  @@index([company_code, operation, wms_reference], map: "insw_preparation_queue_correlation_idx")
 }
 
 // Lightweight execution metadata: payload lives on cycle, responses on logs.
@@ -1381,4 +1382,58 @@ model insw_queue_attempt {
   logs           insw_tracking_log[]
 
   @@unique([queue_id, retry_index])
+}
+
+// C2A dormant preparation only. SQL checks deliberately prohibit ACTIVE.
+model insw_preparation_rollout {
+  id                  String   @id @default(uuid()) @db.Uuid
+  company_code        Int
+  source_kind         String   @default("INCOMING") @db.VarChar(30)
+  mode                String   @default("DISABLED") @db.VarChar(20)
+  evidence            Json     @default("{}")
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@unique([company_code, source_kind])
+}
+
+// Explicit synthetic manifest, independent of ledger and WMS log retention.
+// No production writer or membership rule is supplied in C2A.
+model insw_preparation_member {
+  id            String   @id @default(uuid()) @db.Uuid
+  rollout_id    String   @db.Uuid
+  company_code  Int
+  source_kind   String   @default("INCOMING") @db.VarChar(30)
+  wms_reference String   @db.VarChar(100)
+  source_id     Int
+  business_date DateTime @db.Date
+  proof         String   @db.VarChar(100)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([company_code, source_kind, wms_reference])
+  @@index([rollout_id, id])
+}
+
+model insw_preparation_ledger {
+  id               String    @id @default(uuid()) @db.Uuid
+  member_id        String    @unique @db.Uuid
+  rollout_id       String    @db.Uuid
+  company_code     Int
+  source_kind      String    @default("INCOMING") @db.VarChar(30)
+  wms_reference    String    @db.VarChar(100)
+  source_id        Int
+  business_date    DateTime  @db.Date
+  state            String    @default("SOURCE_OBSERVED") @db.VarChar(30)
+  reason           String    @default("ACCEPTANCE_UNPROVEN") @db.VarChar(60)
+  attempt_count    Int       @default(0)
+  next_eligible_at DateTime  @default(now()) @db.Timestamptz(6)
+  owner_token      String?   @db.Uuid
+  lease_until      DateTime? @db.Timestamptz(6)
+  fence            Int       @default(0)
+  queue_id         String?   @unique @db.Uuid
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@unique([company_code, source_kind, wms_reference])
+  @@index([rollout_id, state, next_eligible_at])
 }
