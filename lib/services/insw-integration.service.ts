@@ -1203,69 +1203,61 @@ export class INSWIntegrationService {
   async postPemasukan(
     payload: INSWTransaksiPayload
   ): Promise<INSWApiResponse> {
-    const endpoint = this.useTestMode
-      ? INSW_ENDPOINTS.transaksi.temp
-      : INSW_ENDPOINTS.transaksi.real;
-
-    return this.postINSW(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-      body: JSON.stringify(payload),
-    });
+    return this.postTransaction(payload);
   }
 
   async postPengeluaran(
     payload: INSWTransaksiPayload
   ): Promise<INSWApiResponse> {
-    const endpoint = this.useTestMode
-      ? INSW_ENDPOINTS.transaksi.temp
-      : INSW_ENDPOINTS.transaksi.real;
-
-    return this.postINSW(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-      body: JSON.stringify(payload),
-    });
+    return this.postTransaction(payload);
   }
 
   async postStockOpname(
     payload: INSWTransaksiPayload
   ): Promise<INSWApiResponse> {
-    const endpoint = this.useTestMode
-      ? INSW_ENDPOINTS.transaksi.temp
-      : INSW_ENDPOINTS.transaksi.real;
-
-    return this.postINSW(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-      body: JSON.stringify(payload),
-    });
+    return this.postTransaction(payload);
   }
 
   async postAdjustment(
     payload: INSWTransaksiPayload
   ): Promise<INSWApiResponse> {
+    return this.postTransaction(payload);
+  }
+
+  private transactionRequest(body: string, signal?: AbortSignal): {
+    endpoint: string; init: RequestInit;
+  } {
     const endpoint = this.useTestMode
       ? INSW_ENDPOINTS.transaksi.temp
       : INSW_ENDPOINTS.transaksi.real;
-
-    return this.postINSW(endpoint, {
+    return { endpoint, init: {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...this.apiHeaders,
       },
-      body: JSON.stringify(payload),
-    });
+      body,
+      ...(signal ? { signal } : {}),
+    } };
+  }
+
+  private postTransaction(payload: INSWTransaksiPayload): Promise<INSWApiResponse> {
+    const { endpoint, init } = this.transactionRequest(JSON.stringify(payload));
+    // Legacy response/error handling remains unchanged.
+    return this.postINSW(endpoint, init);
+  }
+
+  /**
+   * Raw transaction-only transport seam for a future reviewed worker adapter.
+   * Caller must verify the frozen hash and persist admission BEFORE invocation,
+   * then track invocation/body settlement. This method provides no ownership,
+   * source validation, toggle authorization, enqueue or domain finalization.
+   * Keeping the raw response/error lets the worker classify HTTP and ambiguity
+   * without the legacy wrapper converting network errors into business JSON.
+   */
+  requestFrozenTransaction(body: string, signal: AbortSignal): Promise<Response> {
+    const { endpoint, init } = this.transactionRequest(body, signal);
+    return this.fetchINSW(endpoint, init);
   }
 
   async getPemasukan(
