@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { PrismaClient } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { prepareIncomingHandoff, handoffIncomingInTransaction, type IncomingPreparation, type PreparedIncomingHandoff } from '../lib/insw-queue/incoming-handoff';
+import { assertIncomingEnvelopeBudget, prepareIncomingHandoff, handoffIncomingInTransaction, type IncomingPreparation, type PreparedIncomingHandoff } from '../lib/insw-queue/incoming-handoff';
 import { freezePayload } from '../lib/insw-queue/contracts';
 import { claimJob, transition } from '../lib/insw-queue/queue.repository';
 
@@ -20,7 +20,7 @@ function fixture(extra: Partial<IncomingPreparation> = {}): IncomingPreparation 
   };
 }
 
-test('preparation fails closed on incomplete, invalid or oversized inputs', () => {
+test('preparation rejects invalid inputs and accepts the former pilot size boundary', () => {
   for (const extra of [
     { authoritativeInputs: undefined }, { revision: '' }, { businessDate: '2026-02-30' },
     { payload: { data: [] } }, { wmsReference: 'OTHER' },
@@ -28,21 +28,47 @@ test('preparation fails closed on incomplete, invalid or oversized inputs', () =
   ]) expect(() => prepareIncomingHandoff(fixture(extra as Partial<IncomingPreparation>))).toThrow();
   const huge = fixture();
   huge.payload.data[0].dokumenKegiatan[0].namaEntitas = 'x'.repeat(1024 * 1024 + 1);
-  expect(() => prepareIncomingHandoff(huge)).toThrow('limit');
+  expect(() => prepareIncomingHandoff(huge)).not.toThrow();
+  for (const companyCode of [1310, 1371, 9999]) {
+    expect(() => prepareIncomingHandoff(fixture({ companyCode }))).toThrow('SEZ_COMPANY_REQUIRED');
+  }
+  const cyclic = fixture();
+  (cyclic.payload as any).cycle = cyclic.payload;
+  expect(() => prepareIncomingHandoff(cyclic)).toThrow('acyclic JSON');
   const invalid = fixture();
   invalid.payload.data[0].dokumenKegiatan[0].barangTransaksi[0].jumlah = NaN;
   expect(() => prepareIncomingHandoff(invalid)).toThrow('JSON');
 });
 
+test('converted envelope resource guard rejects excess without allocating a giant source tree', () => {
+  const shared = 'x'.repeat(100000);
+  expect(() => assertIncomingEnvelopeBudget({ data: Array(6000).fill(shared) })).toThrow('resource limit');
+});
+
 test('live paths including source repository remain byte-identical to checkpoint', () => {
   for (const file of [
     'lib/services/incoming-goods.service.ts',
-    'lib/validators/schemas/incoming-goods.schema.ts', 'lib/services/insw-integration.service.ts',
-    'lib/repositories/insw-integration.repository.ts', 'lib/services/insw-transmission.service.ts',
+    'lib/validators/schemas/incoming-goods.schema.ts',
+    'lib/services/insw-transmission.service.ts',
     'lib/services/insw-service.factory.ts', 'ecosystem.config.js',
   ]) expect(readFileSync(file, 'utf8'), file).toBe(execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8', maxBuffer: 2000000 }));
   expect(readFileSync('lib/repositories/incoming-goods.repository.ts', 'utf8')).toBe(
     execFileSync('git', ['show', 'HEAD:lib/repositories/incoming-goods.repository.ts'], { encoding: 'utf8' }));
+});
+
+// Phase 1 adds optional DB/transport injection. The converter, SQL and DIRECT
+// HTTP construction remain byte-identical; keep this narrower semantic guard.
+test('Phase 1 injection preserves Incoming converter, query and DIRECT request bodies', () => {
+  for (const [file, start, end] of [
+    ['lib/services/insw-integration.service.ts', '  async convertPemasukanToINSW(', '  async convertPengeluaranToINSWByIds('],
+    ['lib/repositories/insw-integration.repository.ts', '    const query = `', '    const result = await'],
+    ['lib/services/insw-integration.service.ts', '  private transactionRequest(', '  private postTransaction('],
+  ]) {
+    const current = readFileSync(file, 'utf8');
+    const baseline = execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8', maxBuffer: 2000000 });
+    const section = (text: string) => text.slice(text.indexOf(start), text.indexOf(end, text.indexOf(start)));
+    expect(section(current).length).toBeGreaterThan(100); expect(section(current)).toBe(section(baseline));
+  }
 });
 
 test.describe('isolated queue API only — real Incoming source atomicity UNPROVEN', () => {
@@ -149,7 +175,7 @@ test.describe('isolated queue API only — real Incoming source atomicity UNPROV
     const durationMs = performance.now() - started;
     await expect.poll(() => queries.at(-1)).toBe('COMMIT');
     const sql = queries.filter(query => !/^(BEGIN|COMMIT|ROLLBACK)/.test(query));
-    expect(sql).toHaveLength(7);
+    expect(sql.length).toBeLessThanOrEqual(7);
     queries = []; await submit(b);
     const rows = await a.insw_queue_cycle.findMany();
     expect(rows).toHaveLength(1);

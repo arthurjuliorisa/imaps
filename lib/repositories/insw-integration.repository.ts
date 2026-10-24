@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 export interface LaporanPemasukanView {
   id: number;
@@ -106,6 +106,7 @@ export interface ProductionOutputData {
 }
 
 export class INSWIntegrationRepository {
+  constructor(private readonly incomingDatabase: PrismaClient = prisma) {}
   async getLaporanPemasukanByIds(
     companyCode: number,
     ids: number[]
@@ -139,7 +140,7 @@ export class INSWIntegrationRepository {
       ORDER BY doc_date, id
     `;
 
-    const result = await prisma.$queryRawUnsafe<LaporanPemasukanView[]>(
+    const result = await this.incomingDatabase.$queryRawUnsafe<LaporanPemasukanView[]>(
       query,
       companyCode,
       ids

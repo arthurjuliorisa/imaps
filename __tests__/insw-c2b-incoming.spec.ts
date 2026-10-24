@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { PrismaClient } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { readdirSync, existsSync } from 'node:fs';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { INSWIntegrationService } from '../lib/services/insw-integration.service';
 import { INSW_ENDPOINTS } from '../lib/types/insw-api.types';
@@ -48,8 +48,8 @@ async function source(ref = 'C2B', company = 1370) {
 async function admission() {
   const token = await acquireOperationalOwnership(db);
   const job = (await admitNext(db, token)).job!;
-  const finalize = await prepareIsolatedIncomingFinalizer(db, token, job, { endpointUrl: INSW_ENDPOINTS.transaksi.temp });
-  const concurrentFinalize = await prepareIsolatedIncomingFinalizer(other, token, job, { endpointUrl: INSW_ENDPOINTS.transaksi.temp });
+  const finalize = await prepareIsolatedIncomingFinalizer(db, token, job, { endpointUrl: endpoint });
+  const concurrentFinalize = await prepareIsolatedIncomingFinalizer(other, token, job, { endpointUrl: endpoint });
   const outcome = await executeFrozenRequest({ payload: job.frozen_payload, sha256: job.payload_sha256,
     timeoutMs: 1000, captureResponse: true, request: async (body, signal) => {
       const pending = request(body, signal); await recordActualStart(db, token, job); return pending;
@@ -65,7 +65,7 @@ test.beforeAll(async () => {
   other = new PrismaClient({ datasources: { db: { url } } });
   const [state] = await db.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'`;
   if (state.count !== BigInt(0)) throw new Error('NEW_EMPTY_DATABASE_REQUIRED');
-  for (const name of readdirSync('prisma/migrations').sort().filter(n => n !== 'migration_lock.toml')) {
+  for (const name of readdirSync('prisma/migrations').sort().filter(n => existsSync(`prisma/migrations/${n}/migration.sql`))) {
     execFileSync('psql', [url!, '-X', '-v', 'ON_ERROR_STOP=1', '-f', `prisma/migrations/${name}/migration.sql`], { stdio: 'pipe' });
   }
   await db.companies.createMany({ data: [{ code: 1370, name: 'Synthetic', company_type: 'SEZ' }, { code: 1371, name: 'BZ', company_type: 'BZ' }] });
@@ -194,7 +194,7 @@ test('retained worker injection: retry goes behind next source, 3600ms spacing, 
     res.end(JSON.stringify({ status: calls !== 1 })); };
   statements = []; const started = performance.now();
   await runIsolatedWorker({ db, request, signal: new AbortController().signal, timeoutMs: 1000, maxJobs: 3,
-    prepareFinalizer: (token, job) => prepareIsolatedIncomingFinalizer(db, token, job, { endpointUrl: INSW_ENDPOINTS.transaksi.temp }) });
+    prepareFinalizer: (token, job) => prepareIsolatedIncomingFinalizer(db, token, job, { endpointUrl: endpoint }) });
   const measured = [...statements];
   expect(arrivals.map(r => JSON.parse(r.body).data[0].dokumenKegiatan[0].nomorDokKegiatan)).toEqual(['FIRST', 'SECOND', 'FIRST']);
   for (let i = 1; i < 3; i++) expect(arrivals[i].at - arrivals[i - 1].at).toBeGreaterThanOrEqual(3600);
@@ -228,19 +228,20 @@ test('malformed actual response text remains available by legacy payload detail'
   expect((await db.insw_tracking_log.findFirst())?.insw_response).toMatchObject({ rawResponse: 'actual simulator error', httpStatus: 502 });
 });
 
-test('timeout with unavailable response has no fabricated response; worker drains before retry', async () => {
+test('timeout with unavailable response drains then holds under Phase 1 owner policy', async () => {
   await policy(1, 3600); await source(); let calls = 0;
   respond = res => { const n = ++calls; setTimeout(() => res.end('{"status":true}'), n === 1 ? 150 : 0); };
   let active = 0; let maxActive = 0;
-  await runIsolatedWorker({ db, signal: new AbortController().signal, timeoutMs: 40, maxJobs: 2,
+  await runIsolatedWorker({ db, signal: new AbortController().signal, timeoutMs: 40, maxJobs: 1,
     request: async (body) => { active++; maxActive = Math.max(maxActive, active);
       try { await new Promise(r => setTimeout(r, calls === 0 ? 100 : 0)); return await request(body, new AbortController().signal); }
       finally { active--; } },
-    prepareFinalizer: (token, job) => prepareIsolatedIncomingFinalizer(db, token, job, { endpointUrl: INSW_ENDPOINTS.transaksi.temp }) });
-  expect(maxActive).toBe(1); expect(arrivals).toHaveLength(2);
+    prepareFinalizer: (token, job) => prepareIsolatedIncomingFinalizer(db, token, job, { endpointUrl: endpoint }) });
+  expect(maxActive).toBe(1); expect(arrivals).toHaveLength(1);
   const logs = await db.insw_tracking_log.findMany({ orderBy: { id: 'asc' } });
   expect(logs[0].insw_response).toBeNull(); expect(logs[0].metadata).toMatchObject({ reasonCode: 'REQUEST_TIMEOUT' });
-  expect(logs[1].insw_status).toBe('SUCCESS');
+  expect(logs).toHaveLength(1);
+  expect((await db.insw_queue_cycle.findFirst())?.status).toBe('HELD');
 });
 
 test('pre-cancel and contradictory caller evidence cannot fabricate success; stale owners cannot repair', async () => {
@@ -258,8 +259,16 @@ test('pre-cancel and contradictory caller evidence cannot fabricate success; sta
 });
 
 test('BZ and unsupported batching fail closed before HTTP; no silent splitting', async () => {
-  await source('BZ', 1371); const token = await acquireOperationalOwnership(db); const job = (await admitNext(db, token)).job!;
-  await expect(prepareIsolatedIncomingFinalizer(db, token, job, { endpointUrl: endpoint })).rejects.toThrow('SOURCE_IDENTITY_UNCONFIRMED');
+  await expect(source('BZ', 1371)).rejects.toThrow('SEZ_COMPANY_REQUIRED');
+  const token = await acquireOperationalOwnership(db);
+  const bz = await enqueueExisting(db, { identity: { kind: 'WMS_REFERENCE', companyCode: 1371, operation: 'INCOMING',
+    reference: 'BZ', revision: 'ACCEPTED_WMS_ID', businessDate: '2026-10-24' }, intent: 'SOURCE_COMMIT',
+    requestedBy: 'forged-fixture', payload: payload('BZ') });
+  expect((await admitNext(db, token)).job).toBeNull();
+  expect(await db.insw_queue_attempt.count()).toBe(0);
+  const job = { ...await db.insw_queue_cycle.findUniqueOrThrow({ where: { id: bz.id } }),
+    attemptId: '00000000-0000-0000-0000-000000000000', admissionPolicyVersion: 1 };
+  await expect(prepareIsolatedIncomingFinalizer(db, token, job, { endpointUrl: endpoint })).rejects.toThrow('SEZ_COMPANY_REQUIRED');
   expect(() => prepareIncomingHandoff({ companyCode: 1370, wmsReference: 'BATCH', businessDate: '2026-10-24', revision: 'ACCEPTED_WMS_ID',
     requestedBy: 'test', authoritativeInputs: 'COMPLETE_SOURCE_AND_MAPPING_SNAPSHOT', payload: { data: [payload('A').data[0], payload('B').data[0]] } })).toThrow('one complete Incoming');
   const bad = await enqueueExisting(db, { identity: { kind: 'WMS_REFERENCE', operation: 'INCOMING', companyCode: 1370,
@@ -375,7 +384,7 @@ test('partial streamed body timeout stays unknown and raw evidence is unavailabl
   expect(outcome.delivery).toBe('POSSIBLY_STARTED'); expect(outcome.errorClass).toBe('TIMEOUT');
   await finalize(outcome, Date.now());
   expect((await db.insw_tracking_log.findFirst())?.insw_response).toBeNull();
-  expect((await db.insw_queue_cycle.findFirst())?.status).toBe('FAILED'); // Default zero retries exhausted, never Success.
+  expect((await db.insw_queue_cycle.findFirst())?.status).toBe('HELD'); // Phase 1: unknown delivery always requires review, even at zero retries.
 });
 
 test('new adapter cannot run on the retained C1 database boundary or in production mode', async () => {
@@ -463,13 +472,13 @@ test('checkpoint hold retains live-owner recovery denial; verified reaped fixtur
   expect(arrivals).toHaveLength(1); expect(await db.insw_tracking_log.count()).toBe(0);
 });
 
-test('bounded reader cancellation must drain before a retry may start', async () => {
+test('bounded reader cancellation must drain before unknown delivery can be held', async () => {
   await policy(1); await source();
   let release!: () => void; let cancelEntered!: () => void;
   const cancellation = new Promise<void>(r => release = r);
   const cancelling = new Promise<void>(r => cancelEntered = r);
   let invocations = 0;
-  const running = runIsolatedWorker({ db, signal: new AbortController().signal, timeoutMs: 40, maxJobs: 2,
+  const running = runIsolatedWorker({ db, signal: new AbortController().signal, timeoutMs: 40, maxJobs: 1,
     request: async () => {
       if (++invocations > 1) return Response.json({ status: true });
       return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{"status":')); },
@@ -484,5 +493,6 @@ test('bounded reader cancellation must drain before a retry may start', async ()
     expect((await db.insw_dispatch_gate.findFirst())?.busy_attempt_id).not.toBeNull();
   } finally { release(); }
   await running;
-  expect(invocations).toBe(2); expect(await db.insw_tracking_log.count()).toBe(2);
+  expect(invocations).toBe(1); expect(await db.insw_tracking_log.count()).toBe(1);
+  expect((await db.insw_queue_cycle.findFirst())?.status).toBe('HELD');
 });

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { canonicalIdentity } from '../insw-queue/contracts';
+import { assertIncomingEnvelopeBudget } from '../insw-queue/incoming-handoff';
 import { reserveTail } from '../insw-queue/queue.repository';
 import { classifyResponse, singleFrozenDocument } from './classification';
 import { owned, type AdmittedJob } from './operational.repository';
@@ -15,6 +16,7 @@ import { MAX_RESPONSE_BYTES, type Outcome } from './transport';
 export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
   config: { endpointUrl: string }) {
   const endpoint = new URL(config.endpointUrl);
+  if (endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1' || !endpoint.port) throw new Error('LOOPBACK_HTTP_REQUIRED');
   if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash
     || !['http:', 'https:'].includes(endpoint.protocol)) throw new Error('INVALID_ENDPOINT_EVIDENCE');
   const endpointUrl = endpoint.toString();
@@ -24,11 +26,13 @@ export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: 
   if (!/^[a-z0-9_]+_phase_c2b_test$/.test(runtime.name) || !['127.0.0.1', '::1'].includes(runtime.host ?? '')) {
     throw new Error('ISOLATED_TEST_ONLY');
   }
+  if (![1370, 1380].includes(admitted.company_code)) throw new Error('SEZ_COMPANY_REQUIRED');
+  assertIncomingEnvelopeBudget(admitted.frozen_payload);
   const body = verifiedPayload(admitted.frozen_payload, admitted.payload_sha256);
   const requestBytes = Buffer.byteLength(body);
-  if (requestBytes > MAX_RESPONSE_BYTES) throw new Error('INCOMING_REQUEST_TOO_LARGE');
   const payload = JSON.parse(body);
   const reference = admitted.wms_reference;
+  if (![1370, 1380].includes(admitted.company_code)) throw new Error('SEZ_COMPANY_REQUIRED');
   if (admitted.operation !== 'INCOMING' || !reference || singleFrozenDocument(payload) !== reference
     || payload.data[0].kdKegiatan !== '30' || !payload.data[0].dokumenKegiatan[0].barangTransaksi?.length
     || admitted.source_revision !== 'ACCEPTED_WMS_ID' || admitted.intent !== 'SOURCE_COMMIT'
@@ -46,7 +50,7 @@ export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: 
   const sourceId = sources[0].id;
   // Snapshot scalar identity; never consult mutable source views after send.
   const job = { ...admitted, frozen_payload: payload };
-  let retained: { fingerprint: string; outcome: Outcome; response: Prisma.InputJsonValue | null; endedAt: number } | undefined;
+  let retained: { fingerprint: string; outcome: Outcome; response: Prisma.InputJsonValue | null; explicitRejection: boolean; endedAt: number } | undefined;
   return async (received: Outcome, locallyEndedAt: number): Promise<void> => {
     // One bounded outcome is retained for all local retries, even if the caller
     // mutates/replaces its object. A contradictory repair cannot replace evidence.
@@ -60,10 +64,13 @@ export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: 
     if (!retained) {
       const outcome: Outcome = JSON.parse(serialized);
       let response: Prisma.InputJsonValue | null = null;
+      let explicitRejection = false;
       if (evidence.state === 'COMPLETE') {
         if (evidence.raw === null || evidence.bytes !== Buffer.byteLength(evidence.raw)) throw new Error('INVALID_RESPONSE_EVIDENCE');
         let parsed: unknown;
         try { parsed = JSON.parse(evidence.raw); } catch { parsed = undefined; }
+        explicitRejection = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+          && (parsed as { status?: unknown }).status === false;
         const classification = classifyResponse(outcome.httpCode!, parsed, payload);
         if (classification.kind !== outcome.classification.kind || classification.reasonCode !== outcome.classification.reasonCode
           || (outcome.delivery === 'KNOWN_SUCCESS') !== (classification.kind === 'KNOWN_REMOTE_SUCCESS')) {
@@ -86,9 +93,9 @@ export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: 
         }
       } else if (outcome.delivery === 'KNOWN_SUCCESS' || outcome.classification.kind === 'KNOWN_REMOTE_SUCCESS'
         || evidence.raw !== null) throw new Error('SUCCESS_REQUIRES_COMPLETE_RESPONSE');
-      retained = { fingerprint, outcome, response, endedAt: locallyEndedAt };
+      retained = { fingerprint, outcome, response, explicitRejection, endedAt: locallyEndedAt };
     }
-    const { outcome, response, endedAt } = retained;
+    const { outcome, response, explicitRejection, endedAt } = retained;
     const success = outcome.delivery === 'KNOWN_SUCCESS';
     const responseRecord = response as Record<string, unknown> | null;
     const remoteMessage = typeof responseRecord?.message === 'string' ? responseRecord.message : null;
@@ -107,7 +114,10 @@ export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: 
     await db.$transaction(async tx => {
       const gate = await owned(tx, token);
       const attempt = await tx.insw_queue_attempt.findUniqueOrThrow({ where: { id: job.attemptId } });
-      const cycle = await tx.insw_queue_cycle.findUniqueOrThrow({ where: { id: job.id } });
+      const cycle = await tx.insw_queue_cycle.findUniqueOrThrow({ where: { id: job.id }, select: {
+        id: true, payload_sha256: true, identity_key: true, status: true, owner_token: true,
+        delivery_state: true, hold_reason: true,
+      } });
       if (attempt.owner_token !== token || attempt.queue_id !== job.id || attempt.retry_index !== job.retry_index
         || cycle.payload_sha256 !== job.payload_sha256 || cycle.identity_key !== job.identity_key) throw new Error('ATTEMPT_OWNER_LOST');
       const logs = await tx.insw_tracking_log.findMany({ where: { queue_attempt_id: job.attemptId }, take: 2,
@@ -123,30 +133,36 @@ export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: 
       if (gate.busy_attempt_id !== job.attemptId || logs.length || !(cycle.status === 'CLAIMED' && cycle.owner_token === token
         || success && cycle.status === 'HELD' && cycle.delivery_state === 'KNOWN_SUCCESS'
           && cycle.hold_reason === 'LOCAL_FINALIZATION_REQUIRED')) throw new Error('JOB_OWNER_LOST');
-      const disposition = classifiedRetryDisposition({ classification: outcome.classification, delivery: outcome.delivery,
+      const disposition = classifiedRetryDisposition({ classification: outcome.classification,
+        // Only a complete explicit remote rejection is safe to retry. Timeouts,
+        // reset sockets and incomplete responses retain delivery uncertainty.
+        delivery: evidence.state === 'COMPLETE' && explicitRejection
+          && outcome.classification.kind === 'TRANSIENT_FAILURE' ? 'KNOWN_FAILURE' : outcome.delivery,
         retryIndex: job.retry_index, maxAutoRetrySnapshot: Math.min(10, job.max_auto_retry_snapshot),
-        clientApprovedAmbiguousRetry: true, exclusiveStreamProven: true, priorInvocationEnded: true, outcomeDurablyRecorded: true });
+        clientApprovedAmbiguousRetry: false, exclusiveStreamProven: true, priorInvocationEnded: true, outcomeDurablyRecorded: true });
       const retry = !success && disposition === 'RETRY_TO_TAIL';
       const failure = !success && disposition === 'STOP';
-      // One newly inserted Incoming log. Scrap's preclaims are deliberately unsupported.
-      await tx.insw_tracking_log.create({ data: {
-        queue_attempt_id: job.attemptId, transaction_type: 'incoming', transaction_id: sourceId,
-        company_code: job.company_code, wms_id: reference, insw_activity_code: '30',
-        insw_status: success ? 'SUCCESS' : 'FAILED', retry_count: job.retry_index,
-        sent_at: outcome.requestInvokedAt === null ? null : new Date(outcome.requestInvokedAt),
-        insw_request_payload: payload, insw_response: response === null ? Prisma.DbNull : response,
-        insw_error: success ? null : remoteMessage || outcome.classification.reasonCode,
-        metadata: { adapter: 'C2B_ISOLATED_INCOMING', outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
+      const metadata = { adapter: 'C2B_ISOLATED_INCOMING', outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
           endpoint_url: endpointUrl, classification: outcome.classification.kind,
           reasonCode: outcome.classification.reasonCode, delivery: outcome.delivery, phase: outcome.phase,
           httpCode: outcome.httpCode, businessCode: outcome.businessCode, responseEvidence: evidence.state,
           responseBytes: evidence.bytes, requestBytes, policyVersion: job.admissionPolicyVersion,
-          invokedAt: outcome.requestInvokedAt, boundedOutcomeEndedAt: outcome.endedAt, locallyDrainedAt: endedAt },
-      } });
+          invokedAt: outcome.requestInvokedAt, boundedOutcomeEndedAt: outcome.endedAt, locallyDrainedAt: endedAt };
+      // Keep the exact legacy JSON fields and one insert, binding the already
+      // verified body instead of traversing all detail items under the gate lock.
+      await tx.$executeRaw`INSERT INTO insw_tracking_log
+        (queue_attempt_id, transaction_type, transaction_id, company_code, wms_id, insw_activity_code,
+          insw_status, retry_count, sent_at, insw_request_payload, insw_response, insw_error, metadata, updated_at)
+        VALUES (${job.attemptId}::uuid, 'incoming', ${sourceId}, ${job.company_code}, ${reference}, '30',
+          ${success ? 'SUCCESS' : 'FAILED'}, ${job.retry_index},
+          ${outcome.requestInvokedAt === null ? null : new Date(outcome.requestInvokedAt)}::timestamptz,
+          ${body}::jsonb, ${response === null ? null : JSON.stringify(response)}::jsonb,
+          ${success ? null : remoteMessage || outcome.classification.reasonCode}, ${JSON.stringify(metadata)}::jsonb,
+          clock_timestamp())`;
       await tx.insw_queue_attempt.update({ where: { id: attempt.id }, data: {
         delivery_state: outcome.delivery, completed_at: new Date(endedAt),
       } });
-      await tx.insw_queue_cycle.update({ where: { id: cycle.id }, data: {
+      await tx.insw_queue_cycle.update({ where: { id: cycle.id }, select: { id: true }, data: {
         status: success ? 'SUCCEEDED' : retry ? 'READY' : failure ? 'FAILED' : 'HELD',
         delivery_state: success ? 'KNOWN_SUCCESS' : retry ? 'NOT_STARTED' : failure ? 'KNOWN_FAILURE' : outcome.delivery,
         completed_at: success || failure ? new Date() : null, owner_token: null, lease_until: null,

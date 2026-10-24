@@ -23,7 +23,7 @@ function wait(ms: number, signal: AbortSignal) {
 // Injected primitive must represent one locally tracked invocation, spawning no
 // children/background HTTP. The CLI below supplies the only runnable adapter.
 export async function runIsolatedWorker(input: { db: PrismaClient; request: RequestPrimitive; signal: AbortSignal;
-  timeoutMs: number; onEvent?: (event: string, data?: unknown) => void; maxJobs?: number;
+  timeoutMs: number; minimumIntervalMs?: number; onEvent?: (event: string, data?: unknown) => void; maxJobs?: number;
   // Inactive injected domain extension. No CLI supplies this capability.
   prepareFinalizer?: (token: string, job: AdmittedJob) => Promise<(outcome: Outcome, endedAt: number) => Promise<void>> }) {
   integer(input.timeoutMs, 'request timeout', 1, 300000);
@@ -33,7 +33,7 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
   let idleMs = 250;
   let count = 0;
   while (!input.signal.aborted && count < (input.maxJobs ?? Infinity)) {
-    const admission = await admitNext(input.db, token);
+    const admission = await admitNext(input.db, token, input.minimumIntervalMs);
     if (!admission.job) {
       await wait(admission.waitMs || idleMs, input.signal);
       idleMs = Math.min(5000, idleMs * 2);

@@ -1,7 +1,9 @@
-import type { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import type { Prisma, InswQueueStatus } from '@prisma/client';
 import type { INSWTransaksiPayload } from '../types/insw-api.types';
 import { boundedText, canonicalIdentity, freezePayload } from './contracts';
-import { enqueueInTransaction, type EnqueueInput } from './queue.repository';
+import type { EnqueueInput } from './queue.repository';
+import { readPolicy } from './policy.repository';
 
 export type IncomingPreparation = {
   companyCode: number;
@@ -19,7 +21,48 @@ export type IncomingPreparation = {
 
 declare const prepared: unique symbol;
 export type PreparedIncomingHandoff = { readonly [prepared]: true };
-const preparations = new WeakMap<PreparedIncomingHandoff, EnqueueInput>();
+const preparations = new WeakMap<PreparedIncomingHandoff, Omit<EnqueueInput, 'payload'> & { json: string; sha256: string }>();
+
+// Resource ceiling for the converted envelope, NOT a WMS/INSW business limit.
+// A minimal required source item (even with invalid empty strings) uses 88 JSON
+// bytes. Conversion copies its item fields once, but can repeat a 255-character
+// header document number per item (at most 1530 escaped bytes). 2048 extra bytes
+// per possible item covers that document, mapped UOM (varchar(10)), keys and
+// numeric formatting. Thus every supported <=20 MiB source fits this ceiling,
+// including header amplification; it is deliberately distinct from responses.
+export const MAX_INCOMING_ENVELOPE_BYTES = 20 * 1024 * 1024
+  + Math.floor(20 * 1024 * 1024 / 88) * 2048;
+
+export function assertIncomingEnvelopeBudget(payload: unknown): void {
+  let bytes = 0;
+  const ancestors = new Set<object>();
+  const pending: { value: unknown; exit?: true }[] = [{ value: payload }];
+  while (pending.length) {
+    const { value, exit } = pending.pop()!;
+    if (exit) { ancestors.delete(value as object); continue; }
+    if (value && typeof value === 'object') {
+      if (ancestors.has(value)) throw new Error('Payload must be acyclic JSON');
+      ancestors.add(value);
+      bytes += 2;
+      pending.push({ value, exit: true });
+      const keys = Object.keys(value);
+      // Sparse arrays are not converter output; count their serialized nulls
+      // too, before canonicalization can allocate a dense array.
+      if (Array.isArray(value)) bytes += Math.max(0, value.length - keys.length) * 5;
+      for (const key of keys) {
+        bytes += 1;
+        if (!Array.isArray(value)) bytes += Buffer.byteLength(JSON.stringify(key)) + 1;
+        pending.push({ value: (value as Record<string, unknown>)[key] });
+      }
+    } else {
+      if (typeof value === 'string' && Buffer.byteLength(value) > MAX_INCOMING_ENVELOPE_BYTES) {
+        throw new Error('Incoming envelope exceeds resource limit');
+      }
+      bytes += Buffer.byteLength(JSON.stringify(value) ?? 'null');
+    }
+    if (bytes > MAX_INCOMING_ENVELOPE_BYTES) throw new Error('Incoming envelope exceeds resource limit');
+  }
+}
 
 /** Pure, detached preparation. No converter, source reads, HTTP or DB singleton.
  * Retained low-level utility: this does not establish source provenance or
@@ -27,6 +70,7 @@ const preparations = new WeakMap<PreparedIncomingHandoff, EnqueueInput>();
  * exclusive producer rollout. Never attach it to a source beforeCommit hook.
  */
 export function prepareIncomingHandoff(input: IncomingPreparation): PreparedIncomingHandoff {
+  if (![1370, 1380].includes(input.companyCode)) throw new Error('SEZ_COMPANY_REQUIRED');
   if (input.authoritativeInputs !== 'COMPLETE_SOURCE_AND_MAPPING_SNAPSHOT') {
     throw new Error('Complete authoritative source and mapping snapshot required');
   }
@@ -38,25 +82,8 @@ export function prepareIncomingHandoff(input: IncomingPreparation): PreparedInco
     revision: input.revision, businessDate: input.businessDate,
   };
   canonicalIdentity(identity);
-  // Bounded work before canonicalization; reject non-JSON via freezePayload.
-  let nodes = 0;
-  let bytes = 0;
-  function bound(value: unknown, depth = 0): void {
-    if (++nodes > 100000 || depth > 100) throw new Error('Incoming payload exceeds preparation limit');
-    if (typeof value === 'string') bytes += Buffer.byteLength(value);
-    if (bytes > 1024 * 1024) throw new Error('Incoming payload exceeds preparation limit');
-    if (value && typeof value === 'object') {
-      for (const key of Object.keys(value)) {
-        bytes += Buffer.byteLength(key);
-        bound((value as Record<string, unknown>)[key], depth + 1);
-      }
-    }
-  }
-  bound(input.payload);
+  assertIncomingEnvelopeBudget(input.payload);
   const frozen = freezePayload(input.payload);
-  if (Buffer.byteLength(JSON.stringify(frozen.payload)) > 1024 * 1024) {
-    throw new Error('Incoming payload exceeds preparation limit');
-  }
   const payload = frozen.payload as unknown as INSWTransaksiPayload;
   const activity = payload.data?.[0];
   const document = activity?.dokumenKegiatan?.[0];
@@ -67,7 +94,7 @@ export function prepareIncomingHandoff(input: IncomingPreparation): PreparedInco
       !document.barangTransaksi?.length) throw new Error('Expected one complete Incoming transmission');
   const token = Object.freeze({}) as PreparedIncomingHandoff;
   preparations.set(token, {
-    identity, payload: frozen.payload, intent: 'SOURCE_COMMIT',
+    identity, json: JSON.stringify(frozen.payload), sha256: frozen.sha256, intent: 'SOURCE_COMMIT',
     requestedBy: input.requestedBy, wmsReference: input.wmsReference,
   });
   return token;
@@ -91,12 +118,27 @@ export async function handoffIncomingInTransaction(tx: Prisma.TransactionClient,
       intent: true, payload_sha256: true, wms_reference: true, source_log_id: true },
   });
   if (existing) {
-    if (existing.intent !== 'SOURCE_COMMIT' || existing.payload_sha256 !== freezePayload(input.payload).sha256 ||
+    if (existing.intent !== 'SOURCE_COMMIT' || existing.payload_sha256 !== input.sha256 ||
         existing.wms_reference !== input.wmsReference || existing.source_log_id !== null) {
       throw new Error('Incoming transmission identity conflicts with prior handoff');
     }
     return { id: existing.id, cycle: existing.cycle, status: existing.status,
       tail_key: existing.tail_key, max_auto_retry_snapshot: existing.max_auto_retry_snapshot, created: false };
   }
-  return enqueueInTransaction(tx, input);
+  // The opaque token owns the detached canonical payload/hash. Do not repeat
+  // full-envelope canonicalization under the DB lock (large valid sources can
+  // otherwise exhaust Prisma's short interactive transaction deadline).
+  // The identity lock + any-cycle lookup above establish cycle 1 exclusively.
+  const policy = await readPolicy(tx);
+  // Bind one JSON string rather than making Prisma traverse every item again
+  // while the identity lock is held. Defaults/triggers remain authoritative.
+  const [row] = await tx.$queryRaw<{ id: string; cycle: number; status: InswQueueStatus;
+    tail_key: bigint; max_auto_retry_snapshot: number }[]>`
+    INSERT INTO insw_queue_cycle (id, company_code, operation, identity_key, source_revision,
+      business_date, wms_reference, cycle, intent, requested_by, frozen_payload, payload_sha256, max_auto_retry_snapshot)
+    VALUES (${randomUUID()}::uuid, ${identity.companyCode}, ${identity.operation}::"InswQueueOperation", ${identity.key},
+      ${identity.revision}, ${identity.businessDate}, ${input.wmsReference}, 1, ${input.intent}, ${input.requestedBy},
+      ${input.json}::jsonb, ${input.sha256}, ${policy.max_auto_retry})
+    RETURNING id, cycle, status, tail_key, max_auto_retry_snapshot`;
+  return { ...row, created: true };
 }

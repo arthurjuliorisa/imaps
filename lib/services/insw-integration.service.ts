@@ -1,4 +1,5 @@
 import { format } from 'date-fns';
+import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/utils/logger';
 import {
@@ -59,9 +60,10 @@ export class INSWIntegrationService {
   constructor(
     apiKey: string,
     uniqueKey: string,
-    useTestMode: boolean = true
+    useTestMode: boolean = true,
+    private readonly incomingDatabase: PrismaClient = prisma
   ) {
-    this.repository = new INSWIntegrationRepository();
+    this.repository = new INSWIntegrationRepository(incomingDatabase);
     this.apiHeaders = {
       'x-insw-key': apiKey,
       'x-unique-key': uniqueKey,
@@ -310,7 +312,7 @@ export class INSWIntegrationService {
   }
 
   private async loadUomMappings(): Promise<Map<string, string>> {
-    const mappings = await prisma.insw_uom_mapping.findMany({ where: { is_active: true } });
+    const mappings = await this.incomingDatabase.insw_uom_mapping.findMany({ where: { is_active: true } });
     return new Map(mappings.map((m) => [m.wms_uom.toUpperCase(), m.insw_uom]));
   }
 
@@ -1255,9 +1257,10 @@ export class INSWIntegrationService {
    * Keeping the raw response/error lets the worker classify HTTP and ambiguity
    * without the legacy wrapper converting network errors into business JSON.
    */
-  requestFrozenTransaction(body: string, signal: AbortSignal): Promise<Response> {
+  requestFrozenTransaction(body: string, signal: AbortSignal,
+    transport?: (endpoint: string, init: RequestInit) => Promise<Response>): Promise<Response> {
     const { endpoint, init } = this.transactionRequest(body, signal);
-    return this.fetchINSW(endpoint, init);
+    return transport ? transport(endpoint, init) : this.fetchINSW(endpoint, init);
   }
 
   async getPemasukan(

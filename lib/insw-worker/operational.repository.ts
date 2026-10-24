@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
-import { boundedText } from '../insw-queue/contracts';
+import { boundedText, integer } from '../insw-queue/contracts';
 import { readPolicy } from '../insw-queue/policy.repository';
 import { reserveTail } from '../insw-queue/queue.repository';
 import { Outcome } from './transport';
@@ -75,22 +75,38 @@ export async function recoverOperationalOwnership(db: PrismaClient, input: {
   });
 }
 
-export async function admitNext(db: PrismaClient, token: string) {
+export async function admitNext(db: PrismaClient, token: string, minimumIntervalMs = 1) {
+  integer(minimumIntervalMs, 'minimum interval', 1);
   return db.$transaction(async tx => {
     const gate = await owned(tx, token);
     if (gate.busy_attempt_id) throw new Error('STREAM_BUSY');
     // Serialize policy changes with this short admission transaction.
     await tx.$queryRaw`SELECT id FROM insw_transmission_policy WHERE id = 1 FOR SHARE`;
     const policy = await readPolicy(tx);
+    const interval = Math.max(minimumIntervalMs, policy.min_processing_interval_ms);
     const [clock] = await tx.$queryRaw<{ wait_ms: number }[]>`SELECT
       CASE WHEN last_started_at IS NULL THEN 0 ELSE GREATEST(0, CEIL(EXTRACT(EPOCH FROM
-        (GREATEST(last_started_at, recovery_barrier_at) + GREATEST(prior_interval_ms, ${policy.min_processing_interval_ms}) * interval '1 millisecond'
+        (GREATEST(last_started_at, recovery_barrier_at) + GREATEST(prior_interval_ms, ${interval}) * interval '1 millisecond'
           - clock_timestamp())) * 1000))::float8 END AS wait_ms
       FROM insw_dispatch_gate WHERE id = 1`;
     if (clock.wait_ms > 0) return { waitMs: Math.min(clock.wait_ms, 1000), job: null };
-    const candidates = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM insw_queue_cycle
-      WHERE status = 'READY' AND next_eligible_at <= clock_timestamp()
-      ORDER BY tail_key, id FOR UPDATE SKIP LOCKED LIMIT 1`;
+    // Filter in the bounded selector, before any job/attempt/gate mutation.
+    // Invalid rows stay untouched and cannot hide valid work later in the tail.
+    // Source association is specific to this Incoming slice; other domain
+    // source adapters remain outside Phase 1.
+    const candidates = await tx.$queryRaw<{ id: string }[]>`SELECT q.id FROM insw_queue_cycle q
+      WHERE q.status = 'READY' AND q.next_eligible_at <= clock_timestamp()
+        AND q.company_code IN (1370, 1380)
+        AND (q.operation <> 'INCOMING' OR (
+          q.source_revision = 'ACCEPTED_WMS_ID' AND q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
+          AND q.identity_key = concat('["insw-v1",', q.company_code, ',"INCOMING","WMS_REFERENCE",',
+            to_json(q.wms_reference)::text, ',"ACCEPTED_WMS_ID",', to_json(q.business_date)::text, ']')
+          AND (SELECT count(*) = 1 AND bool_and(to_char(s.incoming_date, 'YYYY-MM-DD') = q.business_date)
+            FROM (SELECT g.incoming_date FROM incoming_goods g JOIN companies c ON c.code = g.company_code
+              WHERE g.company_code = q.company_code AND c.company_type = 'SEZ'
+                AND g.wms_id = q.wms_reference AND g.deleted_at IS NULL LIMIT 2) s)
+        ))
+      ORDER BY q.tail_key, q.id FOR UPDATE OF q SKIP LOCKED LIMIT 1`;
     if (!candidates.length) return { waitMs: 0, job: null };
     const job = await tx.insw_queue_cycle.update({ where: { id: candidates[0].id }, data: {
       status: 'CLAIMED', owner_token: token, lease_until: new Date('9999-01-01'), claimed_at: new Date(),
@@ -99,7 +115,7 @@ export async function admitNext(db: PrismaClient, token: string) {
     const attempt = await tx.insw_queue_attempt.create({ data: { queue_id: job.id, owner_token: token,
       retry_index: job.retry_index, delivery_state: 'POSSIBLY_STARTED' } });
     await tx.$executeRaw`UPDATE insw_dispatch_gate SET busy_attempt_id = ${attempt.id}::uuid,
-      last_started_at = clock_timestamp(), recovery_barrier_at = NULL, prior_interval_ms = ${policy.min_processing_interval_ms}
+      last_started_at = clock_timestamp(), recovery_barrier_at = NULL, prior_interval_ms = ${interval}
       WHERE id = 1 AND owner_token = ${token}::uuid`;
     return { waitMs: 0, job: { ...job, attemptId: attempt.id, admissionPolicyVersion: policy.version } };
   });
