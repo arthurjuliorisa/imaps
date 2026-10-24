@@ -7,7 +7,8 @@ import type { RequestPrimitive } from './transport';
  * factory); importing this module loads no app DB, credentials or HTTP client.
  * Applies to the transaction endpoint only, including reversal activities.
  * Saldo and final registration need separate dependency/finalization adapters.
- * Do not wire this into the isolated loop: its persistence is synthetic-only.
+ * The default isolated loop persistence is synthetic-only. A C2B real-schema
+ * test must explicitly inject its guarded Incoming finalizer before using this.
  */
 export function createTransactionRequest(
   service: Pick<INSWIntegrationService, 'requestFrozenTransaction'>,

@@ -15,7 +15,45 @@ export type Outcome = {
   endedAt: number;
   autoRetry: false;
   classification: Classification;
+  // Opt-in authorized domain evidence. Never emit this in diagnostics/events.
+  responseEvidence?: { state: 'COMPLETE' | 'UNAVAILABLE' | 'TOO_LARGE'; raw: string | null; bytes: number;
+    contentType?: string; statusText?: string };
 };
+export const MAX_RESPONSE_BYTES = 1024 * 1024;
+
+async function boundedBody(response: Response, signal: AbortSignal, evidence: NonNullable<Outcome['responseEvidence']>) {
+  if (!response.body) { evidence.state = 'COMPLETE'; evidence.raw = ''; return ''; }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let cancellation: Promise<void> | undefined;
+  const cancel = () => { cancellation ??= reader.cancel().catch(() => undefined); };
+  signal.addEventListener('abort', cancel, { once: true });
+  if (signal.aborted) cancel();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (signal.aborted) throw new Error('INTERRUPTED');
+      if (done) break;
+      evidence.bytes += value.byteLength;
+      if (evidence.bytes > MAX_RESPONSE_BYTES) {
+        evidence.state = 'TOO_LARGE';
+        cancel(); await cancellation;
+        throw new Error('RESPONSE_TOO_LARGE');
+      }
+      chunks.push(value);
+    }
+    // Decode once; legacy JSON fields retain the actual response, not a digest.
+    const raw = Buffer.concat(chunks).toString('utf8');
+    evidence.state = 'COMPLETE'; evidence.raw = raw;
+    return raw;
+  } finally {
+    signal.removeEventListener('abort', cancel);
+    // reader.read() can settle before an asynchronous underlying cancel hook.
+    // The worker's body promise must cover that hook too, retaining the stream.
+    await cancellation;
+    reader.releaseLock();
+  }
+}
 // Deliberately injected: no default fetch, URL, headers, credentials, proxy or sender.
 // A future reviewed adapter must preserve company mode/proxy/toggles and persist
 // POSSIBLY_STARTED under proven global ownership BEFORE invoking this primitive.
@@ -24,12 +62,14 @@ export type RequestPrimitive = (body: string, signal: AbortSignal) => Promise<Re
 export async function executeFrozenRequest(input: {
   payload: unknown; sha256: string; timeoutMs: number; request: RequestPrimitive;
   signal?: AbortSignal; now?: () => number;
+  captureResponse?: boolean; onBodyRead?: (body: Promise<string>) => void;
 }): Promise<Outcome> {
   integer(input.timeoutMs, 'request timeout', 1, 300000);
   const now = input.now ?? Date.now;
   const base: Outcome = { phase: 'PREFLIGHT', errorClass: null, delivery: 'NOT_STARTED', httpCode: null,
     businessCode: null, retryAfter: null, requestInvokedAt: null, endedAt: now(), autoRetry: false,
     classification: { kind: 'UNKNOWN', reasonCode: 'NOT_STARTED', retryCandidate: false } };
+  if (input.captureResponse) base.responseEvidence = { state: 'UNAVAILABLE', raw: null, bytes: 0 };
   let body: string;
   try { body = verifiedPayload(input.payload, input.sha256); }
   catch { return { ...base, errorClass: 'INVALID_PAYLOAD', classification: classifyLocalFailure('DATA'), endedAt: now() }; }
@@ -54,11 +94,17 @@ export async function executeFrozenRequest(input: {
     base.requestInvokedAt = now();
     const response = await Promise.race([input.request(body, controller.signal), interrupted]);
     base.httpCode = response.status;
+    if (base.responseEvidence) {
+      base.responseEvidence.contentType = (response.headers.get('content-type') ?? '').slice(0, 200);
+      base.responseEvidence.statusText = response.statusText.slice(0, 200);
+    }
     const retryAfter = response.headers.get('retry-after');
     // No arbitrary headers, response bodies, exception messages or secrets returned.
     base.retryAfter = retryAfter && /^[\x20-\x7e]{1,100}$/.test(retryAfter) ? retryAfter : null;
     base.phase = 'BODY';
-    const raw = await Promise.race([response.text(), interrupted]);
+    const reading = input.captureResponse ? boundedBody(response, controller.signal, base.responseEvidence!) : response.text();
+    input.onBodyRead?.(reading);
+    const raw = await Promise.race([reading, interrupted]);
     base.phase = 'RESPONSE';
     let parsed: unknown;
     try { parsed = JSON.parse(raw); }
@@ -75,6 +121,8 @@ export async function executeFrozenRequest(input: {
     if (!record.status) return { ...base, errorClass: 'BUSINESS_REJECTION', endedAt: now() };
     return { ...base, delivery: 'KNOWN_SUCCESS', endedAt: now() };
   } catch (error) {
+    if (base.responseEvidence?.state === 'TOO_LARGE') return { ...base, errorClass: 'INVALID_RESPONSE',
+      classification: { kind: 'UNKNOWN', reasonCode: 'RESPONSE_TOO_LARGE', retryCandidate: false }, endedAt: now() };
     const code = (error as { cause?: { code?: string } } | null)?.cause?.code;
     const errorClass = timedOut ? 'TIMEOUT' : input.signal?.aborted ? 'CANCELLED'
       : base.phase === 'REQUEST' && ['ENOTFOUND', 'EAI_AGAIN'].includes(code ?? '') ? 'DNS'

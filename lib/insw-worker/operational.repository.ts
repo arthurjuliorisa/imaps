@@ -8,7 +8,7 @@ import { classifiedRetryDisposition } from './retry';
 import { ProcessIdentity, processIdentity, verifyReaped } from './process-identity';
 
 type Tx = Prisma.TransactionClient;
-async function owned(tx: Tx, token: string) {
+export async function owned(tx: Tx, token: string) {
   const rows = await tx.$queryRaw<{ last_started_at: Date | null; prior_interval_ms: number | null; busy_attempt_id: string | null }[]>`
     SELECT last_started_at, prior_interval_ms, busy_attempt_id FROM insw_dispatch_gate
     WHERE id = 1 AND owner_token = ${token}::uuid FOR UPDATE`;
@@ -52,8 +52,10 @@ export async function recoverOperationalOwnership(db: PrismaClient, input: {
       where: { id: gate.busy_attempt_id }, include: { queue: true },
     }) : null;
     if (gate.busy_attempt_id && (!attempt || attempt.owner_token !== input.expectedToken
-      || attempt.queue.owner_token !== input.expectedToken
-      || !['CLAIMED', 'REMOTE_SUCCEEDED'].includes(attempt.queue.status))) throw new Error('INCONSISTENT_BUSY_ATTEMPT');
+      || !(attempt.queue.owner_token === input.expectedToken && ['CLAIMED', 'REMOTE_SUCCEEDED'].includes(attempt.queue.status)
+        || attempt.queue.status === 'HELD' && attempt.queue.owner_token === null
+          && attempt.queue.delivery_state === 'KNOWN_SUCCESS' && attempt.queue.hold_reason === 'LOCAL_FINALIZATION_REQUIRED')))
+      throw new Error('INCONSISTENT_BUSY_ATTEMPT');
     const claim = attempt?.queue;
     if (claim) {
       await tx.insw_queue_cycle.update({ where: { id: claim.id }, data: { status: 'HELD', owner_token: null,

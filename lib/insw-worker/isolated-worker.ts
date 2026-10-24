@@ -23,7 +23,9 @@ function wait(ms: number, signal: AbortSignal) {
 // Injected primitive must represent one locally tracked invocation, spawning no
 // children/background HTTP. The CLI below supplies the only runnable adapter.
 export async function runIsolatedWorker(input: { db: PrismaClient; request: RequestPrimitive; signal: AbortSignal;
-  timeoutMs: number; onEvent?: (event: string, data?: unknown) => void; maxJobs?: number }) {
+  timeoutMs: number; onEvent?: (event: string, data?: unknown) => void; maxJobs?: number;
+  // Inactive injected domain extension. No CLI supplies this capability.
+  prepareFinalizer?: (token: string, job: AdmittedJob) => Promise<(outcome: Outcome, endedAt: number) => Promise<void>> }) {
   integer(input.timeoutMs, 'request timeout', 1, 300000);
   if (input.maxJobs !== undefined) integer(input.maxJobs, 'maximum jobs', 1);
   const token = await acquireOperationalOwnership(input.db);
@@ -39,6 +41,7 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
     }
     idleMs = 250;
     const job = admission.job;
+    const finalize = input.prepareFinalizer ? await input.prepareFinalizer(token, job) : undefined;
     input.onEvent?.('admitted', { id: job.id });
     let invocation: Promise<Response> | undefined;
     let body: Promise<string> | undefined;
@@ -46,14 +49,11 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
     let startFailed = false;
     const outcome = await executeFrozenRequest({ payload: job.frozen_payload, sha256: job.payload_sha256,
       timeoutMs: input.timeoutMs, signal: input.signal,
+      captureResponse: !!finalize, onBodyRead: reading => { body = reading; },
       request: (json, signal) => {
         // executeFrozenRequest can return at its deadline; these separately tracked
         // promises must settle before ANY result releases the stream.
-        invocation = Promise.resolve().then(() => input.request(json, signal)).then(response => {
-          const text = response.text.bind(response);
-          response.text = () => { body = text(); return body; };
-          return response;
-        });
+        invocation = Promise.resolve().then(() => input.request(json, signal));
         started = recordActualStart(input.db, token, job).catch(() => { startFailed = true; });
         return invocation;
       },
@@ -68,7 +68,7 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
     }
     await started;
     if (startFailed) throw new Error('START_EVIDENCE_FAILED_STREAM_RETAINED');
-    await persistWithRepair(input.db, token, job, outcome, input.signal);
+    await persistWithRepair(input.db, token, job, outcome, input.signal, finalize);
     count++;
     input.onEvent?.('recorded', { id: job.id, classification: outcome.classification.kind });
   }
@@ -78,10 +78,15 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
 }
 
 // Bounded repair of one result, separate from queue selection. Never invokes HTTP.
-async function persistWithRepair(db: PrismaClient, token: string, job: AdmittedJob, outcome: Outcome, signal: AbortSignal) {
+async function persistWithRepair(db: PrismaClient, token: string, job: AdmittedJob, outcome: Outcome, signal: AbortSignal,
+  finalize?: (outcome: Outcome, endedAt: number) => Promise<void>) {
   const locallyEndedAt = Date.now();
   for (let repair = 0; ; repair++) {
-    try { await persistOutcome(db, token, job, outcome, locallyEndedAt); return; }
+    try {
+      if (finalize) await finalize(outcome, locallyEndedAt);
+      else await persistOutcome(db, token, job, outcome, locallyEndedAt);
+      return;
+    }
     catch (error) {
       if (repair === 4) throw error;
       await wait(250 * (repair + 1), signal);

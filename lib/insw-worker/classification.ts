@@ -28,6 +28,9 @@ export function classifyResponse(httpStatus: number, body: unknown, frozenPayloa
   if (httpStatus >= 200 && httpStatus < 300 && response?.status === true) return result('KNOWN_REMOTE_SUCCESS', 'REMOTE_SUCCESS');
   // Contradictory responses never authorize retry or claim success.
   if (response?.status === true) return result('UNKNOWN', 'CONTRADICTORY_RESPONSE');
+  // Numeric/coerced duplicate codes are ambiguous, never validated duplicates
+  // or ordinary permanent validation failures.
+  if (httpStatus === 400 && (response?.code === 2 || response?.code === '2')) return result('UNKNOWN', 'UNRECOGNIZED_CODE_02');
   if (httpStatus === 400 && response?.code === '02' && response.status === false) {
     const expected = singleFrozenDocument(frozenPayload);
     const message = response.message;
