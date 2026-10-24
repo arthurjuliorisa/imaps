@@ -21,8 +21,11 @@ async function policy(interval = 1, retries = 0) {
   await updatePolicy(db, p.version, { min_processing_interval_ms: interval, max_auto_retry: retries }, 'isolated-test', 'Synthetic acceptance');
 }
 async function enqueue(document: string) {
+  await db.outgoing_goods.create({ data: { company_code: 1370, owner: 1370, wms_id: document,
+    outgoing_date: new Date('2026-10-22'), ppkek_number: 'N', is_non_facility: true, outgoing_evidence_number: 'N',
+    invoice_number: 'INV', invoice_date: new Date('2026-10-22'), recipient_name: 'Synthetic', timestamp: new Date() } });
   return enqueueExisting(db, { identity: { kind: 'WMS_REFERENCE', companyCode: 1370, operation: 'OUTGOING',
-    reference: document, revision: '1', businessDate: '2026-10-22' }, intent: 'SOURCE_COMMIT', requestedBy: 'synthetic-test',
+    reference: document, revision: 'ACCEPTED_WMS_ID', businessDate: '2026-10-22' }, intent: 'SOURCE_COMMIT', requestedBy: 'synthetic-test',
     payload: { data: [{ dokumenKegiatan: [{ nomorDokKegiatan: document }] }] } });
 }
 function launch(timeout = 10000) {
@@ -69,6 +72,7 @@ test.beforeAll(async () => {
     + readFileSync('prisma/migrations/20261022000000_insw_queue_foundation/migration.sql', 'utf8')
     + readFileSync('prisma/migrations/20261022010000_insw_worker_recovery/migration.sql', 'utf8'));
   execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-f', `${dir}/bootstrap.sql`], { stdio: 'pipe' });
+  await db.companies.create({ data: { code: 1370, name: 'Fixture SEZ', company_type: 'SEZ' } });
   server = createServer((incoming, response) => {
     let body = '';
     incoming.on('data', chunk => { body += chunk; });
@@ -86,6 +90,7 @@ test.beforeEach(async () => {
   await db.$executeRaw`UPDATE insw_dispatch_gate SET busy_attempt_id = NULL, owner_token = NULL, lease_until = NULL,
     last_started_at = NULL, recovery_barrier_at = NULL, prior_interval_ms = NULL, process_identity = NULL WHERE id = 1`;
   await db.insw_tracking_log.deleteMany(); await db.insw_queue_attempt.deleteMany(); await db.insw_queue_cycle.deleteMany();
+  await db.outgoing_goods.deleteMany();
   await policy();
 });
 test.afterEach(async () => {

@@ -30,6 +30,8 @@ const preparations = new WeakMap<PreparedIncomingHandoff, Omit<EnqueueInput, 'pa
 // per possible item covers that document, mapped UOM (varchar(10)), keys and
 // numeric formatting. Thus every supported <=20 MiB source fits this ceiling,
 // including header amplification; it is deliberately distinct from responses.
+// Outgoing emits the same item/document shape and has the same required item
+// fields; optional allocations only enlarge its source. Reuse this ceiling.
 export const MAX_INCOMING_ENVELOPE_BYTES = 20 * 1024 * 1024
   + Math.floor(20 * 1024 * 1024 / 88) * 2048;
 
@@ -70,6 +72,15 @@ export function assertIncomingEnvelopeBudget(payload: unknown): void {
  * exclusive producer rollout. Never attach it to a source beforeCommit hook.
  */
 export function prepareIncomingHandoff(input: IncomingPreparation): PreparedIncomingHandoff {
+  return prepareGoodsHandoff(input, 'INCOMING');
+}
+
+/** Same detached queue primitive; no new Outgoing producer. */
+export function prepareOutgoingHandoff(input: IncomingPreparation): PreparedIncomingHandoff {
+  return prepareGoodsHandoff(input, 'OUTGOING');
+}
+
+function prepareGoodsHandoff(input: IncomingPreparation, operation: 'INCOMING' | 'OUTGOING'): PreparedIncomingHandoff {
   if (![1370, 1380].includes(input.companyCode)) throw new Error('SEZ_COMPANY_REQUIRED');
   if (input.authoritativeInputs !== 'COMPLETE_SOURCE_AND_MAPPING_SNAPSHOT') {
     throw new Error('Complete authoritative source and mapping snapshot required');
@@ -77,7 +88,7 @@ export function prepareIncomingHandoff(input: IncomingPreparation): PreparedInco
   boundedText(input.wmsReference, 'WMS reference', 100);
   boundedText(input.requestedBy, 'request actor', 100);
   const identity = {
-    kind: 'WMS_REFERENCE' as const, operation: 'INCOMING' as const,
+    kind: 'WMS_REFERENCE' as const, operation,
     companyCode: input.companyCode, reference: input.wmsReference,
     revision: input.revision, businessDate: input.businessDate,
   };
@@ -89,9 +100,9 @@ export function prepareIncomingHandoff(input: IncomingPreparation): PreparedInco
   const document = activity?.dokumenKegiatan?.[0];
   // One source transmission per intent. Domain conversion/validation stays with
   // the future authoritative capture; these are boundary consistency checks only.
-  if (payload.data?.length !== 1 || activity?.kdKegiatan !== '30' ||
+  if (payload.data?.length !== 1 || activity?.kdKegiatan !== (operation === 'INCOMING' ? '30' : '31') ||
       activity.dokumenKegiatan.length !== 1 || document?.nomorDokKegiatan !== input.wmsReference ||
-      !document.barangTransaksi?.length) throw new Error('Expected one complete Incoming transmission');
+      !document.barangTransaksi?.length) throw new Error(`Expected one complete ${operation === 'INCOMING' ? 'Incoming' : 'Outgoing'} transmission`);
   const token = Object.freeze({}) as PreparedIncomingHandoff;
   preparations.set(token, {
     identity, json: JSON.stringify(frozen.payload), sha256: frozen.sha256, intent: 'SOURCE_COMMIT',

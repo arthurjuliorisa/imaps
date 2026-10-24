@@ -182,7 +182,7 @@ export class INSWIntegrationRepository {
       ORDER BY doc_date, id
     `;
 
-    const result = await prisma.$queryRawUnsafe<LaporanPengeluaranView[]>(
+    const result = await this.incomingDatabase.$queryRawUnsafe<LaporanPengeluaranView[]>(
       query,
       companyCode,
       ids

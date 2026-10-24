@@ -92,8 +92,7 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
     if (clock.wait_ms > 0) return { waitMs: Math.min(clock.wait_ms, 1000), job: null };
     // Filter in the bounded selector, before any job/attempt/gate mutation.
     // Invalid rows stay untouched and cannot hide valid work later in the tail.
-    // Source association is specific to this Incoming slice; other domain
-    // source adapters remain outside Phase 1.
+    // Both isolated goods domains verify committed source association in SQL.
     const candidates = await tx.$queryRaw<{ id: string }[]>`SELECT q.id FROM insw_queue_cycle q
       WHERE q.status = 'READY' AND q.next_eligible_at <= clock_timestamp()
         AND q.company_code IN (1370, 1380)
@@ -103,6 +102,15 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
             to_json(q.wms_reference)::text, ',"ACCEPTED_WMS_ID",', to_json(q.business_date)::text, ']')
           AND (SELECT count(*) = 1 AND bool_and(to_char(s.incoming_date, 'YYYY-MM-DD') = q.business_date)
             FROM (SELECT g.incoming_date FROM incoming_goods g JOIN companies c ON c.code = g.company_code
+              WHERE g.company_code = q.company_code AND c.company_type = 'SEZ'
+                AND g.wms_id = q.wms_reference AND g.deleted_at IS NULL LIMIT 2) s)
+        ))
+        AND (q.operation <> 'OUTGOING' OR (
+          q.source_revision = 'ACCEPTED_WMS_ID' AND q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
+          AND q.identity_key = concat('["insw-v1",', q.company_code, ',"OUTGOING","WMS_REFERENCE",',
+            to_json(q.wms_reference)::text, ',"ACCEPTED_WMS_ID",', to_json(q.business_date)::text, ']')
+          AND (SELECT count(*) = 1 AND bool_and(to_char(s.outgoing_date, 'YYYY-MM-DD') = q.business_date)
+            FROM (SELECT g.outgoing_date FROM outgoing_goods g JOIN companies c ON c.code = g.company_code
               WHERE g.company_code = q.company_code AND c.company_type = 'SEZ'
                 AND g.wms_id = q.wms_reference AND g.deleted_at IS NULL LIMIT 2) s)
         ))

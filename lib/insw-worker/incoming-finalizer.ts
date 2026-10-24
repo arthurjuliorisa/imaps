@@ -15,6 +15,18 @@ import { MAX_RESPONSE_BYTES, type Outcome } from './transport';
  */
 export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
   config: { endpointUrl: string }) {
+  return prepareIsolatedGoodsFinalizer(db, token, admitted, config, 'INCOMING');
+}
+
+export async function prepareIsolatedOutgoingFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
+  config: { endpointUrl: string }) {
+  return prepareIsolatedGoodsFinalizer(db, token, admitted, config, 'OUTGOING');
+}
+
+async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
+  config: { endpointUrl: string }, operation: 'INCOMING' | 'OUTGOING') {
+  const activityCode = operation === 'INCOMING' ? '30' : '31';
+  const transactionType = operation === 'INCOMING' ? 'incoming' : 'outgoing';
   const endpoint = new URL(config.endpointUrl);
   if (endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1' || !endpoint.port) throw new Error('LOOPBACK_HTTP_REQUIRED');
   if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash
@@ -33,19 +45,25 @@ export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: 
   const payload = JSON.parse(body);
   const reference = admitted.wms_reference;
   if (![1370, 1380].includes(admitted.company_code)) throw new Error('SEZ_COMPANY_REQUIRED');
-  if (admitted.operation !== 'INCOMING' || !reference || singleFrozenDocument(payload) !== reference
-    || payload.data[0].kdKegiatan !== '30' || !payload.data[0].dokumenKegiatan[0].barangTransaksi?.length
+  if (admitted.operation !== operation || !reference || singleFrozenDocument(payload) !== reference
+    || payload.data[0].kdKegiatan !== activityCode || !payload.data[0].dokumenKegiatan[0].barangTransaksi?.length
     || admitted.source_revision !== 'ACCEPTED_WMS_ID' || admitted.intent !== 'SOURCE_COMMIT'
     || admitted.source_log_id !== null || admitted.identity_key !== canonicalIdentity({ kind: 'WMS_REFERENCE',
-      operation: 'INCOMING', companyCode: admitted.company_code, reference, revision: 'ACCEPTED_WMS_ID',
-      businessDate: admitted.business_date }).key) throw new Error('UNSUPPORTED_INCOMING_IDENTITY_OR_BATCH');
-  const sources = await db.$queryRaw<{ id: number; incoming_date: Date }[]>`
-    SELECT g.id, g.incoming_date FROM incoming_goods g
-    JOIN companies c ON c.code = g.company_code AND c.company_type = 'SEZ'
-    WHERE g.company_code = ${admitted.company_code} AND g.wms_id = ${reference}
-      AND g.deleted_at IS NULL LIMIT 2`;
-  if (sources.length !== 1 || sources[0].incoming_date.toISOString().slice(0, 10) !== admitted.business_date) {
-    throw new Error('INCOMING_SOURCE_IDENTITY_UNCONFIRMED');
+      operation, companyCode: admitted.company_code, reference, revision: 'ACCEPTED_WMS_ID',
+      businessDate: admitted.business_date }).key) throw new Error(`UNSUPPORTED_${operation}_IDENTITY_OR_BATCH`);
+  const sources = operation === 'INCOMING'
+    ? await db.$queryRaw<{ id: number; business_date: Date }[]>`
+      SELECT g.id, g.incoming_date AS business_date FROM incoming_goods g
+      JOIN companies c ON c.code = g.company_code AND c.company_type = 'SEZ'
+      WHERE g.company_code = ${admitted.company_code} AND g.wms_id = ${reference}
+        AND g.deleted_at IS NULL LIMIT 2`
+    : await db.$queryRaw<{ id: number; business_date: Date }[]>`
+      SELECT g.id, g.outgoing_date AS business_date FROM outgoing_goods g
+      JOIN companies c ON c.code = g.company_code AND c.company_type = 'SEZ'
+      WHERE g.company_code = ${admitted.company_code} AND g.wms_id = ${reference}
+        AND g.deleted_at IS NULL LIMIT 2`;
+  if (sources.length !== 1 || sources[0].business_date.toISOString().slice(0, 10) !== admitted.business_date) {
+    throw new Error(`${operation}_SOURCE_IDENTITY_UNCONFIRMED`);
   }
   const sourceId = sources[0].id;
   // Snapshot scalar identity; never consult mutable source views after send.
@@ -123,7 +141,7 @@ export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: 
       const logs = await tx.insw_tracking_log.findMany({ where: { queue_attempt_id: job.attemptId }, take: 2,
         select: { transaction_id: true, transaction_type: true, company_code: true, metadata: true } });
       if (attempt.completed_at) {
-        if (logs.length !== 1 || logs[0].transaction_type !== 'incoming' || logs[0].transaction_id !== sourceId
+        if (logs.length !== 1 || logs[0].transaction_type !== transactionType || logs[0].transaction_id !== sourceId
           || logs[0].company_code !== job.company_code
           || (logs[0].metadata as { outcome_sha256?: string } | null)?.outcome_sha256 !== fingerprint) {
           throw new Error('INCONSISTENT_COMPLETED_OUTCOME');
@@ -142,7 +160,7 @@ export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: 
         clientApprovedAmbiguousRetry: false, exclusiveStreamProven: true, priorInvocationEnded: true, outcomeDurablyRecorded: true });
       const retry = !success && disposition === 'RETRY_TO_TAIL';
       const failure = !success && disposition === 'STOP';
-      const metadata = { adapter: 'C2B_ISOLATED_INCOMING', outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
+      const metadata = { adapter: operation === 'INCOMING' ? 'C2B_ISOLATED_INCOMING' : 'PHASE2A_ISOLATED_OUTGOING', outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
           endpoint_url: endpointUrl, classification: outcome.classification.kind,
           reasonCode: outcome.classification.reasonCode, delivery: outcome.delivery, phase: outcome.phase,
           httpCode: outcome.httpCode, businessCode: outcome.businessCode, responseEvidence: evidence.state,
@@ -153,7 +171,7 @@ export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: 
       await tx.$executeRaw`INSERT INTO insw_tracking_log
         (queue_attempt_id, transaction_type, transaction_id, company_code, wms_id, insw_activity_code,
           insw_status, retry_count, sent_at, insw_request_payload, insw_response, insw_error, metadata, updated_at)
-        VALUES (${job.attemptId}::uuid, 'incoming', ${sourceId}, ${job.company_code}, ${reference}, '30',
+        VALUES (${job.attemptId}::uuid, ${transactionType}, ${sourceId}, ${job.company_code}, ${reference}, ${activityCode},
           ${success ? 'SUCCESS' : 'FAILED'}, ${job.retry_index},
           ${outcome.requestInvokedAt === null ? null : new Date(outcome.requestInvokedAt)}::timestamptz,
           ${body}::jsonb, ${response === null ? null : JSON.stringify(response)}::jsonb,
