@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { PrismaClient } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { OutgoingGoodsService, authorizedOutgoingCompletion } from '../lib/services/outgoing-goods.service';
+import { OutgoingGoodsService } from '../lib/services/outgoing-goods.service';
 import { captureCompletedWmsSource, type CompletedSourceCapture } from '../lib/insw-worker/completed-source-capture';
 import type { INSWIntegrationRepository } from '../lib/repositories/insw-integration.repository';
 import { INSWIntegrationService } from '../lib/services/insw-integration.service';
@@ -83,7 +83,7 @@ function handoff(row: Parameters<typeof scope>[0], completion = Promise.resolve(
 function generic(row: Parameters<typeof scope>[0] & { id: number }): CompletedSourceCapture {
   return { operation: 'OUTGOING', companyCode: row.company_code, sourceId: row.id,
     businessDate: scope(row).businessDate, requestedBy: 'arbitrary-caller', revision: 'ACCEPTED_WMS_ID',
-    completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' };
+    completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' } as unknown as CompletedSourceCapture;
 }
 async function counts() {
   return Promise.all([db.insw_queue_cycle.count(), db.insw_queue_attempt.count(), db.insw_tracking_log.count(), db.insw_worker_recovery.count()]);
@@ -127,10 +127,10 @@ for (const company of [1370, 1380]) for (const nf of [false, true]) {
         status: 'SUCCEEDED', delivery_state: 'KNOWN_SUCCESS', completed_at: new Date() } });
       expect(await handoff(row)).toEqual({ outcome: 'ALREADY_CAPTURED', id: frozen.id, created: false });
       expect(args).toHaveLength(2); // terminal capture never reconverts
-      // Prior trusted capture never turns the source into a generic allowlist.
-      await expect(captureCompletedWmsSource(db, generic(row), {})).rejects.toThrow('OUTGOING_WMS_ORIGIN_ADAPTER_REQUIRED');
+      // Prior capture does not enable arbitrary-ID enrollment.
+      await expect(captureCompletedWmsSource(db, generic(row))).rejects.toThrow('OUTGOING_REFERENCE_SCOPE_REQUIRED');
       expect(await counts()).toEqual([1, 0, 0, 0]); expect(httpCalls).toBe(0);
-      console.log('B2 concurrent capture SQL count including transaction commands', capturedQueries);
+      console.log('S1 concurrent capture SQL count including transaction commands', capturedQueries);
     } finally { INSWIntegrationService.prototype.convertPengeluaranToINSWByIds = original; }
   });
 }
@@ -152,22 +152,38 @@ test('rejected business promise never reads or captures even when the header exi
   await expect(handoff(row, Promise.reject(new Error('BUSINESS_FAILURE')))).rejects.toThrow('BUSINESS_FAILURE');
   expect(queries).toEqual([]); expect(await counts()).toEqual([0, 0, 0, 0]);
 });
-test('generic/manual Capital-like and paired Scrap IDs plus forged context cannot enroll', async () => {
+test('arbitrary Outgoing IDs fail closed; fixture labels do not establish origin; paired Scrap is excluded', async () => {
   const row = await fixture(1370, false, 'CAPITAL-LIKE');
   await db.outgoing_good_items.updateMany({ data: { item_type: 'HIBE-M' } });
   const scrap = await db.scrap_transactions.create({ data: { company_code: 1370, transaction_date: row.outgoing_date,
     transaction_type: 'OUT', document_number: 'SCRAP' } });
   const paired = await fixture(1370, false, 'PAIRED-SCRAP');
   await db.outgoing_goods.update({ where: { id: paired.id }, data: { scrap_transaction_id: scrap.id } });
-  for (const r of [row, paired]) for (const token of [undefined, {}, { ...generic(r), isWms: true }, Promise.resolve()]) {
+  for (const r of [row, paired]) {
     queries = [];
-    expect(authorizedOutgoingCompletion(db, token)).toBeUndefined();
-    await expect(captureCompletedWmsSource(db, generic(r), token)).rejects.toThrow('OUTGOING_WMS_ORIGIN_ADAPTER_REQUIRED');
+    await expect(captureCompletedWmsSource(db, generic(r))).rejects.toThrow('OUTGOING_REFERENCE_SCOPE_REQUIRED');
     expect(queries).toEqual([]);
   }
-  // Even a trusted caller cannot authorize a paired Scrap source.
   await expect(handoff(paired)).rejects.toThrow('SCRAP_SOURCE_EXCLUDED');
   expect(await counts()).toEqual([0, 0, 0, 0]); expect(httpCalls).toBe(0);
+  // Neither the reference label nor item type proves manual/WMS origin. This
+  // test-only private seam simulates a trusted WMS caller even for this label.
+  // Actual manual routes have no runtime call site (independent source fence).
+  expect((await handoff(row)).created).toBe(true);
+});
+test('missing completion context and malformed reference/date fail with no lifecycle writes', async () => {
+  const row = await fixture(1370);
+  queries = [];
+  await expect(seam.captureCompletedOutgoing(db, undefined as unknown as Promise<void>, scope(row)))
+    .rejects.toThrow('BUSINESS_COMPLETION_CONTEXT_REQUIRED');
+  expect(queries).toEqual([]);
+  for (const bad of [{ completion: undefined }, { wmsReference: '' }, { wmsReference: null },
+    { businessDate: 'invalid' }, { businessDate: '2026-02-30' }, { revision: 'FORGED' }]) {
+    await expect(captureCompletedWmsSource(db, { ...scope(row), operation: 'OUTGOING',
+      revision: 'ACCEPTED_WMS_ID', completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED', ...bad } as unknown as CompletedSourceCapture)).rejects.toThrow();
+    expect(await counts()).toEqual([0, 0, 0, 0]);
+  }
+  expect(httpCalls).toBe(0);
 });
 test('distinct original IDs sharing evidence/date stay separate', async () => {
   const a = await fixture(1370, false, 'DISTINCT-A');
@@ -213,7 +229,7 @@ test('missing UOM fails before queue writes', async () => {
   await expect(handoff(row)).rejects.toThrow('UOM mapping');
   expect(await counts()).toEqual([0, 0, 0, 0]); expect(httpCalls).toBe(0);
 });
-for (const corruption of ['activity', 'document', 'company-race', 'reference-race', 'deleted-race', 'scrap-race', 'source-id'] as const) {
+for (const corruption of ['activity', 'document', 'company-race', 'reference-race', 'deleted-race', 'scrap-race', 'date-race', 'association-race', 'source-id'] as const) {
   test(`${corruption}: malformed projection or changed original association rejects without writes`, async () => {
     const row = await fixture(1370);
     const other = await fixture(1370, false, 'OTHER-SOURCE');
@@ -223,6 +239,11 @@ for (const corruption of ['activity', 'document', 'company-race', 'reference-rac
       if (corruption === 'activity') payload.data[0].kdKegiatan = '30';
       if (corruption === 'document') payload.data[0].dokumenKegiatan[0].nomorDokKegiatan = 'WRONG';
       if (corruption === 'company-race') await db.companies.update({ where: { code: 1370 }, data: { company_type: 'BZ' } });
+      if (corruption === 'date-race') await db.outgoing_goods.update({ where: { id: row.id }, data: { outgoing_date: new Date('2026-10-22') } });
+      if (corruption === 'association-race') {
+        await db.outgoing_good_items.deleteMany({ where: { outgoing_good_id: other.id } });
+        await db.outgoing_goods.update({ where: { id: other.id }, data: { wms_id: row.wms_id, outgoing_date: new Date('2026-10-23') } });
+      }
       if (corruption === 'reference-race') await db.outgoing_goods.update({ where: { id: row.id }, data: { wms_id: 'CHANGED' } });
       if (corruption === 'scrap-race') {
         const scrap = await db.scrap_transactions.create({ data: { company_code: 1370, transaction_date: row.outgoing_date,

@@ -111,7 +111,7 @@ function input(operation: CompletedSourceCapture['operation'], id: number | bigi
   return { operation, sourceId: id, companyCode: company, businessDate: '2026-10-24',
     revision: operation === 'ADJUSTMENT' ? 'COMMITTED_SOURCE' : operation === 'STOCK_OPNAME'
       ? 'CONFIRMED:2026-10-24T12:34:56.789Z' : 'ACCEPTED_WMS_ID',
-    requestedBy: 'completed-wms-source', completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' };
+    requestedBy: 'completed-wms-source', completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' } as CompletedSourceCapture;
 }
 async function counts() {
   return Promise.all([db.insw_queue_cycle.count(), db.insw_queue_attempt.count(), db.insw_tracking_log.count(), db.insw_worker_recovery.count()]);
@@ -180,13 +180,28 @@ for (const operation of ['INCOMING', 'MATERIAL_USAGE', 'PRODUCTION_OUTPUT'] as c
   expect(await counts()).toEqual([0, 0, 0, 0]); expect(httpCalls).toBe(0);
 });
 
-test('all Outgoing including Capital, paired Scrap and unproven WMS IDs fail closed before DB access', async () => {
+test('arbitrary Outgoing IDs without trusted reference scope fail closed before DB access', async () => {
   for (const id of [1, 2, 3]) {
     queries = [];
-    await expect(captureCompletedWmsSource(db, input('OUTGOING', id))).rejects.toThrow('OUTGOING_WMS_ORIGIN_ADAPTER_REQUIRED');
+    await expect(captureCompletedWmsSource(db, input('OUTGOING', id))).rejects.toThrow('OUTGOING_REFERENCE_SCOPE_REQUIRED');
     expect(queries).toEqual([]);
   }
   expect(await counts()).toEqual([0, 0, 0, 0]); expect(httpCalls).toBe(0);
+});
+
+test('STO exact Int maximum captures unchanged; larger exact IDs reject without writes', async () => {
+  const max = BigInt(2147483647);
+  const row = await countFixture('STOCK_OPNAME', 1380, 'MAX-INT', max);
+  for (const id of [max + BigInt(1), String(max + BigInt(1)), BigInt('9007199254740993')]) {
+    queries = [];
+    await expect(captureCompletedWmsSource(db, input('STOCK_OPNAME', id, 1380)))
+      .rejects.toThrow('SOURCE_ID_EXCEEDS_LEGACY_TRACKING_INT');
+    expect(queries).toEqual([]); expect(await counts()).toEqual([0, 0, 0, 0]);
+  }
+  const result = await captureCompletedWmsSource(db, input('STOCK_OPNAME', max, 1380));
+  expect((await db.insw_queue_cycle.findUniqueOrThrow({ where: { id: result.id } })).frozen_payload)
+    .toEqual(await convert('STOCK_OPNAME', 1380, row.id));
+  expect(await counts()).toEqual([1, 0, 0, 0]); expect(httpCalls).toBe(0);
 });
 
 test('Confirmed eligibility and persisted revision are mandatory', async () => {

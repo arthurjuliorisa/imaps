@@ -32,12 +32,15 @@ test('only dormant Outgoing completion imports capture; live methods and coordin
     if (/\.(tsx?|js|json)$/.test(file)) {
       let source = readFileSync(file, 'utf8');
       if (file === 'lib/services/outgoing-goods.service.ts') {
-        // B2 permits exactly one dormant import inside the private completion
+        // S1 permits exactly one dormant import inside the private completion
         // adapter. Every existing live method remains byte-identical to HEAD.
         const baseline = execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8' });
         expect(source.slice(source.indexOf('  async processOutgoingGoods('))).toBe(
           baseline.slice(baseline.indexOf('  async processOutgoingGoods(')));
         expect(source.match(/captureCompletedOutgoing\(/g)).toHaveLength(1);
+        expect(source).not.toMatch(/WeakMap|outgoingCompletions|authorizedOutgoingCompletion/);
+        const capture = readFileSync('lib/insw-worker/completed-source-capture.ts', 'utf8');
+        expect(capture).not.toMatch(/outgoing-goods.service|outgoingToken|OUTGOING_WMS_ORIGIN_ADAPTER_REQUIRED/);
         source = source.replace("const { captureCompletedWmsSource } = await import('../insw-worker/completed-source-capture');", '');
       }
       expect(source, file).not.toMatch(/insw-worker|executeFrozenRequest/);
@@ -46,7 +49,11 @@ test('only dormant Outgoing completion imports capture; live methods and coordin
   // C2 shares the client's transaction request builder; its executable parity
   // coverage is in insw-c2-transport.spec.ts. All routing/authorization remains
   // byte-identical, and the import guard above still excludes live worker use.
-  for (const file of ['lib/services/insw-transmission.service.ts', 'lib/services/insw-service.factory.ts', 'lib/config/insw-company-config.ts', 'ecosystem.config.js']) {
+  for (const file of ['lib/services/insw-transmission.service.ts', 'lib/services/insw-service.factory.ts', 'lib/config/insw-company-config.ts', 'ecosystem.config.js',
+    'app/api/customs/capital-goods/outgoing/route.ts', 'app/api/customs/capital-goods-transactions/out/route.ts',
+    'app/api/customs/scrap-transactions/in/route.ts', 'app/api/customs/scrap-transactions/out/route.ts',
+    'lib/services/insw-integration.service.ts', 'lib/repositories/insw-integration.repository.ts',
+    'lib/insw-queue/incoming-handoff.ts']) {
     expect(readFileSync(file, 'utf8')).toBe(execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8', maxBuffer: 2000000 }));
   }
 });
