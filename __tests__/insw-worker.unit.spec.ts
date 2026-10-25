@@ -24,12 +24,24 @@ test('entrypoint is default off and explicit opt-in cannot activate dispatch', (
   }
 });
 
-test('runtime has no new worker imports and coordinator/company/PM2 files remain identical to baseline', () => {
+test('only dormant Outgoing completion imports capture; live methods and coordinator/company/PM2 remain identical to baseline', () => {
   function walk(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
   }
   for (const file of [...walk('app'), ...walk('lib').filter(p => !p.startsWith('lib/insw-worker/')), 'ecosystem.config.js', 'package.json']) {
-    if (/\.(tsx?|js|json)$/.test(file)) expect(readFileSync(file, 'utf8'), file).not.toMatch(/insw-worker|executeFrozenRequest/);
+    if (/\.(tsx?|js|json)$/.test(file)) {
+      let source = readFileSync(file, 'utf8');
+      if (file === 'lib/services/outgoing-goods.service.ts') {
+        // B2 permits exactly one dormant import inside the private completion
+        // adapter. Every existing live method remains byte-identical to HEAD.
+        const baseline = execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8' });
+        expect(source.slice(source.indexOf('  async processOutgoingGoods('))).toBe(
+          baseline.slice(baseline.indexOf('  async processOutgoingGoods(')));
+        expect(source.match(/captureCompletedOutgoing\(/g)).toHaveLength(1);
+        source = source.replace("const { captureCompletedWmsSource } = await import('../insw-worker/completed-source-capture');", '');
+      }
+      expect(source, file).not.toMatch(/insw-worker|executeFrozenRequest/);
+    }
   }
   // C2 shares the client's transaction request builder; its executable parity
   // coverage is in insw-c2-transport.spec.ts. All routing/authorization remains

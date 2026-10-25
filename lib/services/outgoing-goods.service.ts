@@ -1,4 +1,6 @@
 import { logger } from '@/lib/utils/logger';
+import type { PrismaClient } from '@prisma/client';
+import { boundedText } from '../insw-queue/contracts';
 import { prisma } from '@/lib/prisma';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import {
@@ -15,6 +17,23 @@ import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
 import { validateSezFreeMovementCustomsDocumentType } from '@/lib/validators/free-movement-customs-document';
 import { validateNonFacilityMarker } from '@/lib/validators/non-facility-marker.validator';
+
+// Tokens can only be minted inside the dormant private WMS completion seam.
+// This is caller encapsulation, not persisted provenance or a security sandbox
+// against trusted server code deliberately bypassing TypeScript private access.
+type OutgoingCompletion = Readonly<{
+  operation: 'OUTGOING'; companyCode: number; sourceId: number;
+  businessDate: string; revision: 'ACCEPTED_WMS_ID'; requestedBy: string;
+  completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED'; wmsReference: string;
+}>;
+const outgoingCompletions = new WeakMap<object, { db: PrismaClient; source: OutgoingCompletion }>();
+
+/** Validation only: no exported token constructor or arbitrary-ID enrollment. */
+export function authorizedOutgoingCompletion(db: PrismaClient, token: unknown): OutgoingCompletion | undefined {
+  if (!token || typeof token !== 'object') return undefined;
+  const entry = outgoingCompletions.get(token);
+  return entry?.db === db ? entry.source : undefined;
+}
 
 export interface SuccessResponse {
   status: 'success';
@@ -65,6 +84,48 @@ interface RevisionInfo {
 }
 
 export class OutgoingGoodsService {
+  /** Dormant: future wiring belongs at the existing insertOutgoingGoodsAsync
+   * promise, never at HTTP acceptance/core commit. No live caller invokes this.
+   * The private caller owns the genuine business promise and accepted scope.
+   * Its void result requires a bounded exact reference/date lookup after resolve.
+   */
+  private async captureCompletedOutgoing(
+    db: PrismaClient,
+    businessCompletion: Promise<void>,
+    scope: Readonly<{ companyCode: number; wmsReference: string; businessDate: string; requestedBy: string }>,
+  ) {
+    const expected = { ...scope }; // detach before awaiting the business promise
+    await businessCompletion;
+    try {
+      if (![1370, 1380].includes(expected.companyCode)) throw new Error('SEZ_COMPANY_REQUIRED');
+      boundedText(expected.wmsReference, 'WMS reference', 100);
+      boundedText(expected.requestedBy, 'request actor', 100);
+      const matches = await db.outgoing_goods.findMany({ where: {
+        company_code: expected.companyCode, wms_id: expected.wmsReference, deleted_at: null,
+        company: { company_type: 'SEZ' },
+      }, take: 2, select: { id: true, outgoing_date: true, scrap_transaction_id: true } });
+      if (matches.length !== 1) throw new Error('AMBIGUOUS_OR_MISSING_COMPLETED_OUTGOING');
+      const row = matches[0];
+      if (row.scrap_transaction_id !== null) throw new Error('SCRAP_SOURCE_EXCLUDED');
+      if (row.outgoing_date.toISOString().slice(0, 10) !== expected.businessDate) throw new Error('SOURCE_DATE_OR_REVISION_MISMATCH');
+      const input: OutgoingCompletion = Object.freeze({ operation: 'OUTGOING', companyCode: expected.companyCode,
+        sourceId: row.id, businessDate: expected.businessDate, revision: 'ACCEPTED_WMS_ID',
+        requestedBy: expected.requestedBy, completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED',
+        wmsReference: expected.wmsReference });
+      const token = Object.freeze({});
+      outgoingCompletions.set(token, { db, source: input });
+      try {
+        const { captureCompletedWmsSource } = await import('../insw-worker/completed-source-capture');
+        return await captureCompletedWmsSource(db, input, token);
+      } finally { outgoingCompletions.delete(token); }
+    } catch (error) {
+      logger.error('Completed WMS Outgoing capture failed; no DIRECT fallback', {
+        error: error instanceof Error ? error.message : String(error), wmsId: expected.wmsReference,
+      });
+      throw error;
+    }
+  }
+
   /**
    * Process outgoing goods request
    */

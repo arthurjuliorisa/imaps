@@ -96,6 +96,9 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
     const candidates = await tx.$queryRaw<{ id: string }[]>`SELECT q.id FROM insw_queue_cycle q
       WHERE q.status = 'READY' AND q.next_eligible_at <= clock_timestamp()
         AND q.company_code IN (1370, 1380)
+        AND q.operation IN ('INCOMING', 'OUTGOING', 'MATERIAL_USAGE', 'PRODUCTION_OUTPUT', 'ADJUSTMENT', 'STOCK_OPNAME')
+        AND EXISTS (SELECT 1 FROM companies eligible_company
+          WHERE eligible_company.code = q.company_code AND eligible_company.company_type = 'SEZ')
         AND (q.operation <> 'INCOMING' OR (
           q.source_revision = 'ACCEPTED_WMS_ID' AND q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
           AND q.identity_key = concat('["insw-v1",', q.company_code, ',"INCOMING","WMS_REFERENCE",',

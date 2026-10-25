@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { boundedText, canonicalIdentity } from '../insw-queue/contracts';
 
 export type CountOperation = 'ADJUSTMENT' | 'STOCK_OPNAME';
@@ -13,7 +13,7 @@ export function countSourceId(id: number | bigint | string): number {
   return Number(id);
 }
 
-export async function readCountSource(db: PrismaClient, operation: CountOperation, company: number, id: number | bigint | string) {
+export async function readCountSource(db: PrismaClient | Prisma.TransactionClient, operation: CountOperation, company: number, id: number | bigint | string) {
   const sourceId = countSourceId(id);
   if (![1370, 1380].includes(company)) throw new Error('SEZ_COMPANY_REQUIRED');
   if (operation === 'ADJUSTMENT') {
