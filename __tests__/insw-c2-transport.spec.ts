@@ -61,6 +61,8 @@ for (const useTestMode of [true, false]) {
     }
     expect(calls[0].init.body).toBe(JSON.stringify(payload));
     expect(calls[0].init.signal).toBeUndefined();
+    expect(calls[0].init.redirect).toBeUndefined();
+    expect(calls[1].init.redirect).toBe('error');
     expect(calls[1].init.body).toBe(body);
     expect(calls[1].init.signal).toBe(controller.signal);
   });
@@ -177,4 +179,47 @@ test('frozen client seam sends one exact request to a loopback simulator', async
     server.closeAllConnections();
     if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   }
+});
+
+
+test('worker raw seam rejects loopback redirects without a second request', async () => {
+  let first = 0; let redirected = 0;
+  const server = createServer((req, res) => {
+    req.resume();
+    if (req.url === '/redirected') { redirected++; res.end('{"status":true}'); }
+    else { first++; res.writeHead(307, { location: '/redirected' }); res.end(); }
+  });
+  try {
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    const address = server.address() as { port: number };
+    globalThis.fetch = async (_target, init) => savedFetch(`http://127.0.0.1:${address.port}/first`, init);
+    const frozen = freezePayload(payload);
+    const service = new INSWIntegrationService('synthetic', 'synthetic');
+    const outcome = await executeFrozenRequest({ payload: frozen.payload, sha256: frozen.sha256,
+      timeoutMs: 1000, request: createTransactionRequest(service), captureResponse: true });
+    expect(first).toBe(1); expect(redirected).toBe(0);
+    expect(outcome.delivery).toBe('POSSIBLY_STARTED');
+    expect(outcome.classification.kind).toBe('UNKNOWN');
+  } finally {
+    server.closeAllConnections();
+    if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
+test('worker start hook runs after asynchronous proxy preparation at actual fetch invocation', async () => {
+  process.env.https_proxy = 'http://127.0.0.1:9';
+  const service = new INSWIntegrationService('synthetic', 'synthetic');
+  const internals = service as unknown as {
+    getProxyAgent: (url: string) => Promise<unknown>; undiciFetchPromise: Promise<typeof fetch>;
+  };
+  let ready!: () => void;
+  internals.getProxyAgent = () => new Promise(resolve => { ready = () => resolve({ synthetic: true }); });
+  internals.undiciFetchPromise = Promise.resolve(globalThis.fetch);
+  let marked = false;
+  const response = service.requestFrozenTransaction(JSON.stringify(payload), new AbortController().signal, undefined, () => {
+    expect(calls).toHaveLength(1); marked = true;
+  });
+  expect(marked).toBe(false); expect(calls).toHaveLength(0);
+  ready(); await response;
+  expect(marked).toBe(true); expect(calls).toHaveLength(1);
 });

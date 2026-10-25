@@ -52,7 +52,7 @@ async function recover(token: string) {
     evidence: 'Test supervisor disabled; child close/reap observed; adapter creates no children', shutdownAcknowledged: true });
 }
 async function finished(count: number) {
-  await expect.poll(() => db.insw_queue_attempt.count({ where: { completed_at: { not: null } } }), { timeout: 20000 }).toBe(count);
+  await expect.poll(() => db.insw_queue_attempt.count({ where: { completed_at: { not: null } } }), { timeout: 50000 }).toBe(count);
 }
 
 test.beforeAll(async () => {

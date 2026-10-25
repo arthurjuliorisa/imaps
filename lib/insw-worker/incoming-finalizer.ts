@@ -11,51 +11,61 @@ import { classifiedRetryDisposition } from './retry';
 import { verifiedPayload } from './safety';
 import { MAX_RESPONSE_BYTES, type Outcome } from './transport';
 
-/** Inactive real-schema Incoming pilot. No singleton, converter, coordinator,
- * sender, discovery or production caller. Bind source identity BEFORE HTTP.
- * The isolated loop alone establishes prior-invocation drain before finalizing.
+/** Disposable wrappers retain their strict lab guards. The shared finalizer
+ * below binds source identity BEFORE HTTP; the engine drains the invocation
+ * and body before local finalization. No converter or source write occurs here.
  */
 export async function prepareIsolatedIncomingFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
   config: { endpointUrl: string }) {
-  return prepareIsolatedGoodsFinalizer(db, token, admitted, config, 'INCOMING');
+  await assertDisposableFinalizer(db, config.endpointUrl);
+  return prepareWmsFinalizer(db, token, admitted, config, 'INCOMING');
 }
 
 export async function prepareIsolatedOutgoingFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
   config: { endpointUrl: string }) {
-  return prepareIsolatedGoodsFinalizer(db, token, admitted, config, 'OUTGOING');
+  await assertDisposableFinalizer(db, config.endpointUrl);
+  return prepareWmsFinalizer(db, token, admitted, config, 'OUTGOING');
 }
 
 export async function prepareIsolatedMaterialUsageFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
   config: { endpointUrl: string }) {
-  return prepareIsolatedGoodsFinalizer(db, token, admitted, config, 'MATERIAL_USAGE');
+  await assertDisposableFinalizer(db, config.endpointUrl);
+  return prepareWmsFinalizer(db, token, admitted, config, 'MATERIAL_USAGE');
 }
 
 export async function prepareIsolatedProductionOutputFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
   config: { endpointUrl: string }) {
-  return prepareIsolatedGoodsFinalizer(db, token, admitted, config, 'PRODUCTION_OUTPUT');
+  await assertDisposableFinalizer(db, config.endpointUrl);
+  return prepareWmsFinalizer(db, token, admitted, config, 'PRODUCTION_OUTPUT');
 }
 
 export async function prepareIsolatedCountFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
   config: { endpointUrl: string }) {
   if (admitted.operation !== 'ADJUSTMENT' && admitted.operation !== 'STOCK_OPNAME') throw new Error('INVALID_COUNT_OPERATION');
-  return prepareIsolatedGoodsFinalizer(db, token, admitted, config, admitted.operation);
+  await assertDisposableFinalizer(db, config.endpointUrl);
+  return prepareWmsFinalizer(db, token, admitted, config, admitted.operation);
 }
 
-async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
-  config: { endpointUrl: string }, operation: 'INCOMING' | 'OUTGOING' | 'MATERIAL_USAGE' | 'PRODUCTION_OUTPUT' | 'ADJUSTMENT' | 'STOCK_OPNAME') {
-  const transactionType = { INCOMING: 'incoming', OUTGOING: 'outgoing',
-    MATERIAL_USAGE: 'material_usage', PRODUCTION_OUTPUT: 'production_output', ADJUSTMENT: 'adjustment', STOCK_OPNAME: 'stock_opname' }[operation];
-  const endpoint = new URL(config.endpointUrl);
+async function assertDisposableFinalizer(db: PrismaClient, endpointUrl: string) {
+  const endpoint = new URL(endpointUrl);
   if (endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1' || !endpoint.port) throw new Error('LOOPBACK_HTTP_REQUIRED');
-  if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash
-    || !['http:', 'https:'].includes(endpoint.protocol)) throw new Error('INVALID_ENDPOINT_EVIDENCE');
-  const endpointUrl = endpoint.toString();
   if (process.env.NODE_ENV === 'production') throw new Error('ISOLATED_TEST_ONLY');
   const [runtime] = await db.$queryRaw<{ name: string; host: string | null }[]>`
     SELECT current_database() AS name, host(inet_server_addr()) AS host`;
   if (!/^[a-z0-9_]+_phase_c2b_test$/.test(runtime.name) || !['127.0.0.1', '::1'].includes(runtime.host ?? '')) {
     throw new Error('ISOLATED_TEST_ONLY');
   }
+}
+
+// Shared domain validation/finalization. Dispatch callers establish exclusive
+// ownership and drain the tracked request/body before invoking the closure.
+export async function prepareWmsFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
+  config: { endpointUrl: string }, operation: 'INCOMING' | 'OUTGOING' | 'MATERIAL_USAGE' | 'PRODUCTION_OUTPUT' | 'ADJUSTMENT' | 'STOCK_OPNAME') {
+  const transactionType = operation.toLowerCase();
+  const endpoint = new URL(config.endpointUrl);
+  if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash
+    || !['http:', 'https:'].includes(endpoint.protocol)) throw new Error('INVALID_ENDPOINT_EVIDENCE');
+  const endpointUrl = endpoint.toString();
   if (![1370, 1380].includes(admitted.company_code)) throw new Error('SEZ_COMPANY_REQUIRED');
   assertIncomingEnvelopeBudget(admitted.frozen_payload, operation === 'MATERIAL_USAGE' ? MAX_MATERIAL_USAGE_ENVELOPE_BYTES : MAX_INCOMING_ENVELOPE_BYTES);
   const body = verifiedPayload(admitted.frozen_payload, admitted.payload_sha256);
@@ -204,9 +214,7 @@ async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, ad
         clientApprovedAmbiguousRetry: false, exclusiveStreamProven: true, priorInvocationEnded: true, outcomeDurablyRecorded: true });
       const retry = !success && disposition === 'RETRY_TO_TAIL';
       const failure = !success && disposition === 'STOP';
-      const metadata = { adapter: { INCOMING: 'C2B_ISOLATED_INCOMING', OUTGOING: 'PHASE2A_ISOLATED_OUTGOING',
-          MATERIAL_USAGE: 'PHASE2B_ISOLATED_MATERIAL_USAGE', PRODUCTION_OUTPUT: 'PHASE2B_ISOLATED_PRODUCTION_OUTPUT',
-          ADJUSTMENT: 'PHASE2C_ISOLATED_ADJUSTMENT', STOCK_OPNAME: 'PHASE2C_ISOLATED_STOCK_OPNAME' }[operation], outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
+      const metadata = { adapter: 'WMS_QUEUE_FINALIZER', outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
           endpoint_url: endpointUrl, classification: outcome.classification.kind,
           reasonCode: outcome.classification.reasonCode, delivery: outcome.delivery, phase: outcome.phase,
           httpCode: outcome.httpCode, businessCode: outcome.businessCode, responseEvidence: evidence.state,

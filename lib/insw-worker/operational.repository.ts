@@ -75,7 +75,7 @@ export async function recoverOperationalOwnership(db: PrismaClient, input: {
   });
 }
 
-export async function admitNext(db: PrismaClient, token: string, minimumIntervalMs = 1) {
+export async function admitNext(db: PrismaClient, token: string, minimumIntervalMs = 3600) {
   integer(minimumIntervalMs, 'minimum interval', 1);
   return db.$transaction(async tx => {
     const gate = await owned(tx, token);
@@ -83,7 +83,7 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
     // Serialize policy changes with this short admission transaction.
     await tx.$queryRaw`SELECT id FROM insw_transmission_policy WHERE id = 1 FOR SHARE`;
     const policy = await readPolicy(tx);
-    const interval = Math.max(minimumIntervalMs, policy.min_processing_interval_ms);
+    const interval = Math.max(3600, minimumIntervalMs, policy.min_processing_interval_ms);
     const [clock] = await tx.$queryRaw<{ wait_ms: number }[]>`SELECT
       CASE WHEN last_started_at IS NULL THEN 0 ELSE GREATEST(0, CEIL(EXTRACT(EPOCH FROM
         (GREATEST(last_started_at, recovery_barrier_at) + GREATEST(prior_interval_ms, ${interval}) * interval '1 millisecond'
@@ -283,5 +283,19 @@ export async function finalizeSyntheticSuccess(db: PrismaClient, token: string, 
     const result = await tx.insw_queue_cycle.updateMany({ where: { id, status: 'HELD', delivery_state: 'KNOWN_SUCCESS',
       hold_reason: 'LOCAL_FINALIZATION_REQUIRED' }, data: { status: 'SUCCEEDED', hold_reason: null, completed_at: new Date() } });
     if (result.count !== 1) throw new Error('NOT_LOCAL_FINALIZATION_HOLD');
+  });
+}
+
+// Pre-HTTP rejection only: no delivery occurred, but never automatically retry
+// a malformed record. A database failure retains sticky ownership and exits.
+export async function holdPreflight(db: PrismaClient, token: string, job: AdmittedJob) {
+  await db.$transaction(async tx => {
+    const gate = await owned(tx, token);
+    if (gate.busy_attempt_id !== job.attemptId) throw new Error('ATTEMPT_MISMATCH');
+    const changed = await tx.insw_queue_cycle.updateMany({ where: { id: job.id, owner_token: token, status: 'CLAIMED' },
+      data: { status: 'HELD', delivery_state: 'NOT_STARTED', hold_reason: 'PRE_SEND_LEASE_EXPIRED', error_category: 'LOCAL_PREPARATION_FAILURE', error_code: 'PRE_SEND_VALIDATION_FAILED', owner_token: null, lease_until: null } });
+    if (changed.count !== 1) throw new Error('JOB_OWNER_LOST');
+    await tx.insw_queue_attempt.update({ where: { id: job.attemptId }, data: { delivery_state: 'NOT_STARTED', completed_at: new Date() } });
+    await tx.$executeRaw`UPDATE insw_dispatch_gate SET busy_attempt_id = NULL WHERE id = 1 AND owner_token = ${token}::uuid`;
   });
 }

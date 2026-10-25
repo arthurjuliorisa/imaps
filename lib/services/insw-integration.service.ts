@@ -178,7 +178,8 @@ export class INSWIntegrationService {
 
   private async fetchINSW(
     endpoint: string,
-    init: RequestInit
+    init: RequestInit,
+    onInvoked?: () => void
   ): Promise<Response> {
     const fetchInit: RequestInit & { dispatcher?: unknown } = { ...init };
     let fetchImpl = fetch;
@@ -196,7 +197,9 @@ export class INSWIntegrationService {
     }
 
     try {
-      const response = await fetchImpl(endpoint, fetchInit);
+      const invocation = fetchImpl(endpoint, fetchInit);
+      onInvoked?.();
+      const response = await invocation;
       if (!response.ok) {
         this.log.warn('INSW fetch returned non-success status', {
           httpStatus: response.status,
@@ -1258,9 +1261,12 @@ export class INSWIntegrationService {
    * without the legacy wrapper converting network errors into business JSON.
    */
   requestFrozenTransaction(body: string, signal: AbortSignal,
-    transport?: (endpoint: string, init: RequestInit) => Promise<Response>): Promise<Response> {
+    transport?: (endpoint: string, init: RequestInit) => Promise<Response>, onInvoked?: () => void): Promise<Response> {
     const { endpoint, init } = this.transactionRequest(body, signal);
-    return transport ? transport(endpoint, init) : this.fetchINSW(endpoint, init);
+    if (!transport) return this.fetchINSW(endpoint, { ...init, redirect: 'error' }, onInvoked);
+    const invocation = transport(endpoint, { ...init, redirect: 'error' });
+    onInvoked?.();
+    return invocation;
   }
 
   async getPemasukan(

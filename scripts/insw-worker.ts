@@ -1,14 +1,33 @@
-import { ACTIVATION_BLOCKERS, startupDecision } from '../lib/insw-worker/safety';
+import { startupDecision } from '../lib/insw-worker/safety';
 
-// Dedicated process entrypoint; no application imports, .env loading, Prisma,
-// timers, claims or transport. Even explicit opt-in fails closed in this release.
-export function main(env: NodeJS.ProcessEnv = process.env): number {
-  if (startupDecision(env) === 'DISABLED') {
+// Disabled startup opens no database, transport, app singleton or .env file.
+// PM2 supplies the explicit production environment from its separate config.
+export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number> {
+  const decision = startupDecision(env);
+  if (decision === 'DISABLED') {
     process.stdout.write('INSW worker disabled (default). No resources opened.\n');
     return 0;
   }
-  process.stderr.write(`INSW worker NOT READY FOR ACTIVATION: ${ACTIVATION_BLOCKERS.join(', ')}\n`);
-  return 78;
+  if (decision !== 'ENABLED' || !env.DATABASE_URL) {
+    process.stderr.write('INSW worker requires explicit production opt-in and DATABASE_URL.\n');
+    return 78;
+  }
+  const stop = new AbortController();
+  const shutdown = () => stop.abort();
+  process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);
+  const { PrismaClient } = await import('@prisma/client');
+  const db = new PrismaClient({ datasources: { db: { url: env.DATABASE_URL } } });
+  try {
+    const { runProductionDispatcher } = await import('../lib/insw-worker/production-dispatcher');
+    await runProductionDispatcher({ db, signal: stop.signal,
+      onEvent: (event, data) => process.stdout.write(`${JSON.stringify({ event, data })}\n`),
+    });
+    return 0;
+  } finally {
+    await db.$disconnect();
+    process.removeListener('SIGTERM', shutdown); process.removeListener('SIGINT', shutdown);
+  }
 }
-
-if (require.main === module) process.exitCode = main();
+if (require.main === module) main().then(code => { process.exitCode = code; }).catch(() => {
+  process.stderr.write('INSW_WORKER_STOPPED_REQUIRES_REVIEW\n'); process.exitCode = 78;
+});

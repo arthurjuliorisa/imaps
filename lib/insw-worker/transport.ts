@@ -57,7 +57,7 @@ async function boundedBody(response: Response, signal: AbortSignal, evidence: No
 // Deliberately injected: no default fetch, URL, headers, credentials, proxy or sender.
 // A future reviewed adapter must preserve company mode/proxy/toggles and persist
 // POSSIBLY_STARTED under proven global ownership BEFORE invoking this primitive.
-export type RequestPrimitive = (body: string, signal: AbortSignal) => Promise<Response>;
+export type RequestPrimitive = (body: string, signal: AbortSignal, onInvoked?: () => void) => Promise<Response>;
 
 export async function executeFrozenRequest(input: {
   payload: unknown; sha256: string; timeoutMs: number; request: RequestPrimitive;

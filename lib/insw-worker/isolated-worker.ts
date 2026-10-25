@@ -1,7 +1,7 @@
 import { integer } from '../insw-queue/contracts';
 import { PrismaClient } from '@prisma/client';
 import { executeFrozenRequest, RequestPrimitive, Outcome } from './transport';
-import { acquireOperationalOwnership, admitNext, persistOutcome, recordActualStart, AdmittedJob } from './operational.repository';
+import { acquireOperationalOwnership, admitNext, persistOutcome, recordActualStart, holdPreflight, AdmittedJob } from './operational.repository';
 
 export function isolatedDatabaseUrl(env: NodeJS.ProcessEnv): string {
   if (env.NODE_ENV !== 'test' || env.INSW_ISOLATED_WORKER_ENABLED !== 'true') throw new Error('ISOLATED_TEST_OPT_IN_REQUIRED');
@@ -21,10 +21,11 @@ function wait(ms: number, signal: AbortSignal) {
 }
 
 // Injected primitive must represent one locally tracked invocation, spawning no
-// children/background HTTP. The CLI below supplies the only runnable adapter.
+// children/background HTTP. Dedicated CLIs supply the transport adapter.
 export async function runIsolatedWorker(input: { db: PrismaClient; request: RequestPrimitive; signal: AbortSignal;
+  tracksInvocationStart?: boolean;
   timeoutMs: number; minimumIntervalMs?: number; onEvent?: (event: string, data?: unknown) => void; maxJobs?: number;
-  // Inactive injected domain extension. No CLI supplies this capability.
+  // Domain finalization shared by the disposable pilots and production CLI.
   prepareFinalizer?: (token: string, job: AdmittedJob) => Promise<(outcome: Outcome, endedAt: number) => Promise<void>> }) {
   integer(input.timeoutMs, 'request timeout', 1, 300000);
   if (input.maxJobs !== undefined) integer(input.maxJobs, 'maximum jobs', 1);
@@ -41,7 +42,14 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
     }
     idleMs = 250;
     const job = admission.job;
-    const finalize = input.prepareFinalizer ? await input.prepareFinalizer(token, job) : undefined;
+    let finalize;
+    try { finalize = input.prepareFinalizer ? await input.prepareFinalizer(token, job) : undefined; }
+    catch {
+      await holdPreflight(input.db, token, job);
+      input.onEvent?.('preflightHeld', { id: job.id });
+      count++;
+      continue;
+    }
     input.onEvent?.('admitted', { id: job.id });
     let invocation: Promise<Response> | undefined;
     let body: Promise<string> | undefined;
@@ -53,8 +61,11 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
       request: (json, signal) => {
         // executeFrozenRequest can return at its deadline; these separately tracked
         // promises must settle before ANY result releases the stream.
-        invocation = Promise.resolve().then(() => input.request(json, signal));
-        started = recordActualStart(input.db, token, job).catch(() => { startFailed = true; });
+        const markStarted = () => {
+          started = recordActualStart(input.db, token, job).catch(() => { startFailed = true; });
+        };
+        invocation = Promise.resolve().then(() => input.request(json, signal, markStarted));
+        if (!input.tracksInvocationStart) markStarted();
         return invocation;
       },
     });

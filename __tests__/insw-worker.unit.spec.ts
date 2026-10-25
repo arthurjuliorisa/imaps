@@ -12,15 +12,16 @@ const run = (request: RequestPrimitive, extra: Partial<Parameters<typeof execute
   executeFrozenRequest({ payload, sha256, timeoutMs: 100, request, ...extra });
 const reply = (body: string, status = 200, headers?: HeadersInit): RequestPrimitive => async () => new Response(body, { status, headers });
 
-test('entrypoint is default off and explicit opt-in cannot activate dispatch', () => {
+test('entrypoint is default off and requires the production environment for explicit opt-in', () => {
   for (const value of [undefined, 'false', '1', 'TRUE', ' true ']) expect(startupDecision({ INSW_WORKER_ENABLED: value })).toBe('DISABLED');
   expect(startupDecision({ INSW_WORKER_ENABLED: 'true' })).toBe('BLOCKED');
+  expect(startupDecision({ NODE_ENV: 'production', INSW_WORKER_ENABLED: 'true' })).toBe('ENABLED');
   for (const enabled of ['false', 'true']) {
     const result = spawnSync('node_modules/.bin/tsx', ['scripts/insw-worker.ts'], {
-      env: { ...process.env, INSW_WORKER_ENABLED: enabled }, encoding: 'utf8',
+      env: { PATH: process.env.PATH, NODE_ENV: 'test', INSW_WORKER_ENABLED: enabled }, encoding: 'utf8',
     });
     expect(result.status, result.stderr).toBe(enabled === 'true' ? 78 : 0);
-    expect(result.stdout + result.stderr).toContain(enabled === 'true' ? 'NOT READY FOR ACTIVATION' : 'disabled');
+    expect(result.stdout + result.stderr).toContain(enabled === 'true' ? 'requires explicit production opt-in' : 'disabled');
   }
 });
 
@@ -69,7 +70,17 @@ test('WMS aliases coordinate capture; excluded producers and payload builders re
     'app/api/customs/scrap-transactions/[id]/transmit-insw/route.ts',
     'app/api/insw/post/saldo-awal/route.ts', 'app/api/insw/post/saldo-awal-final/route.ts',
     'app/api/settings/wms-transmission-logs/[id]/retry/route.ts']) {
-    expect(readFileSync(file, 'utf8')).toBe(execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8', maxBuffer: 2000000 }));
+    let baseline = execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8', maxBuffer: 2000000 });
+    // Worker seam changes only redirect handling and a fetch-invocation hook.
+    // The transaction builder/converters/legacy response behavior stay identical.
+    if (file === 'lib/services/insw-integration.service.ts') baseline = baseline
+      .replace('    init: RequestInit\n  ): Promise<Response>', '    init: RequestInit,\n    onInvoked?: () => void\n  ): Promise<Response>')
+      .replace('      const response = await fetchImpl(endpoint, fetchInit);', '      const invocation = fetchImpl(endpoint, fetchInit);\n      onInvoked?.();\n      const response = await invocation;')
+      .replace('    transport?: (endpoint: string, init: RequestInit) => Promise<Response>): Promise<Response> {',
+        '    transport?: (endpoint: string, init: RequestInit) => Promise<Response>, onInvoked?: () => void): Promise<Response> {')
+      .replace('    return transport ? transport(endpoint, init) : this.fetchINSW(endpoint, init);',
+        "    if (!transport) return this.fetchINSW(endpoint, { ...init, redirect: 'error' }, onInvoked);\n    const invocation = transport(endpoint, { ...init, redirect: 'error' });\n    onInvoked?.();\n    return invocation;");
+    expect(readFileSync(file, 'utf8')).toBe(baseline);
   }
 });
 
