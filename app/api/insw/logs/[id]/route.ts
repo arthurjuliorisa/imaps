@@ -1,4 +1,4 @@
-import { incomingLogResendEligibility } from '@/lib/insw-queue/incoming-coordination';
+import { wmsLogResendEligibility, wmsLogTypes } from '@/lib/insw-queue/wms-coordination';
 import { prisma } from '@/lib/db/prisma';
 import { NextResponse } from 'next/server';
 import { checkAuth } from '@/lib/api-auth';
@@ -21,7 +21,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       console.error('INSW log detail identity mismatch', { requestedId: id, returnedId: log.id.toString() });
       return NextResponse.json({ success: false, error: 'Log tidak ditemukan' }, { status: 404 });
     }
-    const eligible = log.transaction_type === 'incoming' ? await incomingLogResendEligibility(prisma, companyValidation.companyCode, [logId]) : null;
+    const eligible = wmsLogTypes.some(type => type === log.transaction_type) ? await wmsLogResendEligibility(prisma, companyValidation.companyCode, [logId]) : null;
     return NextResponse.json({ success: true, data: { ...log, id: log.id.toString(),
       ...(eligible ? { can_resend: eligible.has(logId.toString()) } : {}) } });
   } catch (error: any) {

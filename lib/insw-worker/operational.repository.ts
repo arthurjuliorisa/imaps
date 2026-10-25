@@ -99,13 +99,12 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
         AND q.operation IN ('INCOMING', 'OUTGOING', 'MATERIAL_USAGE', 'PRODUCTION_OUTPUT', 'ADJUSTMENT', 'STOCK_OPNAME')
         AND EXISTS (SELECT 1 FROM companies eligible_company
           WHERE eligible_company.code = q.company_code AND eligible_company.company_type = 'SEZ')
-        AND (q.operation <> 'INCOMING' OR (
-          q.source_revision = 'ACCEPTED_WMS_ID' AND (
+        AND (
             q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
             OR q.intent = 'MANUAL_RESUBMIT' AND EXISTS (
               SELECT 1 FROM insw_tracking_log l JOIN insw_queue_attempt a ON a.id = l.queue_attempt_id
               JOIN insw_queue_cycle p ON p.id = a.queue_id
-              WHERE l.id = q.source_log_id AND l.transaction_type = 'incoming' AND l.insw_status = 'FAILED'
+              WHERE l.id = q.source_log_id AND l.transaction_type = lower(q.operation::text) AND l.insw_status = 'FAILED'
                 AND l.company_code = q.company_code AND p.identity_key = q.identity_key AND p.cycle = q.cycle - 1
                 AND p.status = 'FAILED' AND p.delivery_state = 'KNOWN_FAILURE'
                 AND p.retry_index >= p.max_auto_retry_snapshot AND p.owner_token IS NULL AND p.lease_until IS NULL
@@ -113,6 +112,8 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
                 AND l.metadata#>>'{manual_resend,queue_id}' = q.id::text
             )
           )
+        AND (q.operation <> 'INCOMING' OR (
+          q.source_revision = 'ACCEPTED_WMS_ID'
           AND q.identity_key = concat('["insw-v1",', q.company_code, ',"INCOMING","WMS_REFERENCE",',
             to_json(q.wms_reference)::text, ',"ACCEPTED_WMS_ID",', to_json(q.business_date)::text, ']')
           AND (SELECT count(*) = 1 AND bool_and(to_char(s.incoming_date, 'YYYY-MM-DD') = q.business_date)
@@ -121,18 +122,18 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
                 AND g.wms_id = q.wms_reference AND g.deleted_at IS NULL LIMIT 2) s)
         ))
         AND (q.operation <> 'OUTGOING' OR (
-          q.source_revision = 'ACCEPTED_WMS_ID' AND q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
+          q.source_revision = 'ACCEPTED_WMS_ID'
           AND q.identity_key = concat('["insw-v1",', q.company_code, ',"OUTGOING","WMS_REFERENCE",',
             to_json(q.wms_reference)::text, ',"ACCEPTED_WMS_ID",', to_json(q.business_date)::text, ']')
-          AND (SELECT count(*) = 1 AND bool_and(to_char(s.outgoing_date, 'YYYY-MM-DD') = q.business_date)
-            FROM (SELECT g.outgoing_date FROM outgoing_goods g JOIN companies c ON c.code = g.company_code
+          AND (SELECT count(*) = 1 AND bool_and(to_char(s.outgoing_date, 'YYYY-MM-DD') = q.business_date AND s.scrap_transaction_id IS NULL)
+            FROM (SELECT g.outgoing_date, g.scrap_transaction_id FROM outgoing_goods g JOIN companies c ON c.code = g.company_code
               WHERE g.company_code = q.company_code AND c.company_type = 'SEZ'
                 AND g.wms_id = q.wms_reference AND g.deleted_at IS NULL LIMIT 2) s)
         ))
         AND (q.operation <> 'MATERIAL_USAGE' OR (
           q.wms_reference = btrim(q.wms_reference) AND length(q.wms_reference) BETWEEN 1 AND 100
           AND q.wms_reference !~ '[[:cntrl:]]' AND
-          q.source_revision = 'ACCEPTED_WMS_ID' AND q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
+          q.source_revision = 'ACCEPTED_WMS_ID'
           AND q.identity_key = concat('["insw-v1",', q.company_code, ',"MATERIAL_USAGE","WMS_REFERENCE",',
             to_json(q.wms_reference)::text, ',"ACCEPTED_WMS_ID",', to_json(q.business_date)::text, ']')
           AND jsonb_typeof(q.frozen_payload->'data') = 'array'
@@ -152,7 +153,7 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
         AND (q.operation <> 'PRODUCTION_OUTPUT' OR (
           q.wms_reference = btrim(q.wms_reference) AND length(q.wms_reference) BETWEEN 1 AND 100
           AND q.wms_reference !~ '[[:cntrl:]]' AND
-          q.source_revision = 'ACCEPTED_WMS_ID' AND q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
+          q.source_revision = 'ACCEPTED_WMS_ID'
           AND q.identity_key = concat('["insw-v1",', q.company_code, ',"PRODUCTION_OUTPUT","WMS_REFERENCE",',
             to_json(q.wms_reference)::text, ',"ACCEPTED_WMS_ID",', to_json(q.business_date)::text, ']')
           AND jsonb_typeof(q.frozen_payload->'data') = 'array'
@@ -170,8 +171,7 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
                 AND g.wms_id = q.wms_reference AND g.deleted_at IS NULL LIMIT 2) s)
         ))
         AND (q.operation <> 'ADJUSTMENT' OR (
-          q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
-          AND q.wms_reference = btrim(q.wms_reference) AND length(q.wms_reference) BETWEEN 1 AND 100
+          q.wms_reference = btrim(q.wms_reference) AND length(q.wms_reference) BETWEEN 1 AND 100
           AND q.wms_reference !~ '[[:cntrl:]]'
           AND CASE WHEN jsonb_typeof(q.frozen_payload->'data') = 'array'
             THEN jsonb_array_length(q.frozen_payload->'data') = 1 ELSE false END
@@ -192,8 +192,7 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
                 to_json(g.id::text)::text, ',', to_json(q.source_revision)::text, ',', to_json(q.business_date)::text, ']'))
         ))
         AND (q.operation <> 'STOCK_OPNAME' OR (
-          q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
-          AND q.wms_reference = btrim(q.wms_reference) AND length(q.wms_reference) BETWEEN 1 AND 100
+          q.wms_reference = btrim(q.wms_reference) AND length(q.wms_reference) BETWEEN 1 AND 100
           AND q.wms_reference !~ '[[:cntrl:]]'
           AND CASE WHEN jsonb_typeof(q.frozen_payload->'data') = 'array'
             THEN jsonb_array_length(q.frozen_payload->'data') = 1 ELSE false END

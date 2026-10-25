@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
+import { WmsAdmissionError, submitOutgoingOriginals } from '@/lib/insw-queue/wms-coordination';
+import { prisma } from '@/lib/db/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode, validateSEZCompany } from '@/lib/company-validation';
 
@@ -25,38 +26,12 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const { ids, wmsIds } = body;
-    const service = new INSWTransmissionService();
-
-    let result;
-    let method = '';
-
-    if (wmsIds && Array.isArray(wmsIds) && wmsIds.length > 0) {
-      result = await service.transmitOutgoingGoodsByWmsIds(companyCode, wmsIds);
-      method = 'wmsIds';
-    } else if (ids && Array.isArray(ids) && ids.length > 0) {
-      result = await service.transmitOutgoingGoodsByIds(companyCode, ids);
-      method = 'ids';
-    } else {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            'Either ids or wmsIds is required and must be a non-empty array',
-        },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json({
-      success: result.status === 'success',
-      message: result.message,
-      method: method,
-      total: result.total,
-      success_count: result.success_count,
-      failed_count: result.failed_count,
-      results: result.results,
-    });
+    const byReference = Array.isArray(wmsIds) && wmsIds.length > 0;
+    const result = await submitOutgoingOriginals(prisma, companyCode, byReference ? wmsIds : ids, byReference, String(session.user.id));
+    return NextResponse.json({ ...result, method: byReference ? 'wmsIds' : 'ids' },
+      { status: ['accepted', 'already_pending'].includes(result.status) ? 202 : 409 });
   } catch (error: any) {
+    if (error instanceof WmsAdmissionError) return NextResponse.json({ success: false, status: 'not_eligible', message: error.message }, { status: 400 });
     console.error('Error posting Pengeluaran to INSW:', error);
     return NextResponse.json(
       {

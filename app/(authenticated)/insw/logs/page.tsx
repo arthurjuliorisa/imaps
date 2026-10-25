@@ -391,7 +391,7 @@ export default function INSWLogsPage() {
               <Visibility fontSize="small" />
             </IconButton>
           </Tooltip>
-          {((row as INSWLog).transaction_type === 'incoming' ? (row as INSWLog).can_resend === true : ((row as INSWLog).insw_status === 'FAILED' || (row as INSWLog).insw_status === 'PENDING')) && (
+          {(['incoming', 'outgoing', 'material_usage', 'production_output', 'adjustment', 'stock_opname'].includes((row as INSWLog).transaction_type) ? (row as INSWLog).can_resend === true : ((row as INSWLog).insw_status === 'FAILED' || (row as INSWLog).insw_status === 'PENDING')) && (
             <Tooltip title="Kirim Ulang">
               <span>
                 <IconButton
@@ -1090,7 +1090,7 @@ export default function INSWLogsPage() {
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'space-between' }}>
           <Box>
-            {selectedLog && (selectedLog.transaction_type === 'incoming' ? selectedLog.can_resend === true : (selectedLog?.insw_status === 'FAILED' || selectedLog?.insw_status === 'PENDING')) && (
+            {selectedLog && (['incoming', 'outgoing', 'material_usage', 'production_output', 'adjustment', 'stock_opname'].includes(selectedLog.transaction_type) ? selectedLog.can_resend === true : (selectedLog?.insw_status === 'FAILED' || selectedLog?.insw_status === 'PENDING')) && (
               <Button
                 onClick={() => {
                   if (selectedLog && selectedLog.transaction_type === 'stock_opname' && (selectedLog.insw_status === 'FAILED' || selectedLog.insw_status === 'PENDING')) {

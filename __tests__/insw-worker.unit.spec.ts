@@ -24,7 +24,7 @@ test('entrypoint is default off and explicit opt-in cannot activate dispatch', (
   }
 });
 
-test('Incoming aliases coordinate capture; excluded producers and payload builders remain identical to baseline', () => {
+test('WMS aliases coordinate capture; excluded producers and payload builders remain identical to baseline', () => {
   function walk(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
   }
@@ -38,18 +38,17 @@ test('Incoming aliases coordinate capture; excluded producers and payload builde
         source = source.replace("const { captureCompletedWmsSource } = await import('../insw-worker/completed-source-capture');", '');
       }
       if (file === 'lib/services/outgoing-goods.service.ts') {
-        // S1 permits exactly one dormant import inside the private completion
-        // adapter. Every existing live method remains byte-identical to HEAD.
-        const baseline = execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8' });
-        expect(source.slice(source.indexOf('  async processOutgoingGoods('))).toBe(
-          baseline.slice(baseline.indexOf('  async processOutgoingGoods(')));
-        expect(source.match(/captureCompletedOutgoing\(/g)).toHaveLength(1);
+        expect(source).toContain('this.captureCompletedOutgoing(prisma, repository.insertOutgoingGoodsAsync(data)');
+        expect(source.match(/captureCompletedOutgoing\(/g)).toHaveLength(2);
+        expect(source).not.toContain('INSWTransmissionService');
         expect(source).not.toMatch(/WeakMap|outgoingCompletions|authorizedOutgoingCompletion/);
         const capture = readFileSync('lib/insw-worker/completed-source-capture.ts', 'utf8');
         expect(capture).not.toMatch(/outgoing-goods.service|outgoingToken|OUTGOING_WMS_ORIGIN_ADAPTER_REQUIRED/);
         source = source.replace("const { captureCompletedWmsSource } = await import('../insw-worker/completed-source-capture');", '');
       }
-      if (file === 'lib/services/wms-reprocess.service.ts' || file === 'lib/insw-queue/incoming-coordination.ts') {
+      if (['lib/services/wms-reprocess.service.ts', 'lib/insw-queue/incoming-coordination.ts', 'lib/insw-queue/wms-coordination.ts',
+        'lib/services/material-usage.service.ts', 'lib/services/production-output.service.ts', 'lib/services/adjustments.service.ts',
+        'app/api/v1/stock-opname/route.ts'].includes(file)) {
         source = source.replace(/import .* from ['"].*insw-worker\/completed-source-capture['"];?/, '');
       }
       expect(source, file).not.toMatch(/insw-worker|executeFrozenRequest/);
@@ -62,6 +61,13 @@ test('Incoming aliases coordinate capture; excluded producers and payload builde
     'app/api/customs/capital-goods/outgoing/route.ts', 'app/api/customs/capital-goods-transactions/out/route.ts',
     'app/api/customs/scrap-transactions/in/route.ts', 'app/api/customs/scrap-transactions/out/route.ts',
     'lib/services/insw-integration.service.ts', 'lib/repositories/insw-integration.repository.ts',
+    'lib/repositories/incoming-goods.repository.ts', 'lib/repositories/outgoing-goods.repository.ts',
+    'lib/repositories/material-usage.repository.ts', 'lib/repositories/production-output.repository.ts',
+    'lib/repositories/adjustments.repository.ts', 'lib/repositories/wms-stock-opname.repository.ts',
+    'app/api/v1/incoming-goods/route.ts', 'app/api/v1/outgoing-goods/route.ts', 'app/api/v1/material-usage/route.ts',
+    'app/api/v1/production-output/route.ts', 'app/api/v1/adjustments/route.ts',
+    'app/api/customs/scrap-transactions/[id]/transmit-insw/route.ts',
+    'app/api/insw/post/saldo-awal/route.ts', 'app/api/insw/post/saldo-awal-final/route.ts',
     'app/api/settings/wms-transmission-logs/[id]/retry/route.ts']) {
     expect(readFileSync(file, 'utf8')).toBe(execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8', maxBuffer: 2000000 }));
   }

@@ -27,7 +27,7 @@ export type CompletedSourceCapture = {
  * resolves, including its existing tolerated side-effect failures. The caller
  * declares completion; a visible header, HTTP 200 or arbitrary resolved promise
  * cannot prove it. This is an internal producer contract, not an HTTP endpoint.
- * Incoming is coordinated; other domain seams remain dormant. Queue acceptance is never remote success.
+ * All six trusted WMS completions use this capture. Queue acceptance is never remote success.
  * No worker, finalizer, generic enqueue/claim/recovery or HTTP sender is exposed.
  */
 export async function captureCompletedWmsSource(db: PrismaClient, input: CompletedSourceCapture) {
@@ -100,9 +100,9 @@ export async function captureCompletedWmsSource(db: PrismaClient, input: Complet
     }
     return { outcome: 'ALREADY_CAPTURED' as const, id: prior.id, created: false };
   }
-  if (operation === 'INCOMING') {
+  {
     const legacy = await db.insw_tracking_log.findFirst({ where: { company_code: input.companyCode,
-      transaction_type: 'incoming', transaction_id: id, insw_status: { in: ['SUCCESS', 'PENDING', 'RETRYING', 'PENDING_RESOLVED', 'FAILED', 'SENT'] } }, select: { id: true } });
+      transaction_type: operation.toLowerCase(), transaction_id: id, insw_status: { in: ['SUCCESS', 'PENDING', 'RETRYING', 'PENDING_RESOLVED', 'FAILED', 'SENT'] } }, select: { id: true } });
     if (legacy) throw new Error('LEGACY_DELIVERY_REQUIRES_INVESTIGATION_OR_LOCAL_REPAIR');
   }
   const converter = new INSWIntegrationService('', '', true, db);

@@ -1,4 +1,4 @@
-import { IncomingAdmissionError, resendIncomingLog } from '@/lib/insw-queue/incoming-coordination';
+import { WmsAdmissionError, resendWmsLog, wmsLogTypes } from '@/lib/insw-queue/wms-coordination';
 import { NextResponse } from 'next/server';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
@@ -80,9 +80,9 @@ export async function POST(
       );
     }
 
-    if (log.transaction_type === 'incoming') {
+    if (wmsLogTypes.some(type => type === log.transaction_type)) {
       const body = await request.json().catch(() => ({}));
-      const result = await resendIncomingLog(prisma, companyCode, logId, String(session.user.id), body.reason || 'Operator confirmed INSW-log RESEND');
+      const result = await resendWmsLog(prisma, companyCode, logId, String(session.user.id), body.reason || 'Operator confirmed INSW-log RESEND');
       return NextResponse.json(result, { status: 202 });
     }
 
@@ -102,39 +102,6 @@ export async function POST(
     const skipEndpointCheck = log.insw_status === 'PENDING';
 
     switch (log.transaction_type) {
-      case 'outgoing':
-        if (wmsId) {
-          result = await service.transmitOutgoingGoodsByWmsIds(logCompanyCode, [wmsId], skipEndpointCheck);
-        } else if (transactionId) {
-          result = await service.transmitOutgoingGoodsByIds(logCompanyCode, [transactionId], skipEndpointCheck);
-        } else {
-          return NextResponse.json(
-            { success: false, message: 'Transaction ID atau WMS ID tidak ditemukan pada log ini' },
-            { status: 400 }
-          );
-        }
-        break;
-
-      case 'material_usage':
-        if (!transactionId) {
-          return NextResponse.json(
-            { success: false, message: 'Transaction ID tidak ditemukan pada log ini' },
-            { status: 400 }
-          );
-        }
-        result = await service.transmitMaterialUsage(logCompanyCode, [transactionId], [wmsId || ''], skipEndpointCheck);
-        break;
-
-      case 'production_output':
-        if (!transactionId) {
-          return NextResponse.json(
-            { success: false, message: 'Transaction ID tidak ditemukan pada log ini' },
-            { status: 400 }
-          );
-        }
-        result = await service.transmitProductionOutput(logCompanyCode, [transactionId], [wmsId || ''], skipEndpointCheck);
-        break;
-
       case 'scrap_in':
         if (!transactionId) {
           return NextResponse.json(
@@ -171,26 +138,6 @@ export async function POST(
         result = await service.transmitCapitalGoodsOut(logCompanyCode, [wmsId], skipEndpointCheck);
         break;
 
-      case 'stock_opname':
-        if (!transactionId || !wmsId) {
-          return NextResponse.json(
-            { success: false, message: 'Transaction ID dan WMS ID tidak ditemukan pada log ini' },
-            { status: 400 }
-          );
-        }
-        result = await service.transmitStockOpname(logCompanyCode, transactionId, wmsId, skipEndpointCheck);
-        break;
-
-      case 'adjustment':
-        if (!transactionId || !wmsId) {
-          return NextResponse.json(
-            { success: false, message: 'Transaction ID dan WMS ID tidak ditemukan pada log ini' },
-            { status: 400 }
-          );
-        }
-        result = await service.transmitAdjustment(logCompanyCode, transactionId, wmsId, skipEndpointCheck);
-        break;
-
       default:
         return NextResponse.json(
           { success: false, message: `Tipe transaksi "${log.transaction_type}" tidak didukung untuk pengiriman ulang` },
@@ -208,7 +155,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
-    if (error instanceof IncomingAdmissionError) return NextResponse.json({ success: false, status: 'not_eligible', message: error.message }, { status: 409 });
+    if (error instanceof WmsAdmissionError) return NextResponse.json({ success: false, status: 'not_eligible', message: error.message }, { status: 409 });
     if (error instanceof ScrapResendConflictError) {
       return NextResponse.json({ success: false, message: error.message }, { status: 409 });
     }

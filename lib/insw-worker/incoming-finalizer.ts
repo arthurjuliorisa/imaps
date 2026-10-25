@@ -1,4 +1,4 @@
-import { verifyIncomingManualCycle } from '../insw-queue/incoming-coordination';
+import { verifyWmsManualCycle } from '../insw-queue/wms-coordination';
 import { verifyCountSource } from './adjustment-stock-opname-source';
 import { createHash } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
@@ -67,17 +67,18 @@ async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, ad
   const validActivity = countDomain ? activityCode === (operation === 'ADJUSTMENT' ? '33' : '32') : operation === 'INCOMING' ? activityCode === '30'
     : operation === 'OUTGOING' ? activityCode === '31' : ['30', '31'].includes(activityCode);
   if (![1370, 1380].includes(admitted.company_code)) throw new Error('SEZ_COMPANY_REQUIRED');
-  if (countDomain && (admitted.intent !== 'SOURCE_COMMIT' || admitted.source_log_id !== null)) throw new Error('UNSUPPORTED_SOURCE_INTENT');
+  if (!(admitted.intent === 'SOURCE_COMMIT' && admitted.source_log_id === null
+    || admitted.intent === 'MANUAL_RESUBMIT' && admitted.source_log_id !== null)) throw new Error('UNSUPPORTED_SOURCE_INTENT');
   if (countDomain && (payload.data?.[0]?.dokumenKegiatan?.[0]?.tanggalKegiatan !== admitted.business_date.split('-').reverse().join('-')
     || payload.data?.[0]?.dokumenKegiatan?.[0]?.namaEntitas !== String(admitted.company_code))) throw new Error('COUNT_SOURCE_DOCUMENT_UNCONFIRMED');
   if (admitted.operation !== operation || !reference || singleFrozenDocument(payload) !== reference
     || !validActivity || !payload.data[0].dokumenKegiatan[0].barangTransaksi?.length
     || (!countDomain && (admitted.source_revision !== 'ACCEPTED_WMS_ID' || !(admitted.intent === 'SOURCE_COMMIT'
-      && admitted.source_log_id === null || operation === 'INCOMING' && admitted.intent === 'MANUAL_RESUBMIT' && admitted.source_log_id !== null) || admitted.identity_key !== canonicalIdentity({ kind: 'WMS_REFERENCE',
+      && admitted.source_log_id === null || admitted.intent === 'MANUAL_RESUBMIT' && admitted.source_log_id !== null) || admitted.identity_key !== canonicalIdentity({ kind: 'WMS_REFERENCE',
       operation, companyCode: admitted.company_code, reference, revision: 'ACCEPTED_WMS_ID',
       businessDate: admitted.business_date }).key))) throw new Error(`UNSUPPORTED_${operation}_IDENTITY_OR_BATCH`);
-  if (operation === 'INCOMING' && admitted.intent === 'MANUAL_RESUBMIT') await verifyIncomingManualCycle(db, admitted);
-  const sources: { id: number; business_date: Date; reversal?: string | null }[] = countDomain
+  if (admitted.intent === 'MANUAL_RESUBMIT') await verifyWmsManualCycle(db, admitted);
+  const sources: { id: number; business_date: Date; reversal?: string | null; scrap_transaction_id?: number | null }[] = countDomain
     ? await verifyCountSource(db, admitted).then(source => [{ id: source.id, business_date: new Date(source.businessDate) }])
     : operation === 'INCOMING'
     ? await db.$queryRaw<{ id: number; business_date: Date }[]>`
@@ -85,8 +86,8 @@ async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, ad
       JOIN companies c ON c.code = g.company_code AND c.company_type = 'SEZ'
       WHERE g.company_code = ${admitted.company_code} AND g.wms_id = ${reference}
         AND g.deleted_at IS NULL LIMIT 2`
-    : operation === 'OUTGOING' ? await db.$queryRaw<{ id: number; business_date: Date }[]>`
-      SELECT g.id, g.outgoing_date AS business_date FROM outgoing_goods g
+    : operation === 'OUTGOING' ? await db.$queryRaw<{ id: number; business_date: Date; scrap_transaction_id: number | null }[]>`
+      SELECT g.id, g.outgoing_date AS business_date, g.scrap_transaction_id FROM outgoing_goods g
       JOIN companies c ON c.code = g.company_code AND c.company_type = 'SEZ'
       WHERE g.company_code = ${admitted.company_code} AND g.wms_id = ${reference}
         AND g.deleted_at IS NULL LIMIT 2`
@@ -100,7 +101,7 @@ async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, ad
       JOIN companies c ON c.code = g.company_code AND c.company_type = 'SEZ'
       WHERE g.company_code = ${admitted.company_code} AND g.wms_id = ${reference}
         AND g.deleted_at IS NULL LIMIT 2`;
-  if (sources.length !== 1 || sources[0].business_date.toISOString().slice(0, 10) !== admitted.business_date) {
+  if (sources.length !== 1 || operation === 'OUTGOING' && sources[0].scrap_transaction_id !== null || sources[0].business_date.toISOString().slice(0, 10) !== admitted.business_date) {
     throw new Error(`${operation}_SOURCE_IDENTITY_UNCONFIRMED`);
   }
   if (operation === 'MATERIAL_USAGE' || operation === 'PRODUCTION_OUTPUT') {

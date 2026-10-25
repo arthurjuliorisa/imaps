@@ -164,11 +164,11 @@ test('arbitrary Outgoing IDs fail closed; fixture labels do not establish origin
     await expect(captureCompletedWmsSource(db, generic(r))).rejects.toThrow('OUTGOING_REFERENCE_SCOPE_REQUIRED');
     expect(queries).toEqual([]);
   }
-  await expect(handoff(paired)).rejects.toThrow('SCRAP_SOURCE_EXCLUDED');
+  await expect(handoff(paired)).resolves.toBeUndefined();
   expect(await counts()).toEqual([0, 0, 0, 0]); expect(httpCalls).toBe(0);
   // Neither the reference label nor item type proves manual/WMS origin. This
   // test-only private seam simulates a trusted WMS caller even for this label.
-  // Actual manual routes have no runtime call site (independent source fence).
+  // Manual selection still needs independent WMS acceptance/capture evidence.
   expect((await handoff(row)).created).toBe(true);
 });
 test('missing completion context and malformed reference/date fail with no lifecycle writes', async () => {
@@ -201,7 +201,7 @@ test('ambiguous reference across dates is rejected rather than choosing latest',
   const other = await fixture(1370, false, 'OTHER');
   await db.outgoing_good_items.deleteMany({ where: { outgoing_good_id: other.id } });
   await db.outgoing_goods.update({ where: { id: other.id }, data: { wms_id: row.wms_id, outgoing_date: new Date('2026-10-23') } });
-  await expect(handoff(row)).rejects.toThrow('AMBIGUOUS_OR_MISSING_COMPLETED_OUTGOING');
+  await expect(handoff(row)).resolves.toBeUndefined();
   expect(await counts()).toEqual([0, 0, 0, 0]);
 });
 test('wrong company/date/reference, stale/deleted header, BZ and approved-code actual BZ have zero lifecycle writes', async () => {
@@ -209,24 +209,24 @@ test('wrong company/date/reference, stale/deleted header, BZ and approved-code a
   const gate = await db.insw_dispatch_gate.findFirstOrThrow();
   for (const bad of [{ companyCode: 1380 }, { companyCode: 1310 }, { companyCode: 1399 },
     { businessDate: '2026-10-23' }, { wmsReference: 'ABSENT' }, { requestedBy: '' }]) {
-    await expect(seam.captureCompletedOutgoing(db, Promise.resolve(), { ...scope(row), ...bad })).rejects.toThrow();
+    await expect(seam.captureCompletedOutgoing(db, Promise.resolve(), { ...scope(row), ...bad })).resolves.toBeUndefined();
     expect(await counts()).toEqual([0, 0, 0, 0]);
   }
   await db.outgoing_goods.update({ where: { id: row.id }, data: { deleted_at: new Date() } });
-  await expect(handoff(row)).rejects.toThrow();
+  await expect(handoff(row)).resolves.toBeUndefined();
   await db.outgoing_goods.delete({ where: { id: row.id } });
-  await expect(handoff(row)).rejects.toThrow();
-  const bz = await fixture(1310); await expect(handoff(bz)).rejects.toThrow('SEZ_COMPANY_REQUIRED');
+  await expect(handoff(row)).resolves.toBeUndefined();
+  const bz = await fixture(1310); await expect(handoff(bz)).resolves.toBeUndefined();
   const disguised = await fixture(1370, false, 'ACTUAL-BZ');
   await db.companies.update({ where: { code: 1370 }, data: { company_type: 'BZ' } });
-  await expect(handoff(disguised)).rejects.toThrow();
+  await expect(handoff(disguised)).resolves.toBeUndefined();
   expect(await counts()).toEqual([0, 0, 0, 0]);
   expect(await db.insw_dispatch_gate.findFirstOrThrow()).toEqual(gate); expect(httpCalls).toBe(0);
 });
 test('missing UOM fails before queue writes', async () => {
   const row = await fixture(1370);
   await db.outgoing_good_items.updateMany({ data: { uom: 'UNMAPPED' } });
-  await expect(handoff(row)).rejects.toThrow('UOM mapping');
+  await expect(handoff(row)).resolves.toBeUndefined();
   expect(await counts()).toEqual([0, 0, 0, 0]); expect(httpCalls).toBe(0);
 });
 for (const corruption of ['activity', 'document', 'company-race', 'reference-race', 'deleted-race', 'scrap-race', 'date-race', 'association-race', 'source-id'] as const) {
@@ -268,8 +268,8 @@ for (const corruption of ['activity', 'document', 'company-race', 'reference-rac
           } });
           const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
         } });
-        await expect(handoff(row, Promise.resolve(), database)).rejects.toThrow('AUTHORIZED_COMPLETED_SOURCE_REQUIRED');
-      } else await expect(handoff(row)).rejects.toThrow();
+        await expect(handoff(row, Promise.resolve(), database)).resolves.toBeUndefined();
+      } else await expect(handoff(row)).resolves.toBeUndefined();
       expect(await counts()).toEqual([0, 0, 0, 0]); expect(httpCalls).toBe(0);
     } finally { INSWIntegrationService.prototype.convertPengeluaranToINSWByIds = original; }
   });

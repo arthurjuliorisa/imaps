@@ -8,7 +8,7 @@ import {
 import { ProductionOutputRepository } from '@/lib/repositories/production-output.repository';
 import { transformZodErrors } from '@/lib/utils/error-transformer';
 import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/api-response';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
+import { captureCompletedWmsSource } from '@/lib/insw-worker/completed-source-capture';
 import { prisma } from '@/lib/db/prisma';
 import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
@@ -149,7 +149,7 @@ export class ProductionOutputService {
         };
       }
 
-      // Step 6: Queue for immediate async insert (non-blocking) + auto-transmit to INSW
+      // Step 6: Queue for immediate async insert (non-blocking) + coordinated INSW capture
       this.repository
         .create(data)
         .then(async (result) => {
@@ -158,7 +158,7 @@ export class ProductionOutputService {
             productionOutputId: result.header.id,
           });
 
-          // Auto-transmit to INSW
+          // Capture after the complete business promise resolves
           try {
             // Check company type
             const company = await prisma.companies.findUnique({
@@ -168,31 +168,17 @@ export class ProductionOutputService {
 
             // Only transmit if SEZ company
             if (company?.company_type === 'SEZ') {
-              log.info('Starting auto-transmit to INSW (SEZ company)', {
+              log.info('Starting INSW queue capture (SEZ company)', {
                 wmsId: data.wms_id,
                 companyCode: data.company_code,
                 productionOutputId: result.header.id,
               });
 
-              const inswService = new INSWTransmissionService();
-
-              const transmissionResult = await inswService.transmitProductionOutput(
-                data.company_code,
-                [result.header.id],
-                [data.wms_id]
-              );
-
-              if (transmissionResult.status === 'success') {
-                log.info('Production output transmitted to INSW successfully', {
-                  wmsId: data.wms_id,
-                  transmissionResult,
-                });
-              } else {
-                log.warn('Production output INSW transmission failed', {
-                  wmsId: data.wms_id,
-                  transmissionResult,
-                });
-              }
+              await captureCompletedWmsSource(prisma, { operation: 'PRODUCTION_OUTPUT', sourceId: result.header.id,
+                companyCode: data.company_code, businessDate: new Date(data.transaction_date).toISOString().slice(0, 10),
+                revision: 'ACCEPTED_WMS_ID', requestedBy: 'WMS_PRODUCTION_OUTPUT_COMPLETION',
+                completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' });
+              log.info('WMS original accepted for coordinated INSW capture', { wmsId: data.wms_id });
             } else {
               log.info('Production output NOT transmitted to INSW (non-SEZ company)', {
                 wmsId: data.wms_id,
@@ -201,7 +187,7 @@ export class ProductionOutputService {
               });
             }
           } catch (inswError: any) {
-            log.error('Error during INSW auto-transmit', {
+            log.error('INSW queue capture failed; no DIRECT fallback', {
               wmsId: data.wms_id,
               error: inswError.message,
             });

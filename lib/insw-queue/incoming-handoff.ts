@@ -184,9 +184,9 @@ export async function handoffIncomingInTransaction(tx: Prisma.TransactionClient,
     return { id: existing.id, cycle: existing.cycle, status: existing.status,
       tail_key: existing.tail_key, max_auto_retry_snapshot: existing.max_auto_retry_snapshot, created: false };
   }
-  if (identity.operation === 'INCOMING') {
+  {
     const legacy = await tx.insw_tracking_log.findFirst({ where: { company_code: identity.companyCode,
-      transaction_type: 'incoming', wms_id: input.wmsReference,
+      transaction_type: identity.operation.toLowerCase(), wms_id: input.wmsReference,
       insw_status: { in: ['SUCCESS', 'PENDING', 'RETRYING', 'PENDING_RESOLVED', 'FAILED', 'SENT'] } }, select: { id: true } });
     if (legacy) throw new Error('LEGACY_DELIVERY_REQUIRES_INVESTIGATION_OR_LOCAL_REPAIR');
   }
@@ -203,7 +203,7 @@ export async function handoffIncomingInTransaction(tx: Prisma.TransactionClient,
       business_date, wms_reference, cycle, intent, requested_by, frozen_payload, payload_sha256, max_auto_retry_snapshot)
     VALUES (${randomUUID()}::uuid, ${identity.companyCode}, ${identity.operation}::"InswQueueOperation", ${identity.key},
       ${identity.revision}, ${identity.businessDate}, ${input.wmsReference}, 1, ${input.intent}, ${input.requestedBy},
-      ${input.json}::jsonb, ${input.sha256}, ${identity.operation === 'INCOMING' ? Math.min(10, policy.max_auto_retry) : policy.max_auto_retry})
+      ${input.json}::jsonb, ${input.sha256}, ${Math.min(10, policy.max_auto_retry)})
     RETURNING id, cycle, status, tail_key, max_auto_retry_snapshot`;
   return { ...row, created: true };
 }

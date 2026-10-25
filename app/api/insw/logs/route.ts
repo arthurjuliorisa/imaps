@@ -1,4 +1,4 @@
-import { incomingLogResendEligibility } from '@/lib/insw-queue/incoming-coordination';
+import { wmsLogResendEligibility, wmsLogTypes } from '@/lib/insw-queue/wms-coordination';
 import { prisma } from '@/lib/db/prisma';
 import { NextResponse } from 'next/server';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
@@ -67,11 +67,11 @@ export async function GET(request: Request) {
     });
 
     // Transform BigInt fields to strings for JSON serialization
-    const eligible = await incomingLogResendEligibility(prisma, companyCode, logs.filter(log => log.transaction_type === 'incoming').map(log => log.id));
+    const eligible = await wmsLogResendEligibility(prisma, companyCode, logs.filter(log => wmsLogTypes.some(type => type === log.transaction_type)).map(log => log.id));
     const serializedLogs = logs.map((log) => ({
       ...log,
       id: log.id.toString(),
-      ...(log.transaction_type === 'incoming' ? { can_resend: eligible.has(log.id.toString()) } : {}),
+      ...(wmsLogTypes.some(type => type === log.transaction_type) ? { can_resend: eligible.has(log.id.toString()) } : {}),
     }));
 
     // Calculate pagination metadata
