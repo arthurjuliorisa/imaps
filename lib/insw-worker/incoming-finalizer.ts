@@ -1,3 +1,4 @@
+import { verifyCountSource } from './adjustment-stock-opname-source';
 import { createHash } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { canonicalIdentity } from '../insw-queue/contracts';
@@ -33,10 +34,16 @@ export async function prepareIsolatedProductionOutputFinalizer(db: PrismaClient,
   return prepareIsolatedGoodsFinalizer(db, token, admitted, config, 'PRODUCTION_OUTPUT');
 }
 
+export async function prepareIsolatedCountFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
+  config: { endpointUrl: string }) {
+  if (admitted.operation !== 'ADJUSTMENT' && admitted.operation !== 'STOCK_OPNAME') throw new Error('INVALID_COUNT_OPERATION');
+  return prepareIsolatedGoodsFinalizer(db, token, admitted, config, admitted.operation);
+}
+
 async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
-  config: { endpointUrl: string }, operation: 'INCOMING' | 'OUTGOING' | 'MATERIAL_USAGE' | 'PRODUCTION_OUTPUT') {
+  config: { endpointUrl: string }, operation: 'INCOMING' | 'OUTGOING' | 'MATERIAL_USAGE' | 'PRODUCTION_OUTPUT' | 'ADJUSTMENT' | 'STOCK_OPNAME') {
   const transactionType = { INCOMING: 'incoming', OUTGOING: 'outgoing',
-    MATERIAL_USAGE: 'material_usage', PRODUCTION_OUTPUT: 'production_output' }[operation];
+    MATERIAL_USAGE: 'material_usage', PRODUCTION_OUTPUT: 'production_output', ADJUSTMENT: 'adjustment', STOCK_OPNAME: 'stock_opname' }[operation];
   const endpoint = new URL(config.endpointUrl);
   if (endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1' || !endpoint.port) throw new Error('LOOPBACK_HTTP_REQUIRED');
   if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash
@@ -55,16 +62,22 @@ async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, ad
   const payload = JSON.parse(body);
   const reference = admitted.wms_reference;
   const activityCode = payload.data?.[0]?.kdKegiatan;
-  const validActivity = operation === 'INCOMING' ? activityCode === '30'
+  const countDomain = operation === 'ADJUSTMENT' || operation === 'STOCK_OPNAME';
+  const validActivity = countDomain ? activityCode === (operation === 'ADJUSTMENT' ? '33' : '32') : operation === 'INCOMING' ? activityCode === '30'
     : operation === 'OUTGOING' ? activityCode === '31' : ['30', '31'].includes(activityCode);
   if (![1370, 1380].includes(admitted.company_code)) throw new Error('SEZ_COMPANY_REQUIRED');
+  if (countDomain && (admitted.intent !== 'SOURCE_COMMIT' || admitted.source_log_id !== null)) throw new Error('UNSUPPORTED_SOURCE_INTENT');
+  if (countDomain && (payload.data?.[0]?.dokumenKegiatan?.[0]?.tanggalKegiatan !== admitted.business_date.split('-').reverse().join('-')
+    || payload.data?.[0]?.dokumenKegiatan?.[0]?.namaEntitas !== String(admitted.company_code))) throw new Error('COUNT_SOURCE_DOCUMENT_UNCONFIRMED');
   if (admitted.operation !== operation || !reference || singleFrozenDocument(payload) !== reference
     || !validActivity || !payload.data[0].dokumenKegiatan[0].barangTransaksi?.length
-    || admitted.source_revision !== 'ACCEPTED_WMS_ID' || admitted.intent !== 'SOURCE_COMMIT'
+    || (!countDomain && (admitted.source_revision !== 'ACCEPTED_WMS_ID' || admitted.intent !== 'SOURCE_COMMIT'
     || admitted.source_log_id !== null || admitted.identity_key !== canonicalIdentity({ kind: 'WMS_REFERENCE',
       operation, companyCode: admitted.company_code, reference, revision: 'ACCEPTED_WMS_ID',
-      businessDate: admitted.business_date }).key) throw new Error(`UNSUPPORTED_${operation}_IDENTITY_OR_BATCH`);
-  const sources: { id: number; business_date: Date; reversal?: string | null }[] = operation === 'INCOMING'
+      businessDate: admitted.business_date }).key))) throw new Error(`UNSUPPORTED_${operation}_IDENTITY_OR_BATCH`);
+  const sources: { id: number; business_date: Date; reversal?: string | null }[] = countDomain
+    ? await verifyCountSource(db, admitted).then(source => [{ id: source.id, business_date: new Date(source.businessDate) }])
+    : operation === 'INCOMING'
     ? await db.$queryRaw<{ id: number; business_date: Date }[]>`
       SELECT g.id, g.incoming_date AS business_date FROM incoming_goods g
       JOIN companies c ON c.code = g.company_code AND c.company_type = 'SEZ'
@@ -189,7 +202,8 @@ async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, ad
       const retry = !success && disposition === 'RETRY_TO_TAIL';
       const failure = !success && disposition === 'STOP';
       const metadata = { adapter: { INCOMING: 'C2B_ISOLATED_INCOMING', OUTGOING: 'PHASE2A_ISOLATED_OUTGOING',
-          MATERIAL_USAGE: 'PHASE2B_ISOLATED_MATERIAL_USAGE', PRODUCTION_OUTPUT: 'PHASE2B_ISOLATED_PRODUCTION_OUTPUT' }[operation], outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
+          MATERIAL_USAGE: 'PHASE2B_ISOLATED_MATERIAL_USAGE', PRODUCTION_OUTPUT: 'PHASE2B_ISOLATED_PRODUCTION_OUTPUT',
+          ADJUSTMENT: 'PHASE2C_ISOLATED_ADJUSTMENT', STOCK_OPNAME: 'PHASE2C_ISOLATED_STOCK_OPNAME' }[operation], outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
           endpoint_url: endpointUrl, classification: outcome.classification.kind,
           reasonCode: outcome.classification.reasonCode, delivery: outcome.delivery, phase: outcome.phase,
           httpCode: outcome.httpCode, businessCode: outcome.businessCode, responseEvidence: evidence.state,

@@ -92,7 +92,7 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
     if (clock.wait_ms > 0) return { waitMs: Math.min(clock.wait_ms, 1000), job: null };
     // Filter in the bounded selector, before any job/attempt/gate mutation.
     // Invalid rows stay untouched and cannot hide valid work later in the tail.
-    // All four isolated domains verify committed source association in SQL.
+    // All six isolated domains verify committed source association in SQL.
     const candidates = await tx.$queryRaw<{ id: string }[]>`SELECT q.id FROM insw_queue_cycle q
       WHERE q.status = 'READY' AND q.next_eligible_at <= clock_timestamp()
         AND q.company_code IN (1370, 1380)
@@ -153,6 +153,50 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
             FROM (SELECT g.transaction_date, g.reversal FROM production_outputs g JOIN companies c ON c.code = g.company_code
               WHERE g.company_code = q.company_code AND c.company_type = 'SEZ'
                 AND g.wms_id = q.wms_reference AND g.deleted_at IS NULL LIMIT 2) s)
+        ))
+        AND (q.operation <> 'ADJUSTMENT' OR (
+          q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
+          AND q.wms_reference = btrim(q.wms_reference) AND length(q.wms_reference) BETWEEN 1 AND 100
+          AND q.wms_reference !~ '[[:cntrl:]]'
+          AND CASE WHEN jsonb_typeof(q.frozen_payload->'data') = 'array'
+            THEN jsonb_array_length(q.frozen_payload->'data') = 1 ELSE false END
+          AND CASE WHEN jsonb_typeof(q.frozen_payload#>'{data,0,dokumenKegiatan}') = 'array'
+            THEN jsonb_array_length(q.frozen_payload#>'{data,0,dokumenKegiatan}') = 1 ELSE false END
+          AND CASE WHEN jsonb_typeof(q.frozen_payload#>'{data,0,dokumenKegiatan,0,barangTransaksi}') = 'array'
+            THEN jsonb_array_length(q.frozen_payload#>'{data,0,dokumenKegiatan,0,barangTransaksi}') > 0 ELSE false END
+          AND q.frozen_payload#>>'{data,0,kdKegiatan}' = '33'
+          AND q.frozen_payload#>>'{data,0,dokumenKegiatan,0,nomorDokKegiatan}' = q.wms_reference
+          AND q.frozen_payload#>>'{data,0,dokumenKegiatan,0,tanggalKegiatan}' = concat(substring(q.business_date, 9, 2), '-', substring(q.business_date, 6, 2), '-', substring(q.business_date, 1, 4))
+          AND q.frozen_payload#>>'{data,0,dokumenKegiatan,0,namaEntitas}' = q.company_code::text
+          AND EXISTS (SELECT 1 FROM adjustments g JOIN companies c ON c.code = g.company_code
+            WHERE g.company_code = q.company_code AND c.company_type = 'SEZ' AND g.wms_id = q.wms_reference
+              AND g.id BETWEEN 1 AND 2147483647 AND g.deleted_at IS NULL
+              AND to_char(g.transaction_date, 'YYYY-MM-DD') = q.business_date
+              AND q.source_revision = 'COMMITTED_SOURCE'
+              AND q.identity_key = concat('["insw-v1",', q.company_code, ',"ADJUSTMENT","SOURCE_HEADER",',
+                to_json(g.id::text)::text, ',', to_json(q.source_revision)::text, ',', to_json(q.business_date)::text, ']'))
+        ))
+        AND (q.operation <> 'STOCK_OPNAME' OR (
+          q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
+          AND q.wms_reference = btrim(q.wms_reference) AND length(q.wms_reference) BETWEEN 1 AND 100
+          AND q.wms_reference !~ '[[:cntrl:]]'
+          AND CASE WHEN jsonb_typeof(q.frozen_payload->'data') = 'array'
+            THEN jsonb_array_length(q.frozen_payload->'data') = 1 ELSE false END
+          AND CASE WHEN jsonb_typeof(q.frozen_payload#>'{data,0,dokumenKegiatan}') = 'array'
+            THEN jsonb_array_length(q.frozen_payload#>'{data,0,dokumenKegiatan}') = 1 ELSE false END
+          AND CASE WHEN jsonb_typeof(q.frozen_payload#>'{data,0,dokumenKegiatan,0,barangTransaksi}') = 'array'
+            THEN jsonb_array_length(q.frozen_payload#>'{data,0,dokumenKegiatan,0,barangTransaksi}') > 0 ELSE false END
+          AND q.frozen_payload#>>'{data,0,kdKegiatan}' = '32'
+          AND q.frozen_payload#>>'{data,0,dokumenKegiatan,0,nomorDokKegiatan}' = q.wms_reference
+          AND q.frozen_payload#>>'{data,0,dokumenKegiatan,0,tanggalKegiatan}' = concat(substring(q.business_date, 9, 2), '-', substring(q.business_date, 6, 2), '-', substring(q.business_date, 1, 4))
+          AND q.frozen_payload#>>'{data,0,dokumenKegiatan,0,namaEntitas}' = q.company_code::text
+          AND EXISTS (SELECT 1 FROM wms_stock_opnames g JOIN companies c ON c.code = g.company_code
+            WHERE g.company_code = q.company_code AND c.company_type = 'SEZ' AND g.wms_id = q.wms_reference
+              AND g.id BETWEEN 1 AND 2147483647 AND g.status = 'CONFIRMED' AND g.confirmed_at IS NOT NULL
+              AND to_char(g.document_date, 'YYYY-MM-DD') = q.business_date
+              AND q.source_revision = concat('CONFIRMED:', to_char(g.confirmed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+              AND q.identity_key = concat('["insw-v1",', q.company_code, ',"STOCK_OPNAME","SOURCE_HEADER",',
+                to_json(g.id::text)::text, ',', to_json(q.source_revision)::text, ',', to_json(q.business_date)::text, ']'))
         ))
       ORDER BY q.tail_key, q.id FOR UPDATE OF q SKIP LOCKED LIMIT 1`;
     if (!candidates.length) return { waitMs: 0, job: null };

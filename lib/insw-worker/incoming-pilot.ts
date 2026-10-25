@@ -1,3 +1,6 @@
+import { countSourceId, readCountSource, verifyCountSource, type CountOperation } from './adjustment-stock-opname-source';
+import { prepareCountHandoff } from '../insw-queue/incoming-handoff';
+import { prepareIsolatedCountFinalizer } from './incoming-finalizer';
 import type { PrismaClient } from '@prisma/client';
 import { INSWIntegrationService } from '../services/insw-integration.service';
 import { INSW_ENDPOINTS } from '../types/insw-api.types';
@@ -11,6 +14,7 @@ type PilotOperation = 'INCOMING' | 'OUTGOING' | 'MATERIAL_USAGE' | 'PRODUCTION_O
 /** Explicit disposable fixtures only. No discovery, producer hooks or source writes. */
 export async function isolatedIncomingPilot(db: PrismaClient, config: {
   authorization: 'DISPOSABLE_INCOMING_FIXTURES_ONLY'; sourceIds: readonly number[]; endpoint: string;
+  fullyPersistedAdjustmentSourceIds?: readonly number[]; confirmedStockOpnameSourceIds?: readonly bigint[];
   outgoingSourceIds?: readonly number[]; materialUsageSourceIds?: readonly number[]; productionOutputSourceIds?: readonly number[];
 }) {
   if (process.env.NODE_ENV !== 'test' || config.authorization !== 'DISPOSABLE_INCOMING_FIXTURES_ONLY') {
@@ -73,7 +77,30 @@ export async function isolatedIncomingPilot(db: PrismaClient, config: {
       payload, authoritativeInputs: 'COMPLETE_SOURCE_AND_MAPPING_SNAPSHOT' }, row.reversal);
     return db.$transaction(tx => handoffIncomingInTransaction(tx, prepared));
   }
+  async function captureCount(operation: CountOperation, company: number, id: number | bigint) {
+    const exactId = countSourceId(id);
+    const authorized = operation === 'ADJUSTMENT'
+      ? config.fullyPersistedAdjustmentSourceIds?.some(value => value === exactId)
+      : config.confirmedStockOpnameSourceIds?.some(value => value === BigInt(exactId));
+    if (!authorized) throw new Error('EXPLICIT_FULLY_PERSISTED_SOURCE_AUTHORIZATION_REQUIRED');
+    const row = await readCountSource(db, operation, company, id);
+    const identity = canonicalIdentity({ kind: 'SOURCE_HEADER', operation, companyCode: company,
+      sourceId: exactId, revision: row.revision, businessDate: row.businessDate });
+    const prior = await db.insw_queue_cycle.findFirst({ where: { identity_key: identity.key }, orderBy: { cycle: 'asc' } });
+    if (prior) {
+      if (prior.intent !== 'SOURCE_COMMIT' || prior.source_log_id !== null || prior.wms_reference !== row.reference) throw new Error('COUNT_PRIOR_CYCLE_CONFLICT');
+      return { id: prior.id, created: false };
+    }
+    const payload = operation === 'ADJUSTMENT'
+      ? await converter.convertAdjustmentToINSW(company, exactId) : await converter.convertStockOpnameToINSW(company, exactId);
+    const prepared = prepareCountHandoff({ companyCode: company, operation, sourceId: exactId, wmsReference: row.reference,
+      revision: row.revision, businessDate: row.businessDate, requestedBy: 'ISOLATED_PHASE2C_FIXTURE', payload,
+      authoritativeInputs: 'COMPLETE_SOURCE_AND_MAPPING_SNAPSHOT' });
+    return db.$transaction(tx => handoffIncomingInTransaction(tx, prepared));
+  }
   return {
+    captureAdjustment: (company: number, id: number) => captureCount('ADJUSTMENT', company, id),
+    captureStockOpname: (company: number, id: bigint) => captureCount('STOCK_OPNAME', company, id),
     capture: (company: number, id: number) => capture('INCOMING', company, id),
     captureOutgoing: (company: number, id: number) => capture('OUTGOING', company, id),
     captureMaterialUsage: (company: number, id: number) => capture('MATERIAL_USAGE', company, id),
@@ -82,6 +109,14 @@ export async function isolatedIncomingPilot(db: PrismaClient, config: {
       onEvent?: (event: string, data?: unknown) => void }) {
       return runIsolatedWorker({ db, ...options, minimumIntervalMs: 3600, timeoutMs: options.timeoutMs ?? 10000,
         prepareFinalizer: async (token, job) => {
+          if (job.operation === 'ADJUSTMENT' || job.operation === 'STOCK_OPNAME') {
+            const row = await verifyCountSource(db, job);
+            const authorized = job.operation === 'ADJUSTMENT'
+              ? config.fullyPersistedAdjustmentSourceIds?.includes(row.id)
+              : config.confirmedStockOpnameSourceIds?.includes(BigInt(row.id));
+            if (!authorized) throw new Error('EXPLICIT_FULLY_PERSISTED_SOURCE_AUTHORIZATION_REQUIRED');
+            return prepareIsolatedCountFinalizer(db, token, job, { endpointUrl: endpoint.toString() });
+          }
           if (!['INCOMING', 'OUTGOING', 'MATERIAL_USAGE', 'PRODUCTION_OUTPUT'].includes(job.operation)) throw new Error('UNSUPPORTED_ISOLATED_DOMAIN');
           await source(job.operation as PilotOperation, job.company_code, undefined, job.wms_reference ?? '');
           const prepare = { INCOMING: prepareIsolatedIncomingFinalizer, OUTGOING: prepareIsolatedOutgoingFinalizer,

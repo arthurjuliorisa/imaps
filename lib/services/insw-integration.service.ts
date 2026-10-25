@@ -952,7 +952,7 @@ export class INSWIntegrationService {
     companyCode: number,
     stockOpnameId: number
   ): Promise<INSWTransaksiPayload> {
-    const opname = await prisma.wms_stock_opnames.findFirst({
+    const opname = await this.incomingDatabase.wms_stock_opnames.findFirst({
       where: { id: BigInt(stockOpnameId), company_code: companyCode },
       include: { items: true },
     });
@@ -1019,7 +1019,7 @@ export class INSWIntegrationService {
     companyCode: number,
     adjustmentId: number
   ): Promise<INSWTransaksiPayload> {
-    const adjustment = await prisma.adjustments.findFirst({
+    const adjustment = await this.incomingDatabase.adjustments.findFirst({
       where: { id: adjustmentId, company_code: companyCode, deleted_at: null },
       include: {
         items: {

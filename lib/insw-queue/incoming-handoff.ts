@@ -98,6 +98,34 @@ export function prepareProductionOutputHandoff(input: IncomingPreparation, rever
   return prepareGoodsHandoff(input, 'PRODUCTION_OUTPUT', reversal);
 }
 
+/** Detached single committed header; never a WMS acceptance hook. */
+export function prepareCountHandoff(input: IncomingPreparation & {
+  operation: 'ADJUSTMENT' | 'STOCK_OPNAME'; sourceId: number;
+}): PreparedIncomingHandoff {
+  if (![1370, 1380].includes(input.companyCode)) throw new Error('SEZ_COMPANY_REQUIRED');
+  if (input.authoritativeInputs !== 'COMPLETE_SOURCE_AND_MAPPING_SNAPSHOT') throw new Error('Complete authoritative snapshot required');
+  boundedText(input.wmsReference, 'WMS reference', 100);
+  boundedText(input.requestedBy, 'request actor', 100);
+  if (!Number.isInteger(input.sourceId) || input.sourceId < 1 || input.sourceId > 2147483647) throw new Error('SOURCE_ID_EXCEEDS_LEGACY_TRACKING_INT');
+  const identity = { kind: 'SOURCE_HEADER' as const, operation: input.operation, companyCode: input.companyCode,
+    sourceId: input.sourceId, revision: input.revision, businessDate: input.businessDate };
+  canonicalIdentity(identity);
+  // These converters emit one shallow item per persisted detail; the existing
+  // goods amplification ceiling also covers their remarks and scalar fields.
+  assertIncomingEnvelopeBudget(input.payload);
+  const frozen = freezePayload(input.payload);
+  const payload = frozen.payload as unknown as INSWTransaksiPayload;
+  const activity = payload.data?.[0]; const document = activity?.dokumenKegiatan?.[0];
+  if (payload.data?.length !== 1 || activity?.kdKegiatan !== (input.operation === 'ADJUSTMENT' ? '33' : '32')
+    || activity.dokumenKegiatan.length !== 1 || document?.nomorDokKegiatan !== input.wmsReference
+    || document?.tanggalKegiatan !== input.businessDate.split('-').reverse().join('-') || document?.namaEntitas !== String(input.companyCode)
+    || !document.barangTransaksi?.length) throw new Error('Expected one complete source header transmission');
+  const token = Object.freeze({}) as PreparedIncomingHandoff;
+  preparations.set(token, { identity, json: JSON.stringify(frozen.payload), sha256: frozen.sha256,
+    intent: 'SOURCE_COMMIT', requestedBy: input.requestedBy, wmsReference: input.wmsReference });
+  return token;
+}
+
 function prepareGoodsHandoff(input: IncomingPreparation, operation: 'INCOMING' | 'OUTGOING' | 'MATERIAL_USAGE' | 'PRODUCTION_OUTPUT', reversal: string | null = null): PreparedIncomingHandoff {
   if (![1370, 1380].includes(input.companyCode)) throw new Error('SEZ_COMPANY_REQUIRED');
   if (input.authoritativeInputs !== 'COMPLETE_SOURCE_AND_MAPPING_SNAPSHOT') {
