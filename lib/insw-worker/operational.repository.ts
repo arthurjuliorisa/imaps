@@ -100,7 +100,19 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
         AND EXISTS (SELECT 1 FROM companies eligible_company
           WHERE eligible_company.code = q.company_code AND eligible_company.company_type = 'SEZ')
         AND (q.operation <> 'INCOMING' OR (
-          q.source_revision = 'ACCEPTED_WMS_ID' AND q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
+          q.source_revision = 'ACCEPTED_WMS_ID' AND (
+            q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
+            OR q.intent = 'MANUAL_RESUBMIT' AND EXISTS (
+              SELECT 1 FROM insw_tracking_log l JOIN insw_queue_attempt a ON a.id = l.queue_attempt_id
+              JOIN insw_queue_cycle p ON p.id = a.queue_id
+              WHERE l.id = q.source_log_id AND l.transaction_type = 'incoming' AND l.insw_status = 'FAILED'
+                AND l.company_code = q.company_code AND p.identity_key = q.identity_key AND p.cycle = q.cycle - 1
+                AND p.status = 'FAILED' AND p.delivery_state = 'KNOWN_FAILURE'
+                AND p.retry_index >= p.max_auto_retry_snapshot AND p.owner_token IS NULL AND p.lease_until IS NULL
+                AND p.payload_sha256 = q.payload_sha256 AND p.frozen_payload = q.frozen_payload
+                AND l.metadata#>>'{manual_resend,queue_id}' = q.id::text
+            )
+          )
           AND q.identity_key = concat('["insw-v1",', q.company_code, ',"INCOMING","WMS_REFERENCE",',
             to_json(q.wms_reference)::text, ',"ACCEPTED_WMS_ID",', to_json(q.business_date)::text, ']')
           AND (SELECT count(*) = 1 AND bool_and(to_char(s.incoming_date, 'YYYY-MM-DD') = q.business_date)

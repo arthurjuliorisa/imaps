@@ -1,3 +1,4 @@
+import { verifyIncomingManualCycle } from '../insw-queue/incoming-coordination';
 import { verifyCountSource } from './adjustment-stock-opname-source';
 import { createHash } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
@@ -71,10 +72,11 @@ async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, ad
     || payload.data?.[0]?.dokumenKegiatan?.[0]?.namaEntitas !== String(admitted.company_code))) throw new Error('COUNT_SOURCE_DOCUMENT_UNCONFIRMED');
   if (admitted.operation !== operation || !reference || singleFrozenDocument(payload) !== reference
     || !validActivity || !payload.data[0].dokumenKegiatan[0].barangTransaksi?.length
-    || (!countDomain && (admitted.source_revision !== 'ACCEPTED_WMS_ID' || admitted.intent !== 'SOURCE_COMMIT'
-    || admitted.source_log_id !== null || admitted.identity_key !== canonicalIdentity({ kind: 'WMS_REFERENCE',
+    || (!countDomain && (admitted.source_revision !== 'ACCEPTED_WMS_ID' || !(admitted.intent === 'SOURCE_COMMIT'
+      && admitted.source_log_id === null || operation === 'INCOMING' && admitted.intent === 'MANUAL_RESUBMIT' && admitted.source_log_id !== null) || admitted.identity_key !== canonicalIdentity({ kind: 'WMS_REFERENCE',
       operation, companyCode: admitted.company_code, reference, revision: 'ACCEPTED_WMS_ID',
       businessDate: admitted.business_date }).key))) throw new Error(`UNSUPPORTED_${operation}_IDENTITY_OR_BATCH`);
+  if (operation === 'INCOMING' && admitted.intent === 'MANUAL_RESUBMIT') await verifyIncomingManualCycle(db, admitted);
   const sources: { id: number; business_date: Date; reversal?: string | null }[] = countDomain
     ? await verifyCountSource(db, admitted).then(source => [{ id: source.id, business_date: new Date(source.businessDate) }])
     : operation === 'INCOMING'

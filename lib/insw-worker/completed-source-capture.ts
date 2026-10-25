@@ -23,11 +23,11 @@ export type CompletedSourceCapture = {
   sourceId?: never;
 });
 
-/** Dormant internal API: invoke only after the existing WMS business promise
+/** Internal completion API: invoke only after the existing WMS business promise
  * resolves, including its existing tolerated side-effect failures. The caller
  * declares completion; a visible header, HTTP 200 or arbitrary resolved promise
  * cannot prove it. This is an internal producer contract, not an HTTP endpoint.
- * Only the dormant private Outgoing adapter imports this module. Queue acceptance is never remote success.
+ * Incoming is coordinated; other domain seams remain dormant. Queue acceptance is never remote success.
  * No worker, finalizer, generic enqueue/claim/recovery or HTTP sender is exposed.
  */
 export async function captureCompletedWmsSource(db: PrismaClient, input: CompletedSourceCapture) {
@@ -99,6 +99,11 @@ export async function captureCompletedWmsSource(db: PrismaClient, input: Complet
       throw new Error('PRIOR_SOURCE_CYCLE_CONFLICT');
     }
     return { outcome: 'ALREADY_CAPTURED' as const, id: prior.id, created: false };
+  }
+  if (operation === 'INCOMING') {
+    const legacy = await db.insw_tracking_log.findFirst({ where: { company_code: input.companyCode,
+      transaction_type: 'incoming', transaction_id: id, insw_status: { in: ['SUCCESS', 'PENDING', 'RETRYING', 'PENDING_RESOLVED', 'FAILED', 'SENT'] } }, select: { id: true } });
+    if (legacy) throw new Error('LEGACY_DELIVERY_REQUIRES_INVESTIGATION_OR_LOCAL_REPAIR');
   }
   const converter = new INSWIntegrationService('', '', true, db);
   const payload = operation === 'INCOMING' ? await converter.convertPemasukanToINSW(input.companyCode, [id])

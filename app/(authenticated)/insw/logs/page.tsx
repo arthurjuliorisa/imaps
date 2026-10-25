@@ -50,6 +50,7 @@ interface INSWLog {
   insw_error: string | null;
   sent_at: string | null;
   retry_count: number;
+  can_resend?: boolean;
   created_at: string;
   metadata?: { endpoint_url?: string } | null;
 }
@@ -390,7 +391,7 @@ export default function INSWLogsPage() {
               <Visibility fontSize="small" />
             </IconButton>
           </Tooltip>
-          {((row as INSWLog).insw_status === 'FAILED' || (row as INSWLog).insw_status === 'PENDING') && (
+          {((row as INSWLog).transaction_type === 'incoming' ? (row as INSWLog).can_resend === true : ((row as INSWLog).insw_status === 'FAILED' || (row as INSWLog).insw_status === 'PENDING')) && (
             <Tooltip title="Kirim Ulang">
               <span>
                 <IconButton
@@ -687,7 +688,7 @@ export default function INSWLogsPage() {
       const res = await fetch(`/api/insw/logs/${logId}/resend`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Gagal mengirim ulang data');
-      toast.success('Data berhasil dikirim ulang ke INSW');
+      toast.success(data.status === 'accepted' ? data.message : 'Data berhasil dikirim ulang ke INSW');
       fetchLogs();
     } catch (err: any) {
       toast.error(err.message || 'Gagal mengirim ulang data');
@@ -1089,7 +1090,7 @@ export default function INSWLogsPage() {
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'space-between' }}>
           <Box>
-            {(selectedLog?.insw_status === 'FAILED' || selectedLog?.insw_status === 'PENDING') && (
+            {selectedLog && (selectedLog.transaction_type === 'incoming' ? selectedLog.can_resend === true : (selectedLog?.insw_status === 'FAILED' || selectedLog?.insw_status === 'PENDING')) && (
               <Button
                 onClick={() => {
                   if (selectedLog && selectedLog.transaction_type === 'stock_opname' && (selectedLog.insw_status === 'FAILED' || selectedLog.insw_status === 'PENDING')) {

@@ -1,3 +1,4 @@
+import { captureCompletedWmsSource } from '@/lib/insw-worker/completed-source-capture';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { AdjustmentsRepository } from '@/lib/repositories/adjustments.repository';
@@ -82,7 +83,7 @@ export type PersistedWmsTransaction = {
 
 export type WmsRetryInswResult = {
   attempted: boolean;
-  status: 'not_applicable' | 'skipped' | 'success' | 'failed';
+  status: 'not_applicable' | 'skipped' | 'success' | 'failed' | 'accepted';
   message: string;
 };
 
@@ -474,10 +475,18 @@ export async function continueWmsRetryToInsw(
     return { attempted: false, status: 'skipped', message: 'A successful INSW transmission is already recorded for this transaction' };
   }
 
+  if (transactionType === 'incoming_goods') {
+    const source = await prisma.incoming_goods.findUniqueOrThrow({ where: { id: transaction.id } });
+    const result = await captureCompletedWmsSource(prisma, { operation: 'INCOMING', sourceId: transaction.id,
+      companyCode: transaction.companyCode, businessDate: source.incoming_date.toISOString().slice(0, 10),
+      revision: 'ACCEPTED_WMS_ID', requestedBy: 'WMS_INCOMING_REPROCESS', completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' });
+    return { attempted: result.created, status: result.created ? 'accepted' : 'skipped',
+      message: result.created ? 'Incoming accepted in queue; not yet delivered to INSW' : 'Existing Incoming queue cycle retained; no remote repost' };
+  }
+
   const service = new INSWTransmissionService();
   let result;
   switch (transactionType) {
-    case 'incoming_goods': result = await service.transmitIncomingGoods(transaction.companyCode, [transaction.id]); break;
     case 'outgoing_goods': result = await service.transmitOutgoingGoodsByWmsIds(transaction.companyCode, [transaction.wmsId]); break;
     case 'material_usage': result = await service.transmitMaterialUsage(transaction.companyCode, [transaction.id], [transaction.wmsId]); break;
     case 'production_output': result = await service.transmitProductionOutput(transaction.companyCode, [transaction.id], [transaction.wmsId]); break;

@@ -78,8 +78,8 @@ export function assertIncomingEnvelopeBudget(payload: unknown, maximumBytes = MA
 
 /** Pure, detached preparation. No converter, source reads, HTTP or DB singleton.
  * Retained low-level utility: this does not establish source provenance or
- * converter parity. Live post-commit capture stays disabled pending parity and
- * exclusive producer rollout. Never attach it to a source beforeCommit hook.
+ * converter parity. Incoming completion supplies that context through coordinated
+ * post-commit capture. Never attach it to a source beforeCommit hook.
  */
 export function prepareIncomingHandoff(input: IncomingPreparation): PreparedIncomingHandoff {
   return prepareGoodsHandoff(input, 'INCOMING');
@@ -159,9 +159,9 @@ function prepareGoodsHandoff(input: IncomingPreparation, operation: 'INCOMING' |
   return token;
 }
 
-/** Dormant queue-side API only. Use a separate queue transaction AFTER source
+/** Use a separate queue transaction AFTER source
  * commit. Never enroll this function in the WMS source transaction: downstream
- * failures must not roll back a valid source. No production caller is authorized.
+ * failures must not roll back a valid source. Only Incoming routing is connected.
  */
 export async function handoffIncomingInTransaction(tx: Prisma.TransactionClient, token: PreparedIncomingHandoff) {
   const input = preparations.get(token);
@@ -184,6 +184,12 @@ export async function handoffIncomingInTransaction(tx: Prisma.TransactionClient,
     return { id: existing.id, cycle: existing.cycle, status: existing.status,
       tail_key: existing.tail_key, max_auto_retry_snapshot: existing.max_auto_retry_snapshot, created: false };
   }
+  if (identity.operation === 'INCOMING') {
+    const legacy = await tx.insw_tracking_log.findFirst({ where: { company_code: identity.companyCode,
+      transaction_type: 'incoming', wms_id: input.wmsReference,
+      insw_status: { in: ['SUCCESS', 'PENDING', 'RETRYING', 'PENDING_RESOLVED', 'FAILED', 'SENT'] } }, select: { id: true } });
+    if (legacy) throw new Error('LEGACY_DELIVERY_REQUIRES_INVESTIGATION_OR_LOCAL_REPAIR');
+  }
   // The opaque token owns the detached canonical payload/hash. Do not repeat
   // full-envelope canonicalization under the DB lock (large valid sources can
   // otherwise exhaust Prisma's short interactive transaction deadline).
@@ -197,7 +203,7 @@ export async function handoffIncomingInTransaction(tx: Prisma.TransactionClient,
       business_date, wms_reference, cycle, intent, requested_by, frozen_payload, payload_sha256, max_auto_retry_snapshot)
     VALUES (${randomUUID()}::uuid, ${identity.companyCode}, ${identity.operation}::"InswQueueOperation", ${identity.key},
       ${identity.revision}, ${identity.businessDate}, ${input.wmsReference}, 1, ${input.intent}, ${input.requestedBy},
-      ${input.json}::jsonb, ${input.sha256}, ${policy.max_auto_retry})
+      ${input.json}::jsonb, ${input.sha256}, ${identity.operation === 'INCOMING' ? Math.min(10, policy.max_auto_retry) : policy.max_auto_retry})
     RETURNING id, cycle, status, tail_key, max_auto_retry_snapshot`;
   return { ...row, created: true };
 }

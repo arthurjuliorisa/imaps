@@ -24,13 +24,19 @@ test('entrypoint is default off and explicit opt-in cannot activate dispatch', (
   }
 });
 
-test('only dormant Outgoing completion imports capture; live methods and coordinator/company/PM2 remain identical to baseline', () => {
+test('Incoming aliases coordinate capture; excluded producers and payload builders remain identical to baseline', () => {
   function walk(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
   }
   for (const file of [...walk('app'), ...walk('lib').filter(p => !p.startsWith('lib/insw-worker/')), 'ecosystem.config.js', 'package.json']) {
     if (/\.(tsx?|js|json)$/.test(file)) {
       let source = readFileSync(file, 'utf8');
+      if (file === 'lib/services/incoming-goods.service.ts') {
+        expect(source.match(/captureCompletedIncoming\(/g)).toHaveLength(2);
+        expect(source).toContain("this.captureCompletedIncoming(prisma, this.repository.createOrUpdate(data)");
+        expect(source).not.toContain('transmitIncomingGoods');
+        source = source.replace("const { captureCompletedWmsSource } = await import('../insw-worker/completed-source-capture');", '');
+      }
       if (file === 'lib/services/outgoing-goods.service.ts') {
         // S1 permits exactly one dormant import inside the private completion
         // adapter. Every existing live method remains byte-identical to HEAD.
@@ -43,6 +49,9 @@ test('only dormant Outgoing completion imports capture; live methods and coordin
         expect(capture).not.toMatch(/outgoing-goods.service|outgoingToken|OUTGOING_WMS_ORIGIN_ADAPTER_REQUIRED/);
         source = source.replace("const { captureCompletedWmsSource } = await import('../insw-worker/completed-source-capture');", '');
       }
+      if (file === 'lib/services/wms-reprocess.service.ts' || file === 'lib/insw-queue/incoming-coordination.ts') {
+        source = source.replace(/import .* from ['"].*insw-worker\/completed-source-capture['"];?/, '');
+      }
       expect(source, file).not.toMatch(/insw-worker|executeFrozenRequest/);
     }
   }
@@ -53,7 +62,7 @@ test('only dormant Outgoing completion imports capture; live methods and coordin
     'app/api/customs/capital-goods/outgoing/route.ts', 'app/api/customs/capital-goods-transactions/out/route.ts',
     'app/api/customs/scrap-transactions/in/route.ts', 'app/api/customs/scrap-transactions/out/route.ts',
     'lib/services/insw-integration.service.ts', 'lib/repositories/insw-integration.repository.ts',
-    'lib/insw-queue/incoming-handoff.ts']) {
+    'app/api/settings/wms-transmission-logs/[id]/retry/route.ts']) {
     expect(readFileSync(file, 'utf8')).toBe(execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8', maxBuffer: 2000000 }));
   }
 });

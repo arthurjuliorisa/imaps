@@ -1,3 +1,4 @@
+import { IncomingAdmissionError, resendIncomingLog } from '@/lib/insw-queue/incoming-coordination';
 import { NextResponse } from 'next/server';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
@@ -79,6 +80,12 @@ export async function POST(
       );
     }
 
+    if (log.transaction_type === 'incoming') {
+      const body = await request.json().catch(() => ({}));
+      const result = await resendIncomingLog(prisma, companyCode, logId, String(session.user.id), body.reason || 'Operator confirmed INSW-log RESEND');
+      return NextResponse.json(result, { status: 202 });
+    }
+
     if (log.insw_status !== 'FAILED' && log.insw_status !== 'PENDING') {
       return NextResponse.json(
         { success: false, message: 'Hanya log dengan status FAILED atau PENDING yang dapat dikirim ulang' },
@@ -95,16 +102,6 @@ export async function POST(
     const skipEndpointCheck = log.insw_status === 'PENDING';
 
     switch (log.transaction_type) {
-      case 'incoming':
-        if (!transactionId) {
-          return NextResponse.json(
-            { success: false, message: 'Transaction ID tidak ditemukan pada log ini' },
-            { status: 400 }
-          );
-        }
-        result = await service.transmitIncomingGoods(logCompanyCode, [transactionId], skipEndpointCheck);
-        break;
-
       case 'outgoing':
         if (wmsId) {
           result = await service.transmitOutgoingGoodsByWmsIds(logCompanyCode, [wmsId], skipEndpointCheck);
@@ -211,6 +208,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
+    if (error instanceof IncomingAdmissionError) return NextResponse.json({ success: false, status: 'not_eligible', message: error.message }, { status: 409 });
     if (error instanceof ScrapResendConflictError) {
       return NextResponse.json({ success: false, message: error.message }, { status: 409 });
     }
