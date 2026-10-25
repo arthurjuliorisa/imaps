@@ -32,10 +32,20 @@ const preparations = new WeakMap<PreparedIncomingHandoff, Omit<EnqueueInput, 'pa
 // including header amplification; it is deliberately distinct from responses.
 // Outgoing emits the same item/document shape and has the same required item
 // fields; optional allocations only enlarge its source. Reuse this ceiling.
+// PO emits one shallow item per source item, with empty documents and
+// additional required WO/planned fields. It fits the goods ceiling.
 export const MAX_INCOMING_ENVELOPE_BYTES = 20 * 1024 * 1024
   + Math.floor(20 * 1024 * 1024 / 88) * 2048;
 
-export function assertIncomingEnvelopeBudget(payload: unknown): void {
+// MU expands each traceability entry into a persisted/emitted detail, repeating
+// the parent item code/name. A required {ppkek_number,qty} entry exceeds 20 JSON
+// bytes, even for null/N; 2048 extra bytes cover the escaped 50/200-character
+// item code/name, mapped UOM and numeric/structural overhead per emitted row.
+// Do not apply the goods minimum-item-size assumption to MU traceability.
+export const MAX_MATERIAL_USAGE_ENVELOPE_BYTES = 20 * 1024 * 1024
+  + Math.floor(20 * 1024 * 1024 / 20) * 2048;
+
+export function assertIncomingEnvelopeBudget(payload: unknown, maximumBytes = MAX_INCOMING_ENVELOPE_BYTES): void {
   let bytes = 0;
   const ancestors = new Set<object>();
   const pending: { value: unknown; exit?: true }[] = [{ value: payload }];
@@ -57,12 +67,12 @@ export function assertIncomingEnvelopeBudget(payload: unknown): void {
         pending.push({ value: (value as Record<string, unknown>)[key] });
       }
     } else {
-      if (typeof value === 'string' && Buffer.byteLength(value) > MAX_INCOMING_ENVELOPE_BYTES) {
+      if (typeof value === 'string' && Buffer.byteLength(value) > maximumBytes) {
         throw new Error('Incoming envelope exceeds resource limit');
       }
       bytes += Buffer.byteLength(JSON.stringify(value) ?? 'null');
     }
-    if (bytes > MAX_INCOMING_ENVELOPE_BYTES) throw new Error('Incoming envelope exceeds resource limit');
+    if (bytes > maximumBytes) throw new Error('Incoming envelope exceeds resource limit');
   }
 }
 
@@ -80,7 +90,15 @@ export function prepareOutgoingHandoff(input: IncomingPreparation): PreparedInco
   return prepareGoodsHandoff(input, 'OUTGOING');
 }
 
-function prepareGoodsHandoff(input: IncomingPreparation, operation: 'INCOMING' | 'OUTGOING'): PreparedIncomingHandoff {
+export function prepareMaterialUsageHandoff(input: IncomingPreparation, reversal: string | null): PreparedIncomingHandoff {
+  return prepareGoodsHandoff(input, 'MATERIAL_USAGE', reversal);
+}
+
+export function prepareProductionOutputHandoff(input: IncomingPreparation, reversal: string | null): PreparedIncomingHandoff {
+  return prepareGoodsHandoff(input, 'PRODUCTION_OUTPUT', reversal);
+}
+
+function prepareGoodsHandoff(input: IncomingPreparation, operation: 'INCOMING' | 'OUTGOING' | 'MATERIAL_USAGE' | 'PRODUCTION_OUTPUT', reversal: string | null = null): PreparedIncomingHandoff {
   if (![1370, 1380].includes(input.companyCode)) throw new Error('SEZ_COMPANY_REQUIRED');
   if (input.authoritativeInputs !== 'COMPLETE_SOURCE_AND_MAPPING_SNAPSHOT') {
     throw new Error('Complete authoritative source and mapping snapshot required');
@@ -93,16 +111,18 @@ function prepareGoodsHandoff(input: IncomingPreparation, operation: 'INCOMING' |
     revision: input.revision, businessDate: input.businessDate,
   };
   canonicalIdentity(identity);
-  assertIncomingEnvelopeBudget(input.payload);
+  assertIncomingEnvelopeBudget(input.payload, operation === 'MATERIAL_USAGE' ? MAX_MATERIAL_USAGE_ENVELOPE_BYTES : MAX_INCOMING_ENVELOPE_BYTES);
   const frozen = freezePayload(input.payload);
   const payload = frozen.payload as unknown as INSWTransaksiPayload;
   const activity = payload.data?.[0];
   const document = activity?.dokumenKegiatan?.[0];
+  const normalIncoming = operation === 'INCOMING' || operation === 'PRODUCTION_OUTPUT';
+  const expectedActivity = (normalIncoming !== (reversal === 'Y')) ? '30' : '31';
   // One source transmission per intent. Domain conversion/validation stays with
   // the future authoritative capture; these are boundary consistency checks only.
-  if (payload.data?.length !== 1 || activity?.kdKegiatan !== (operation === 'INCOMING' ? '30' : '31') ||
+  if (payload.data?.length !== 1 || activity?.kdKegiatan !== expectedActivity ||
       activity.dokumenKegiatan.length !== 1 || document?.nomorDokKegiatan !== input.wmsReference ||
-      !document.barangTransaksi?.length) throw new Error(`Expected one complete ${operation === 'INCOMING' ? 'Incoming' : 'Outgoing'} transmission`);
+      !document.barangTransaksi?.length) throw new Error(`Expected one complete ${{ INCOMING: 'Incoming', OUTGOING: 'Outgoing', MATERIAL_USAGE: 'Material Usage', PRODUCTION_OUTPUT: 'Production Output' }[operation]} transmission`);
   const token = Object.freeze({}) as PreparedIncomingHandoff;
   preparations.set(token, {
     identity, json: JSON.stringify(frozen.payload), sha256: frozen.sha256, intent: 'SOURCE_COMMIT',

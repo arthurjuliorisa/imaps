@@ -2,14 +2,16 @@ import type { PrismaClient } from '@prisma/client';
 import { INSWIntegrationService } from '../services/insw-integration.service';
 import { INSW_ENDPOINTS } from '../types/insw-api.types';
 import { canonicalIdentity } from '../insw-queue/contracts';
-import { prepareIncomingHandoff, prepareOutgoingHandoff, handoffIncomingInTransaction } from '../insw-queue/incoming-handoff';
-import { prepareIsolatedIncomingFinalizer, prepareIsolatedOutgoingFinalizer } from './incoming-finalizer';
+import { prepareIncomingHandoff, prepareOutgoingHandoff, prepareMaterialUsageHandoff, prepareProductionOutputHandoff, handoffIncomingInTransaction } from '../insw-queue/incoming-handoff';
+import { prepareIsolatedIncomingFinalizer, prepareIsolatedOutgoingFinalizer, prepareIsolatedMaterialUsageFinalizer, prepareIsolatedProductionOutputFinalizer } from './incoming-finalizer';
 import { runIsolatedWorker } from './isolated-worker';
+
+type PilotOperation = 'INCOMING' | 'OUTGOING' | 'MATERIAL_USAGE' | 'PRODUCTION_OUTPUT';
 
 /** Explicit disposable fixtures only. No discovery, producer hooks or source writes. */
 export async function isolatedIncomingPilot(db: PrismaClient, config: {
   authorization: 'DISPOSABLE_INCOMING_FIXTURES_ONLY'; sourceIds: readonly number[]; endpoint: string;
-  outgoingSourceIds?: readonly number[];
+  outgoingSourceIds?: readonly number[]; materialUsageSourceIds?: readonly number[]; productionOutputSourceIds?: readonly number[];
 }) {
   if (process.env.NODE_ENV !== 'test' || config.authorization !== 'DISPOSABLE_INCOMING_FIXTURES_ONLY') {
     throw new Error('EXPLICIT_ISOLATED_PILOT_AUTHORIZATION_REQUIRED');
@@ -22,21 +24,27 @@ export async function isolatedIncomingPilot(db: PrismaClient, config: {
   if (!/^[a-z0-9_]+_phase_c2b_test$/.test(runtime.name) || runtime.host !== '127.0.0.1') throw new Error('ISOLATED_TEST_ONLY');
   const incomingIds = new Set(config.sourceIds);
   const outgoingIds = new Set(config.outgoingSourceIds ?? []);
+  const materialUsageIds = new Set(config.materialUsageSourceIds ?? []);
+  const productionOutputIds = new Set(config.productionOutputSourceIds ?? []);
   const converter = new INSWIntegrationService('', '', true, db);
   const transport = new INSWIntegrationService('isolated-fixture-key', 'isolated-fixture-unique', true, db);
-  async function source(operation: 'INCOMING' | 'OUTGOING', company: number, id?: number, reference?: string) {
+  async function source(operation: PilotOperation, company: number, id?: number, reference?: string) {
     if (![1370, 1380].includes(company)) throw new Error('SEZ_COMPANY_REQUIRED');
     const where = { ...(id === undefined ? {} : { id }),
       ...(reference === undefined ? {} : { wms_id: reference }), company_code: company, deleted_at: null,
       company: { company_type: 'SEZ' as const } };
     const rows = operation === 'INCOMING'
-      ? (await db.incoming_goods.findMany({ where, take: 2 })).map(row => ({ ...row, businessDate: row.incoming_date }))
-      : (await db.outgoing_goods.findMany({ where, take: 2 })).map(row => ({ ...row, businessDate: row.outgoing_date }));
-    const authorized = operation === 'INCOMING' ? incomingIds : outgoingIds;
+      ? (await db.incoming_goods.findMany({ where, take: 2 })).map(row => ({ ...row, businessDate: row.incoming_date, reversal: null }))
+      : operation === 'OUTGOING'
+        ? (await db.outgoing_goods.findMany({ where, take: 2 })).map(row => ({ ...row, businessDate: row.outgoing_date, reversal: null }))
+        : operation === 'MATERIAL_USAGE'
+          ? (await db.material_usages.findMany({ where, take: 2 })).map(row => ({ ...row, businessDate: row.transaction_date }))
+          : (await db.production_outputs.findMany({ where, take: 2 })).map(row => ({ ...row, businessDate: row.transaction_date }));
+    const authorized = { INCOMING: incomingIds, OUTGOING: outgoingIds, MATERIAL_USAGE: materialUsageIds, PRODUCTION_OUTPUT: productionOutputIds }[operation];
     if (rows.length !== 1 || !authorized.has(rows[0].id) || !rows[0].wms_id) throw new Error('AUTHORIZED_SOURCE_COMPANY_REQUIRED');
     return rows[0];
   }
-  async function capture(operation: 'INCOMING' | 'OUTGOING', companyCode: number, sourceId: number) {
+  async function capture(operation: PilotOperation, companyCode: number, sourceId: number) {
     const row = await source(operation, companyCode, sourceId);
     // Reject same-company duplicate WMS references as well; no source splitting.
     await source(operation, companyCode, undefined, row.wms_id!);
@@ -53,24 +61,31 @@ export async function isolatedIncomingPilot(db: PrismaClient, config: {
     // No HTTP or source transaction; the pre-enqueue crash gap is accepted.
     const payload = operation === 'INCOMING'
       ? await converter.convertPemasukanToINSW(companyCode, [sourceId])
-      : await converter.convertPengeluaranToINSWByIds(companyCode, [sourceId]);
-    const prepare = operation === 'INCOMING' ? prepareIncomingHandoff : prepareOutgoingHandoff;
+      : operation === 'OUTGOING' ? await converter.convertPengeluaranToINSWByIds(companyCode, [sourceId])
+        : operation === 'MATERIAL_USAGE' ? await converter.convertMaterialUsageToINSW(companyCode, [sourceId])
+          : await converter.convertProductionOutputToINSW(companyCode, [sourceId]);
+    const prepare = { INCOMING: prepareIncomingHandoff, OUTGOING: prepareOutgoingHandoff,
+      MATERIAL_USAGE: prepareMaterialUsageHandoff, PRODUCTION_OUTPUT: prepareProductionOutputHandoff }[operation];
     const prepared = prepare({ companyCode, wmsReference: row.wms_id!,
       businessDate: identity.businessDate, revision: 'ACCEPTED_WMS_ID',
-      requestedBy: operation === 'INCOMING' ? 'ISOLATED_PHASE1_FIXTURE' : 'ISOLATED_PHASE2A_FIXTURE',
-      payload, authoritativeInputs: 'COMPLETE_SOURCE_AND_MAPPING_SNAPSHOT' });
+      requestedBy: { INCOMING: 'ISOLATED_PHASE1_FIXTURE', OUTGOING: 'ISOLATED_PHASE2A_FIXTURE',
+        MATERIAL_USAGE: 'ISOLATED_PHASE2B_MU_FIXTURE', PRODUCTION_OUTPUT: 'ISOLATED_PHASE2B_PO_FIXTURE' }[operation],
+      payload, authoritativeInputs: 'COMPLETE_SOURCE_AND_MAPPING_SNAPSHOT' }, row.reversal);
     return db.$transaction(tx => handoffIncomingInTransaction(tx, prepared));
   }
   return {
     capture: (company: number, id: number) => capture('INCOMING', company, id),
     captureOutgoing: (company: number, id: number) => capture('OUTGOING', company, id),
+    captureMaterialUsage: (company: number, id: number) => capture('MATERIAL_USAGE', company, id),
+    captureProductionOutput: (company: number, id: number) => capture('PRODUCTION_OUTPUT', company, id),
     run(options: { signal: AbortSignal; maxJobs: number; timeoutMs?: number;
       onEvent?: (event: string, data?: unknown) => void }) {
       return runIsolatedWorker({ db, ...options, minimumIntervalMs: 3600, timeoutMs: options.timeoutMs ?? 10000,
         prepareFinalizer: async (token, job) => {
-          if (job.operation !== 'INCOMING' && job.operation !== 'OUTGOING') throw new Error('UNSUPPORTED_ISOLATED_DOMAIN');
-          await source(job.operation, job.company_code, undefined, job.wms_reference ?? '');
-          const prepare = job.operation === 'INCOMING' ? prepareIsolatedIncomingFinalizer : prepareIsolatedOutgoingFinalizer;
+          if (!['INCOMING', 'OUTGOING', 'MATERIAL_USAGE', 'PRODUCTION_OUTPUT'].includes(job.operation)) throw new Error('UNSUPPORTED_ISOLATED_DOMAIN');
+          await source(job.operation as PilotOperation, job.company_code, undefined, job.wms_reference ?? '');
+          const prepare = { INCOMING: prepareIsolatedIncomingFinalizer, OUTGOING: prepareIsolatedOutgoingFinalizer,
+            MATERIAL_USAGE: prepareIsolatedMaterialUsageFinalizer, PRODUCTION_OUTPUT: prepareIsolatedProductionOutputFinalizer }[job.operation as PilotOperation];
           return prepare(db, token, job, { endpointUrl: endpoint.toString() });
         },
         request: (body, signal) => transport.requestFrozenTransaction(body, signal, async (target, init) => {

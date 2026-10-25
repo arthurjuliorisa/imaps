@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { canonicalIdentity } from '../insw-queue/contracts';
-import { assertIncomingEnvelopeBudget } from '../insw-queue/incoming-handoff';
+import { assertIncomingEnvelopeBudget, MAX_INCOMING_ENVELOPE_BYTES, MAX_MATERIAL_USAGE_ENVELOPE_BYTES } from '../insw-queue/incoming-handoff';
 import { reserveTail } from '../insw-queue/queue.repository';
 import { classifyResponse, singleFrozenDocument } from './classification';
 import { owned, type AdmittedJob } from './operational.repository';
@@ -23,10 +23,20 @@ export async function prepareIsolatedOutgoingFinalizer(db: PrismaClient, token: 
   return prepareIsolatedGoodsFinalizer(db, token, admitted, config, 'OUTGOING');
 }
 
+export async function prepareIsolatedMaterialUsageFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
+  config: { endpointUrl: string }) {
+  return prepareIsolatedGoodsFinalizer(db, token, admitted, config, 'MATERIAL_USAGE');
+}
+
+export async function prepareIsolatedProductionOutputFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
+  config: { endpointUrl: string }) {
+  return prepareIsolatedGoodsFinalizer(db, token, admitted, config, 'PRODUCTION_OUTPUT');
+}
+
 async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, admitted: AdmittedJob,
-  config: { endpointUrl: string }, operation: 'INCOMING' | 'OUTGOING') {
-  const activityCode = operation === 'INCOMING' ? '30' : '31';
-  const transactionType = operation === 'INCOMING' ? 'incoming' : 'outgoing';
+  config: { endpointUrl: string }, operation: 'INCOMING' | 'OUTGOING' | 'MATERIAL_USAGE' | 'PRODUCTION_OUTPUT') {
+  const transactionType = { INCOMING: 'incoming', OUTGOING: 'outgoing',
+    MATERIAL_USAGE: 'material_usage', PRODUCTION_OUTPUT: 'production_output' }[operation];
   const endpoint = new URL(config.endpointUrl);
   if (endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1' || !endpoint.port) throw new Error('LOOPBACK_HTTP_REQUIRED');
   if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash
@@ -39,31 +49,49 @@ async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, ad
     throw new Error('ISOLATED_TEST_ONLY');
   }
   if (![1370, 1380].includes(admitted.company_code)) throw new Error('SEZ_COMPANY_REQUIRED');
-  assertIncomingEnvelopeBudget(admitted.frozen_payload);
+  assertIncomingEnvelopeBudget(admitted.frozen_payload, operation === 'MATERIAL_USAGE' ? MAX_MATERIAL_USAGE_ENVELOPE_BYTES : MAX_INCOMING_ENVELOPE_BYTES);
   const body = verifiedPayload(admitted.frozen_payload, admitted.payload_sha256);
   const requestBytes = Buffer.byteLength(body);
   const payload = JSON.parse(body);
   const reference = admitted.wms_reference;
+  const activityCode = payload.data?.[0]?.kdKegiatan;
+  const validActivity = operation === 'INCOMING' ? activityCode === '30'
+    : operation === 'OUTGOING' ? activityCode === '31' : ['30', '31'].includes(activityCode);
   if (![1370, 1380].includes(admitted.company_code)) throw new Error('SEZ_COMPANY_REQUIRED');
   if (admitted.operation !== operation || !reference || singleFrozenDocument(payload) !== reference
-    || payload.data[0].kdKegiatan !== activityCode || !payload.data[0].dokumenKegiatan[0].barangTransaksi?.length
+    || !validActivity || !payload.data[0].dokumenKegiatan[0].barangTransaksi?.length
     || admitted.source_revision !== 'ACCEPTED_WMS_ID' || admitted.intent !== 'SOURCE_COMMIT'
     || admitted.source_log_id !== null || admitted.identity_key !== canonicalIdentity({ kind: 'WMS_REFERENCE',
       operation, companyCode: admitted.company_code, reference, revision: 'ACCEPTED_WMS_ID',
       businessDate: admitted.business_date }).key) throw new Error(`UNSUPPORTED_${operation}_IDENTITY_OR_BATCH`);
-  const sources = operation === 'INCOMING'
+  const sources: { id: number; business_date: Date; reversal?: string | null }[] = operation === 'INCOMING'
     ? await db.$queryRaw<{ id: number; business_date: Date }[]>`
       SELECT g.id, g.incoming_date AS business_date FROM incoming_goods g
       JOIN companies c ON c.code = g.company_code AND c.company_type = 'SEZ'
       WHERE g.company_code = ${admitted.company_code} AND g.wms_id = ${reference}
         AND g.deleted_at IS NULL LIMIT 2`
-    : await db.$queryRaw<{ id: number; business_date: Date }[]>`
+    : operation === 'OUTGOING' ? await db.$queryRaw<{ id: number; business_date: Date }[]>`
       SELECT g.id, g.outgoing_date AS business_date FROM outgoing_goods g
+      JOIN companies c ON c.code = g.company_code AND c.company_type = 'SEZ'
+      WHERE g.company_code = ${admitted.company_code} AND g.wms_id = ${reference}
+        AND g.deleted_at IS NULL LIMIT 2`
+    : operation === 'MATERIAL_USAGE' ? await db.$queryRaw<{ id: number; business_date: Date; reversal: string | null }[]>`
+      SELECT g.id, g.transaction_date AS business_date, g.reversal FROM material_usages g
+      JOIN companies c ON c.code = g.company_code AND c.company_type = 'SEZ'
+      WHERE g.company_code = ${admitted.company_code} AND g.wms_id = ${reference}
+        AND g.deleted_at IS NULL LIMIT 2`
+    : await db.$queryRaw<{ id: number; business_date: Date; reversal: string | null }[]>`
+      SELECT g.id, g.transaction_date AS business_date, g.reversal FROM production_outputs g
       JOIN companies c ON c.code = g.company_code AND c.company_type = 'SEZ'
       WHERE g.company_code = ${admitted.company_code} AND g.wms_id = ${reference}
         AND g.deleted_at IS NULL LIMIT 2`;
   if (sources.length !== 1 || sources[0].business_date.toISOString().slice(0, 10) !== admitted.business_date) {
     throw new Error(`${operation}_SOURCE_IDENTITY_UNCONFIRMED`);
+  }
+  if (operation === 'MATERIAL_USAGE' || operation === 'PRODUCTION_OUTPUT') {
+    const reversed = sources[0].reversal === 'Y';
+    const expected = ((operation === 'PRODUCTION_OUTPUT') !== reversed) ? '30' : '31';
+    if (activityCode !== expected) throw new Error(`${operation}_SOURCE_ACTIVITY_UNCONFIRMED`);
   }
   const sourceId = sources[0].id;
   // Snapshot scalar identity; never consult mutable source views after send.
@@ -160,7 +188,8 @@ async function prepareIsolatedGoodsFinalizer(db: PrismaClient, token: string, ad
         clientApprovedAmbiguousRetry: false, exclusiveStreamProven: true, priorInvocationEnded: true, outcomeDurablyRecorded: true });
       const retry = !success && disposition === 'RETRY_TO_TAIL';
       const failure = !success && disposition === 'STOP';
-      const metadata = { adapter: operation === 'INCOMING' ? 'C2B_ISOLATED_INCOMING' : 'PHASE2A_ISOLATED_OUTGOING', outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
+      const metadata = { adapter: { INCOMING: 'C2B_ISOLATED_INCOMING', OUTGOING: 'PHASE2A_ISOLATED_OUTGOING',
+          MATERIAL_USAGE: 'PHASE2B_ISOLATED_MATERIAL_USAGE', PRODUCTION_OUTPUT: 'PHASE2B_ISOLATED_PRODUCTION_OUTPUT' }[operation], outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
           endpoint_url: endpointUrl, classification: outcome.classification.kind,
           reasonCode: outcome.classification.reasonCode, delivery: outcome.delivery, phase: outcome.phase,
           httpCode: outcome.httpCode, businessCode: outcome.businessCode, responseEvidence: evidence.state,

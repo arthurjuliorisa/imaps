@@ -354,7 +354,7 @@ export class INSWIntegrationRepository {
       ORDER BY mu.transaction_date, mu.id
     `;
 
-    const result = await prisma.$queryRawUnsafe<MaterialUsageData[]>(
+    const result = await this.incomingDatabase.$queryRawUnsafe<MaterialUsageData[]>(
       query,
       companyCode,
       ids
@@ -400,7 +400,7 @@ export class INSWIntegrationRepository {
       ORDER BY po.transaction_date, po.id
     `;
 
-    const result = await prisma.$queryRawUnsafe<ProductionOutputData[]>(
+    const result = await this.incomingDatabase.$queryRawUnsafe<ProductionOutputData[]>(
       query,
       companyCode,
       ids

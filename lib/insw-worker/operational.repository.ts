@@ -92,7 +92,7 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
     if (clock.wait_ms > 0) return { waitMs: Math.min(clock.wait_ms, 1000), job: null };
     // Filter in the bounded selector, before any job/attempt/gate mutation.
     // Invalid rows stay untouched and cannot hide valid work later in the tail.
-    // Both isolated goods domains verify committed source association in SQL.
+    // All four isolated domains verify committed source association in SQL.
     const candidates = await tx.$queryRaw<{ id: string }[]>`SELECT q.id FROM insw_queue_cycle q
       WHERE q.status = 'READY' AND q.next_eligible_at <= clock_timestamp()
         AND q.company_code IN (1370, 1380)
@@ -111,6 +111,46 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
             to_json(q.wms_reference)::text, ',"ACCEPTED_WMS_ID",', to_json(q.business_date)::text, ']')
           AND (SELECT count(*) = 1 AND bool_and(to_char(s.outgoing_date, 'YYYY-MM-DD') = q.business_date)
             FROM (SELECT g.outgoing_date FROM outgoing_goods g JOIN companies c ON c.code = g.company_code
+              WHERE g.company_code = q.company_code AND c.company_type = 'SEZ'
+                AND g.wms_id = q.wms_reference AND g.deleted_at IS NULL LIMIT 2) s)
+        ))
+        AND (q.operation <> 'MATERIAL_USAGE' OR (
+          q.wms_reference = btrim(q.wms_reference) AND length(q.wms_reference) BETWEEN 1 AND 100
+          AND q.wms_reference !~ '[[:cntrl:]]' AND
+          q.source_revision = 'ACCEPTED_WMS_ID' AND q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
+          AND q.identity_key = concat('["insw-v1",', q.company_code, ',"MATERIAL_USAGE","WMS_REFERENCE",',
+            to_json(q.wms_reference)::text, ',"ACCEPTED_WMS_ID",', to_json(q.business_date)::text, ']')
+          AND jsonb_typeof(q.frozen_payload->'data') = 'array'
+          AND CASE WHEN jsonb_typeof(q.frozen_payload->'data') = 'array'
+            THEN jsonb_array_length(q.frozen_payload->'data') = 1 ELSE false END
+          AND CASE WHEN jsonb_typeof(q.frozen_payload#>'{data,0,dokumenKegiatan}') = 'array'
+            THEN jsonb_array_length(q.frozen_payload#>'{data,0,dokumenKegiatan}') = 1 ELSE false END
+          AND q.frozen_payload#>>'{data,0,dokumenKegiatan,0,nomorDokKegiatan}' = q.wms_reference
+          AND CASE WHEN jsonb_typeof(q.frozen_payload#>'{data,0,dokumenKegiatan,0,barangTransaksi}') = 'array'
+            THEN jsonb_array_length(q.frozen_payload#>'{data,0,dokumenKegiatan,0,barangTransaksi}') > 0 ELSE false END
+          AND (SELECT count(*) = 1 AND bool_and(to_char(s.transaction_date, 'YYYY-MM-DD') = q.business_date
+              AND q.frozen_payload#>>'{data,0,kdKegiatan}' = CASE WHEN s.reversal = 'Y' THEN '30' ELSE '31' END)
+            FROM (SELECT g.transaction_date, g.reversal FROM material_usages g JOIN companies c ON c.code = g.company_code
+              WHERE g.company_code = q.company_code AND c.company_type = 'SEZ'
+                AND g.wms_id = q.wms_reference AND g.deleted_at IS NULL LIMIT 2) s)
+        ))
+        AND (q.operation <> 'PRODUCTION_OUTPUT' OR (
+          q.wms_reference = btrim(q.wms_reference) AND length(q.wms_reference) BETWEEN 1 AND 100
+          AND q.wms_reference !~ '[[:cntrl:]]' AND
+          q.source_revision = 'ACCEPTED_WMS_ID' AND q.intent = 'SOURCE_COMMIT' AND q.source_log_id IS NULL
+          AND q.identity_key = concat('["insw-v1",', q.company_code, ',"PRODUCTION_OUTPUT","WMS_REFERENCE",',
+            to_json(q.wms_reference)::text, ',"ACCEPTED_WMS_ID",', to_json(q.business_date)::text, ']')
+          AND jsonb_typeof(q.frozen_payload->'data') = 'array'
+          AND CASE WHEN jsonb_typeof(q.frozen_payload->'data') = 'array'
+            THEN jsonb_array_length(q.frozen_payload->'data') = 1 ELSE false END
+          AND CASE WHEN jsonb_typeof(q.frozen_payload#>'{data,0,dokumenKegiatan}') = 'array'
+            THEN jsonb_array_length(q.frozen_payload#>'{data,0,dokumenKegiatan}') = 1 ELSE false END
+          AND q.frozen_payload#>>'{data,0,dokumenKegiatan,0,nomorDokKegiatan}' = q.wms_reference
+          AND CASE WHEN jsonb_typeof(q.frozen_payload#>'{data,0,dokumenKegiatan,0,barangTransaksi}') = 'array'
+            THEN jsonb_array_length(q.frozen_payload#>'{data,0,dokumenKegiatan,0,barangTransaksi}') > 0 ELSE false END
+          AND (SELECT count(*) = 1 AND bool_and(to_char(s.transaction_date, 'YYYY-MM-DD') = q.business_date
+              AND q.frozen_payload#>>'{data,0,kdKegiatan}' = CASE WHEN s.reversal = 'Y' THEN '31' ELSE '30' END)
+            FROM (SELECT g.transaction_date, g.reversal FROM production_outputs g JOIN companies c ON c.code = g.company_code
               WHERE g.company_code = q.company_code AND c.company_type = 'SEZ'
                 AND g.wms_id = q.wms_reference AND g.deleted_at IS NULL LIMIT 2) s)
         ))

@@ -828,7 +828,7 @@ export class INSWIntegrationService {
     // Get wms_id mapping from material_usages
     const wmsIdMap = new Map<number, string>();
     const uniqueTransactionIds = [...new Set(data.map((item) => item.transaction_id))];
-    const materialUsages = await prisma.material_usages.findMany({
+    const materialUsages = await this.incomingDatabase.material_usages.findMany({
       where: {
         id: { in: uniqueTransactionIds },
         company_code: companyCode,
@@ -901,7 +901,7 @@ export class INSWIntegrationService {
     // Get wms_id mapping from production_outputs
     const wmsIdMap = new Map<number, string>();
     const uniqueTransactionIds = [...new Set(data.map((item) => item.transaction_id))];
-    const productionOutputs = await prisma.production_outputs.findMany({
+    const productionOutputs = await this.incomingDatabase.production_outputs.findMany({
       where: {
         id: { in: uniqueTransactionIds },
         company_code: companyCode,
