@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { isAllowedRequestHost, getRequestHost } from './lib/security/request-origin';
+import { formatMenuFetchDiagnostic } from './lib/security/menu-fetch-diagnostics';
 
 /**
  * Protected routes that require menu access permission
@@ -68,13 +69,16 @@ async function fetchUserMenuPaths(
   const pathname = request.nextUrl.pathname;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
+    let menuTarget: URL | undefined;
+    let responseStatus: number | undefined;
     try {
       // Create abort controller for timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
+      menuTarget = new URL('/api/settings/access-menu/current-user-menus', request.url);
       const response = await fetch(
-        new URL('/api/settings/access-menu/current-user-menus', request.url),
+        menuTarget,
         {
           headers: {
             cookie: request.headers.get('cookie') || '',
@@ -84,6 +88,7 @@ async function fetchUserMenuPaths(
       );
 
       clearTimeout(timeoutId);
+      responseStatus = response.status;
       const duration = Date.now() - startTime;
 
       if (!response.ok) {
@@ -97,6 +102,12 @@ async function fetchUserMenuPaths(
         console.error(
           `[Middleware] API failed with status ${response.status} after ${retries + 1} attempts (${duration}ms) for ${pathname}`
         );
+        if (isAuthDebugEnabled) {
+          authDebug('menu-fetch', formatMenuFetchDiagnostic({
+            pathname, target: menuTarget, attempt: attempt + 1, elapsedMs: duration,
+            outcome: 'http_error', status: response.status,
+          }));
+        }
         return new Set();
       }
 
@@ -130,6 +141,14 @@ async function fetchUserMenuPaths(
       );
       console.error(`[Middleware] Error type: ${error instanceof Error ? error.constructor.name : typeof error}`);
       console.error(`[Middleware] Error message: ${error instanceof Error ? error.message : String(error)}`);
+
+      if (isAuthDebugEnabled) {
+        authDebug('menu-fetch', formatMenuFetchDiagnostic({
+          pathname, target: menuTarget, attempt: attempt + 1, elapsedMs: duration,
+          outcome: responseStatus === undefined ? 'transport_error' : 'response_error',
+          status: responseStatus, error,
+        }));
+      }
 
       return new Set();
     }

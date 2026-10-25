@@ -45,7 +45,8 @@ next-env.d.ts
 
 # test folder
 /test
-/tests
+/tests/*
+!/tests/proxy-menu-fetch-diagnostics.spec.ts
 
 # markdown files
 *.md
