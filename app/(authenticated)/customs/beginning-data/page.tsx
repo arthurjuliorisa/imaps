@@ -166,6 +166,7 @@ export default function BeginningDataPage() {
         itemName: item.item.name,
         itemType: item.itemType,
         uom: item.uom.code,
+        inswUom: item.inswUom ?? null,
         beginningBalance: item.beginningBalance,
         beginningDate: item.beginningDate,
         remarks: item.remarks,

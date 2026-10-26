@@ -131,6 +131,34 @@ export async function GET(request: Request) {
       take: limit,
     });
 
+    // Resolve current global mappings once per page, including historical/locked balances.
+    // Keep JS uppercase semantics (without trimming) consistent with INSW integration.
+    const activeMappings = beginningBalances.length > 0
+      ? await prisma.insw_uom_mapping.findMany({
+          where: { is_active: true },
+          select: { wms_uom: true, insw_uom: true },
+        })
+      : [];
+    const uomMappings = new Map<string, { count: number; target: string | null }>();
+    for (const mapping of activeMappings) {
+      const key = mapping.wms_uom.toUpperCase();
+      const existing = uomMappings.get(key);
+      uomMappings.set(key, {
+        count: (existing?.count ?? 0) + 1,
+        target: existing ? null : (mapping.insw_uom.trim() ? mapping.insw_uom : null),
+      });
+    }
+    const encounteredAmbiguousKeys = new Set(
+      beginningBalances.map(balance => balance.uom.toUpperCase())
+        .filter(key => (uomMappings.get(key)?.count ?? 0) > 1)
+    );
+    if (encounteredAmbiguousKeys.size > 0) {
+      console.warn('[Beginning Balance UoM]', {
+        event: 'ambiguous_active_uom_mapping',
+        ambiguousKeyCount: encounteredAmbiguousKeys.size,
+      });
+    }
+
     // Fetch status separately via raw SQL (Prisma client may not have status field yet)
     const statusRows = await prisma.$queryRawUnsafe<Array<{ id: number; status: string }>>(
       `SELECT id, status::text FROM beginning_balances WHERE company_code = $1 AND deleted_at IS NULL`,
@@ -175,6 +203,7 @@ export async function GET(request: Request) {
         ppkek_numbers: balance.ppkeks?.map(p => p.ppkek_number) || [],
         itemId: balance.item_code,
         uomId: balance.uom,
+        inswUom: uomMappings.get(balance.uom.toUpperCase())?.target ?? null,
         itemType: balance.item_type,
         status: statusMap.get(balance.id) || 'OPEN',
         hasTransactions,

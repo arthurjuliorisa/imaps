@@ -44,6 +44,7 @@ export interface BeginningStockData {
   itemName: string;
   itemType?: string;
   uom: string;
+  inswUom?: string | null;
   beginningBalance: number;
   beginningDate: string;
   remarks?: string;
@@ -232,7 +233,8 @@ export function BeginningStockTable({
               <TableCell sx={{ fontWeight: 600 }}>Item Code</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>UOM</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>WMS UoM</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>INSW / CEISA UoM</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">
                 Beginning Balance
               </TableCell>
@@ -249,7 +251,7 @@ export function BeginningStockTable({
           <TableBody>
             {paginatedData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} align="center" sx={{ py: 8 }}>
+                <TableCell colSpan={11} align="center" sx={{ py: 8 }}>
                   <Typography variant="body1" color="text.secondary">
                     No beginning stock data found
                   </Typography>
@@ -305,6 +307,14 @@ export function BeginningStockTable({
                     >
                       {row.uom}
                     </Typography>
+                  </TableCell>
+                  <TableCell>
+                    {row.inswUom || (
+                      <span title="No unambiguous active INSW / CEISA UoM mapping available"
+                        aria-label="No unambiguous active INSW / CEISA UoM mapping available">
+                        -
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" fontWeight={600}>
