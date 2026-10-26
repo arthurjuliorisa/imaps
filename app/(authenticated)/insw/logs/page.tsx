@@ -411,6 +411,7 @@ export default function INSWLogsPage() {
             <Tooltip title="Kirim Ulang">
               <span>
                 <IconButton
+                  aria-label="Kirim Ulang"
                   size="small"
                   color="warning"
                   onClick={() => {
