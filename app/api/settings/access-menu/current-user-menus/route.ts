@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { resolveMenuGrants } from '@/lib/menu-auth';
 
 /**
  * Menu structure for sidebar
@@ -27,7 +28,7 @@ interface MenuResponse {
  *
  * @returns Array of menus the user can view
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     // Get current user session
     const session = await getServerSession(authOptions);
@@ -37,6 +38,10 @@ export async function GET() {
         { message: 'Unauthorized' },
         { status: 401 }
       );
+    }
+
+    if (new URL(request.url).searchParams.get('grantsFor') === '/insw/logs') {
+      return NextResponse.json(await resolveMenuGrants(session, '/insw/logs'));
     }
 
     const userId = session.user.id;

@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import dayjs from 'dayjs';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
-import { checkAuth } from '@/lib/api-auth';
+import { checkInswAuth } from '@/lib/insw-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 
 export async function GET(request: Request) {
   try {
-    const authCheck = await checkAuth();
+    const authCheck = await checkInswAuth();
     if (!authCheck.authenticated) {
       return authCheck.response;
     }
@@ -27,17 +27,24 @@ export async function GET(request: Request) {
     const dateTo = searchParams.get('date_to');
     const service = new INSWTransmissionService();
 
-    const logs = await service.getTransmissionLogs({
+    const { logs, total } = await service.getTransmissionLogPage({
       company_code: companyCode,
       transaction_type: transactionType || undefined,
       insw_status: inswStatus || undefined,
       limit: 10000,
+      offset: 0,
+      wms_id: searchParams.get('wms_id')?.trim() || undefined,
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
     });
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('INSW Logs');
+    const info = workbook.addWorksheet('Export Info');
+    info.addRow(['Historical attempt outcomes; current queue state is shown in the application.']);
+    info.addRow(['Matching rows', total]);
+    info.addRow(['Exported rows', logs.length]);
+    info.addRow(['Truncated', total > logs.length ? 'YES — export limited to 10,000 rows; narrow filters.' : 'NO']);
 
     worksheet.columns = [
       { header: 'No', key: 'no', width: 6 },

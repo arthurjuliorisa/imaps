@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { WmsAdmissionError, submitOutgoingOriginals } from '@/lib/insw-queue/wms-coordination';
 import { prisma } from '@/lib/db/prisma';
-import { checkAuth } from '@/lib/api-auth';
+import { checkInswAuth } from '@/lib/insw-auth';
 import { validateCompanyCode, validateSEZCompany } from '@/lib/company-validation';
 
 export async function POST(request: Request) {
   try {
-    const authCheck = await checkAuth();
+    const authCheck = await checkInswAuth('create');
     if (!authCheck.authenticated) {
       return authCheck.response;
     }

@@ -1,6 +1,6 @@
 import { WmsAdmissionError, resendWmsLog, wmsLogTypes } from '@/lib/insw-queue/wms-coordination';
 import { NextResponse } from 'next/server';
-import { checkAuth } from '@/lib/api-auth';
+import { checkInswAuth } from '@/lib/insw-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { prisma } from '@/lib/prisma';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
@@ -54,7 +54,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authCheck = await checkAuth();
+    const authCheck = await checkInswAuth('edit');
     if (!authCheck.authenticated) {
       return authCheck.response;
     }

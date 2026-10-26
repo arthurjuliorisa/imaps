@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
-import { checkAuth } from '@/lib/api-auth';
+import { checkInswAuth } from '@/lib/insw-auth';
 import { validateCompanyCode, validateSEZCompany } from '@/lib/company-validation';
 
 export async function POST() {
   try {
-    const authCheck = await checkAuth();
+    const authCheck = await checkInswAuth('create');
     if (!authCheck.authenticated) {
       return authCheck.response;
     }

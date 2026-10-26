@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { checkAuth } from '@/lib/api-auth';
+import { checkInswAuth } from '@/lib/insw-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { prisma } from '@/lib/prisma';
 
@@ -14,7 +14,7 @@ import { prisma } from '@/lib/prisma';
  */
 export async function GET() {
   try {
-    const authCheck = await checkAuth();
+    const authCheck = await checkInswAuth();
     if (!authCheck.authenticated) {
       return authCheck.response;
     }

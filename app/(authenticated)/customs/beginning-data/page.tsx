@@ -49,6 +49,7 @@ export default function BeginningDataPage() {
   const [transmitModalOpen, setTransmitModalOpen] = useState(false);
   const [lockDialogOpen, setLockDialogOpen] = useState(false);
   const [transmitLoading, setTransmitLoading] = useState(false);
+  const [canSubmitInsw, setCanSubmitInsw] = useState(false);
 
   // Company Type Management
   const [companyType, setCompanyType] = useState<'SEZ' | 'BZ' | null>(null);
@@ -58,6 +59,19 @@ export default function BeginningDataPage() {
   const [selectedItemType, setSelectedItemType] = useState<string>('ALL');
   const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
   const [itemTypesLoading, setItemTypesLoading] = useState(true);
+
+  // Own grant metadata only; CREATE does not require permission to read logs.
+  useEffect(() => {
+    let active = true;
+    setCanSubmitInsw(false);
+    if (session?.user?.id) {
+      fetch('/api/settings/access-menu/current-user-menus?grantsFor=/insw/logs')
+        .then(async response => response.ok ? response.json() : null)
+        .then(grants => { if (active) setCanSubmitInsw(grants?.canCreate === true); })
+        .catch(() => { if (active) setCanSubmitInsw(false); });
+    }
+    return () => { active = false; };
+  }, [session?.user?.id]);
 
   // Load company type on mount
   useEffect(() => {
@@ -378,6 +392,7 @@ export default function BeginningDataPage() {
 
   // Handle transmit to INSW
   const handleTransmitToINSW = async () => {
+    if (!canSubmitInsw) return;
     setTransmitLoading(true);
     try {
       const response = await fetch('/api/insw/post/saldo-awal', { method: 'POST' });
@@ -397,6 +412,7 @@ export default function BeginningDataPage() {
 
   // Handle lock saldo awal
   const handleLockSaldoAwal = async () => {
+    if (!canSubmitInsw) return;
     try {
       const response = await fetch('/api/insw/post/saldo-awal-final', { method: 'POST' });
       const result = await response.json();
@@ -457,7 +473,7 @@ export default function BeginningDataPage() {
       subtitle="Manage beginning balance data for stock mutations"
       actions={
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, flexWrap: 'wrap' }}>
-          {companyType === 'SEZ' && (
+          {companyType === 'SEZ' && canSubmitInsw && (
             <>
               {overallStatus === 'OPEN' && (
                 <Button

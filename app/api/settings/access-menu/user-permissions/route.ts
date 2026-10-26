@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { checkMenuAuth } from '@/lib/menu-auth';
+import { isCompanyInUserScope } from '@/lib/user-company-scope';
 import {
   handleApiError,
   validateRequiredFields,
@@ -26,6 +28,8 @@ interface UserPermission {
  */
 export async function GET(request: NextRequest) {
   try {
+    const auth = await checkMenuAuth('/settings/access-menu');
+    if (!auth.authenticated) return auth.response;
     const searchParams = request.nextUrl.searchParams;
     const userId = searchParams.get('userId');
 
@@ -38,7 +42,8 @@ export async function GET(request: NextRequest) {
       where: { id: userId },
     });
 
-    if (!user) {
+    if (!user || (auth.session.user.role !== 'SUPER_ADMIN'
+      && !isCompanyInUserScope(auth.session.user.companyCode, user.company_code))) {
       return NextResponse.json(
         { message: 'User not found' },
         { status: 404 }
@@ -87,6 +92,8 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const auth = await checkMenuAuth('/settings/access-menu');
+    if (!auth.authenticated) return auth.response;
     const body = await request.json();
 
     // Validate required fields
@@ -104,7 +111,8 @@ export async function POST(request: NextRequest) {
       where: { id: userId },
     });
 
-    if (!user) {
+    if (!user || (auth.session.user.role !== 'SUPER_ADMIN'
+      && !isCompanyInUserScope(auth.session.user.companyCode, user.company_code))) {
       return NextResponse.json(
         { message: 'User not found' },
         { status: 404 }

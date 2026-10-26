@@ -36,6 +36,7 @@ import {
 import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import dayjs from 'dayjs';
+import { deliveryLabel, type OperationalState } from '@/lib/insw-queue/operational-state';
 
 interface INSWLog {
   id: string;
@@ -51,6 +52,9 @@ interface INSWLog {
   sent_at: string | null;
   retry_count: number;
   can_resend?: boolean;
+  current_queue?: OperationalState | null;
+  queue_id?: string | null;
+  queue_attempt_id?: string | null;
   created_at: string;
   metadata?: { endpoint_url?: string } | null;
 }
@@ -302,6 +306,12 @@ export default function INSWLogsPage() {
   const [selectedLog, setSelectedLog] = useState<INSWLog | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const detailRequestVersion = useRef(0);
+  const listRequestVersion = useRef(0);
+  const metadataRequestVersion = useRef(0);
+  const chartRequestVersion = useRef(0);
+  const resendLatch = useRef(false);
+  const refreshLatch = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const [dateFrom, setDateFrom] = useState(dayjs().subtract(7, 'day').format('YYYY-MM-DD'));
@@ -350,7 +360,7 @@ export default function INSWLogsPage() {
     },
     {
       id: 'insw_status',
-      label: 'Status',
+      label: 'Historical attempt outcome',
       minWidth: 120,
       format: (value: string) => {
         const upperValue = value?.toUpperCase() || '';
@@ -369,6 +379,12 @@ export default function INSWLogsPage() {
           />
         );
       },
+    },
+    {
+      id: 'current_queue',
+      label: 'Current delivery / latest cycle',
+      minWidth: 280,
+      format: (_value: any, row: INSWLog) => renderQueueState(row),
     },
     {
       id: 'retry_count',
@@ -391,7 +407,7 @@ export default function INSWLogsPage() {
               <Visibility fontSize="small" />
             </IconButton>
           </Tooltip>
-          {(['incoming', 'outgoing', 'material_usage', 'production_output', 'adjustment', 'stock_opname'].includes((row as INSWLog).transaction_type) ? (row as INSWLog).can_resend === true : ((row as INSWLog).insw_status === 'FAILED' || (row as INSWLog).insw_status === 'PENDING')) && (
+          {(row as INSWLog).can_resend === true && (
             <Tooltip title="Kirim Ulang">
               <span>
                 <IconButton
@@ -442,6 +458,7 @@ export default function INSWLogsPage() {
   }, []);
 
   const fetchLogs = async () => {
+    const version = ++listRequestVersion.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -457,26 +474,32 @@ export default function INSWLogsPage() {
       const response = await fetch(`/api/insw/logs?${params}`);
       const result = await response.json();
 
-      if (result.success && Array.isArray(result.data)) {
+      if (version !== listRequestVersion.current) return false;
+      if (response.ok && result.success && Array.isArray(result.data)) {
         setLogs(result.data);
         setTotalCount(result.pagination?.total || 0);
         setError(null);
+        return true;
       } else {
         setLogs([]);
         setTotalCount(0);
-        setError(result.error || 'Failed to fetch logs');
+        setError(result.error || result.message || 'Failed to fetch logs');
+        return false;
       }
     } catch (err) {
+      if (version !== listRequestVersion.current) return false;
       console.error('Error fetching INSW logs:', err);
       setLogs([]);
       setTotalCount(0);
       setError('Failed to fetch INSW logs');
+      return false;
     } finally {
-      setLoading(false);
+      if (version === listRequestVersion.current) setLoading(false);
     }
   };
 
   const fetchFilterMetadata = async () => {
+    const version = ++metadataRequestVersion.current;
     try {
       const params = new URLSearchParams({
         ...(dateFrom && { date_from: dateFrom }),
@@ -484,31 +507,41 @@ export default function INSWLogsPage() {
       });
       const response = await fetch(`/api/insw/logs/metadata?${params}`);
       const result = await response.json();
-      if (result.success) {
+      if (version !== metadataRequestVersion.current) return false;
+      if (response.ok && result.success) {
         setTransactionTypes(result.data?.transactionTypes || []);
         setStatuses(result.data?.statuses || []);
+        return true;
       }
+      return false;
     } catch (err) {
       console.error('Error fetching INSW log filter metadata:', err);
+      return false;
     }
   };
 
   const fetchChartData = async () => {
+    const version = ++chartRequestVersion.current;
     setChartLoading(true);
     try {
       const response = await fetch('/api/insw/logs/chart-stats');
       const result = await response.json();
 
-      if (result.success && Array.isArray(result.data)) {
+      if (version !== chartRequestVersion.current) return false;
+      if (response.ok && result.success && Array.isArray(result.data)) {
         setChartData(result.data);
+        return true;
       } else {
         setChartData([]);
+        return false;
       }
     } catch (err) {
+      if (version !== chartRequestVersion.current) return false;
       console.error('Error fetching chart data:', err);
       setChartData([]);
+      return false;
     } finally {
-      setChartLoading(false);
+      if (version === chartRequestVersion.current) setChartLoading(false);
     }
   };
 
@@ -527,14 +560,23 @@ export default function INSWLogsPage() {
     setPage(0);
   };
 
-  const handleRefresh = () => {
-    fetchLogs();
-    fetchChartData();
-    toast.success('INSW logs refreshed');
+  const handleRefresh = async () => {
+    if (refreshLatch.current) return;
+    refreshLatch.current = true;
+    setRefreshing(true);
+    try {
+      const results = await Promise.all([fetchLogs(), fetchChartData(), fetchFilterMetadata()]);
+      if (results.every(Boolean)) toast.success('INSW logs refreshed');
+      else toast.error('Refresh incomplete; a request failed or was superseded.');
+    } finally {
+      refreshLatch.current = false;
+      setRefreshing(false);
+    }
   };
 
   const handleExportExcel = () => {
     const params = new URLSearchParams({
+      ...(wmsIdSearch && { wms_id: wmsIdSearch }),
       ...(dateFrom && { date_from: dateFrom }),
       ...(dateTo && { date_to: dateTo }),
       ...(transactionTypeFilter !== 'ALL' && { transaction_type: transactionTypeFilter }),
@@ -606,6 +648,7 @@ export default function INSWLogsPage() {
     payloadType: 'request' | 'response',
     logId: string
   ) => {
+    if (payload == null) return <Typography variant="body2" color="text.secondary">No recorded {payloadType} payload.</Typography>;
     if (isLargePayload(payload)) {
       const filename = `insw-${payloadType}-payload-${logId}.json`;
 
@@ -683,6 +726,8 @@ export default function INSWLogsPage() {
   };
 
   const handleResend = async (logId: string) => {
+    if (resendLatch.current) return;
+    resendLatch.current = true;
     setResendingId(logId);
     try {
       const res = await fetch(`/api/insw/logs/${logId}/resend`, { method: 'POST' });
@@ -693,9 +738,27 @@ export default function INSWLogsPage() {
     } catch (err: any) {
       toast.error(err.message || 'Gagal mengirim ulang data');
     } finally {
+      resendLatch.current = false;
       setResendingId(null);
     }
   };
+
+  function renderQueueState(log: INSWLog) {
+    const q = log.current_queue;
+    return <Stack spacing={0.5}>
+      <Typography variant="body2">{deliveryLabel(q)}</Typography>
+      {log.queue_attempt_id && <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>Historical attempt {log.queue_attempt_id}</Typography>}
+      {q && <>
+        <Typography variant="caption">Cycle {q.cycle} · {q.intent} · retry {q.retry_index}/{q.max_auto_retry_snapshot}</Typography>
+        <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>Queue {q.id}{log.id.startsWith('queue:') ? '' : ' (latest)'}</Typography>
+        <Typography variant="caption">Queued {dayjs(q.queued_at).format('DD/MM HH:mm:ss')} · {q.completed_at ? `Completed ${dayjs(q.completed_at).format('DD/MM HH:mm:ss')}` : q.claimed_at ? `Claimed ${dayjs(q.claimed_at).format('DD/MM HH:mm:ss')}` : `Eligible ${dayjs(q.next_eligible_at).format('DD/MM HH:mm:ss')}`}</Typography>
+        {q.attempt && <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>Latest attempt {q.attempt.id} · {q.attempt.delivery_state} · started {q.attempt.started_at || 'not started'} · completed {q.attempt.completed_at || 'pending'}</Typography>}
+        {q.error_message && <Typography variant="caption">{q.error_message}</Typography>}
+        {!q.latest_log_id && q.id !== log.queue_id && !log.id.startsWith('queue:') && <Button size="small" onClick={() => handleViewDetails({ ...log, id: `queue:${q.id}` })}>View current cycle</Button>}
+        {q.latest_log_id && q.latest_log_id !== log.id && <Button size="small" onClick={() => handleViewDetails({ ...log, id: q.latest_log_id! })}>Latest cycle attempt #{q.latest_log_id}</Button>}
+      </>}
+    </Stack>;
+  }
 
   const totalSuccess = chartData.reduce((sum, d) => sum + d.success, 0);
   const totalFailed = chartData.reduce((sum, d) => sum + d.failed, 0);
@@ -735,7 +798,7 @@ export default function INSWLogsPage() {
             </IconButton>
           </Tooltip>
           <Tooltip title="Refresh">
-            <IconButton onClick={handleRefresh} color="primary">
+            <IconButton onClick={handleRefresh} disabled={refreshing} color="primary">
               <Refresh />
             </IconButton>
           </Tooltip>
@@ -764,10 +827,10 @@ export default function INSWLogsPage() {
           >
             <Box>
               <Typography variant="subtitle1" fontWeight="bold" sx={{ lineHeight: 1.3 }}>
-                Statistik 7 Hari Terakhir
+                Historical attempt outcomes — last 7 days
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Distribusi log INSW berdasarkan status per hari
+                Historical FAILED includes retries and uncertain delivery; these are not live queue counts.
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -1005,9 +1068,10 @@ export default function INSWLogsPage() {
                   <Typography variant="subtitle2" color="text.secondary">
                     INSW Status
                   </Typography>
+                  {renderQueueState(selectedLog)}
                   <Chip
-                    label={selectedLog.insw_status}
-                    color={selectedLog.insw_status === 'SUCCESS' ? 'success' : 'error'}
+                    label={`Historical attempt: ${selectedLog.insw_status}`}
+                    color={selectedLog.insw_status === 'SUCCESS' ? 'success' : 'default'}
                     size="small"
                   />
                 </Box>
@@ -1028,7 +1092,7 @@ export default function INSWLogsPage() {
                     <Typography variant="subtitle2" color="text.secondary">
                       Request Payload
                     </Typography>
-                    {!isLargePayload(selectedLog.insw_request_payload) && (
+                    {selectedLog.insw_request_payload != null && !isLargePayload(selectedLog.insw_request_payload) && (
                       <Tooltip title={copiedKey === 'payload' ? 'Tersalin!' : 'Salin'}>
                         <IconButton
                           size="small"
@@ -1090,7 +1154,7 @@ export default function INSWLogsPage() {
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'space-between' }}>
           <Box>
-            {selectedLog && (['incoming', 'outgoing', 'material_usage', 'production_output', 'adjustment', 'stock_opname'].includes(selectedLog.transaction_type) ? selectedLog.can_resend === true : (selectedLog?.insw_status === 'FAILED' || selectedLog?.insw_status === 'PENDING')) && (
+            {selectedLog && selectedLog.can_resend === true && (
               <Button
                 onClick={() => {
                   if (selectedLog && selectedLog.transaction_type === 'stock_opname' && (selectedLog.insw_status === 'FAILED' || selectedLog.insw_status === 'PENDING')) {
