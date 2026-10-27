@@ -1627,12 +1627,41 @@ export class INSWTransmissionService {
       prisma.insw_tracking_log.findMany({
         where,
         select: this.listSelect,
-        orderBy: { created_at: 'desc' },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
         take: filters.limit,
         skip: filters.offset,
       }),
     ]);
     return { total, logs };
+  }
+
+  /**
+   * Bounded small-export probe. The extra row detects overflow in the same
+   * selection, avoiding count/read races. 100K remains gated on a paced writer.
+   */
+  async getTransmissionLogsForExcel(filters: {
+    company_code: number;
+    transaction_type?: string;
+    insw_status?: string;
+    wms_id?: string;
+    date_from?: string;
+    date_to?: string;
+  }) {
+    const visibilityFilter = await excludeTechnicalScrapClaims(filters.company_code);
+    const where = this.buildLogWhere(filters, visibilityFilter);
+    return prisma.insw_tracking_log.findMany({
+      where,
+      select: {
+        sent_at: true,
+        transaction_type: true,
+        wms_id: true,
+        insw_activity_code: true,
+        insw_status: true,
+        retry_count: true,
+      },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      take: 10001,
+    });
   }
 
   async getTransmissionLogMetadata(filters: {

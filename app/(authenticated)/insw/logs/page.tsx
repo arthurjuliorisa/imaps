@@ -296,6 +296,9 @@ export default function INSWLogsPage() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [loadedListKey, setLoadedListKey] = useState<string | null>(null);
+  const listRequestVersion = useRef(0);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<INSWLog | null>(null);
@@ -305,6 +308,10 @@ export default function INSWLogsPage() {
 
   const [dateFrom, setDateFrom] = useState(dayjs().subtract(7, 'day').format('YYYY-MM-DD'));
   const [dateTo, setDateTo] = useState(dayjs().format('YYYY-MM-DD'));
+
+  // Draft WMS text is deliberately excluded: only Enter commits it.
+  const activeListKey = JSON.stringify([transactionTypeFilter, statusFilter, wmsIdSearch, dateFrom, dateTo, page, rowsPerPage]);
+  const exportReady = !loading && !error && loadedListKey === activeListKey;
 
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
@@ -441,6 +448,8 @@ export default function INSWLogsPage() {
   }, []);
 
   const fetchLogs = async () => {
+    const requestVersion = ++listRequestVersion.current;
+    const requestKey = activeListKey;
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -455,8 +464,10 @@ export default function INSWLogsPage() {
 
       const response = await fetch(`/api/insw/logs?${params}`);
       const result = await response.json();
+      if (requestVersion !== listRequestVersion.current) return;
 
       if (result.success && Array.isArray(result.data)) {
+        setLoadedListKey(requestKey);
         setLogs(result.data);
         setTotalCount(result.pagination?.total || 0);
         setError(null);
@@ -466,12 +477,13 @@ export default function INSWLogsPage() {
         setError(result.error || 'Failed to fetch logs');
       }
     } catch (err) {
+      if (requestVersion !== listRequestVersion.current) return;
       console.error('Error fetching INSW logs:', err);
       setLogs([]);
       setTotalCount(0);
       setError('Failed to fetch INSW logs');
     } finally {
-      setLoading(false);
+      if (requestVersion === listRequestVersion.current) setLoading(false);
     }
   };
 
@@ -532,14 +544,36 @@ export default function INSWLogsPage() {
     toast.success('INSW logs refreshed');
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+    if (!exportReady || exporting) return;
     const params = new URLSearchParams({
       ...(dateFrom && { date_from: dateFrom }),
       ...(dateTo && { date_to: dateTo }),
       ...(transactionTypeFilter !== 'ALL' && { transaction_type: transactionTypeFilter }),
       ...(statusFilter !== 'ALL' && { insw_status: statusFilter }),
+      ...(wmsIdSearch && { wms_id: wmsIdSearch }),
     });
-    window.open(`/api/insw/logs/export?${params}`, '_blank');
+    setExporting(true);
+    try {
+      const response = await fetch(`/api/insw/logs/export?${params}`);
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error || 'Unable to export INSW logs');
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || 'insw-logs.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // Allow the browser to start consuming the object URL before releasing it.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to export INSW logs');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleViewDetails = async (log: INSWLog) => {
@@ -729,9 +763,11 @@ export default function INSWLogsPage() {
         </Box>
         <Stack direction="row" spacing={1}>
           <Tooltip title="Export Excel">
-            <IconButton onClick={handleExportExcel} color="success">
-              <GetApp />
-            </IconButton>
+            <span>
+              <IconButton onClick={handleExportExcel} color="success" disabled={!exportReady || exporting} aria-label="Export Excel" aria-busy={exporting}>
+                {exporting ? <CircularProgress size={20} color="inherit" /> : <GetApp />}
+              </IconButton>
+            </span>
           </Tooltip>
           <Tooltip title="Refresh">
             <IconButton onClick={handleRefresh} color="primary">

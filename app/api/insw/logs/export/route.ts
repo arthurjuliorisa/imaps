@@ -5,7 +5,11 @@ import { INSWTransmissionService } from '@/lib/services/insw-transmission.servic
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 
+// Single-process admission for the existing buffered path. No waiting queue.
+let exportActive = false;
+
 export async function GET(request: Request) {
+  let admitted = false;
   try {
     const authCheck = await checkAuth();
     if (!authCheck.authenticated) {
@@ -18,6 +22,16 @@ export async function GET(request: Request) {
       return companyValidation.response;
     }
 
+    if (request.signal.aborted) return new Response(null, { status: 499 });
+    if (exportActive) {
+      return NextResponse.json(
+        { success: false, error: 'An INSW Excel export is already running. Please try again shortly.' },
+        { status: 429, headers: { 'Retry-After': '5' } }
+      );
+    }
+    exportActive = true;
+    admitted = true;
+
     const { companyCode } = companyValidation;
     const { searchParams } = new URL(request.url);
 
@@ -25,16 +39,26 @@ export async function GET(request: Request) {
     const inswStatus = searchParams.get('insw_status');
     const dateFrom = searchParams.get('date_from');
     const dateTo = searchParams.get('date_to');
+    const wmsId = searchParams.get('wms_id')?.trim();
     const service = new INSWTransmissionService();
 
-    const logs = await service.getTransmissionLogs({
+    const logs = await service.getTransmissionLogsForExcel({
       company_code: companyCode,
       transaction_type: transactionType || undefined,
       insw_status: inswStatus || undefined,
-      limit: 10000,
+      wms_id: wmsId || undefined,
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
     });
+
+    // This single bounded probe includes one sentinel row; never silently truncate.
+    if (request.signal.aborted) return new Response(null, { status: 499 });
+    if (logs.length > 10000) {
+      return NextResponse.json(
+        { success: false, error: 'More than 10,000 logs match. Narrow the active filters and try again. The 100,000-row export is pending capacity validation.' },
+        { status: 413 }
+      );
+    }
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('INSW Logs');
@@ -72,8 +96,10 @@ export async function GET(request: Request) {
 
     const buffer = await workbook.xlsx.writeBuffer();
 
-    const filenameDateFrom = dateFrom ?? 'all';
-    const filenameDateTo = dateTo ?? 'all';
+    if (request.signal.aborted) return new Response(null, { status: 499 });
+    const filenamePart = (value: string | null) => value?.replace(/[^0-9A-Za-z-]/g, '_') || 'all';
+    const filenameDateFrom = filenamePart(dateFrom);
+    const filenameDateTo = filenamePart(dateTo);
     const filename = `insw-logs-${filenameDateFrom}-to-${filenameDateTo}.xlsx`;
 
     return new Response(buffer, {
@@ -84,14 +110,18 @@ export async function GET(request: Request) {
         'Content-Length': buffer.byteLength.toString(),
       },
     });
-  } catch (error: any) {
-    console.error('Error exporting INSW logs:', error);
+  } catch {
+    console.error('Error exporting INSW logs');
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
+        error: 'Unable to export INSW logs. Please try again or narrow the active filters.',
       },
       { status: 500 }
     );
+  } finally {
+    // An aborted Prisma query cannot be canceled here: retain admission until
+    // its work settles, so repeated disconnects cannot bypass the bound.
+    if (admitted) exportActive = false;
   }
 }
