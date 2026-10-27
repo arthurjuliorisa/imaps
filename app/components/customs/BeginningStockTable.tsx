@@ -45,6 +45,7 @@ export interface BeginningStockData {
   itemType?: string;
   uom: string;
   inswUom?: string | null;
+  ceisaInswUom?: string | null;
   beginningBalance: number;
   beginningDate: string;
   remarks?: string;
@@ -309,9 +310,9 @@ export function BeginningStockTable({
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    {row.inswUom || (
-                      <span title="No unambiguous active INSW / CEISA UoM mapping available"
-                        aria-label="No unambiguous active INSW / CEISA UoM mapping available">
+                    {row.ceisaInswUom || (
+                      <span title="No saved INSW / CEISA UoM"
+                        aria-label="No saved INSW / CEISA UoM">
                         -
                       </span>
                     )}

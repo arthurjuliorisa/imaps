@@ -1,4 +1,10 @@
-import { beginningBalanceUploadErrors, normalizeBeginningBalanceItemCode, parseBeginningBalanceDate, parseBeginningBalanceQty } from '@/lib/beginning-balance-upload-validation';
+import {
+  normalizeBeginningBalanceText,
+  beginningBalanceUploadErrors,
+  normalizeBeginningBalanceItemCode,
+  parseBeginningBalanceDate,
+  parseBeginningBalanceQty,
+} from '@/lib/beginning-balance-upload-validation';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -121,6 +127,7 @@ export async function POST(request: Request) {
       itemCode: string;
       itemName: string;
       uom: string;
+      ceisaInswUom: string | null;
       qty: number;
       balanceDate: Date;
       remarks: string | null;
@@ -234,6 +241,7 @@ export async function POST(request: Request) {
         itemCode,
         itemName: String(row.itemName).trim(),
         uom: String(row.uom).trim(),
+        ceisaInswUom: normalizeBeginningBalanceText(row.ceisaInswUom) || null,
         qty: qtyValue,
         balanceDate: dateValue,
         remarks: remarksValue || null,
@@ -331,6 +339,7 @@ export async function POST(request: Request) {
           item_code: record.itemCode,
           item_name: record.itemName,
           uom: record.uom,
+          ceisa_insw_uom: record.ceisaInswUom,
           qty: record.qty,
           balance_date: record.balanceDate,
           remarks: record.remarks,

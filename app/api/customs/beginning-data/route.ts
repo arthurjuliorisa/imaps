@@ -203,6 +203,7 @@ export async function GET(request: Request) {
         ppkek_numbers: balance.ppkeks?.map(p => p.ppkek_number) || [],
         itemId: balance.item_code,
         uomId: balance.uom,
+        ceisaInswUom: balance.ceisa_insw_uom ?? null,
         inswUom: uomMappings.get(balance.uom.toUpperCase())?.target ?? null,
         itemType: balance.item_type,
         status: statusMap.get(balance.id) || 'OPEN',

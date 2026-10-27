@@ -167,6 +167,7 @@ export default function BeginningDataPage() {
         itemType: item.itemType,
         uom: item.uom.code,
         inswUom: item.inswUom ?? null,
+        ceisaInswUom: item.ceisaInswUom ?? null,
         beginningBalance: item.beginningBalance,
         beginningDate: item.beginningDate,
         remarks: item.remarks,
@@ -333,6 +334,7 @@ export default function BeginningDataPage() {
             balanceDate: r.balanceDate,
             ppkekNumbers: r.ppkekNumbers,
             remarks: r.remarks,
+            ceisaInswUom: r.ceisaInswUom,
           })),
         }),
       });

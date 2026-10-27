@@ -24,7 +24,12 @@ import {
 } from '@mui/material';
 import { UploadFile, Close, Save, CheckCircle, Error as ErrorIcon, Download } from '@mui/icons-material';
 import ExcelJS from 'exceljs';
-import { normalizeBeginningBalanceItemCode, normalizeBeginningBalanceText, parseBeginningBalanceQty, validateBeginningBalanceUploadRecord } from '@/lib/beginning-balance-upload-validation';
+import {
+  normalizeBeginningBalanceItemCode,
+  normalizeBeginningBalanceText,
+  parseBeginningBalanceQty,
+  validateBeginningBalanceUploadRecord,
+} from '@/lib/beginning-balance-upload-validation';
 import { useToast } from '../ToastProvider';
 import { formatQty } from '@/lib/utils/format';
 import {
@@ -37,6 +42,7 @@ interface ImportedRecord {
   itemCode: string;
   itemName: string;
   uom: string;
+  ceisaInswUom: string | null;
   qty: number;
   balanceDate: string;
   ppkekNumbers: string[];
@@ -158,6 +164,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
       itemType: row['Item Type'], itemCode: row['Item Code'], itemName: row['Item Name'],
       uom: row['UOM'], qty: row['Qty'], balanceDate: row['Balance Date'],
       remarks: row['Remarks'], ppkekNumbers: row['PPKEK Numbers'],
+      ceisaInswUom: row['UOM CEISA/INSW'],
     }).map(issue => issue.error));
     const itemTypeValue = normalizeBeginningBalanceText(row['Item Type']);
     if (itemTypesList.length && !itemTypesList.includes(itemTypeValue)) {
@@ -258,6 +265,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
           itemCode,
           itemName: normalizeBeginningBalanceText(row['Item Name']),
           uom: normalizeBeginningBalanceText(row['UOM']),
+          ceisaInswUom: normalizeBeginningBalanceText(row['UOM CEISA/INSW']) || null,
           qty,
           balanceDate: normalizeBeginningBalanceText(row['Balance Date']),
           ppkekNumbers,
@@ -284,6 +292,7 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
               itemName: r.itemName,
               itemType: r.itemType,
               uom: r.uom,
+              ceisaInswUom: r.ceisaInswUom,
             })),
           }),
         });
@@ -509,7 +518,10 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
 
           <Alert severity="info" icon={false} sx={{ mb: 2, py: 0.75 }}>
             <Typography variant="caption" component="div">
-              <strong>Format:</strong> Item Type | Item Code | Item Name | UOM | Qty | Balance Date | PPKEK Numbers | Remarks
+              <strong>Format:</strong> Item Type | Item Code | Item Name | UOM | Qty | Balance Date | PPKEK Numbers | Remarks | UOM CEISA/INSW
+            </Typography>
+            <Typography variant="caption" component="div" sx={{ mt: 0.5 }}>
+              UOM CEISA/INSW is optional text, up to 20 characters. Legacy eight-column files remain supported.
             </Typography>
             <Typography variant="caption" component="div" sx={{ mt: 0.5 }}>
               <strong>Note:</strong> Data harus dimulai dari baris ke-3 (Row 3). Baris 1 adalah header, baris 2 adalah format hint.
@@ -716,6 +728,18 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     top: 0,
                     zIndex: 10
                   }}>
+                    UOM CEISA/INSW
+                  </TableCell>
+                  <TableCell sx={{
+                    fontWeight: 600,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f1f5f9',
+                    borderBottom: `2px solid ${theme.palette.divider}`,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
                     Errors
                   </TableCell>
                 </TableRow>
@@ -775,6 +799,11 @@ export function BeginningStockImport({ open, onClose, onSubmit }: BeginningStock
                     <TableCell>
                       <Typography variant="body2" color="text.secondary" fontSize="0.875rem">
                         {record.remarks || '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontSize="0.875rem">
+                        {record.ceisaInswUom || '-'}
                       </Typography>
                     </TableCell>
                     <TableCell>

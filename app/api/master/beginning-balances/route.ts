@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 import { logActivity } from '@/lib/log-activity';
 import type {
   ApiSuccessResponse,
@@ -21,6 +22,14 @@ import type {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+// Preserve the pre-metadata API field set for GET and POST.
+const beginningBalanceSelect = {
+  id: true, company_code: true, item_code: true, item_name: true, item_type: true,
+  uom: true, qty: true, balance_date: true, remarks: true, status: true,
+  created_at: true, updated_at: true, deleted_at: true,
+  ppkeks: { select: { ppkek_number: true } },
+} satisfies Prisma.beginning_balancesSelect;
 
 function errorResponse(message: string, code = 'ERROR', status = 400): NextResponse<ApiErrorResponse> {
   return NextResponse.json<ApiErrorResponse>(
@@ -92,13 +101,7 @@ export async function GET(request: NextRequest) {
       where,
       skip,
       take: pageSize,
-      include: {
-        ppkeks: {
-          select: {
-            ppkek_number: true
-          }
-        }
-      },
+      select: beginningBalanceSelect,
       orderBy: [
         { company_code: 'asc' },
         { item_code: 'asc' }
@@ -202,13 +205,7 @@ export async function POST(request: NextRequest) {
           }
         })
       },
-      include: {
-        ppkeks: {
-          select: {
-            ppkek_number: true
-          }
-        }
-      }
+      select: beginningBalanceSelect
     });
 
     // Transform response

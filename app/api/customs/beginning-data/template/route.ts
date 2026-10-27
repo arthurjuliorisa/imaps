@@ -9,7 +9,7 @@ import { BEGINNING_BALANCE_UPLOAD_MAX_ROWS } from '@/lib/constants/beginning-bal
  *
  * Returns:
  * - Excel file (.xlsx) with proper formatting and sample data for all item types
- * - Headers: Item Type, Item Code, Item Name, UOM, Qty, Balance Date, Remarks
+ * - Headers: Item Type, Item Code, Item Name, UOM, Qty, Balance Date, PPKEK Numbers, Remarks, UOM CEISA/INSW
  * - Includes format hints and sample data rows for multiple item types
  * - Contains an additional Instructions sheet
  */
@@ -38,7 +38,8 @@ export async function GET() {
       'Qty',
       'Balance Date',
       'PPKEK Numbers',
-      'Remarks'
+      'Remarks',
+      'UOM CEISA/INSW'
     ];
 
     // Define format hints (row 2)
@@ -50,13 +51,14 @@ export async function GET() {
       'Positive number > 0',
       'MM/DD/YYYY',
       'Comma-separated, e.g., 001,002,003 (optional)',
-      'Optional notes'
+      'Optional notes',
+      'Optional text, max 20 characters'
     ];
 
     // Define sample data (rows 3-8) - showcasing different item types
     const sampleData = [
-      ['ROH', 'RM-1310-001', 'Steel Plate', 'KG', 100, '01/01/2025', '001,002', 'Opening balance for raw materials'],
-      ['FERT', 'FG-1310-001', 'Finished Product A', 'PCS', 250.5, '01/01/2025', '003', 'Initial finished goods stock'],
+      ['ROH', 'RM-1310-001', 'Steel Plate', 'KG', 100, '01/01/2025', '001,002', 'Opening balance for raw materials', 'KgM'],
+      ['FERT', 'FG-1310-001', 'Finished Product A', 'PCS', 250.5, '01/01/2025', '003', 'Initial finished goods stock', '001'],
       ['HIBE-M', 'CG-MACH-001', 'CNC Machine', 'SET', 2, '01/01/2025', '', 'Capital goods - Machine'],
       ['HALB', 'WIP-1310-001', 'Semi-finished Product', 'PCS', 150, '01/01/2025', '004,005,006', 'WIP stock'],
       ['SCRAP', 'SCRAP-1310-001', 'Waste Materials', 'KG', 10, '01/01/2025', '', 'Waste materials'],
@@ -78,6 +80,7 @@ export async function GET() {
       { width: 18 },  // Balance Date column
       { width: 30 },  // PPKEK Numbers column
       { width: 35 },  // Remarks column
+      { width: 30 },  // UOM CEISA/INSW column
     ];
 
     // Style header row
@@ -96,6 +99,9 @@ export async function GET() {
       pattern: 'solid',
       fgColor: { argb: 'FFF5F5F5' }, // Light gray
     };
+
+    // Column default also covers data rows added after the samples.
+    worksheet.getColumn(9).numFmt = '@';
 
     // Format Qty column (E3:E8) as numbers with 2 decimal places
     for (let row = 3; row <= 8; row++) {
@@ -183,6 +189,7 @@ export async function GET() {
       ['HALB      | WIP-1310-001 | Semi-finished      | PCS  | 150   | 01/01/2025   | WIP stock'],
       ['SCRAP     | SCRAP-001    | Waste Materials    | KG   | 10    | 01/01/2025   | Waste materials'],
       [],
+      ['UOM CEISA/INSW (column I) is optional text, max 20 characters; legacy eight-column files remain supported.'],
       ['For assistance, please contact the system administrator.'],
     ];
 
