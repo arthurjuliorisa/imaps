@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 import { excludeTechnicalScrapClaims } from '@/lib/insw-log-visibility';
+import { createInswCsvPostgresqlSource } from '@/lib/insw-logs-csv-postgresql';
+import { InswCsvError } from '@/lib/insw-logs-csv';
 import { INSWHelper } from '@/lib/utils/insw-helper';
 import {
   INSWTransmissionStatus,
@@ -1594,6 +1596,27 @@ export class INSWTransmissionService {
       ...(filters.wms_id && { wms_id: { contains: filters.wms_id, mode: 'insensitive' } }),
       ...(dateFilter && { sent_at: dateFilter }),
     };
+  }
+
+  /** Internal only: company_code MUST come from validated server session.
+   * Inputs follow the routes' normalization (including trimmed WMS); no CSV
+   * endpoint is enabled. Reuse the canonical local-calendar filter builder. */
+  createTransmissionLogsCsvSource(filters: {
+    company_code: number;
+    transaction_type?: string;
+    insw_status?: string;
+    date_from?: string;
+    date_to?: string;
+    wms_id?: string;
+  }, controls: { signal?: AbortSignal; checkDeadline?: () => void } = {}) {
+    const allowed = ['company_code', 'transaction_type', 'insw_status', 'date_from', 'date_to', 'wms_id'];
+    if (!filters || Object.getPrototypeOf(filters) !== Object.prototype ||
+        Reflect.ownKeys(filters).some(key => typeof key !== 'string' || !allowed.includes(key)) ||
+        Object.entries(filters).some(([key, value]) => key !== 'company_code' &&
+          value !== undefined && typeof value !== 'string')) {
+      throw new InswCsvError('SOURCE');
+    }
+    return createInswCsvPostgresqlSource(this.buildLogWhere(filters, {}), controls);
   }
 
   private readonly listSelect = {

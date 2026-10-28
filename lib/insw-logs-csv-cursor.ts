@@ -1,8 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { CSV_TRIAL_BATCH_SIZE, InswCsvError, type InswCsvRow } from './insw-logs-csv';
 
-/** Independent cursor machinery only. No approved company/filter/visibility SQL
- * binding exists yet. Do not wire this module to a route or an unscoped query. */
+/** Lossless cursor machinery. The internal PostgreSQL binding lives in
+ * insw-logs-csv-postgresql; no route or client authorization is provided here. */
 export interface InswCsvCursor {
   readonly createdAt: string;
   readonly id: bigint;
@@ -56,11 +56,11 @@ export function inswCsvCursorPredicate(page: InswCsvPageRequest): Prisma.Sql {
 }
 
 /**
- * Usable with generateInswCsv's sequential callback contract, once an approved
- * readPage binding exists. readPage MUST apply company + canonical filters +
+ * Usable with generateInswCsv's sequential callback contract.
+ * readPage MUST apply company + canonical filters +
  * legacy visibility AND the cursor predicate, ORDER BY created_at DESC, id DESC,
  * LIMIT take, selecting six CSV fields plus the exact cursor projection only.
- * No default Prisma binding is provided: visibility parity is approval-blocked.
+ * The PostgreSQL module supplies this contract using the shared visibility rule.
  *
  * First returned tuple is the upper fence from the first page's statement.
  * Empty first page ends the read. Short nonempty pages are not treated as EOF.

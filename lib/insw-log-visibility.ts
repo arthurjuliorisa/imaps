@@ -7,14 +7,12 @@ import { prisma } from '@/lib/prisma';
  * including while genuinely PENDING. Only the narrow legacy duplicate shape
  * is hidden; finalized rows are never hidden merely because claim metadata
  * remains on historical data.
- */
-export async function excludeTechnicalScrapClaims(
-  companyCode: number
-): Promise<Prisma.insw_tracking_logWhereInput> {
-  const rows = await prisma.$queryRaw<Array<{ id: bigint }>>`
-    SELECT claim.id
-    FROM insw_tracking_log claim
-    WHERE claim.company_code = ${companyCode}
+ *
+ * Fixed aliases claim/actual only. Keep this positive selection unchanged:
+ * SQL UNKNOWN must not become exclusion through a direct NOT expression. */
+export function technicalScrapClaimPredicate(companyCode: number): Prisma.Sql {
+  return Prisma.sql`
+    claim.company_code = ${companyCode}
       AND claim.transaction_type IN ('scrap_in', 'scrap_out')
       AND claim.insw_status = 'PENDING'
       AND claim.insw_request_payload IS NULL
@@ -36,6 +34,24 @@ export async function excludeTechnicalScrapClaims(
           )
       )
   `;
+}
+
+/** CSV-only anti-membership: no company-wide excluded-ID transfer. */
+export function inswCsvVisibilityPredicate(companyCode: number): Prisma.Sql {
+  return Prisma.sql`NOT EXISTS (
+    SELECT 1 FROM insw_tracking_log claim
+    WHERE claim.id = log.id AND ${technicalScrapClaimPredicate(companyCode)}
+  )`;
+}
+
+export async function excludeTechnicalScrapClaims(
+  companyCode: number
+): Promise<Prisma.insw_tracking_logWhereInput> {
+  const rows = await prisma.$queryRaw<Array<{ id: bigint }>>(Prisma.sql`
+    SELECT claim.id
+    FROM insw_tracking_log claim
+    WHERE ${technicalScrapClaimPredicate(companyCode)}
+  `);
 
   return rows.length > 0 ? { id: { notIn: rows.map(row => row.id) } } : {};
 }
