@@ -1599,8 +1599,8 @@ export class INSWTransmissionService {
   }
 
   /** Internal only: company_code MUST come from validated server session.
-   * Inputs follow the routes' normalization (including trimmed WMS); no CSV
-   * endpoint is enabled. Reuse the canonical local-calendar filter builder. */
+   * Inputs follow the routes' normalization (including trimmed WMS); the CSV
+   * endpoint supplies authorization. Reuse the canonical local-calendar filter builder. */
   createTransmissionLogsCsvSource(filters: {
     company_code: number;
     transaction_type?: string;

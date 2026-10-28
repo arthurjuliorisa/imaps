@@ -2,7 +2,7 @@ import dayjs from 'dayjs';
 import { Writable } from 'node:stream';
 import { finished } from 'node:stream/promises';
 
-// Deliberately not wired to a route. DB, spool and client gates remain pending.
+// CSV-only route uses the private spool lifecycle; XLSX retains its separate limit.
 export const CSV_ROW_LIMIT = 100_000;
 export const CSV_TRIAL_BATCH_SIZE = 2_000;
 export const CSV_HEADER = 'No,Sent At,Type,WMS ID,Activity,Status,Retries\r\n';

@@ -297,6 +297,7 @@ export default function INSWLogsPage() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const [loadedListKey, setLoadedListKey] = useState<string | null>(null);
   const listRequestVersion = useRef(0);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
@@ -576,6 +577,37 @@ export default function INSWLogsPage() {
     }
   };
 
+  const handleExportCsv = async () => {
+    if (!exportReady || exportingCsv) return;
+    const params = new URLSearchParams({
+      ...(dateFrom && { date_from: dateFrom }),
+      ...(dateTo && { date_to: dateTo }),
+      ...(transactionTypeFilter !== 'ALL' && { transaction_type: transactionTypeFilter }),
+      ...(statusFilter !== 'ALL' && { insw_status: statusFilter }),
+      ...(wmsIdSearch && { wms_id: wmsIdSearch }),
+    });
+    setExportingCsv(true);
+    try {
+      const response = await fetch(`/api/insw/logs/export/csv?${params}`);
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error || 'Unable to export INSW CSV');
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || 'insw-logs.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to export INSW CSV');
+    } finally {
+      setExportingCsv(false);
+    }
+  };
+
   const handleViewDetails = async (log: INSWLog) => {
     const logId = String(log.id);
     const requestVersion = ++detailRequestVersion.current;
@@ -769,6 +801,11 @@ export default function INSWLogsPage() {
               </IconButton>
             </span>
           </Tooltip>
+          <Button onClick={handleExportCsv} color="success" disabled={!exportReady || exportingCsv}
+            aria-label="Export CSV (max 100,000 rows)" aria-busy={exportingCsv}
+            startIcon={exportingCsv ? <CircularProgress size={16} color="inherit" /> : <GetApp />}>
+            Export CSV (max 100,000 rows)
+          </Button>
           <Tooltip title="Refresh">
             <IconButton onClick={handleRefresh} color="primary">
               <Refresh />
