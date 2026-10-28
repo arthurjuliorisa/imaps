@@ -1,3 +1,4 @@
+import { assertBeginningBalanceCompanyScope, BeginningBalanceStateError, guardBeginningBalanceWrite } from '@/lib/beginning-balance-state';
 import {
   normalizeBeginningBalanceText,
   beginningBalanceUploadErrors,
@@ -108,6 +109,8 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    assertBeginningBalanceCompanyScope(request, companyCodeInt, body);
 
     const inputErrors = beginningBalanceUploadErrors(records);
     if (inputErrors.length) return NextResponse.json({ success: false, message: 'Invalid upload values', successCount: 0, errorCount: inputErrors.length, errors: inputErrors }, { status: 400 });
@@ -329,6 +332,7 @@ export async function POST(request: Request) {
 
     try {
       await prisma.$transaction(async (tx) => {
+        await guardBeginningBalanceWrite(tx, companyCodeInt);
         // Note: Duplicate and transaction validation is already done before this transaction
         // This ensures we fail fast and don't start a transaction if validation fails
 
@@ -421,10 +425,11 @@ export async function POST(request: Request) {
           byType[record.itemType]++;
         }
       }, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
         timeout: 60000, // Allow larger 10,000-row bulk operations to complete
       });
     } catch (error: any) {
+      if (error instanceof BeginningBalanceStateError) return NextResponse.json({ success: false, message: error.message, successCount: 0 }, { status: error.status });
       if (!(error instanceof BeginningBalanceSnapshotError)) console.error('[API Error] Transaction failed during import:', error);
 
       if (error instanceof ValidationError) {
@@ -528,6 +533,7 @@ export async function POST(request: Request) {
       errors: [],
     });
   } catch (error: any) {
+    if (error instanceof BeginningBalanceStateError) return NextResponse.json({ success: false, message: error.message }, { status: error.status });
     console.error('[API Error] Failed to import beginning balance records:', error);
 
     if (error instanceof SyntaxError) {

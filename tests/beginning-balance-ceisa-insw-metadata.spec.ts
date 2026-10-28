@@ -24,6 +24,17 @@ function load(file: string, dependencies: Record<string, unknown>): any {
 const base = { itemType: 'ROH', itemCode: '001', itemName: 'Material', uom: 'KG', qty: 1, balanceDate: '01/01/2026' };
 const headers = ['Item Type', 'Item Code', 'Item Name', 'UOM', 'Qty', 'Balance Date', 'PPKEK Numbers', 'Remarks'];
 const auth = { checkAuth: async () => ({ authenticated: true, session: { user: { companyCode: '1310' } } }) };
+function stateDependencies(prisma: any) {
+  prisma.beginning_balances.groupBy = async () => [{ status: 'OPEN' }];
+  prisma.$queryRawUnsafe = async () => [{ locked: 1 }];
+  prisma.$transaction = async (callback: any) => callback(prisma);
+  return {
+    '@/lib/prisma': { prisma },
+    '@/lib/beginning-balance-state': load('lib/beginning-balance-state.ts', {}),
+    '@/lib/company-validation': load('lib/company-validation.ts', { 'next/server': nextServer, '@/lib/prisma': { prisma } }),
+  };
+}
+
 
 test('optional text follows remarks normalization and type errors with the database length bound', () => {
   for (const value of [undefined, null, '', '   ', '\u00a0']) expect((validation.normalizeBeginningBalanceText(value) || null)).toBeNull();
@@ -158,6 +169,7 @@ test('actual page submit and list projection retain independent metadata', async
     '@/app/components/customs/BeginningStockForm': { BeginningStockForm: 'form' },
     '@/app/components/customs/BeginningStockImport': { BeginningStockImport: Import },
     '@/app/components/ConfirmDialog': { ConfirmDialog: 'confirm' },
+    '@/app/components/customs/BeginningBalanceLockAction': { BeginningBalanceLockAction: 'lock', beginningBalanceLockDialog: () => ({}) },
     '@/app/components/ToastProvider': { useToast: () => ({ success() {}, error() {} }) },
     dayjs: require('dayjs'),
   };
@@ -191,13 +203,13 @@ test('master GET/POST select every prior field and exclude metadata from outward
     return Object.fromEntries(Object.keys(select).map(key => [key, stored[key]]));
   };
   const route = load('app/api/master/beginning-balances/route.ts', {
-    'next/server': nextServer, 'next-auth': { getServerSession: async () => ({ user: { id: '1' } }) },
+    'next/server': nextServer, 'next-auth': { getServerSession: async () => ({ user: { id: '1', companyCode: '1310' } }) },
     '@/lib/auth': { authOptions: {} }, '@/lib/log-activity': { logActivity: async () => {} },
-    '@/lib/prisma': { prisma: { beginning_balances: {
+    ...stateDependencies({ beginning_balances: {
       count: async () => 1, findMany: async (args: any) => [project(args)],
       findFirst: async () => null, aggregate: async () => ({ _max: { id: 0 } }),
       create: async (args: any) => { expect(args.data).not.toHaveProperty('ceisa_insw_uom'); return project(args); },
-    } } },
+    } }),
   });
   const get = await route.GET(new Request('http://localhost/api/master/beginning-balances'));
   const getRow = (await get.json()).data.data[0];
@@ -219,12 +231,12 @@ test('legacy manual PUT retains stored metadata and per-ID output remains unchan
   const route = load('app/api/customs/beginning-data/[id]/route.ts', {
     'next/server': nextServer, '@/lib/api-auth': auth, '@/lib/api-utils': utils,
     '@/lib/log-activity': { logActivity: async () => {} },
-    '@/lib/prisma': { prisma: {
+    ...stateDependencies({
       beginning_balances: { findUnique: async () => stored, update: async ({ data }: any) => {
         expect(data).not.toHaveProperty('ceisa_insw_uom');
         stored = { ...stored, ...data }; return stored;
       } }, item_types: { findUnique: async () => ({ item_type_code: 'ROH' }) },
-    } },
+    }),
   });
   const response = await route.PUT(new Request('http://localhost', { method: 'PUT',
     body: JSON.stringify({ ...base, itemName: 'Edited' }) }), { params: Promise.resolve({ id: '1' }) });

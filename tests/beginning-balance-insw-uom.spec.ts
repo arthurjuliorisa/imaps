@@ -41,8 +41,9 @@ function harness(rows = [balance()]) {
   // No mutation or transmission methods exist on these doubles: unexpected calls fail.
   const prisma = {
     beginning_balances: {
+      groupBy: record('balance.groupBy', () => statuses),
       count: record('balance.count', () => 23),
-      findMany: record('balance.findMany', args => rows.filter(row => row.company_code === args.where.company_code)),
+      findMany: record('balance.findMany', args => rows.filter(row => row.company_code === args.where.company_code).map(row => ({ ...row, status: statuses.find(status => status.id === row.id)?.status ?? 'OPEN' }))),
     },
     insw_uom_mapping: { findMany: record('mapping.findMany', args => {
       if (failure) throw new Error('synthetic mapping query failure');
@@ -62,6 +63,7 @@ function harness(rows = [balance()]) {
     '@/lib/company-validation': companyValidation,
     '@/lib/log-activity': {}, '@/lib/api-utils': {}, '@/lib/beginning-data-validation': {},
     '@/lib/services/beginning-balance-snapshot.service': {},
+    '@/lib/beginning-balance-state': load('lib/beginning-balance-state.ts', {}),
   }, { warn: (...args: unknown[]) => warnings.push(args), error: (...args: unknown[]) => errors.push(args) });
   return {
     calls, warnings, errors,
@@ -78,7 +80,7 @@ function harness(rows = [balance()]) {
 test('adds mapped code while preserving response fields, filters, pagination and tenant scope', async () => {
   const h = harness([balance('kG'), { ...balance('KG', 2), company_code: 9999 }]);
   h.setStatuses([{ id: 1, status: 'TRANSMITTED_TO_INSW' }]);
-  const { status, body } = await h.get('?companyCode=9999&company_code=9999&page=2&limit=10&itemType=ROH&itemCode=ITEM&itemName=Material&startDate=2026-01-01&endDate=2026-01-02');
+  const { status, body } = await h.get('?page=2&limit=10&itemType=ROH&itemCode=ITEM&itemName=Material&startDate=2026-01-01&endDate=2026-01-02');
   expect(status).toBe(200);
   expect(body.data).toEqual([{
     id: '1', item: { code: 'ITEM-1', name: 'Material' }, uom: { code: 'kG' },
@@ -88,7 +90,7 @@ test('adds mapped code while preserving response fields, filters, pagination and
   }]);
   expect(body.overallStatus).toBe('TRANSMITTED_TO_INSW');
   expect(body.pagination).toEqual({ page: 2, limit: 10, total: 23, totalPages: 3, hasNextPage: true, hasPrevPage: true });
-  const where = { company_code: 1310, item_type: 'ROH',
+  const where = { company_code: 1310, deleted_at: null, item_type: 'ROH',
     OR: [{ item_code: { contains: 'ITEM', mode: 'insensitive' } }, { item_name: { contains: 'Material', mode: 'insensitive' } }],
     balance_date: { gte: new Date('2026-01-01'), lte: new Date('2026-01-02') } };
   expect(h.calls.find(c => c.name === 'balance.count')?.args).toEqual({ where });
@@ -98,7 +100,7 @@ test('adds mapped code while preserving response fields, filters, pagination and
   expect(h.calls.filter(c => c.name === 'mapping.findMany')).toEqual([{
     name: 'mapping.findMany', args: { where: { is_active: true }, select: { wms_uom: true, insw_uom: true } },
   }]);
-  expect(h.calls.find(c => c.name === 'status')?.args[1]).toBe(1310);
+  expect(h.calls.find(c => c.name === 'balance.groupBy')?.args.where).toEqual({ company_code: 1310, deleted_at: null });
 });
 
 test('missing, inactive, deleted and blank targets are non-fatal and never fall back', async () => {
@@ -203,5 +205,17 @@ test('table renders saved metadata and neutral missing values independently of m
     expect(render([])).toContain('No beginning stock data found');
     expect(render(data, true)).toContain('role="progressbar"');
     expect(render(data, true)).not.toContain('<table');
+  }
+});
+
+
+test('company LOCKED status survives empty filtered and paginated pages', async () => {
+  const h = harness([]);
+  h.setStatuses([{ id: 99, status: 'LOCKED' }]);
+  for (const query of ['', '?page=999&itemType=FERT', '?itemCode=missing&startDate=2026-01-01']) {
+    const { status, body } = await h.get(query);
+    expect(status).toBe(200);
+    expect(body.data).toEqual([]);
+    expect(body.overallStatus).toBe('LOCKED');
   }
 });

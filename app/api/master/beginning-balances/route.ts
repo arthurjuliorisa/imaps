@@ -1,3 +1,5 @@
+import { assertBeginningBalanceCompanyScope, BeginningBalanceStateError, guardBeginningBalanceWrite } from '@/lib/beginning-balance-state';
+import { validateCompanyCode } from '@/lib/company-validation';
 /**
  * Master Data API - Beginning Balances (v2.4.2)
  *
@@ -66,7 +68,11 @@ export async function GET(request: NextRequest) {
       return errorResponse('Unauthorized', 'UNAUTHORIZED', 401);
     }
 
+    const companyValidation = validateCompanyCode(session);
+    if (!companyValidation.success) return companyValidation.response;
+
     // Parse query parameters
+    assertBeginningBalanceCompanyScope(request, companyValidation.companyCode);
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('page_size') || '20');
@@ -75,10 +81,10 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
 
     // Build where clause
-    const where: any = {};
+    const where: any = { company_code: companyValidation.companyCode, deleted_at: null };
 
     if (companyCode) {
-      where.company_code = parseInt(companyCode);
+      if (Number(companyCode) !== companyValidation.companyCode) return errorResponse('Forbidden company scope', 'FORBIDDEN', 403);
     }
 
     if (itemType) {
@@ -121,6 +127,7 @@ export async function GET(request: NextRequest) {
 
     return successResponse(response);
   } catch (error) {
+    if (error instanceof BeginningBalanceStateError) return errorResponse(error.message, 'FORBIDDEN', error.status);
     console.error('Error fetching beginning balances:', error);
     return errorResponse(
       error instanceof Error ? error.message : 'Failed to fetch beginning balances',
@@ -142,8 +149,15 @@ export async function POST(request: NextRequest) {
       return errorResponse('Unauthorized', 'UNAUTHORIZED', 401);
     }
 
+    const companyValidation = validateCompanyCode(session);
+    if (!companyValidation.success) return companyValidation.response;
+    const { companyCode } = companyValidation;
+
     // Parse request body
     const body: BeginningBalanceRequest = await request.json();
+    assertBeginningBalanceCompanyScope(request, companyCode, body as unknown as Record<string, unknown>);
+
+    if (body.company_code !== companyCode) return errorResponse('Forbidden company scope', 'FORBIDDEN', 403);
 
     // Validate required fields
     if (!body.company_code || !body.item_type || !body.item_code || !body.item_name) {
@@ -161,7 +175,7 @@ export async function POST(request: NextRequest) {
     // Check for duplicate (based on unique constraint: company_code, item_code, balance_date)
     const existing = await prisma.beginning_balances.findFirst({
       where: {
-        company_code: body.company_code,
+        company_code: companyCode,
         item_code: body.item_code,
         balance_date: new Date(body.balance_date)
       }
@@ -175,38 +189,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get next available ID
-    const maxId = await prisma.beginning_balances.aggregate({
-      _max: {
-        id: true
-      }
-    });
-    const nextId = (maxId._max.id || 0) + 1;
-
-    // Create beginning balance with ppkeks
-    const balance = await prisma.beginning_balances.create({
-      data: {
-        id: nextId,
-        company_code: body.company_code,
-        item_type: body.item_type,
-        item_code: body.item_code,
-        item_name: body.item_name,
-        uom: body.uom,
-        qty: body.qty,
-        balance_date: new Date(body.balance_date),
-        remarks: body.remarks,
-        ...(body.ppkek_numbers && body.ppkek_numbers.length > 0 && {
-          ppkeks: {
-            createMany: {
-              data: body.ppkek_numbers.map(ppkek => ({
-                ppkek_number: ppkek
-              }))
+    const balance = await prisma.$transaction(async (tx) => {
+      await guardBeginningBalanceWrite(tx, companyCode);
+      // Create beginning balance with ppkeks
+      return tx.beginning_balances.create({
+        data: {
+          company_code: companyCode,
+          item_type: body.item_type,
+          item_code: body.item_code,
+          item_name: body.item_name,
+          uom: body.uom,
+          qty: body.qty,
+          balance_date: new Date(body.balance_date),
+          remarks: body.remarks,
+          ...(body.ppkek_numbers && body.ppkek_numbers.length > 0 && {
+            ppkeks: {
+              createMany: {
+                data: body.ppkek_numbers.map(ppkek => ({
+                  ppkek_number: ppkek
+                }))
+              }
             }
-          }
-        })
-      },
-      select: beginningBalanceSelect
-    });
+          })
+        },
+        select: beginningBalanceSelect
+      });
+    }, { isolationLevel: 'ReadCommitted' });
 
     // Transform response
     const responseData = {
@@ -223,6 +231,7 @@ export async function POST(request: NextRequest) {
 
     return successResponse(responseData, 201);
   } catch (error) {
+    if (error instanceof BeginningBalanceStateError) return errorResponse(error.message, 'BEGINNING_BALANCE_STATE', error.status);
     console.error('Error creating beginning balance:', error);
 
     // Log failed activity

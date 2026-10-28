@@ -1,3 +1,4 @@
+import { assertBeginningBalanceCompanyScope, BeginningBalanceStateError, guardBeginningBalanceWrite, readBeginningBalanceState } from '@/lib/beginning-balance-state';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -59,9 +60,11 @@ export async function GET(request: Request) {
       return companyValidation.response;
     }
     const { companyCode } = companyValidation;
+    assertBeginningBalanceCompanyScope(request, companyCode);
 
     const where: any = {
-      company_code: companyCode
+      company_code: companyCode,
+      deleted_at: null,
     };
 
     // Filter by item type
@@ -159,12 +162,7 @@ export async function GET(request: Request) {
       });
     }
 
-    // Fetch status separately via raw SQL (Prisma client may not have status field yet)
-    const statusRows = await prisma.$queryRawUnsafe<Array<{ id: number; status: string }>>(
-      `SELECT id, status::text FROM beginning_balances WHERE company_code = $1 AND deleted_at IS NULL`,
-      companyCode
-    );
-    const statusMap = new Map(statusRows.map((r) => [Number(r.id), r.status]));
+    const companyState = await readBeginningBalanceState(prisma, companyCode);
 
     // Transform data to match frontend expectations
     const transformedData = await Promise.all(beginningBalances.map(async (balance) => {
@@ -206,24 +204,15 @@ export async function GET(request: Request) {
         ceisaInswUom: balance.ceisa_insw_uom ?? null,
         inswUom: uomMappings.get(balance.uom.toUpperCase())?.target ?? null,
         itemType: balance.item_type,
-        status: statusMap.get(balance.id) || 'OPEN',
+        status: balance.status,
         hasTransactions,
       };
     }));
 
-    // Determine overallStatus: LOCKED > TRANSMITTED_TO_INSW > OPEN
-    const statusPriority: Record<string, number> = { OPEN: 0, TRANSMITTED_TO_INSW: 1, LOCKED: 2 };
-    let overallStatus = 'OPEN';
-    for (const item of transformedData) {
-      const p = statusPriority[item.status] ?? 0;
-      if (p > (statusPriority[overallStatus] ?? 0)) {
-        overallStatus = item.status;
-      }
-    }
-
     return NextResponse.json({ 
       data: transformedData, 
-      overallStatus,
+      overallStatus: companyState.overallStatus,
+      mixedStatus: companyState.mixedStatus,
       pagination: {
         page,
         limit,
@@ -234,6 +223,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof BeginningBalanceStateError) return NextResponse.json({ message: error.message }, { status: error.status });
     console.error('[API Error] Failed to fetch beginning data:', error);
     console.error('[API Error] Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
     return NextResponse.json(
@@ -335,6 +325,7 @@ export async function POST(request: Request) {
       );
     }
     companyCodeForError = companyCode;
+    assertBeginningBalanceCompanyScope(request, companyCode, body);
 
     // Validate item: check for duplicates and existing transactions
     const validation = await validateBeginningBalanceItem(
@@ -356,6 +347,7 @@ export async function POST(request: Request) {
 
     // The beginning balance and its required baseline snapshot commit together.
     const newRecord = await prisma.$transaction(async (tx) => {
+      await guardBeginningBalanceWrite(tx, companyCode);
       const created = await tx.beginning_balances.create({
         data: {
           company_code: companyCode,
@@ -391,7 +383,7 @@ export async function POST(request: Request) {
       }]);
 
       return created;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
 
     // Fetch the created record with ppkeks to return complete data
     const recordWithPpkeks = await prisma.beginning_balances.findUnique({
@@ -443,6 +435,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(transformedRecord, { status: 201 });
   } catch (error: any) {
+    if (error instanceof BeginningBalanceStateError) return NextResponse.json({ message: error.message }, { status: error.status });
     console.error('[API Error] Failed to create beginning balance record:', error);
 
     if (error instanceof BeginningBalanceSnapshotError) {

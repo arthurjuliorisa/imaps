@@ -23,12 +23,14 @@ const prisma = {
     staged = { bb: [], ppkek: [], snapshots: new Map() };
     const tx = {
       beginning_balances: {
+        groupBy: async ({ where }) => { assert.deepEqual(where, { company_code: 1310, deleted_at: null }); return []; },
         createMany: async ({ data }) => { insertBatchSizes.push(data.length); staged.bb.push(...data); },
         findMany: async () => staged.bb.map((r, i) => ({ ...r, id: i + 1 })),
       },
       beginning_balance_ppkeks: { createMany: async ({ data }) => { staged.ppkek.push(...data); } },
       $queryRawUnsafe: async (_sql, company, json, date) => {
         assert.equal(company, 1310);
+        if (_sql.includes('pg_advisory_xact_lock')) return [{ locked: 1 }];
         const rows = JSON.parse(json);
         batchSizes.push(rows.length);
         return rows.map((r) => {

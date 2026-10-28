@@ -1,3 +1,4 @@
+import { BeginningBalanceStateError, guardBeginningBalanceWrite, serializeBeginningBalance, readBeginningBalanceState } from '@/lib/beginning-balance-state';
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 import { excludeTechnicalScrapClaims } from '@/lib/insw-log-visibility';
@@ -1333,6 +1334,10 @@ export class INSWTransmissionService {
     companyCode: number
   ): Promise<{ status: string; message: string; insw_response?: any }> {
     this.log.info('Starting saldo awal transmission', { companyCode });
+    const state = await readBeginningBalanceState(prisma, companyCode);
+    if (state.overallStatus === 'LOCKED' || state.mixedStatus) {
+      return { status: 'failed', message: 'Company Beginning Balance is locked or has mixed statuses; transmission is not allowed' };
+    }
     const converter = createInswPayloadConverter();
 
     let payload: any = null;
@@ -1359,11 +1364,13 @@ export class INSWTransmissionService {
       const inswResponse = await inswService.postSaldoAwal(payload);
 
       if (inswResponse.status) {
-        await prisma.$executeRawUnsafe(
-          `UPDATE beginning_balances SET status = $1::beginning_balance_status WHERE company_code = $2 AND deleted_at IS NULL`,
-          'TRANSMITTED_TO_INSW',
-          companyCode
-        );
+        await prisma.$transaction(async (tx) => {
+          await guardBeginningBalanceWrite(tx, companyCode);
+          await tx.beginning_balances.updateMany({
+            where: { company_code: companyCode, deleted_at: null, status: { not: 'LOCKED' } },
+            data: { status: 'TRANSMITTED_TO_INSW' },
+          });
+        }, { isolationLevel: 'ReadCommitted' });
 
         await this.logTransmission({
           transaction_type: 'saldo_awal',
@@ -1410,6 +1417,10 @@ export class INSWTransmissionService {
     companyCode: number
   ): Promise<{ status: string; message: string; insw_response?: any }> {
     this.log.info('Starting saldo awal lock (registrasi final)', { companyCode });
+    const state = await readBeginningBalanceState(prisma, companyCode);
+    if (!state.hasRows || state.mixedStatus || state.overallStatus === 'LOCKED') {
+      return { status: 'failed', message: 'Beginning Balance is empty, locked or has mixed statuses; finalization is not allowed' };
+    }
 
     if (!(await this.isEndpointEnabled('SALDO_AWAL_FINAL'))) {
       await this.logTransmission({
@@ -1428,10 +1439,17 @@ export class INSWTransmissionService {
       const inswResponse = await inswService.registrasiFinal();
 
       if (inswResponse.status) {
-        await prisma.$executeRawUnsafe(
-          `UPDATE beginning_balances SET status = 'LOCKED'::beginning_balance_status WHERE company_code = $1 AND deleted_at IS NULL`,
-          companyCode
-        );
+        await prisma.$transaction(async (tx) => {
+          await serializeBeginningBalance(tx, companyCode);
+          const current = await readBeginningBalanceState(tx, companyCode);
+          if (!current.hasRows || current.mixedStatus) {
+            throw new BeginningBalanceStateError('Beginning Balance is empty or has mixed statuses; local finalization requires review');
+          }
+          await tx.beginning_balances.updateMany({
+            where: { company_code: companyCode, deleted_at: null },
+            data: { status: 'LOCKED' },
+          });
+        }, { isolationLevel: 'ReadCommitted' });
 
         await this.logTransmission({
           transaction_type: 'saldo_awal_final',
