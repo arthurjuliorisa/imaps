@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     if (filters.date_from && filters.date_to && filters.date_from > filters.date_to) return json('Start date must precede end date.', 400, 'FILTER');
     const config = csvSpoolConfig();
     release = reserveCsvExport();
-    if (!release) return json('An INSW CSV export is already running. Try again shortly.', 429, 'BUSY', { 'Retry-After': '5' });
+    if (!release) return json('A CSV export is already running. Try again shortly.', 429, 'BUSY', { 'Retry-After': '5' });
     const ownedRelease = release;
     // Spool owns release from this point, including failure and slow delivery.
     release = undefined;

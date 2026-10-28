@@ -34,6 +34,7 @@ import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import { useSession } from 'next-auth/react';
 import dayjs from 'dayjs';
+import { wmsLogFilterParams } from '@/lib/wms-log-filters';
 
 interface WMSTransmissionLog {
   id: string;
@@ -63,6 +64,7 @@ export default function WMSTransmissionLogsPage() {
 
   const [logs, setLogs] = useState<WMSTransmissionLog[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionFilter, setActionFilter] = useState('ALL');
@@ -278,21 +280,40 @@ export default function WMSTransmissionLogsPage() {
     }
   };
 
+  const activeFilterParams = () => wmsLogFilterParams({ dateFrom, dateTo, appliedWmsIdSearch,
+    actionFilter, errorTypeFilter, transmissionStatusFilter, companyCodeFilter });
+
+  const handleExportCsv = async () => {
+    if (exportingCsv) return;
+    setExportingCsv(true);
+    try {
+      const response = await fetch(`/api/settings/wms-transmission-logs/export/csv?${activeFilterParams()}`);
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error || result?.message || 'Unable to export WMS CSV');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'wms-logs.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success('WMS CSV exported successfully');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to export WMS CSV');
+    } finally { setExportingCsv(false); }
+  };
+
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: String(page + 1),
-        limit: String(rowsPerPage),
-        ...(dateFrom && { date_from: dateFrom }),
-        ...(dateTo && { date_to: dateTo + 'T23:59:59' }),
-        ...(appliedWmsIdSearch && { wms_id: appliedWmsIdSearch }),
-        ...(actionFilter !== 'ALL' && { action: actionFilter }),
-        ...(errorTypeFilter !== 'ALL' && { error_type: errorTypeFilter }),
-        ...(transmissionStatusFilter !== 'ALL' && { transmission_status: transmissionStatusFilter }),
-        ...(companyCodeFilter !== 'ALL' && { company_code: companyCodeFilter }),
-        include_filters: 'false',
-      });
+      const params = activeFilterParams();
+      params.set('page', String(page + 1));
+      params.set('limit', String(rowsPerPage));
+      params.set('include_filters', 'false');
 
       const response = await fetch(`/api/settings/wms-transmission-logs?${params}`);
       const result = await response.json();
@@ -435,6 +456,11 @@ export default function WMSTransmissionLogsPage() {
           </Typography>
         </Box>
         <Stack direction="row" spacing={1}>
+          <Button variant="outlined" onClick={handleExportCsv} disabled={exportingCsv || loading}
+            startIcon={exportingCsv ? <CircularProgress size={16} /> : <GetApp />}
+            aria-label="Export CSV (max 100,000 rows)" aria-busy={exportingCsv}>
+            Export CSV (max 100,000 rows)
+          </Button>
           <Tooltip title="Refresh">
             <IconButton onClick={handleRefresh} color="primary">
               <Refresh />

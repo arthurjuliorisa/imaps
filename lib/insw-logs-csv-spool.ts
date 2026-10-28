@@ -3,7 +3,8 @@ import { lstat, mkdir, open, opendir, realpath, rename, rmdir, statfs, unlink } 
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import { CSV_HEADER, CSV_ROW_LIMIT, generateInswCsv, InswCsvError, type InswCsvRow } from './insw-logs-csv';
+import { CSV_HEADER, encodeInswCsvRow, InswCsvError, type InswCsvRow } from './insw-logs-csv';
+import { CSV_ROW_LIMIT, generateCsv } from './logs-csv';
 
 export interface CsvSpoolConfig {
   root: string;
@@ -38,7 +39,8 @@ export function csvSpoolConfig(env = process.env): CsvSpoolConfig {
   return config;
 }
 
-// Kept across development module reloads. This is a PER-PROCESS CSV reservation.
+// Shared by INSW and WMS across development module reloads. PER-PROCESS only.
+// Keep the existing global key so an INSW reservation survives hot reloads.
 const state = globalThis as typeof globalThis & { __inswCsvActive?: boolean };
 export function reserveCsvExport(): (() => void) | undefined {
   if (state.__inswCsvActive) return;
@@ -111,11 +113,13 @@ async function spoolUsage(root: string): Promise<number> {
 /** Owns admission through completed delivery AND filesystem cleanup. The source
  * is sequential and checks this signal/deadline; an in-flight DB query still
  * settles before generation cleanup and admission release. */
-export async function stageCsvDownload(options: {
+export async function stageLogsCsvDownload<Row>(options: {
+  header: string;
+  encodeRow: (row: Row, ordinal: number) => string;
   config: CsvSpoolConfig;
   signal: AbortSignal;
   release: () => void;
-  source: (controls: { signal: AbortSignal; checkDeadline: () => void }) => (take: number) => Promise<readonly InswCsvRow[]>;
+  source: (controls: { signal: AbortSignal; checkDeadline: () => void }) => (take: number) => Promise<readonly Row[]>;
   filename: string;
 }): Promise<Response> {
   const { config, signal } = options;
@@ -152,7 +156,7 @@ export async function stageCsvDownload(options: {
   const abortDelivery = () => {
     if (stopped) return;
     webController?.error(new Error('CSV delivery interrupted'));
-    void cleanup().catch(() => { console.error('INSW CSV cleanup failed; admission retained'); });
+    void cleanup().catch(() => { console.error('CSV cleanup failed; admission retained'); });
   };
   try {
     checkDeadline();
@@ -175,7 +179,7 @@ export async function stageCsvDownload(options: {
     const closed = new Promise<void>(resolve => destination.once('close', resolve));
     let result: { rows: number; bytes: number };
     try {
-      result = await generateInswCsv({ nextBatch,
+      result = await generateCsv({ nextBatch, header: options.header, encodeRow: options.encodeRow,
         destination, maxBytes: Math.min(config.maxBytes, config.quotaBytes), timeoutMs: config.generationMs,
         signal: controller.signal });
     } finally {
@@ -185,7 +189,7 @@ export async function stageCsvDownload(options: {
     checkDeadline();
     reader = await open(path, 'r');
     const stat = await reader.stat();
-    const header = Buffer.from('\uFEFF' + CSV_HEADER);
+    const header = Buffer.from('\uFEFF' + options.header);
     const head = Buffer.alloc(header.length);
     const tail = Buffer.alloc(2);
     await reader.read(head, 0, head.length, 0);
@@ -216,7 +220,7 @@ export async function stageCsvDownload(options: {
           if (offset === stat.size) { await cleanup(); value.close(); }
         } catch {
           try { value.error(new Error('CSV delivery failed')); } catch { /* Already canceled. */ }
-          await cleanup().catch(() => { console.error('INSW CSV cleanup failed; admission retained'); });
+          await cleanup().catch(() => { console.error('CSV cleanup failed; admission retained'); });
         }
       },
       async cancel() { await cleanup(); },
@@ -231,7 +235,12 @@ export async function stageCsvDownload(options: {
       'X-Content-Type-Options': 'nosniff',
     } });
   } catch (error) {
-    await cleanup().catch(() => { console.error('INSW CSV cleanup failed; admission retained'); });
+    await cleanup().catch(() => { console.error('CSV cleanup failed; admission retained'); });
     throw error;
   }
+}
+
+/** Original INSW policy adapter; both domains use the same lifecycle and reservation. */
+export function stageCsvDownload(options: Omit<Parameters<typeof stageLogsCsvDownload<InswCsvRow>>[0], 'header' | 'encodeRow'>) {
+  return stageLogsCsvDownload({ ...options, header: CSV_HEADER, encodeRow: encodeInswCsvRow });
 }

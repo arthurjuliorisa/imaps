@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 
+import { buildWmsLogWhere, WmsLogFilterError } from '@/lib/wms-log-filters';
+
 const ALLOWED_PAGE_SIZES = [5, 10, 25, 50] as const;
 const DEFAULT_PAGE_SIZE = 10;
 
@@ -13,21 +15,9 @@ export async function GET(request: NextRequest) {
       return authCheck.response;
     }
 
-    const session = authCheck.session as any;
-    const userCompanyCode = session?.user?.companyCode;
-    const userRole = session?.user?.role;
-    const isSuperAdmin = userRole === 'SUPER_ADMIN';
-
     const { searchParams } = new URL(request.url);
     const rawPage = parseInt(searchParams.get('page') || '1', 10);
     const rawLimit = parseInt(searchParams.get('limit') || '', 10);
-    const dateFrom = searchParams.get('date_from');
-    const dateTo = searchParams.get('date_to');
-    const actionFilter = searchParams.get('action');
-    const errorTypeFilter = searchParams.get('error_type');
-    const transmissionStatusFilter = searchParams.get('transmission_status');
-    const companyCodeFilter = searchParams.get('company_code');
-    const wmsIdSearch = searchParams.get('wms_id')?.trim();
     // Keep the existing response behavior by default. The logs page opts out on
     // normal list requests and fetches this stable dropdown data separately.
     const metadataOnly = searchParams.get('metadata_only') === 'true';
@@ -40,51 +30,7 @@ export async function GET(request: NextRequest) {
       : DEFAULT_PAGE_SIZE;
     const offset = (page - 1) * limit;
 
-    // Build where clause
-    const where: any = {};
-
-    if (dateFrom || dateTo) {
-      where.created_at = {};
-      if (dateFrom) where.created_at.gte = new Date(dateFrom);
-      if (dateTo) where.created_at.lte = new Date(dateTo);
-    }
-
-    if (wmsIdSearch) {
-      where.wms_id = { contains: wmsIdSearch, mode: 'insensitive' };
-    }
-
-    if (actionFilter && actionFilter !== 'ALL') {
-      where.action = actionFilter;
-    }
-
-    if (errorTypeFilter && errorTypeFilter !== 'ALL') {
-      where.error_type = errorTypeFilter;
-    }
-
-    if (transmissionStatusFilter && transmissionStatusFilter !== 'ALL') {
-      where.transmission_status = transmissionStatusFilter;
-    }
-
-    // ===================== COMPANY FILTERING LOGIC =====================
-    // SUPER_ADMIN can view all WMS logs or filter by specific company
-    // Non-SUPER_ADMIN can only view logs from their assigned company
-    if (companyCodeFilter && companyCodeFilter !== 'ALL') {
-      const requestedCompanyCode = parseInt(companyCodeFilter, 10);
-
-      // Authorization check: prevent non-SUPER_ADMIN from accessing other companies
-      if (!isSuperAdmin && requestedCompanyCode !== parseInt(userCompanyCode || '0', 10)) {
-        return NextResponse.json(
-          { success: false, data: [], error: 'Unauthorized - cannot access other company logs' },
-          { status: 403 }
-        );
-      }
-
-      where.company_code = requestedCompanyCode;
-    } else if (!isSuperAdmin && userCompanyCode) {
-      // Non-SUPER_ADMIN users always see only their company's logs by default
-      where.company_code = parseInt(userCompanyCode, 10);
-    }
-    // SUPER_ADMIN with no company filter: see all company logs (no where clause)
+    const where = buildWmsLogWhere(searchParams, authCheck.session);
 
     // Filter options use the authorized date/company dataset, independently of
     // the current page and selected list filters.
@@ -193,6 +139,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof WmsLogFilterError) return NextResponse.json({ success: false, data: [], error: error.message }, { status: error.status });
     console.error('[API Error] Failed to fetch WMS transmission logs:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch WMS transmission logs' },
