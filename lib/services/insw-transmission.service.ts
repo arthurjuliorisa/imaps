@@ -1,6 +1,9 @@
+import { BeginningBalanceStateError, guardBeginningBalanceWrite, serializeBeginningBalance, readBeginningBalanceState } from '@/lib/beginning-balance-state';
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 import { excludeTechnicalScrapClaims } from '@/lib/insw-log-visibility';
+import { createInswCsvPostgresqlSource } from '@/lib/insw-logs-csv-postgresql';
+import { InswCsvError } from '@/lib/insw-logs-csv';
 import { INSWHelper } from '@/lib/utils/insw-helper';
 import {
   INSWTransmissionStatus,
@@ -1331,6 +1334,10 @@ export class INSWTransmissionService {
     companyCode: number
   ): Promise<{ status: string; message: string; insw_response?: any }> {
     this.log.info('Starting saldo awal transmission', { companyCode });
+    const state = await readBeginningBalanceState(prisma, companyCode);
+    if (state.overallStatus === 'LOCKED' || state.mixedStatus) {
+      return { status: 'failed', message: 'Company Beginning Balance is locked or has mixed statuses; transmission is not allowed' };
+    }
     const converter = createInswPayloadConverter();
 
     let payload: any = null;
@@ -1357,11 +1364,13 @@ export class INSWTransmissionService {
       const inswResponse = await inswService.postSaldoAwal(payload);
 
       if (inswResponse.status) {
-        await prisma.$executeRawUnsafe(
-          `UPDATE beginning_balances SET status = $1::beginning_balance_status WHERE company_code = $2 AND deleted_at IS NULL`,
-          'TRANSMITTED_TO_INSW',
-          companyCode
-        );
+        await prisma.$transaction(async (tx) => {
+          await guardBeginningBalanceWrite(tx, companyCode);
+          await tx.beginning_balances.updateMany({
+            where: { company_code: companyCode, deleted_at: null, status: { not: 'LOCKED' } },
+            data: { status: 'TRANSMITTED_TO_INSW' },
+          });
+        }, { isolationLevel: 'ReadCommitted' });
 
         await this.logTransmission({
           transaction_type: 'saldo_awal',
@@ -1408,6 +1417,10 @@ export class INSWTransmissionService {
     companyCode: number
   ): Promise<{ status: string; message: string; insw_response?: any }> {
     this.log.info('Starting saldo awal lock (registrasi final)', { companyCode });
+    const state = await readBeginningBalanceState(prisma, companyCode);
+    if (!state.hasRows || state.mixedStatus || state.overallStatus === 'LOCKED') {
+      return { status: 'failed', message: 'Beginning Balance is empty, locked or has mixed statuses; finalization is not allowed' };
+    }
 
     if (!(await this.isEndpointEnabled('SALDO_AWAL_FINAL'))) {
       await this.logTransmission({
@@ -1426,10 +1439,17 @@ export class INSWTransmissionService {
       const inswResponse = await inswService.registrasiFinal();
 
       if (inswResponse.status) {
-        await prisma.$executeRawUnsafe(
-          `UPDATE beginning_balances SET status = 'LOCKED'::beginning_balance_status WHERE company_code = $1 AND deleted_at IS NULL`,
-          companyCode
-        );
+        await prisma.$transaction(async (tx) => {
+          await serializeBeginningBalance(tx, companyCode);
+          const current = await readBeginningBalanceState(tx, companyCode);
+          if (!current.hasRows || current.mixedStatus) {
+            throw new BeginningBalanceStateError('Beginning Balance is empty or has mixed statuses; local finalization requires review');
+          }
+          await tx.beginning_balances.updateMany({
+            where: { company_code: companyCode, deleted_at: null },
+            data: { status: 'LOCKED' },
+          });
+        }, { isolationLevel: 'ReadCommitted' });
 
         await this.logTransmission({
           transaction_type: 'saldo_awal_final',
@@ -1596,6 +1616,27 @@ export class INSWTransmissionService {
     };
   }
 
+  /** Internal only: company_code MUST come from validated server session.
+   * Inputs follow the routes' normalization (including trimmed WMS); the CSV
+   * endpoint supplies authorization. Reuse the canonical local-calendar filter builder. */
+  createTransmissionLogsCsvSource(filters: {
+    company_code: number;
+    transaction_type?: string;
+    insw_status?: string;
+    date_from?: string;
+    date_to?: string;
+    wms_id?: string;
+  }, controls: { signal?: AbortSignal; checkDeadline?: () => void } = {}) {
+    const allowed = ['company_code', 'transaction_type', 'insw_status', 'date_from', 'date_to', 'wms_id'];
+    if (!filters || Object.getPrototypeOf(filters) !== Object.prototype ||
+        Reflect.ownKeys(filters).some(key => typeof key !== 'string' || !allowed.includes(key)) ||
+        Object.entries(filters).some(([key, value]) => key !== 'company_code' &&
+          value !== undefined && typeof value !== 'string')) {
+      throw new InswCsvError('SOURCE');
+    }
+    return createInswCsvPostgresqlSource(this.buildLogWhere(filters, {}), controls);
+  }
+
   private readonly listSelect = {
     id: true,
     queue_attempt_id: true,
@@ -1628,12 +1669,41 @@ export class INSWTransmissionService {
       prisma.insw_tracking_log.findMany({
         where,
         select: this.listSelect,
-        orderBy: { created_at: 'desc' },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
         take: filters.limit,
         skip: filters.offset,
       }),
     ]);
     return { total, logs };
+  }
+
+  /**
+   * Bounded small-export probe. The extra row detects overflow in the same
+   * selection, avoiding count/read races. 100K remains gated on a paced writer.
+   */
+  async getTransmissionLogsForExcel(filters: {
+    company_code: number;
+    transaction_type?: string;
+    insw_status?: string;
+    wms_id?: string;
+    date_from?: string;
+    date_to?: string;
+  }) {
+    const visibilityFilter = await excludeTechnicalScrapClaims(filters.company_code);
+    const where = this.buildLogWhere(filters, visibilityFilter);
+    return prisma.insw_tracking_log.findMany({
+      where,
+      select: {
+        sent_at: true,
+        transaction_type: true,
+        wms_id: true,
+        insw_activity_code: true,
+        insw_status: true,
+        retry_count: true,
+      },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      take: 10001,
+    });
   }
 
   async getTransmissionLogMetadata(filters: {

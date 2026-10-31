@@ -7,7 +7,6 @@ import {
   Add as AddIcon,
   UploadFile as UploadFileIcon,
   Send as SendIcon,
-  Lock as LockIcon,
 } from '@mui/icons-material';
 import { ReportLayout } from '@/app/components/customs/ReportLayout';
 import {
@@ -19,6 +18,7 @@ import {
   BeginningStockFormData,
 } from '@/app/components/customs/BeginningStockForm';
 import { BeginningStockImport } from '@/app/components/customs/BeginningStockImport';
+import { BeginningBalanceLockAction, beginningBalanceLockDialog } from '@/app/components/customs/BeginningBalanceLockAction';
 import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { useToast } from '@/app/components/ToastProvider';
 import dayjs from 'dayjs';
@@ -31,6 +31,7 @@ interface ItemType {
 export default function BeginningDataPage() {
   const toast = useToast();
   const { data: session } = useSession();
+  const isAdmin = session?.user?.role === 'ADMIN';
   const [data, setData] = useState<BeginningStockData[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -46,8 +47,10 @@ export default function BeginningDataPage() {
 
   // INSW transmission status
   const [overallStatus, setOverallStatus] = useState<'OPEN' | 'TRANSMITTED_TO_INSW' | 'LOCKED'>('OPEN');
+  const [mixedStatus, setMixedStatus] = useState(false);
   const [transmitModalOpen, setTransmitModalOpen] = useState(false);
   const [lockDialogOpen, setLockDialogOpen] = useState(false);
+  const [lockLoading, setLockLoading] = useState(false);
   const [transmitLoading, setTransmitLoading] = useState(false);
   const [canSubmitInsw, setCanSubmitInsw] = useState(false);
 
@@ -167,6 +170,8 @@ export default function BeginningDataPage() {
       // Handle new API response format: { data: [...], overallStatus }
       const rawData = Array.isArray(result) ? result : (result.data || []);
 
+      setMixedStatus(result.mixedStatus === true);
+
       // Update overallStatus if provided
       if (result.overallStatus) {
         setOverallStatus(result.overallStatus);
@@ -180,6 +185,8 @@ export default function BeginningDataPage() {
         itemName: item.item.name,
         itemType: item.itemType,
         uom: item.uom.code,
+        inswUom: item.inswUom ?? null,
+        ceisaInswUom: item.ceisaInswUom ?? null,
         beginningBalance: item.beginningBalance,
         beginningDate: item.beginningDate,
         remarks: item.remarks,
@@ -346,6 +353,7 @@ export default function BeginningDataPage() {
             balanceDate: r.balanceDate,
             ppkekNumbers: r.ppkekNumbers,
             remarks: r.remarks,
+            ceisaInswUom: r.ceisaInswUom,
           })),
         }),
       });
@@ -412,18 +420,27 @@ export default function BeginningDataPage() {
 
   // Handle lock saldo awal
   const handleLockSaldoAwal = async () => {
-    if (!canSubmitInsw) return;
+    if (lockLoading || !isAdmin) return;
+    setLockLoading(true);
     try {
       const response = await fetch('/api/insw/post/saldo-awal-final', { method: 'POST' });
-      const result = await response.json();
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || result.message || 'Lock failed');
+      const responseText = await response.text();
+      let result;
+      try {
+        result = responseText.trim() ? JSON.parse(responseText) : null;
+      } catch {
+        throw new Error('Invalid LOCK response. Reload to check Beginning Balance status before retrying.');
       }
-      toast.success('Saldo Awal berhasil dikunci di INSW');
+      if (!response.ok || result?.success !== true) {
+        throw new Error(result?.error || result?.message || 'LOCK could not be confirmed. Reload to check Beginning Balance status before retrying.');
+      }
+      toast.success(companyType === 'BZ' ? result.message : 'Saldo Awal berhasil dikunci di INSW');
       setLockDialogOpen(false);
       await fetchData();
     } catch (error: any) {
-      toast.error(error.message || 'Gagal mengunci Saldo Awal di INSW');
+      toast.error(error.message || (companyType === 'BZ' ? 'Failed to lock Beginning Balance locally in iMAPS' : 'Gagal mengunci Saldo Awal di INSW'));
+    } finally {
+      setLockLoading(false);
     }
   };
 
@@ -458,6 +475,7 @@ export default function BeginningDataPage() {
 
   // Render the overallStatus chip
   const renderOverallStatusChip = () => {
+    if (mixedStatus) return <Chip label={`${overallStatus} — MIXED STATUSES: REVIEW REQUIRED`} color="warning" />;
     if (overallStatus === 'LOCKED') {
       return <Chip label="LOCKED" color="success" />;
     }
@@ -475,7 +493,7 @@ export default function BeginningDataPage() {
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, flexWrap: 'wrap' }}>
           {companyType === 'SEZ' && canSubmitInsw && (
             <>
-              {overallStatus === 'OPEN' && (
+              {!mixedStatus && overallStatus === 'OPEN' && (
                 <Button
                   variant="outlined"
                   color="primary"
@@ -489,23 +507,14 @@ export default function BeginningDataPage() {
                   Kirim ke INSW
                 </Button>
               )}
-              {overallStatus === 'TRANSMITTED_TO_INSW' && (
-                <Button
-                  variant="outlined"
-                  color="warning"
-                  startIcon={<LockIcon />}
-                  onClick={() => setLockDialogOpen(true)}
-                  sx={{
-                    textTransform: 'none',
-                    borderRadius: 2,
-                  }}
-                >
-                  Lock Saldo Awal
-                </Button>
-              )}
             </>
           )}
-          {overallStatus !== 'LOCKED' && (
+          <BeginningBalanceLockAction
+            role={session?.user?.role} companyType={companyType} status={overallStatus}
+            mixedStatus={mixedStatus} disabled={loading || lockLoading}
+            onClick={() => setLockDialogOpen(true)}
+          />
+          {!mixedStatus && overallStatus !== 'LOCKED' && (
             <>
               <Button
                 variant="contained"
@@ -605,7 +614,7 @@ export default function BeginningDataPage() {
         <BeginningStockTable
           data={data}
           loading={loading}
-          isLocked={overallStatus === 'LOCKED'}
+          isLocked={mixedStatus || overallStatus === 'LOCKED'}
           onEdit={handleEdit}
           onDelete={handleDeleteClick}
           onSearch={handleTableSearch}
@@ -672,10 +681,9 @@ export default function BeginningDataPage() {
 
       {/* Lock Saldo Awal Confirmation Dialog */}
       <ConfirmDialog
-        open={lockDialogOpen}
-        title="Lock Saldo Awal?"
-        message="Tindakan ini tidak dapat dibatalkan. Saldo Awal akan dikunci di INSW (Registrasi Final). Setelah dikunci, data tidak dapat diubah lagi."
-        confirmText="Lock Saldo Awal"
+        open={isAdmin && lockDialogOpen}
+        {...beginningBalanceLockDialog(companyType)}
+        loading={lockLoading}
         cancelText="Batal"
         onConfirm={handleLockSaldoAwal}
         onCancel={() => setLockDialogOpen(false)}

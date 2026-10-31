@@ -68,9 +68,12 @@ export function validateBeginningBalanceUploadRecord(value: unknown, full = true
     else if (typeof value !== 'string') errors.push({ field, error: `${field} must be stored as Excel Text. Restore the original value including any leading zeros before re-uploading.` });
     else if (!value.trim()) errors.push({ field, error: `${field} is required` });
   }
-  for (const key of ['remarks', 'ppkekNumbers']) {
+  for (const key of ['remarks', 'ppkekNumbers', 'ceisaInswUom']) {
     const textArray = key === 'ppkekNumbers' && Array.isArray(row[key]) && row[key].every(value => typeof value === 'string');
     if (row[key] != null && typeof row[key] !== 'string' && !textArray) errors.push({ field: key, error: `${key} must be text` });
+  }
+  if (Array.from(normalizeBeginningBalanceText(row.ceisaInswUom)).length > 20) {
+    errors.push({ field: 'ceisaInswUom', error: 'ceisaInswUom must be at most 20 characters' });
   }
   const ppkeks = row.ppkekNumbers;
   if (typeof ppkeks === 'string' && ppkeks.trim() && ppkeks.split(',').some(value => !value.trim())) {

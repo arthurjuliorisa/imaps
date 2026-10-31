@@ -1,3 +1,5 @@
+import { assertBeginningBalanceCompanyScope, BeginningBalanceStateError, guardBeginningBalanceWrite } from '@/lib/beginning-balance-state';
+import { validateCompanyCode } from '@/lib/company-validation';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -24,6 +26,11 @@ export async function GET(
       return authCheck.response;
     }
 
+    const companyValidation = validateCompanyCode(authCheck.session);
+    if (!companyValidation.success) return companyValidation.response;
+    const { companyCode } = companyValidation;
+    assertBeginningBalanceCompanyScope(request, companyCode);
+
     const { id } = await context.params;
 
     // Parse ID as integer
@@ -36,7 +43,7 @@ export async function GET(
     }
 
     const beginningBalance = await prisma.beginning_balances.findUnique({
-      where: { id: recordId },
+      where: { id: recordId, company_code: companyCode, deleted_at: null },
       include: {
         ppkeks: {
           select: {
@@ -74,6 +81,7 @@ export async function GET(
 
     return NextResponse.json(transformedRecord);
   } catch (error) {
+    if (error instanceof BeginningBalanceStateError) return NextResponse.json({ message: error.message }, { status: error.status });
     console.error('[API Error] Failed to fetch beginning balance record:', error);
     return NextResponse.json(
       { message: 'Error fetching beginning balance record' },
@@ -106,9 +114,14 @@ export async function PUT(
       return authCheck.response;
     }
 
-    const { session } = authCheck as { authenticated: true; session: any };
+    const companyValidation = validateCompanyCode(authCheck.session);
+    if (!companyValidation.success) return companyValidation.response;
+    const { companyCode } = companyValidation;
+    assertBeginningBalanceCompanyScope(request, companyCode);
+
     const { id } = await context.params;
     const body = await request.json();
+    assertBeginningBalanceCompanyScope(request, companyCode, body);
     const { itemType, itemCode, itemName, uom, qty, balanceDate, remarks, ppkekNumbers } = body;
 
     // Parse ID as integer
@@ -122,7 +135,7 @@ export async function PUT(
 
     // Check if record exists
     const existing = await prisma.beginning_balances.findUnique({
-      where: { id: recordId },
+      where: { id: recordId, company_code: companyCode, deleted_at: null },
     });
 
     if (!existing) {
@@ -188,24 +201,6 @@ export async function PUT(
       );
     }
 
-    // Get company code from session
-    const companyCodeRaw = session.user?.companyCode;
-    if (!companyCodeRaw) {
-      return NextResponse.json(
-        { message: 'Company code not found in session' },
-        { status: 400 }
-      );
-    }
-
-    // Parse company code as integer
-    const companyCode = parseInt(companyCodeRaw);
-    if (isNaN(companyCode)) {
-      return NextResponse.json(
-        { message: 'Invalid company code format' },
-        { status: 400 }
-      );
-    }
-
     // Check for duplicate if item code or date changed
     if (itemCode !== existing.item_code || normalizedDate.getTime() !== existing.balance_date.getTime()) {
       const duplicate = await prisma.beginning_balances.findFirst({
@@ -225,49 +220,54 @@ export async function PUT(
       }
     }
 
-    // Update the beginning balance record
-    const updated = await prisma.beginning_balances.update({
-      where: { id: recordId },
-      data: {
-        item_type: itemType,
-        item_code: String(itemCode).trim(),
-        item_name: String(itemName).trim(),
-        uom: String(uom).trim(),
-        qty: qtyValue,
-        balance_date: normalizedDate,
-        remarks: sanitizedRemarks,
-      },
-    });
-
-    // Handle PPKEK numbers
-    if (ppkekNumbers && Array.isArray(ppkekNumbers)) {
-      // Delete existing PPKEK associations
-      await prisma.beginning_balance_ppkeks.deleteMany({
-        where: { beginning_balance_id: recordId },
+    const { updated, updatedWithPpkeks } = await prisma.$transaction(async (tx) => {
+      await guardBeginningBalanceWrite(tx, companyCode);
+      // Update the beginning balance record
+      const updated = await tx.beginning_balances.update({
+        where: { id: recordId, company_code: companyCode, deleted_at: null },
+        data: {
+          item_type: itemType,
+          item_code: String(itemCode).trim(),
+          item_name: String(itemName).trim(),
+          uom: String(uom).trim(),
+          qty: qtyValue,
+          balance_date: normalizedDate,
+          remarks: sanitizedRemarks,
+        },
       });
 
-      // Add new PPKEK associations
-      if (ppkekNumbers.length > 0) {
-        await prisma.beginning_balance_ppkeks.createMany({
-          data: ppkekNumbers.map((ppkekNumber: string) => ({
-            beginning_balance_id: recordId,
-            ppkek_number: String(ppkekNumber).trim(),
-          })),
+      // Handle PPKEK numbers
+      if (ppkekNumbers && Array.isArray(ppkekNumbers)) {
+        // Delete existing PPKEK associations
+        await tx.beginning_balance_ppkeks.deleteMany({
+          where: { beginning_balance_id: recordId },
         });
-      }
-    }
 
-    // Fetch updated record with ppkeks
-    const updatedWithPpkeks = await prisma.beginning_balances.findUnique({
-      where: { id: recordId },
-      include: {
-        ppkeks: {
-          select: {
-            ppkek_number: true
-          }
+        // Add new PPKEK associations
+        if (ppkekNumbers.length > 0) {
+          await tx.beginning_balance_ppkeks.createMany({
+            data: ppkekNumbers.map((ppkekNumber: string) => ({
+              beginning_balance_id: recordId,
+              ppkek_number: String(ppkekNumber).trim(),
+            })),
+          });
         }
       }
-    });
+
+      // Fetch updated record with ppkeks
+      const updatedWithPpkeks = await tx.beginning_balances.findUnique({
+        where: { id: recordId, company_code: companyCode, deleted_at: null },
+        include: {
+          ppkeks: {
+            select: {
+              ppkek_number: true
+            }
+          }
+        }
+      });
+
+      return { updated, updatedWithPpkeks };
+    }, { isolationLevel: 'ReadCommitted' });
 
     // Transform response
     const transformedRecord = {
@@ -348,6 +348,7 @@ export async function PUT(
 
     return NextResponse.json(transformedRecord);
   } catch (error: any) {
+    if (error instanceof BeginningBalanceStateError) return NextResponse.json({ message: error.message }, { status: error.status });
     console.error('[API Error] Failed to update beginning balance record:', error);
 
     // Handle validation errors
@@ -401,6 +402,11 @@ export async function DELETE(
       return authCheck.response;
     }
 
+    const companyValidation = validateCompanyCode(authCheck.session);
+    if (!companyValidation.success) return companyValidation.response;
+    const { companyCode } = companyValidation;
+    assertBeginningBalanceCompanyScope(request, companyCode);
+
     const { id } = await context.params;
 
     // Parse ID as integer
@@ -414,7 +420,7 @@ export async function DELETE(
 
     // Check if record exists
     const existing = await prisma.beginning_balances.findUnique({
-      where: { id: recordId },
+      where: { id: recordId, company_code: companyCode, deleted_at: null },
     });
 
     if (!existing) {
@@ -424,10 +430,13 @@ export async function DELETE(
       );
     }
 
-    // Delete the record
-    await prisma.beginning_balances.delete({
-      where: { id: recordId },
-    });
+    // Parent deletion and cascading PPKEK deletion share the company guard.
+    await prisma.$transaction(async (tx) => {
+      await guardBeginningBalanceWrite(tx, companyCode);
+      await tx.beginning_balances.delete({
+        where: { id: recordId, company_code: companyCode, deleted_at: null },
+      });
+    }, { isolationLevel: 'ReadCommitted' });
 
     // Log activity
     await logActivity({
@@ -462,6 +471,7 @@ export async function DELETE(
       message: 'Beginning balance record deleted successfully. Snapshot recalculation queued for processing.',
     });
   } catch (error: any) {
+    if (error instanceof BeginningBalanceStateError) return NextResponse.json({ message: error.message }, { status: error.status });
     console.error('[API Error] Failed to delete beginning balance record:', error);
 
     if (error.code === 'P2025') {

@@ -239,6 +239,7 @@ model beginning_balances {
   uom          String                 @db.VarChar(20)
   qty          Decimal                @db.Decimal(15, 3)
   balance_date DateTime               @db.Date
+  ceisa_insw_uom String?               @db.VarChar(20)
   remarks      String?                @db.VarChar(1000)
   status       BeginningBalanceStatus @default(OPEN)
   created_at   DateTime               @default(now()) @db.Timestamptz(6)

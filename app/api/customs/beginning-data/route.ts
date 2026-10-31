@@ -1,3 +1,4 @@
+import { assertBeginningBalanceCompanyScope, BeginningBalanceStateError, guardBeginningBalanceWrite, readBeginningBalanceState } from '@/lib/beginning-balance-state';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -59,9 +60,11 @@ export async function GET(request: Request) {
       return companyValidation.response;
     }
     const { companyCode } = companyValidation;
+    assertBeginningBalanceCompanyScope(request, companyCode);
 
     const where: any = {
-      company_code: companyCode
+      company_code: companyCode,
+      deleted_at: null,
     };
 
     // Filter by item type
@@ -131,12 +134,35 @@ export async function GET(request: Request) {
       take: limit,
     });
 
-    // Fetch status separately via raw SQL (Prisma client may not have status field yet)
-    const statusRows = await prisma.$queryRawUnsafe<Array<{ id: number; status: string }>>(
-      `SELECT id, status::text FROM beginning_balances WHERE company_code = $1 AND deleted_at IS NULL`,
-      companyCode
+    // Resolve current global mappings once per page, including historical/locked balances.
+    // Keep JS uppercase semantics (without trimming) consistent with INSW integration.
+    const activeMappings = beginningBalances.length > 0
+      ? await prisma.insw_uom_mapping.findMany({
+          where: { is_active: true },
+          select: { wms_uom: true, insw_uom: true },
+        })
+      : [];
+    const uomMappings = new Map<string, { count: number; target: string | null }>();
+    for (const mapping of activeMappings) {
+      const key = mapping.wms_uom.toUpperCase();
+      const existing = uomMappings.get(key);
+      uomMappings.set(key, {
+        count: (existing?.count ?? 0) + 1,
+        target: existing ? null : (mapping.insw_uom.trim() ? mapping.insw_uom : null),
+      });
+    }
+    const encounteredAmbiguousKeys = new Set(
+      beginningBalances.map(balance => balance.uom.toUpperCase())
+        .filter(key => (uomMappings.get(key)?.count ?? 0) > 1)
     );
-    const statusMap = new Map(statusRows.map((r) => [Number(r.id), r.status]));
+    if (encounteredAmbiguousKeys.size > 0) {
+      console.warn('[Beginning Balance UoM]', {
+        event: 'ambiguous_active_uom_mapping',
+        ambiguousKeyCount: encounteredAmbiguousKeys.size,
+      });
+    }
+
+    const companyState = await readBeginningBalanceState(prisma, companyCode);
 
     // Transform data to match frontend expectations
     const transformedData = await Promise.all(beginningBalances.map(async (balance) => {
@@ -175,25 +201,18 @@ export async function GET(request: Request) {
         ppkek_numbers: balance.ppkeks?.map(p => p.ppkek_number) || [],
         itemId: balance.item_code,
         uomId: balance.uom,
+        ceisaInswUom: balance.ceisa_insw_uom ?? null,
+        inswUom: uomMappings.get(balance.uom.toUpperCase())?.target ?? null,
         itemType: balance.item_type,
-        status: statusMap.get(balance.id) || 'OPEN',
+        status: balance.status,
         hasTransactions,
       };
     }));
 
-    // Determine overallStatus: LOCKED > TRANSMITTED_TO_INSW > OPEN
-    const statusPriority: Record<string, number> = { OPEN: 0, TRANSMITTED_TO_INSW: 1, LOCKED: 2 };
-    let overallStatus = 'OPEN';
-    for (const item of transformedData) {
-      const p = statusPriority[item.status] ?? 0;
-      if (p > (statusPriority[overallStatus] ?? 0)) {
-        overallStatus = item.status;
-      }
-    }
-
     return NextResponse.json({ 
       data: transformedData, 
-      overallStatus,
+      overallStatus: companyState.overallStatus,
+      mixedStatus: companyState.mixedStatus,
       pagination: {
         page,
         limit,
@@ -204,6 +223,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof BeginningBalanceStateError) return NextResponse.json({ message: error.message }, { status: error.status });
     console.error('[API Error] Failed to fetch beginning data:', error);
     console.error('[API Error] Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
     return NextResponse.json(
@@ -305,6 +325,7 @@ export async function POST(request: Request) {
       );
     }
     companyCodeForError = companyCode;
+    assertBeginningBalanceCompanyScope(request, companyCode, body);
 
     // Validate item: check for duplicates and existing transactions
     const validation = await validateBeginningBalanceItem(
@@ -326,6 +347,7 @@ export async function POST(request: Request) {
 
     // The beginning balance and its required baseline snapshot commit together.
     const newRecord = await prisma.$transaction(async (tx) => {
+      await guardBeginningBalanceWrite(tx, companyCode);
       const created = await tx.beginning_balances.create({
         data: {
           company_code: companyCode,
@@ -361,7 +383,7 @@ export async function POST(request: Request) {
       }]);
 
       return created;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
 
     // Fetch the created record with ppkeks to return complete data
     const recordWithPpkeks = await prisma.beginning_balances.findUnique({
@@ -413,6 +435,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(transformedRecord, { status: 201 });
   } catch (error: any) {
+    if (error instanceof BeginningBalanceStateError) return NextResponse.json({ message: error.message }, { status: error.status });
     console.error('[API Error] Failed to create beginning balance record:', error);
 
     if (error instanceof BeginningBalanceSnapshotError) {

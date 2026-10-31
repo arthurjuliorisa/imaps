@@ -1,4 +1,11 @@
-import { beginningBalanceUploadErrors, normalizeBeginningBalanceItemCode, parseBeginningBalanceDate, parseBeginningBalanceQty } from '@/lib/beginning-balance-upload-validation';
+import { assertBeginningBalanceCompanyScope, BeginningBalanceStateError, guardBeginningBalanceWrite } from '@/lib/beginning-balance-state';
+import {
+  normalizeBeginningBalanceText,
+  beginningBalanceUploadErrors,
+  normalizeBeginningBalanceItemCode,
+  parseBeginningBalanceDate,
+  parseBeginningBalanceQty,
+} from '@/lib/beginning-balance-upload-validation';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -103,6 +110,8 @@ export async function POST(request: Request) {
       );
     }
 
+    assertBeginningBalanceCompanyScope(request, companyCodeInt, body);
+
     const inputErrors = beginningBalanceUploadErrors(records);
     if (inputErrors.length) return NextResponse.json({ success: false, message: 'Invalid upload values', successCount: 0, errorCount: inputErrors.length, errors: inputErrors }, { status: 400 });
 
@@ -121,6 +130,7 @@ export async function POST(request: Request) {
       itemCode: string;
       itemName: string;
       uom: string;
+      ceisaInswUom: string | null;
       qty: number;
       balanceDate: Date;
       remarks: string | null;
@@ -234,6 +244,7 @@ export async function POST(request: Request) {
         itemCode,
         itemName: String(row.itemName).trim(),
         uom: String(row.uom).trim(),
+        ceisaInswUom: normalizeBeginningBalanceText(row.ceisaInswUom) || null,
         qty: qtyValue,
         balanceDate: dateValue,
         remarks: remarksValue || null,
@@ -321,6 +332,7 @@ export async function POST(request: Request) {
 
     try {
       await prisma.$transaction(async (tx) => {
+        await guardBeginningBalanceWrite(tx, companyCodeInt);
         // Note: Duplicate and transaction validation is already done before this transaction
         // This ensures we fail fast and don't start a transaction if validation fails
 
@@ -331,6 +343,7 @@ export async function POST(request: Request) {
           item_code: record.itemCode,
           item_name: record.itemName,
           uom: record.uom,
+          ceisa_insw_uom: record.ceisaInswUom,
           qty: record.qty,
           balance_date: record.balanceDate,
           remarks: record.remarks,
@@ -412,10 +425,11 @@ export async function POST(request: Request) {
           byType[record.itemType]++;
         }
       }, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
         timeout: 60000, // Allow larger 10,000-row bulk operations to complete
       });
     } catch (error: any) {
+      if (error instanceof BeginningBalanceStateError) return NextResponse.json({ success: false, message: error.message, successCount: 0 }, { status: error.status });
       if (!(error instanceof BeginningBalanceSnapshotError)) console.error('[API Error] Transaction failed during import:', error);
 
       if (error instanceof ValidationError) {
@@ -519,6 +533,7 @@ export async function POST(request: Request) {
       errors: [],
     });
   } catch (error: any) {
+    if (error instanceof BeginningBalanceStateError) return NextResponse.json({ success: false, message: error.message }, { status: error.status });
     console.error('[API Error] Failed to import beginning balance records:', error);
 
     if (error instanceof SyntaxError) {

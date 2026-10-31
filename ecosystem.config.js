@@ -85,7 +85,7 @@ module.exports = {
         ALLOW_FUTURE_DATES: process.env.ALLOW_FUTURE_DATES || 'false',
         SKIP_SEEDERS: process.env.SKIP_SEEDERS,
       },
-      max_memory_restart: '512M',
+      max_memory_restart: '2G',
       error_file: './logs/error.log',
       out_file: './logs/application.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',

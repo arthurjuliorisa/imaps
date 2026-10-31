@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { isAllowedRequestHost, getRequestHost } from './lib/security/request-origin';
+import { formatMenuFetchDiagnostic } from './lib/security/menu-fetch-diagnostics';
+import { directDispatcher, fetchInternalMenus, getMenuFetchTarget, getMenuSessionHeaders } from './lib/security/menu-fetch-transport';
 
 /**
  * Protected routes that require menu access permission
@@ -68,25 +70,32 @@ async function fetchUserMenuPaths(
   const pathname = request.nextUrl.pathname;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
+    let menuTarget: URL | undefined;
+    let responseStatus: number | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
       // Create abort controller for timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      timeoutId = setTimeout(() => controller.abort(), 5000); // Includes body read
 
-      const response = await fetch(
-        new URL('/api/settings/access-menu/current-user-menus', request.url),
+      menuTarget = getMenuFetchTarget();
+      const response = await fetchInternalMenus(
+        menuTarget,
         {
-          headers: {
-            cookie: request.headers.get('cookie') || '',
-          },
+          headers: getMenuSessionHeaders(request),
           signal: controller.signal,
+          dispatcher: directDispatcher,
+          redirect: 'error',
         }
       );
 
-      clearTimeout(timeoutId);
+      responseStatus = response.status;
       const duration = Date.now() - startTime;
 
       if (!response.ok) {
+        await response.body?.cancel();
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
         if (attempt < retries) {
           console.warn(
             `[Middleware] Attempt ${attempt + 1}/${retries + 1} failed with status ${response.status} (${duration}ms) for ${pathname}, retrying...`
@@ -97,14 +106,30 @@ async function fetchUserMenuPaths(
         console.error(
           `[Middleware] API failed with status ${response.status} after ${retries + 1} attempts (${duration}ms) for ${pathname}`
         );
+        if (isAuthDebugEnabled) {
+          authDebug('menu-fetch', formatMenuFetchDiagnostic({
+            pathname, target: menuTarget, attempt: attempt + 1, elapsedMs: duration,
+            outcome: 'http_error', status: response.status,
+          }));
+        }
         return new Set();
       }
 
-      const menus = await response.json();
+      const menus: unknown = await response.json();
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+      if (!Array.isArray(menus) || !menus.every((menu: unknown) => {
+        if (!menu || typeof menu !== 'object') return false;
+        const { menuPath, canView } = menu as Record<string, unknown>;
+        return canView === true && (menuPath === null || (typeof menuPath === 'string'
+          && /^\/(?!\/)[^\s?#\\]*$/.test(menuPath)));
+      })) {
+        throw new TypeError('Invalid menu response');
+      }
       const accessiblePaths: Set<string> = new Set(
         menus
-          .filter((menu: any) => menu.menuPath !== null)
-          .map((menu: any) => menu.menuPath as string)
+          .filter((menu) => menu.menuPath !== null)
+          .map((menu) => menu.menuPath as string)
       );
 
       console.log(
@@ -113,6 +138,8 @@ async function fetchUserMenuPaths(
 
       return accessiblePaths;
     } catch (error) {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      timeoutId = undefined;
       const duration = Date.now() - startTime;
 
       if (attempt < retries) {
@@ -131,7 +158,17 @@ async function fetchUserMenuPaths(
       console.error(`[Middleware] Error type: ${error instanceof Error ? error.constructor.name : typeof error}`);
       console.error(`[Middleware] Error message: ${error instanceof Error ? error.message : String(error)}`);
 
+      if (isAuthDebugEnabled) {
+        authDebug('menu-fetch', formatMenuFetchDiagnostic({
+          pathname, target: menuTarget, attempt: attempt + 1, elapsedMs: duration,
+          outcome: responseStatus === undefined ? 'transport_error' : 'response_error',
+          status: responseStatus, error,
+        }));
+      }
+
       return new Set();
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
     }
   }
 
