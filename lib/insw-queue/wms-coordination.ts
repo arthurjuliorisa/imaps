@@ -51,6 +51,15 @@ export async function wmsLogResendEligibility(db: PrismaClient | Prisma.Transact
       AND l.insw_status = 'FAILED' AND p.company_code = l.company_code AND p.company_code IN (1370, 1380)
       AND p.status = 'FAILED' AND p.delivery_state = 'KNOWN_FAILURE' AND p.retry_index >= p.max_auto_retry_snapshot
       AND p.owner_token IS NULL AND p.lease_until IS NULL
+      -- Retry index is persisted execution order, unique within a cycle. A
+      -- historical failure must never inherit the terminal cycle's eligibility.
+      AND a.retry_index = p.retry_index
+      AND NOT EXISTS (SELECT 1 FROM insw_queue_attempt newer_attempt
+        WHERE newer_attempt.queue_id = p.id AND newer_attempt.retry_index > a.retry_index)
+      -- The finalizer writes one outcome log per attempt. Fail closed if that
+      -- association is ambiguous rather than choosing an arbitrary log ID.
+      AND NOT EXISTS (SELECT 1 FROM insw_tracking_log sibling
+        WHERE sibling.queue_attempt_id = a.id AND sibling.id <> l.id)
       AND NOT EXISTS (SELECT 1 FROM insw_queue_cycle newer WHERE newer.identity_key = p.identity_key AND newer.cycle > p.cycle)
       AND ${originalAssociation()}`);
   return new Set(rows.map(row => row.id.toString()));

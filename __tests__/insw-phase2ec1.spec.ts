@@ -281,6 +281,15 @@ for (const maximum of [0, 2, 10]) {
     }
     const log = await db.insw_tracking_log.findFirstOrThrow({ orderBy: { id: 'desc' } });
     expect((await incomingLogResendEligibility(db, 1370, [log.id])).has(log.id.toString())).toBe(true);
+    const history = await db.insw_tracking_log.findMany({ orderBy: { id: 'asc' } });
+    const queryStart = queries.length;
+    expect([...await incomingLogResendEligibility(db, 1370, history.map(l => l.id))]).toEqual([log.id.toString()]);
+    expect(queries.length - queryStart).toBe(1); // One batch for 1, 3 or 11 attempts.
+    const beforeRejected = await counts();
+    for (const stale of history.slice(0, -1)) {
+      await expect(resendIncomingLog(db, 1370, stale.id, 'op', 'Crafted historical request')).rejects.toThrow('exhausted');
+    }
+    expect(await counts()).toEqual(beforeRejected);
     // Mutate current source after failure: explicit resend must copy the old frozen JSON, not reconvert.
     await db.incoming_good_items.updateMany({ where: { incoming_good_id: row.id }, data: { qty: 999 } });
     const other = new PrismaClient({ datasources: { db: { url } } });
@@ -408,10 +417,10 @@ test('legacy remote success requires repair and cannot create a fresh queue deli
   expect(await db.insw_queue_cycle.count()).toBe(0); expect(httpCalls).toBe(0);
 });
 
-async function withApiSession(run: () => Promise<void>) {
+async function withApiSession(run: () => Promise<void>, role = 'ADMIN', companyCode = '1370') {
   const restore = bindFixtureSingletons();
   const auth = require('next-auth/next'); const original = auth.getServerSession;
-  auth.getServerSession = async () => ({ user: { id: 'fixture-operator', companyCode: '1370', role: 'SUPER_ADMIN' } });
+  auth.getServerSession = async () => ({ user: { id: 'fixture-operator', companyCode, role } });
   try { await run(); } finally { auth.getServerSession = original; restore(); }
 }
 
@@ -464,5 +473,81 @@ for (const failAdmission of [false, true]) {
         expect(await db.insw_queue_cycle.count()).toBe(failAdmission ? 0 : 1); expect(httpCalls).toBe(0);
       });
     } finally { if (failAdmission) await db.insw_uom_mapping.create({ data: { wms_uom: 'PCS', insw_uom: 'PCE' } }); }
+  });
+}
+
+test('historical RESEND HTTP requests, pagination and detail use latest attempt and cycle', async () => {
+  await budget(2);
+  const row = await incomingFixture(1370);
+  await capture(row);
+  const token = await acquireOperationalOwnership(db);
+  for (let i = 0; i < 3; i++) {
+    await db.$executeRaw`UPDATE insw_dispatch_gate SET last_started_at = NULL, prior_interval_ms = NULL WHERE id = 1`;
+    const { job } = await admitNext(db, token, 3600);
+    await finish(job!, token, false);
+  }
+  const logs = await db.insw_tracking_log.findMany({ orderBy: { id: 'asc' } });
+  const before = await counts();
+  const post = async (id: bigint) => require('../app/api/insw/logs/[id]/resend/route').POST(
+    new Request('http://localhost/resend', { method: 'POST' }), { params: Promise.resolve({ id: id.toString() }) });
+  await withApiSession(async () => {
+    for (const log of logs.slice(0, -1)) expect((await post(log.id)).status).toBe(409);
+    const list = await require('../app/api/insw/logs/route').GET(new Request('http://localhost/api/insw/logs?page=1&limit=5&insw_status=FAILED'));
+    const data = await list.json();
+    expect(list.status).toBe(200);
+    expect(data.pagination).toMatchObject({ total: 3, page: 1, limit: 5 });
+    expect(data.data.filter((l: { can_resend: boolean }) => l.can_resend).map((l: { id: string }) => l.id)).toEqual([logs[2].id.toString()]);
+    for (const log of logs) {
+      const detail = await require('../app/api/insw/logs/[id]/route').GET(new Request('http://localhost/log'), { params: Promise.resolve({ id: log.id.toString() }) });
+      expect((await detail.json()).data).toMatchObject({ insw_status: 'FAILED', can_resend: log.id === logs[2].id });
+    }
+  });
+  await withApiSession(async () => { expect((await post(logs[2].id)).status).toBe(403); }, 'USER');
+  await withApiSession(async () => { expect((await post(logs[2].id)).status).toBe(404); }, 'ADMIN', '1380');
+  expect(await counts()).toEqual(before);
+  expect(httpCalls).toBe(0);
+  // An isolated authorized replay creates a new cycle; every old ID is now stale.
+  await resendIncomingLog(db, 1370, logs[2].id, 'fixture', 'Disposable successor');
+  const afterSuccessor = await counts();
+  await withApiSession(async () => {
+    for (const log of logs) expect((await post(log.id)).status).toBe(409);
+  });
+  expect((await incomingLogResendEligibility(db, 1370, logs.map(l => l.id))).size).toBe(0);
+  expect(await counts()).toEqual(afterSuccessor);
+  expect(httpCalls).toBe(0);
+});
+
+for (const outcome of ['success', 'permanent', 'unknown', 'duplicate-log', 'newer-attempt'] as const) {
+  test(`latest-attempt eligibility fails closed for ${outcome}`, async () => {
+    await budget(outcome === 'permanent' ? 10 : 2);
+    const row = await incomingFixture(1370);
+    await capture(row);
+    const token = await acquireOperationalOwnership(db);
+    for (let i = 0; i < (outcome === 'permanent' ? 1 : 3); i++) {
+      await db.$executeRaw`UPDATE insw_dispatch_gate SET last_started_at = NULL, prior_interval_ms = NULL WHERE id = 1`;
+      const { job } = await admitNext(db, token, 3600);
+      await finish(job!, token, outcome === 'success' && i === 2);
+    }
+    const cycle = await db.insw_queue_cycle.findFirstOrThrow();
+    const latest = await db.insw_tracking_log.findFirstOrThrow({ orderBy: { id: 'desc' } });
+    if (outcome === 'permanent') await db.insw_queue_cycle.update({ where: { id: cycle.id }, data: {
+      status: 'FAILED', delivery_state: 'KNOWN_FAILURE', completed_at: new Date(), error_category: 'PERMANENT_FAILURE',
+    } });
+    if (outcome === 'unknown') await db.insw_queue_cycle.update({ where: { id: cycle.id }, data: {
+      status: 'HELD', delivery_state: 'POSSIBLY_STARTED', hold_reason: 'DELIVERY_UNKNOWN', completed_at: null,
+    } });
+    if (outcome === 'duplicate-log') await db.insw_tracking_log.create({ data: {
+      company_code: 1370, transaction_type: 'incoming', transaction_id: row.id, wms_id: row.wms_id,
+      insw_status: 'FAILED', queue_attempt_id: latest.queue_attempt_id,
+    } });
+    if (outcome === 'newer-attempt') await db.insw_queue_attempt.create({ data: {
+      queue_id: cycle.id, retry_index: 3, owner_token: token,
+    } });
+    const logs = await db.insw_tracking_log.findMany();
+    const before = await counts();
+    expect((await incomingLogResendEligibility(db, 1370, logs.map(l => l.id))).size).toBe(0);
+    for (const log of logs) await expect(resendIncomingLog(db, 1370, log.id, 'fixture', 'Forbidden request')).rejects.toThrow('exhausted');
+    expect(await counts()).toEqual(before);
+    expect(httpCalls).toBe(0);
   });
 }
