@@ -34,9 +34,12 @@ import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import { useSession } from 'next-auth/react';
 import dayjs from 'dayjs';
+import type { WmsInswStatus } from '@/lib/insw-queue/wms-log-status';
+import { WMS_INSW_STATUSES } from '@/lib/wms-insw-status-options';
 import { wmsLogFilterParams } from '@/lib/wms-log-filters';
 
 interface WMSTransmissionLog {
+  insw?: WmsInswStatus;
   id: string;
   activity_log_id: string;
   action: string;
@@ -70,6 +73,7 @@ export default function WMSTransmissionLogsPage() {
   const [actionFilter, setActionFilter] = useState('ALL');
   const [errorTypeFilter, setErrorTypeFilter] = useState('ALL');
   const [transmissionStatusFilter, setTransmissionStatusFilter] = useState('ALL');
+  const [inswStatusFilter, setInswStatusFilter] = useState('ALL');
   const [wmsIdSearch, setWmsIdSearch] = useState('');
   const [appliedWmsIdSearch, setAppliedWmsIdSearch] = useState('');
   const [filterOptions, setFilterOptions] = useState({
@@ -139,26 +143,33 @@ export default function WMSTransmissionLogsPage() {
     },
     {
       id: 'transmission_status',
-      label: 'Status',
+      label: 'WMS Status',
       minWidth: 120,
       format: (value: string) => {
         let color: 'success' | 'error' | 'warning' | 'default' = 'default';
-        let label = value || 'UNKNOWN';
+        const label = value || 'UNKNOWN';
         if (value === 'SUCCESS') color = 'success';
         else if (value === 'FAILED') color = 'error';
         else if (value === 'ERROR') color = 'error';
         else if (value === 'UNKNOWN' || value === 'RETRYING') color = 'warning';
 
         return (
-          <Chip
-            label={label}
-            color={color}
-            size="small"
-            variant="outlined"
-            sx={{ fontWeight: 'bold' }}
-          />
+          <Tooltip title="WMS ingress status: local acceptance is separate from INSW delivery.">
+            <Chip label={label} color={color} size="small" variant="outlined" sx={{ fontWeight: 'bold' }} />
+          </Tooltip>
         );
       },
+    },
+    {
+      id: 'insw',
+      label: 'INSW Status',
+      minWidth: 210,
+      format: (_value: unknown, row: WMSTransmissionLog) => row.insw ? (
+        <Tooltip title={row.insw.explanation}>
+          <Chip label={row.insw.label} size="small" variant="outlined"
+            color={row.insw.label === 'Succeeded' ? 'success' : row.insw.label === 'Failed' ? 'error' : 'default'} />
+        </Tooltip>
+      ) : '—',
     },
     {
       id: 'wms_id',
@@ -259,7 +270,7 @@ export default function WMSTransmissionLogsPage() {
 
   useEffect(() => {
     fetchLogs();
-  }, [appliedWmsIdSearch, actionFilter, errorTypeFilter, transmissionStatusFilter, companyCodeFilter, dateFrom, dateTo, page, rowsPerPage]);
+  }, [appliedWmsIdSearch, actionFilter, errorTypeFilter, transmissionStatusFilter, inswStatusFilter, companyCodeFilter, dateFrom, dateTo, page, rowsPerPage]);
 
   // Dropdown options apply to the authorized date/company dataset rather than
   // the current page or selected row filters, so refresh them only when that
@@ -281,7 +292,7 @@ export default function WMSTransmissionLogsPage() {
   };
 
   const activeFilterParams = () => wmsLogFilterParams({ dateFrom, dateTo, appliedWmsIdSearch,
-    actionFilter, errorTypeFilter, transmissionStatusFilter, companyCodeFilter });
+    actionFilter, errorTypeFilter, transmissionStatusFilter, inswStatusFilter, companyCodeFilter });
 
   const handleExportCsv = async () => {
     if (exportingCsv) return;
@@ -522,7 +533,7 @@ export default function WMSTransmissionLogsPage() {
       {/* Filter Card */}
       <Card sx={{ mb: 3, boxShadow: 1 }}>
         <CardContent>
-          <Stack component="form" direction={{ xs: 'column', sm: 'row' }} spacing={2} onSubmit={handleSearchSubmit}>
+          <Stack component="form" direction={{ xs: 'column', sm: 'row' }} spacing={2} useFlexGap sx={{ flexWrap: 'wrap' }} onSubmit={handleSearchSubmit}>
             <TextField
               label="Dari Tanggal"
               type="date"
@@ -575,16 +586,21 @@ export default function WMSTransmissionLogsPage() {
             </TextField>
             <TextField
               select
-              label="Transmission Status"
+              label="WMS Status"
               value={transmissionStatusFilter}
               onChange={handleFilterChange(setTransmissionStatusFilter)}
               size="small"
               sx={{ minWidth: 180 }}
             >
-              <MenuItem value="ALL">All Statuses</MenuItem>
+              <MenuItem value="ALL">All WMS Status</MenuItem>
               {filterOptions.transmissionStatuses.map((status) => (
                 <MenuItem key={status} value={status}>{status}</MenuItem>
               ))}
+            </TextField>
+            <TextField select label="INSW Status" value={inswStatusFilter}
+              onChange={handleFilterChange(setInswStatusFilter)} size="small" sx={{ minWidth: 220 }}>
+              <MenuItem value="ALL">All INSW Status</MenuItem>
+              {WMS_INSW_STATUSES.map(status => <MenuItem key={status} value={status}>{status}</MenuItem>)}
             </TextField>
             <TextField
               select
@@ -695,7 +711,7 @@ export default function WMSTransmissionLogsPage() {
 
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary">
-                    Transmission Status
+                    WMS Status
                   </Typography>
                   <Chip
                     label={selectedLog.transmission_status || 'UNKNOWN'}
@@ -730,6 +746,26 @@ export default function WMSTransmissionLogsPage() {
                     {selectedLog.item_count || 'N/A'}
                   </Typography>
                 </Box>
+
+                {selectedLog.insw && (
+                  <Box>
+                    <Typography variant="subtitle2">INSW transmission: {selectedLog.insw.label}</Typography>
+                    <Typography variant="body2" sx={{ mt: 1 }}>{selectedLog.insw.explanation}</Typography>
+                    <Typography variant="body2" sx={{ mt: 1 }}>
+                      {selectedLog.insw.workerAuthorized
+                        ? 'Company is included in this application process worker fence.'
+                        : 'Worker authorization is not established in this application process.'}
+                    </Typography>
+                    {selectedLog.insw.canInspectRegeneration && selectedLog.insw.label === 'Not queued' && (
+                      <Tooltip title={selectedLog.insw.regenerationBlock}>
+                        <span tabIndex={0} aria-label={selectedLog.insw.regenerationBlock}><Button disabled sx={{ mt: 1 }}>Regenerate INSW Transmission</Button></span>
+                      </Tooltip>
+                    )}
+                    {selectedLog.insw.canViewInswLogs && (
+                      <Button href="/insw/logs" sx={{ mt: 1 }}>Open INSW Logs</Button>
+                    )}
+                  </Box>
+                )}
 
                 {selectedLog.wms_request_payload && (
                   <Box>

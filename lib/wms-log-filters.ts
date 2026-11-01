@@ -1,9 +1,12 @@
+import { WMS_INSW_STATUSES, type WmsInswStatusFilter } from './wms-insw-status-options';
+
 /** WMS list/export policy. SUPER_ADMIN's company selector is a filter, never
  * authority. Other sessions must carry a valid assigned company. */
 export class WmsLogFilterError extends Error {
   constructor(message: string, public readonly status: 400 | 403) { super(message); }
 }
 export interface WmsLogWhere {
+  insw_status?: WmsInswStatusFilter;
   company_code?: number;
   created_at?: { gte?: Date; lte?: Date };
   wms_id?: { contains: string; mode: 'insensitive' };
@@ -11,7 +14,7 @@ export interface WmsLogWhere {
   error_type?: string;
   transmission_status?: string;
 }
-export const WMS_LOG_FILTER_KEYS = ['date_from', 'date_to', 'action', 'error_type', 'transmission_status', 'company_code', 'wms_id'] as const;
+export const WMS_LOG_FILTER_KEYS = ['date_from', 'date_to', 'action', 'error_type', 'transmission_status', 'company_code', 'wms_id', 'insw_status'] as const;
 function company(value: unknown): number | undefined {
   if (typeof value !== 'number' && (typeof value !== 'string' || !/^-?\d+$/.test(value))) return;
   const code = Number(value);
@@ -53,6 +56,11 @@ export function buildWmsLogWhere(params: URLSearchParams, session: unknown, stri
     if (!superAdmin && code !== assigned) throw new WmsLogFilterError('Unauthorized - cannot access other company logs', 403);
     where.company_code = code;
   } else if (!superAdmin) where.company_code = assigned;
+  const insw = params.get('insw_status');
+  if (insw && insw !== 'ALL') {
+    if (!(WMS_INSW_STATUSES as readonly string[]).includes(insw)) throw new WmsLogFilterError('Invalid INSW status filter.', 400);
+    where.insw_status = insw as WmsInswStatusFilter;
+  }
   const from = params.get('date_from'), to = params.get('date_to');
   if (from || to) {
     where.created_at = { ...(from && { gte: new Date(from) }), ...(to && { lte: new Date(to) }) };
@@ -69,10 +77,12 @@ export function buildWmsLogWhere(params: URLSearchParams, session: unknown, stri
 
 /** UI transport shared by listing and export; caller supplies committed search. */
 export function wmsLogFilterParams(filters: {
+  inswStatusFilter?: string;
   dateFrom: string; dateTo: string; appliedWmsIdSearch: string; actionFilter: string;
   errorTypeFilter: string; transmissionStatusFilter: string; companyCodeFilter: string;
 }): URLSearchParams {
   return new URLSearchParams({
+    ...(filters.inswStatusFilter && filters.inswStatusFilter !== 'ALL' && { insw_status: filters.inswStatusFilter }),
     ...(filters.dateFrom && { date_from: filters.dateFrom }),
     ...(filters.dateTo && { date_to: filters.dateTo + 'T23:59:59' }),
     ...(filters.appliedWmsIdSearch && { wms_id: filters.appliedWmsIdSearch }),

@@ -1,4 +1,4 @@
-import { checkAuth } from '@/lib/api-auth';
+import { checkMenuAuth } from '@/lib/menu-auth';
 import { buildWmsLogWhere, WmsLogFilterError } from '@/lib/wms-log-filters';
 import { CsvError } from '@/lib/logs-csv';
 import { csvSpoolConfig, reserveCsvExport, stageLogsCsvDownload } from '@/lib/insw-logs-csv-spool';
@@ -13,7 +13,7 @@ function json(error: string, status: number, code: string, headers?: HeadersInit
 export async function GET(request: Request) {
   let release: (() => void) | undefined;
   try {
-    const auth = await checkAuth();
+    const auth = await checkMenuAuth('/settings/wms-logs');
     if (!auth.authenticated) return auth.response;
     const where = buildWmsLogWhere(new URL(request.url).searchParams, auth.session, true);
     if (request.signal.aborted) return new Response(null, { status: 499 });
