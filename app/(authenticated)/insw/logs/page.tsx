@@ -304,7 +304,6 @@ export default function INSWLogsPage() {
   const [exporting, setExporting] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [loadedListKey, setLoadedListKey] = useState<string | null>(null);
-  const listRequestVersion = useRef(0);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<INSWLog | null>(null);
@@ -483,9 +482,9 @@ export default function INSWLogsPage() {
 
       const response = await fetch(`/api/insw/logs?${params}`);
       const result = await response.json();
-      if (requestVersion !== listRequestVersion.current) return;
+      if (requestVersion !== listRequestVersion.current) return false;
 
-      if (result.success && Array.isArray(result.data)) {
+      if (response.ok && result.success && Array.isArray(result.data)) {
         setLoadedListKey(requestKey);
         setLogs(result.data);
         setTotalCount(result.pagination?.total || 0);
@@ -498,7 +497,7 @@ export default function INSWLogsPage() {
         return false;
       }
     } catch (err) {
-      if (requestVersion !== listRequestVersion.current) return;
+      if (requestVersion !== listRequestVersion.current) return false;
       console.error('Error fetching INSW logs:', err);
       setLogs([]);
       setTotalCount(0);
@@ -571,10 +570,25 @@ export default function INSWLogsPage() {
     setPage(0);
   };
 
-  const handleRefresh = () => {
-    fetchLogs();
-    fetchChartData();
-    toast.success('INSW logs refreshed');
+  const handleRefresh = async () => {
+    if (refreshLatch.current) return;
+    refreshLatch.current = true;
+    setRefreshing(true);
+    try {
+      const requests = [fetchLogs(), fetchChartData(), fetchFilterMetadata()];
+      const versions = [listRequestVersion.current, chartRequestVersion.current, metadataRequestVersion.current];
+      const results = await Promise.all(requests);
+      // A completed request may have been superseded while another was pending.
+      const currentVersions = [listRequestVersion.current, chartRequestVersion.current, metadataRequestVersion.current];
+      if (results.every(Boolean) && versions.every((version, index) => version === currentVersions[index])) {
+        toast.success('INSW logs refreshed');
+      } else {
+        toast.error('Refresh incomplete; a request failed or was superseded.');
+      }
+    } finally {
+      refreshLatch.current = false;
+      setRefreshing(false);
+    }
   };
 
   const handleExportExcel = async () => {

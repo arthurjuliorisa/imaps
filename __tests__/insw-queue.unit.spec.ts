@@ -60,13 +60,56 @@ test('policy validation and retry-after-initial budget fail closed', async () =>
   await expect(readPolicy(db({ min_processing_interval_ms: 0, max_auto_retry: 0, version: 1 }))).rejects.toThrow();
 });
 
-test('foundation is not imported by live code or runtime entry points', () => {
+// Phase B originally prohibited every foundation reference while it was dormant.
+// The committed rollout now exposes these specific read/admission facades. Keep
+// exceptions statement- and caller-specific: no runtime/repository wildcard.
+const approvedQueueStatements: Record<string, string[]> = {
+  'app/(authenticated)/insw/logs/page.tsx': [
+    "import { deliveryLabel, type OperationalState } from '@/lib/insw-queue/operational-state';",
+  ],
+  'app/api/insw/logs/route.ts': ["import { operationalLogPage } from '@/lib/insw-queue/operational-logs';"],
+  'app/api/insw/logs/[id]/route.ts': [
+    "import { currentQueueStates } from '@/lib/insw-queue/operational-logs';",
+    "const queue = await prisma.insw_queue_cycle.findFirst({ where: { id: queueId, company_code: companyValidation.companyCode },\n        select: { id: true, operation: true, wms_reference: true, company_code: true, queued_at: true } });",
+  ],
+  'app/api/insw/logs/[id]/resend/route.ts': ["import { WmsAdmissionError, resendWmsLog, wmsLogTypes } from '@/lib/insw-queue/wms-coordination';"],
+  'app/api/insw/post/pemasukan/route.ts': ["import { IncomingAdmissionError, submitIncomingOriginals } from '@/lib/insw-queue/incoming-coordination';"],
+  'app/api/insw/post/pengeluaran/route.ts': ["import { WmsAdmissionError, submitOutgoingOriginals } from '@/lib/insw-queue/wms-coordination';"],
+  'lib/insw-log-actions.ts': ["import { wmsLogResendEligibility, wmsLogTypes } from './insw-queue/wms-coordination';"],
+};
+function forbiddenQueueAccess(path: string, source: string) {
+  for (const statement of approvedQueueStatements[path] ?? []) source = source.replace(statement, '');
+  return /insw-queue|insw_queue_cycle|insw_transmission_policy/.test(source);
+}
+
+test('foundation is not imported by live code or runtime entry points beyond approved facades', () => {
   function walk(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
   }
-  // C1's isolated, non-activatable worker may reuse contracts. Its own scope
-  // guard proves live code does not import the worker.
+  // The isolated worker has its own live-entrypoint boundary guard.
   const paths = [...walk('app'), ...walk('lib').filter(p => !p.startsWith('lib/insw-queue/') && !p.startsWith('lib/insw-worker/')), 'ecosystem.config.js'];
-  for (const path of paths.filter(p => /\.(tsx?|js)$/.test(p))) expect(readFileSync(path, 'utf8'), path).not.toMatch(/insw-queue|insw_queue_cycle|insw_transmission_policy/);
+  for (const path of paths.filter(p => /\.(tsx?|js)$/.test(p))) expect(forbiddenQueueAccess(path, readFileSync(path, 'utf8')), path).toBe(false);
   for (const path of walk('lib/insw-queue')) expect(readFileSync(path, 'utf8'), path).not.toMatch(/\bfetch\s*\(|setInterval\s*\(|setTimeout\s*\(|INSWIntegrationService/);
+  // The sole client-facing exception must remain dependency-free presentation.
+  expect(readFileSync('lib/insw-queue/operational-state.ts', 'utf8')).not.toMatch(/\bimport\b|\brequire\s*\(|\bfetch\s*\(|\bprisma\b/);
+});
+
+test('queue boundary rejects unsafe imports and DB access even in approved callers', () => {
+  for (const path of [...Object.keys(approvedQueueStatements), 'app/unapproved.ts', 'ecosystem.config.js']) {
+    const approved = (approvedQueueStatements[path] ?? []).join('\n');
+    expect(forbiddenQueueAccess(path, approved)).toBe(false);
+    for (const unsafe of [
+      "import { claimNext } from '@/lib/insw-queue/claim.repository';",
+      "import { dispatch } from '@/lib/insw-queue/dispatcher';",
+      "import { send } from '@/lib/insw-queue/transport';",
+      "export * from '@/lib/insw-queue/policy.repository';",
+      "const runtime = require('@/lib/insw-queue');",
+      "await import('@/lib/insw-queue/wms-coordination');",
+      "await prisma.insw_queue_cycle.updateMany({});",
+      "await prisma.insw_transmission_policy.findMany();",
+    ]) expect(forbiddenQueueAccess(path, approved + '\n' + unsafe), `${path}: ${unsafe}`).toBe(true);
+  }
+  const uiImport = approvedQueueStatements['app/(authenticated)/insw/logs/page.tsx'][0];
+  expect(forbiddenQueueAccess('app/unapproved.ts', uiImport)).toBe(true);
+  expect(forbiddenQueueAccess('app/(authenticated)/insw/logs/page.tsx', uiImport + '\n' + uiImport)).toBe(true);
 });

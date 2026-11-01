@@ -7,7 +7,8 @@ module.exports = { apps: [{
   instances: 1, exec_mode: 'fork', autorestart: false, watch: false,
   // Retained sticky owner requires audited reap/recovery on EVERY restart.
   kill_timeout: 75000,
-  env: { NODE_ENV: 'production', INSW_WORKER_ENABLED: process.env.INSW_WORKER_ENABLED === 'true' ? 'true' : 'false' },
+  env: { NODE_ENV: 'production', INSW_WORKER_ENABLED: process.env.INSW_WORKER_ENABLED === 'true' ? 'true' : 'false',
+    INSW_WORKER_ALLOWED_COMPANIES: process.env.INSW_WORKER_ALLOWED_COMPANIES ?? '' },
   error_file: './logs/insw-worker-error.log', out_file: './logs/insw-worker.log',
   log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
 }] };

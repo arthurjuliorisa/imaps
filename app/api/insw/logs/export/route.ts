@@ -64,9 +64,10 @@ export async function GET(request: Request) {
     const worksheet = workbook.addWorksheet('INSW Logs');
     const info = workbook.addWorksheet('Export Info');
     info.addRow(['Historical attempt outcomes; current queue state is shown in the application.']);
-    info.addRow(['Matching rows', total]);
+    // Oversized probes return 413 above, so every accepted result is complete.
+    info.addRow(['Matching rows', logs.length]);
     info.addRow(['Exported rows', logs.length]);
-    info.addRow(['Truncated', total > logs.length ? 'YES — export limited to 10,000 rows; narrow filters.' : 'NO']);
+    info.addRow(['Truncated', 'NO']);
 
     worksheet.columns = [
       { header: 'No', key: 'no', width: 6 },

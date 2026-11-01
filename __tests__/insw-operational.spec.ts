@@ -31,6 +31,7 @@ async function enqueue(document: string) {
 function launch(timeout = 10000) {
   const child = spawn(process.execPath, ['--import', 'tsx', 'scripts/insw-isolated-worker.ts'], {
     env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: 'test', INSW_ISOLATED_WORKER_ENABLED: 'true',
+      INSW_WORKER_ALLOWED_COMPANIES: '1370,1380',
       INSW_WORKER_TEST_DATABASE_URL: url, INSW_SYNTHETIC_ENDPOINT: endpoint, INSW_SYNTHETIC_TIMEOUT_MS: String(timeout) },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
@@ -258,6 +259,7 @@ test('crash before admission leaves READY; crash after possible-send marker hold
     const job = await enqueue(marker ? 'after-marker' : 'before-marker');
     const child = spawn(process.execPath, ['--import', 'tsx', 'scripts/test-fixtures/insw-operational-boundary.ts'], {
       env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: 'test', INSW_ISOLATED_WORKER_ENABLED: 'true',
+        INSW_WORKER_ALLOWED_COMPANIES: '1370,1380',
         INSW_WORKER_TEST_DATABASE_URL: url }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
     messages.set(child, []); children.push(child);

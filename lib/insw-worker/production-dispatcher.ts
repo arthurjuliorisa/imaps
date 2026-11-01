@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { resolveInswCompanyConfig } from '../config/insw-company-config';
+import { resolveWorkerAllowedCompanies, validateWorkerAllowedCompanies } from '../config/insw-worker-config';
 import { INSWIntegrationService } from '../services/insw-integration.service';
 import { INSW_ENDPOINTS } from '../types/insw-api.types';
 import { prepareWmsFinalizer } from './incoming-finalizer';
@@ -11,18 +12,21 @@ const operations = ['INCOMING', 'OUTGOING', 'MATERIAL_USAGE', 'PRODUCTION_OUTPUT
 // established transport builder. No capture, converters or source writes.
 export async function runProductionDispatcher(input: {
   db: PrismaClient; signal: AbortSignal; timeoutMs?: number; maxJobs?: number;
+  allowedCompanies?: readonly number[];
   onEvent?: (event: string, data?: unknown) => void;
   // Explicit test seam, never supplied by the CLI. Must keep the built request.
   transport?: (endpoint: string, init: RequestInit) => Promise<Response>;
 }) {
-  const companies = [1370, 1380].map(code => {
+  const allowedCompanies = input.allowedCompanies === undefined ? resolveWorkerAllowedCompanies()
+    : validateWorkerAllowedCompanies(input.allowedCompanies);
+  const companies = allowedCompanies.map(code => {
     const config = resolveInswCompanyConfig(code);
     return [code, { endpoint: config.useTestMode ? INSW_ENDPOINTS.transaksi.temp : INSW_ENDPOINTS.transaksi.real,
       service: new INSWIntegrationService(config.apiKey, config.uniqueKey, config.useTestMode, input.db) }] as const;
   });
-  const services = new Map(companies);
+  const services = new Map<number, typeof companies[number][1]>(companies);
   let active: typeof companies[number][1] | undefined;
-  return runIsolatedWorker({ ...input, tracksInvocationStart: true, minimumIntervalMs: 3600, timeoutMs: input.timeoutMs ?? 60000,
+  return runIsolatedWorker({ ...input, allowedCompanies, tracksInvocationStart: true, minimumIntervalMs: 3600, timeoutMs: input.timeoutMs ?? 60000,
     prepareFinalizer: async (token, job) => {
       active = undefined;
       const company = services.get(job.company_code);

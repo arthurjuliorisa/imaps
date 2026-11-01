@@ -84,6 +84,15 @@ module.exports = {
         // Additional
         ALLOW_FUTURE_DATES: process.env.ALLOW_FUTURE_DATES || 'false',
         SKIP_SEEDERS: process.env.SKIP_SEEDERS,
+
+        INSW_CSV_SPOOL_DIR: process.env.INSW_CSV_SPOOL_DIR,
+        INSW_CSV_MAX_BYTES: process.env.INSW_CSV_MAX_BYTES,
+        INSW_CSV_QUOTA_BYTES: process.env.INSW_CSV_QUOTA_BYTES,
+        INSW_CSV_RESERVE_BYTES: process.env.INSW_CSV_RESERVE_BYTES,
+        INSW_CSV_GENERATION_MS: process.env.INSW_CSV_GENERATION_MS,
+        INSW_CSV_DELIVERY_MS: process.env.INSW_CSV_DELIVERY_MS,
+        INSW_CSV_OPERATIONS_VERIFIED: process.env.INSW_CSV_OPERATIONS_VERIFIED,
+        WMS_CSV_OPERATIONS_VERIFIED: process.env.WMS_CSV_OPERATIONS_VERIFIED,
       },
       max_memory_restart: '2G',
       error_file: './logs/error.log',

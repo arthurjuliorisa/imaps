@@ -158,9 +158,10 @@ let arrivals: { at: number; body: unknown; key: string | undefined }[] = [];
 let children: ChildProcess[] = [];
 let reject = false;
 const inbox = new Map<ChildProcess, { event: string; data?: any }[]>();
-function launch(maxJobs: number) {
+function launch(maxJobs: number, allowedCompanies = '1370,1380') {
   const p = fork('scripts/test-fixtures/insw-production-dispatcher.ts', [], { execArgv: ['--import', 'tsx'],
     env: { PATH: process.env.PATH, NODE_ENV: 'test', DATABASE_URL: 'postgresql://synthetic@127.0.0.1:1/unavailable',
+      INSW_WORKER_ALLOWED_COMPANIES: allowedCompanies,
       INSW_OUTCOME_TEST_DATABASE_URL: url, INSW_SYNTHETIC_ENDPOINT: endpoint }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   inbox.set(p, []); children.push(p);
   p.on('message', m => inbox.get(p)!.push(m as any));
@@ -263,11 +264,47 @@ test('production adapter: audited manual frozen successor; malformed head held b
     status: 'HELD', delivery_state: 'NOT_STARTED', error_code: 'PRE_SEND_VALIDATION_FAILED' });
 });
 
+test('1370-only dispatch needs no 1380 credentials and preserves excluded READY rows and sources', async () => {
+  const excludedIds: string[] = [];
+  for (const operation of operations) {
+    const row = await source(operation, 1380);
+    await captureCompletedWmsSource(db, input(operation, operation === 'OUTGOING' ? row.wms_id : row.id, 1380));
+  }
+  const bz = await source('INCOMING', 1310);
+  await enqueueExisting(db, { identity: { kind: 'WMS_REFERENCE', companyCode: 1310, operation: 'INCOMING',
+    reference: bz.wms_id, revision: 'ACCEPTED_WMS_ID', businessDate: '2026-10-24' },
+    intent: 'SOURCE_COMMIT', requestedBy: 'excluded-fixture', payload: { data: [] } });
+  const excludedBefore = await db.insw_queue_cycle.findMany({ orderBy: { tail_key: 'asc' } });
+  expect(excludedBefore).toHaveLength(7);
+  expect(excludedBefore.every(q => q.status === 'READY')).toBe(true);
+  excludedIds.push(...excludedBefore.map(q => q.id));
+  async function excludedSources() {
+    return Promise.all([db.incoming_goods.findMany({ where: { company_code: { in: [1380, 1310] } } }),
+      db.outgoing_goods.findMany({ where: { company_code: 1380 } }), db.material_usages.findMany({ where: { company_code: 1380 } }),
+      db.production_outputs.findMany({ where: { company_code: 1380 } }), db.adjustments.findMany({ where: { company_code: 1380 } }),
+      db.wms_stock_opnames.findMany({ where: { company_code: 1380 } })]);
+  }
+  const sourcesBefore = await excludedSources();
+  const row = await source('INCOMING', 1370);
+  await captureCompletedWmsSource(db, input('INCOMING', row.id, 1370));
+  const worker = launch(1, '1370');
+  await event(worker, 'drained'); await reaped(worker);
+  expect(worker.exitCode).toBe(0);
+  expect(arrivals).toHaveLength(1);
+  expect(arrivals[0].key).toBe('synthetic-1370');
+  expect(await db.insw_queue_cycle.findMany({ where: { id: { in: excludedIds } }, orderBy: { tail_key: 'asc' } })).toEqual(excludedBefore);
+  expect(await excludedSources()).toEqual(sourcesBefore);
+  expect(await db.insw_queue_attempt.count({ where: { queue_id: { in: excludedIds } } })).toBe(0);
+  expect(await db.insw_tracking_log.count({ where: { company_code: { in: [1380, 1310] } } })).toBe(0);
+  expect(await db.insw_queue_cycle.count({ where: { company_code: 1370, status: 'SUCCEEDED' } })).toBe(1);
+});
+
 test('actual production CLI opt-in starts idle, SIGTERM drains, restart fences until audited recovery', async () => {
   const { spawn } = await import('node:child_process');
   function cli() {
     const p = spawn(process.execPath, ['--import', 'tsx', 'scripts/insw-worker.ts'], {
       env: { PATH: process.env.PATH, NODE_ENV: 'production', INSW_WORKER_ENABLED: 'true', DATABASE_URL: url,
+        INSW_WORKER_ALLOWED_COMPANIES: '1370',
         INSW_1370_USE_TEST_MODE: 'true', INSW_1380_USE_TEST_MODE: 'true',
         INSW_1370_API_KEY: 'synthetic', INSW_1380_API_KEY: 'synthetic',
         INSW_1370_UNIQUE_KEY_TEST: 'synthetic', INSW_1380_UNIQUE_KEY_TEST: 'synthetic' },

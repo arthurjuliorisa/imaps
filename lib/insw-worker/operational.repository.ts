@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { resolveWorkerAllowedCompanies, validateWorkerAllowedCompanies } from '../config/insw-worker-config';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { boundedText, integer } from '../insw-queue/contracts';
 import { readPolicy } from '../insw-queue/policy.repository';
@@ -75,8 +76,10 @@ export async function recoverOperationalOwnership(db: PrismaClient, input: {
   });
 }
 
-export async function admitNext(db: PrismaClient, token: string, minimumIntervalMs = 3600) {
+export async function admitNext(db: PrismaClient, token: string, minimumIntervalMs = 3600, allowedCompanies?: readonly number[]) {
   integer(minimumIntervalMs, 'minimum interval', 1);
+  const companies = allowedCompanies === undefined ? resolveWorkerAllowedCompanies()
+    : validateWorkerAllowedCompanies(allowedCompanies);
   return db.$transaction(async tx => {
     const gate = await owned(tx, token);
     if (gate.busy_attempt_id) throw new Error('STREAM_BUSY');
@@ -95,7 +98,7 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
     // All six isolated domains verify committed source association in SQL.
     const candidates = await tx.$queryRaw<{ id: string }[]>`SELECT q.id FROM insw_queue_cycle q
       WHERE q.status = 'READY' AND q.next_eligible_at <= clock_timestamp()
-        AND q.company_code IN (1370, 1380)
+        AND q.company_code IN (${Prisma.join(companies)})
         AND q.operation IN ('INCOMING', 'OUTGOING', 'MATERIAL_USAGE', 'PRODUCTION_OUTPUT', 'ADJUSTMENT', 'STOCK_OPNAME')
         AND EXISTS (SELECT 1 FROM companies eligible_company
           WHERE eligible_company.code = q.company_code AND eligible_company.company_type = 'SEZ')

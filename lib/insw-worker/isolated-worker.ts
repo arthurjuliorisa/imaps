@@ -1,4 +1,5 @@
 import { integer } from '../insw-queue/contracts';
+import { resolveWorkerAllowedCompanies, validateWorkerAllowedCompanies } from '../config/insw-worker-config';
 import { PrismaClient } from '@prisma/client';
 import { executeFrozenRequest, RequestPrimitive, Outcome } from './transport';
 import { acquireOperationalOwnership, admitNext, persistOutcome, recordActualStart, holdPreflight, AdmittedJob } from './operational.repository';
@@ -24,17 +25,20 @@ function wait(ms: number, signal: AbortSignal) {
 // children/background HTTP. Dedicated CLIs supply the transport adapter.
 export async function runIsolatedWorker(input: { db: PrismaClient; request: RequestPrimitive; signal: AbortSignal;
   tracksInvocationStart?: boolean;
+  allowedCompanies?: readonly number[];
   timeoutMs: number; minimumIntervalMs?: number; onEvent?: (event: string, data?: unknown) => void; maxJobs?: number;
   // Domain finalization shared by the disposable pilots and production CLI.
   prepareFinalizer?: (token: string, job: AdmittedJob) => Promise<(outcome: Outcome, endedAt: number) => Promise<void>> }) {
   integer(input.timeoutMs, 'request timeout', 1, 300000);
   if (input.maxJobs !== undefined) integer(input.maxJobs, 'maximum jobs', 1);
+  const allowedCompanies = input.allowedCompanies === undefined ? resolveWorkerAllowedCompanies()
+    : validateWorkerAllowedCompanies(input.allowedCompanies);
   const token = await acquireOperationalOwnership(input.db);
   input.onEvent?.('owned', { token });
   let idleMs = 250;
   let count = 0;
   while (!input.signal.aborted && count < (input.maxJobs ?? Infinity)) {
-    const admission = await admitNext(input.db, token, input.minimumIntervalMs);
+    const admission = await admitNext(input.db, token, input.minimumIntervalMs, allowedCompanies);
     if (!admission.job) {
       await wait(admission.waitMs || idleMs, input.signal);
       idleMs = Math.min(5000, idleMs * 2);
