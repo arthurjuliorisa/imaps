@@ -147,3 +147,30 @@ test('RESEND closure synchronous latch prevents duplicate admission request', as
   await pending;
   expect(view.successes).toEqual(['Accepted to queue; not delivered']);
 });
+
+for (const status of [403, 404, 409]) {
+  test(`RESEND ${status} refreshes eligibility and removes stale detail action`, async () => {
+    const calls: string[] = [];
+    const view = component(source, async (url, init) => {
+      calls.push(url);
+      return init?.method === 'POST'
+        ? { ok: false, status, json: async () => ({}) }
+        : reply([{ id: 'synthetic', can_resend: false }]);
+    });
+    await view.handlers.handleResend('synthetic');
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toContain('/api/insw/logs?');
+    expect(view.state[15]).toBe(false); // detail closed and request version invalidated
+    expect(view.state[17]).toBeNull();
+    expect(view.state[0][0].can_resend).toBe(false);
+    expect(view.successes).toEqual([]);
+    expect(view.errors[0]).toMatch(/Permission denied|no longer available|Eligibility changed/);
+  });
+}
+
+test('HTTP 202 is described as queued even without a status marker or server message', async () => {
+  const view = component(source, async (_url, init) => init?.method === 'POST'
+    ? { ok: true, status: 202, json: async () => ({}) } : reply());
+  await view.handlers.handleResend('synthetic');
+  expect(view.successes).toEqual(['Accepted to queue; not delivered']);
+});

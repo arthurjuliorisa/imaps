@@ -282,9 +282,10 @@ for (const maximum of [0, 2, 10]) {
     const log = await db.insw_tracking_log.findFirstOrThrow({ orderBy: { id: 'desc' } });
     expect((await incomingLogResendEligibility(db, 1370, [log.id])).has(log.id.toString())).toBe(true);
     const history = await db.insw_tracking_log.findMany({ orderBy: { id: 'asc' } });
+    await new Promise(resolve => setTimeout(resolve, 30)); // Prisma query events arrive asynchronously.
     const queryStart = queries.length;
     expect([...await incomingLogResendEligibility(db, 1370, history.map(l => l.id))]).toEqual([log.id.toString()]);
-    expect(queries.length - queryStart).toBe(1); // One batch for 1, 3 or 11 attempts.
+    await expect.poll(() => queries.length - queryStart).toBe(1); // One batch for 1, 3 or 11 attempts.
     const beforeRejected = await counts();
     for (const stale of history.slice(0, -1)) {
       await expect(resendIncomingLog(db, 1370, stale.id, 'op', 'Crafted historical request')).rejects.toThrow('exhausted');
@@ -551,3 +552,76 @@ for (const outcome of ['success', 'permanent', 'unknown', 'duplicate-log', 'newe
     expect(httpCalls).toBe(0);
   });
 }
+
+// UI projection only: reuse the guarded disposable fixtures and no-external-HTTP boundary.
+import { attemptHistory } from '../lib/insw-queue/attempt-history';
+import { provenanceLabel } from '../lib/insw-queue/operational-state';
+import { operationalLogPage } from '../lib/insw-queue/operational-logs';
+
+test('detail history preserves chronology, policy snapshots, safe provenance and company isolation', async () => {
+  await budget(2);
+  const row = await incomingFixture(1370); await capture(row);
+  const token = await acquireOperationalOwnership(db);
+  for (let i = 0; i < 3; i++) {
+    await db.$executeRaw`UPDATE insw_dispatch_gate SET last_started_at = NULL, prior_interval_ms = NULL WHERE id = 1`;
+    const { job } = await admitNext(db, token, 3600);
+    await db.insw_queue_attempt.update({ where: { id: job!.attemptId }, data: { started_at: new Date() } });
+    await finish(job!, token, false);
+  }
+  const q = await db.insw_queue_cycle.findFirstOrThrow();
+  const logs = await db.insw_tracking_log.findMany({ orderBy: { id: 'asc' } });
+  const markers = ['SIMULATED_REMOTE_REJECTION', 'SIMULATED_TRANSPORT_FAULT', 'REAL_INSW_TEST_RESPONSE'];
+  for (let i = 0; i < logs.length; i++) await db.insw_tracking_log.update({ where: { id: logs[i].id },
+    data: { metadata: { rehearsalProvenance: markers[i], httpCode: 503, secret: 'MUST_NOT_PROJECT' } } });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  queries = [];
+  const history = await attemptHistory(db, 1370, q.id);
+  await expect.poll(() => queries.length).toBe(1);
+  expect(history.truncated).toBe(false);
+  expect(history.entries.map(e => e.retry_index)).toEqual([0, 1, 2]);
+  expect(history.entries.map(e => e.log_id)).toEqual(logs.map(l => l.id.toString()));
+  expect(history.entries.every(e => e.max_auto_retry_snapshot === 2 && e.started_at && e.completed_at)).toBe(true);
+  expect(history.entries.map(e => provenanceLabel(e.provenance))).toEqual([
+    'Simulated remote rejection (rehearsal)', 'Simulated transport fault (rehearsal)', 'Actual INSW TEST response',
+  ]);
+  expect(JSON.stringify(history)).not.toMatch(/MUST_NOT_PROJECT|payload|owner_token/);
+  expect((await attemptHistory(db, 1380, q.id)).entries).toEqual([]);
+  await db.insw_tracking_log.update({ where: { id: logs[0].id }, data: { metadata: { httpCode: 503, rehearsalProvenance: 'UNRECOGNIZED' } } });
+  expect((await attemptHistory(db, 1370, q.id)).entries[0].provenance).toBeNull();
+  expect(provenanceLabel(undefined)).toBeNull();
+  for (const limit of [10, 50]) {
+    await new Promise(resolve => setTimeout(resolve, 30));
+    queries = [];
+    const page = await operationalLogPage(db, { company_code: 1370, limit, offset: 0 });
+    expect(page.logs[0].current_queue?.attempts_started).toBe(3);
+    await expect.poll(() => queries.length).toBe(2);
+  }
+  await withApiSession(async () => {
+    const response = await require('../app/api/insw/logs/[id]/route').GET(new Request('http://localhost/detail'), { params: Promise.resolve({ id: logs[0].id.toString() }) });
+    const data = (await response.json()).data;
+    expect(data.attempt_history.entries).toHaveLength(3);
+    expect(data.can_resend).toBe(false);
+  });
+  await resendIncomingLog(db, 1370, logs[2].id, 'fixture', 'Disposable successor');
+  const successor = await db.insw_queue_cycle.findFirstOrThrow({ where: { cycle: 2 } });
+  // A pending successor still shows the immutable historical policy and outcomes.
+  expect((await attemptHistory(db, 1370, successor.id)).entries.map(e => e.cycle)).toEqual([1, 1, 1]);
+  expect(httpCalls).toBe(0);
+});
+
+test('history has a bounded cap and includes claimed attempts without outcome logs', async () => {
+  await budget(0); const row = await incomingFixture(1370); await capture(row);
+  const q = await db.insw_queue_cycle.findFirstOrThrow();
+  // Synthetic projection-only attempts; no dispatcher invocation or remote submission.
+  await db.insw_queue_attempt.createMany({ data: Array.from({ length: 101 }, (_, retry_index) => ({
+    queue_id: q.id, retry_index, owner_token: '00000000-0000-4000-8000-000000000001',
+  })) });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  queries = [];
+  const result = await attemptHistory(db, 1370, q.id);
+  await expect.poll(() => queries.length).toBe(1);
+  expect(result.truncated).toBe(true);
+  expect(result.entries).toHaveLength(100);
+  expect(result.entries[0]).toMatchObject({ retry_index: 0, outcome: null, started_at: null, log_id: null });
+  expect(result.entries[99].retry_index).toBe(99);
+});

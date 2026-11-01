@@ -1,3 +1,4 @@
+import { attemptHistory } from '@/lib/insw-queue/attempt-history';
 import { prisma } from '@/lib/db/prisma';
 import { NextResponse } from 'next/server';
 import { currentQueueStates } from '@/lib/insw-queue/operational-logs';
@@ -24,6 +25,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ success: true, data: { id, transaction_type: queue.operation.toLowerCase(),
         wms_id: queue.wms_reference, company_code: queue.company_code, insw_status: 'NO_ATTEMPT_LOG',
         sent_at: null, created_at: queue.queued_at, retry_count: 0, can_resend: false,
+        attempt_history: await attemptHistory(prisma, companyValidation.companyCode, queue.id),
         queue_id: queue.id, current_queue: states.get(queue.id) } });
     }
     let logId: bigint;
@@ -39,6 +41,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       where: { id: log.queue_attempt_id, queue: { company_code: companyValidation.companyCode } }, select: { queue_id: true } }) : null;
     const states = await currentQueueStates(prisma, companyValidation.companyCode, attempt ? [attempt.queue_id] : []);
     return NextResponse.json({ success: true, data: { ...log, id: log.id.toString(),
+      attempt_history: attempt ? await attemptHistory(prisma, companyValidation.companyCode, attempt.queue_id) : null,
       queue_id: attempt?.queue_id ?? null, current_queue: attempt ? states.get(attempt.queue_id) : null,
       can_resend: authCheck.grants.canEdit && eligible.has(logId.toString()) } });
   } catch (error: any) {

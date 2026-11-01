@@ -74,6 +74,7 @@ export async function currentQueueStates(db: PrismaClient, companyCode: number, 
       'next_eligible_at', q.next_eligible_at, 'claimed_at', q.claimed_at, 'completed_at', q.completed_at,
       'attempt', CASE WHEN a.id IS NULL THEN NULL ELSE jsonb_build_object('id', a.id,
         'delivery_state', a.delivery_state, 'claimed_at', a.claimed_at, 'started_at', a.started_at, 'completed_at', a.completed_at) END,
+      'attempts_started', (SELECT count(*) FROM insw_queue_attempt started WHERE started.queue_id = q.id AND started.started_at IS NOT NULL),
       'latest_log_id', l.id::text) AS state
     FROM insw_queue_cycle original
     JOIN LATERAL (SELECT * FROM insw_queue_cycle latest WHERE latest.identity_key = original.identity_key

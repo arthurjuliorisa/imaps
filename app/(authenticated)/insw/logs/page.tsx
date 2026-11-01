@@ -36,7 +36,8 @@ import {
 import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import dayjs from 'dayjs';
-import { deliveryLabel, type OperationalState } from '@/lib/insw-queue/operational-state';
+import type { AttemptHistoryEntry } from '@/lib/insw-queue/attempt-history';
+import { deliveryLabel, provenanceLabel, type OperationalState } from '@/lib/insw-queue/operational-state';
 
 interface INSWLog {
   id: string;
@@ -56,7 +57,8 @@ interface INSWLog {
   queue_id?: string | null;
   queue_attempt_id?: string | null;
   created_at: string;
-  metadata?: { endpoint_url?: string } | null;
+  attempt_history?: { entries: AttemptHistoryEntry[]; truncated: boolean } | null;
+  metadata?: { endpoint_url?: string; rehearsalProvenance?: string } | null;
 }
 
 interface ChartDataPoint {
@@ -334,12 +336,14 @@ export default function INSWLogsPage() {
   const [adjustmentCheckResult, setAdjustmentCheckResult] = useState<{ hasAdjustments: boolean } | null>(null);
   const [confirmationMessage, setConfirmationMessage] = useState<string>('Apakah Anda yakin ingin mengirim ulang data ini ke INSW?');
 
+  const [detailError, setDetailError] = useState<string | null>(null);
+
   const columns: Column[] = [
     {
       id: 'sent_at',
       label: 'Sent At',
       minWidth: 160,
-      format: (value: any) => value ? dayjs(value).format('MM/DD/YYYY HH:mm:ss') : '-',
+      format: (value: any) => value ? dayjs(value).format('DD-MMMM-YY HH:mm:ss') : '-',
     },
     {
       id: 'transaction_type',
@@ -395,7 +399,7 @@ export default function INSWLogsPage() {
     },
     {
       id: 'retry_count',
-      label: 'Retries',
+      label: 'Historical retry index',
       minWidth: 80,
       format: (value: any) => value || 0,
     },
@@ -408,6 +412,7 @@ export default function INSWLogsPage() {
           <Tooltip title="View Details">
             <IconButton
               size="small"
+              aria-label={`View details for log ${row.id}`}
               color="primary"
               onClick={() => handleViewDetails(row as INSWLog)}
             >
@@ -662,6 +667,7 @@ export default function INSWLogsPage() {
     // List rows intentionally omit payloads. Clear the previous detail before
     // loading so it cannot be shown under the newly selected row.
     setSelectedLog(null);
+    setDetailError(null);
     setDetailDialogOpen(true);
     setDetailLoading(true);
     try {
@@ -673,6 +679,7 @@ export default function INSWLogsPage() {
       setSelectedLog(result.data);
     } catch (err: any) {
       if (detailRequestVersion.current === requestVersion) {
+        setDetailError(err.message || 'Failed to load log details');
         toast.error(err.message || 'Failed to load log details');
       }
     } finally {
@@ -801,10 +808,22 @@ export default function INSWLogsPage() {
     setResendingId(logId);
     try {
       const res = await fetch(`/api/insw/logs/${logId}/resend`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Gagal mengirim ulang data');
-      toast.success(data.status === 'accepted' ? data.message : 'Data berhasil dikirim ulang ke INSW');
-      fetchLogs();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if ([403, 404, 409].includes(res.status)) {
+          // Remove the stale action immediately, even if the authoritative reload fails.
+          handleCloseDetailDialog();
+          await fetchLogs();
+        }
+        const fallback = res.status === 403 ? 'Permission denied. Refresh your access before trying again.'
+          : res.status === 404 ? 'Log no longer available in this company.'
+          : res.status === 409 ? 'Eligibility changed. Review the refreshed queue state.' : 'Gagal mengirim ulang data';
+        throw new Error(data.message || data.error || fallback);
+      }
+      toast.success(res.status === 202 || data.status === 'accepted'
+        ? 'Accepted to queue; not delivered' : 'Data berhasil dikirim ulang ke INSW');
+      handleCloseDetailDialog();
+      await fetchLogs();
     } catch (err: any) {
       toast.error(err.message || 'Gagal mengirim ulang data');
     } finally {
@@ -819,10 +838,16 @@ export default function INSWLogsPage() {
       <Typography variant="body2">{deliveryLabel(q)}</Typography>
       {log.queue_attempt_id && <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>Historical attempt {log.queue_attempt_id}</Typography>}
       {q && <>
-        <Typography variant="caption">Cycle {q.cycle} · {q.intent} · retry {q.retry_index}/{q.max_auto_retry_snapshot}</Typography>
+        <Typography variant="caption">Cycle {q.cycle} · {q.intent} · retry index {q.retry_index}/{q.max_auto_retry_snapshot}</Typography>
+        <Typography variant="caption">{q.attempts_started ?? 'Unknown'} attempts started · policy: {q.max_auto_retry_snapshot} additional retries, at most {q.max_auto_retry_snapshot + 1} total attempts.</Typography>
+        {q.status === 'HELD' && <Alert severity="warning">{q.delivery_state === 'KNOWN_SUCCESS'
+          ? 'Remote success is known. Investigate local finalization; do not retransmit.'
+          : q.hold_reason === 'DELIVERY_UNKNOWN' || q.delivery_state === 'POSSIBLY_STARTED'
+            ? 'Delivery may have occurred. Automatic retry and normal RESEND are blocked. Investigate the remote outcome before any further action.'
+            : 'Queue held. Investigate the hold reason; automatic retry and normal RESEND are blocked.'}</Alert>}
         <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>Queue {q.id}{log.id.startsWith('queue:') ? '' : ' (latest)'}</Typography>
-        <Typography variant="caption">Queued {dayjs(q.queued_at).format('DD/MM HH:mm:ss')} · {q.completed_at ? `Completed ${dayjs(q.completed_at).format('DD/MM HH:mm:ss')}` : q.claimed_at ? `Claimed ${dayjs(q.claimed_at).format('DD/MM HH:mm:ss')}` : `Eligible ${dayjs(q.next_eligible_at).format('DD/MM HH:mm:ss')}`}</Typography>
-        {q.attempt && <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>Latest attempt {q.attempt.id} · {q.attempt.delivery_state} · started {q.attempt.started_at || 'not started'} · completed {q.attempt.completed_at || 'pending'}</Typography>}
+        <Typography variant="caption">Queued {dayjs(q.queued_at).format('DD-MMMM-YY HH:mm:ss')} · {q.completed_at ? `Completed ${dayjs(q.completed_at).format('DD-MMMM-YY HH:mm:ss')}` : q.claimed_at ? `Claimed ${dayjs(q.claimed_at).format('DD-MMMM-YY HH:mm:ss')}` : `Eligible ${dayjs(q.next_eligible_at).format('DD-MMMM-YY HH:mm:ss')}`}</Typography>
+        {q.attempt && <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>Latest attempt {q.attempt.id} · {q.attempt.delivery_state} · started {q.attempt.started_at ? dayjs(q.attempt.started_at).format('DD-MMMM-YY HH:mm:ss') : 'not started'} · completed {q.attempt.completed_at ? dayjs(q.attempt.completed_at).format('DD-MMMM-YY HH:mm:ss') : 'pending'}</Typography>}
         {q.error_message && <Typography variant="caption">{q.error_message}</Typography>}
         {!q.latest_log_id && q.id !== log.queue_id && !log.id.startsWith('queue:') && <Button size="small" onClick={() => handleViewDetails({ ...log, id: `queue:${q.id}` })}>View current cycle</Button>}
         {q.latest_log_id && q.latest_log_id !== log.id && <Button size="small" onClick={() => handleViewDetails({ ...log, id: q.latest_log_id! })}>Latest cycle attempt #{q.latest_log_id}</Button>}
@@ -848,6 +873,8 @@ export default function INSWLogsPage() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 2,
           mb: 3,
           pb: 2,
           borderBottom: `2px solid ${alpha(theme.palette.primary.main, 0.1)}`,
@@ -861,7 +888,7 @@ export default function INSWLogsPage() {
             Monitor INSW API transmission history and status
           </Typography>
         </Box>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
           <Tooltip title="Export Excel">
             <span>
               <IconButton onClick={handleExportExcel} color="success" disabled={!exportReady || exporting} aria-label="Export Excel" aria-busy={exporting}>
@@ -875,7 +902,7 @@ export default function INSWLogsPage() {
             Export CSV (max 100,000 rows)
           </Button>
           <Tooltip title="Refresh">
-            <IconButton onClick={handleRefresh} disabled={refreshing} color="primary">
+            <IconButton aria-label="Refresh INSW logs" aria-busy={refreshing} onClick={handleRefresh} disabled={refreshing} color="primary">
               <Refresh />
             </IconButton>
           </Tooltip>
@@ -1014,7 +1041,7 @@ export default function INSWLogsPage() {
       {/* Filter Card */}
       <Card sx={{ mb: 3, boxShadow: 1 }}>
         <CardContent>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} useFlexGap flexWrap="wrap">
             <TextField
               label="Dari Tanggal"
               type="date"
@@ -1092,11 +1119,13 @@ export default function INSWLogsPage() {
         onClose={handleCloseDetailDialog}
         maxWidth="md"
         fullWidth
+        aria-labelledby="insw-detail-title"
       >
-        <DialogTitle sx={{ fontWeight: 'bold' }}>
+        <DialogTitle id="insw-detail-title" sx={{ fontWeight: 'bold' }}>
           Transmission Details
         </DialogTitle>
-        <DialogContent dividers>
+        <DialogContent dividers sx={{ overflowWrap: 'anywhere' }}>
+          {detailError && <Alert severity="error" action={<Button color="inherit" onClick={() => selectedLogId && handleViewDetails({ id: selectedLogId } as INSWLog)}>Retry</Button>}>{detailError}</Alert>}
           {detailLoading && (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
               <CircularProgress size={24} />
@@ -1153,6 +1182,24 @@ export default function INSWLogsPage() {
                   />
                 </Box>
 
+                {provenanceLabel(selectedLog.metadata?.rehearsalProvenance) && <Chip size="small" label={provenanceLabel(selectedLog.metadata?.rehearsalProvenance)} />}
+                {selectedLog.attempt_history && <Box component="section" aria-label="Chronological attempt history">
+                  <Typography variant="subtitle2">Attempt history — oldest first</Typography>
+                  <Typography variant="caption">Historical snapshots by cycle. Current delivery is shown above. Retry index 0 is the initial attempt.</Typography>
+                  {selectedLog.attempt_history.truncated && <Alert severity="info">Showing the first 100 history records. Use WMS ID filtering and pagination for other logs.</Alert>}
+                  {selectedLog.attempt_history.entries.length === 0 && <Typography variant="body2">No attempts recorded yet.</Typography>}
+                  <Stack component="ol" spacing={1} sx={{ pl: 3 }}>
+                    {selectedLog.attempt_history.entries.map((entry) => <Box component="li" key={`${entry.id}:${entry.log_id}`} sx={{ borderBottom: 1, borderColor: 'divider', pb: 1 }}>
+                      <Typography variant="body2" fontWeight={600}>Cycle {entry.cycle} · Attempt {entry.retry_index + 1} · retry index {entry.retry_index}/{entry.max_auto_retry_snapshot}{entry.log_id === selectedLog.id ? ' · selected log' : ''}</Typography>
+                      <Typography variant="caption" display="block">Policy snapshot: {entry.max_auto_retry_snapshot} additional retries / {entry.max_auto_retry_snapshot + 1} maximum total attempts</Typography>
+                      <Typography variant="body2">{entry.outcome ?? 'No recorded log outcome'} · {entry.delivery_state}{entry.http_code ? ` · HTTP ${entry.http_code}` : ''}</Typography>
+                      <Typography variant="caption" display="block">{entry.started_at ? `Started ${dayjs(entry.started_at).format('DD-MMMM-YY HH:mm:ss')}` : `Claimed ${dayjs(entry.claimed_at).format('DD-MMMM-YY HH:mm:ss')} · not started`} · {entry.completed_at ? `Completed ${dayjs(entry.completed_at).format('DD-MMMM-YY HH:mm:ss')}` : 'Not completed'}</Typography>
+                      {provenanceLabel(entry.provenance) && <Typography variant="body2">{provenanceLabel(entry.provenance)}</Typography>}
+                      {entry.reason && <Typography variant="body2">{entry.reason}</Typography>}
+                    </Box>)}
+                  </Stack>
+                </Box>}
+
                 {selectedLog.insw_error && (
                   <Box>
                     <Typography variant="subtitle2" color="error">
@@ -1172,6 +1219,7 @@ export default function INSWLogsPage() {
                     {selectedLog.insw_request_payload != null && !isLargePayload(selectedLog.insw_request_payload) && (
                       <Tooltip title={copiedKey === 'payload' ? 'Tersalin!' : 'Salin'}>
                         <IconButton
+                          aria-label="Copy request payload"
                           size="small"
                           onClick={() => handleCopy('payload', selectedLog.insw_request_payload)}
                           sx={{ color: copiedKey === 'payload' ? 'success.main' : 'text.secondary' }}
@@ -1193,6 +1241,7 @@ export default function INSWLogsPage() {
                       {!isLargePayload(selectedLog.insw_response) && (
                         <Tooltip title={copiedKey === 'response' ? 'Tersalin!' : 'Salin'}>
                           <IconButton
+                            aria-label="Copy INSW response"
                             size="small"
                             onClick={() => handleCopy('response', selectedLog.insw_response)}
                             sx={{ color: copiedKey === 'response' ? 'success.main' : 'text.secondary' }}
@@ -1212,14 +1261,14 @@ export default function INSWLogsPage() {
                   </Typography>
                   <Typography variant="body1">
                     {selectedLog.sent_at
-                      ? dayjs(selectedLog.sent_at).format('MMMM D, YYYY HH:mm:ss')
+                      ? dayjs(selectedLog.sent_at).format('DD-MMMM-YY HH:mm:ss')
                       : 'Not sent yet'}
                   </Typography>
                 </Box>
 
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary">
-                    Retry Count
+                    Historical retry index (0 = initial attempt)
                   </Typography>
                   <Typography variant="body1">
                     {selectedLog.retry_count}
