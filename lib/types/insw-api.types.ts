@@ -99,6 +99,7 @@ export interface INSWTransaksiResponse {
   barangTransaksi: INSWBarangTransaksiResponse[];
 }
 
+/** Date-only YYYY-MM-DD; legacy DD-MM-YYYY is also accepted and normalized. */
 export interface INSWGetDataParams {
   tglAwal: string;
   tglAkhir: string;

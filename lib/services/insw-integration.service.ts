@@ -1,4 +1,5 @@
 import { format } from 'date-fns';
+import { normalizeINSWRetrievalParams } from '@/lib/utils/insw-retrieval-params';
 import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/utils/logger';
@@ -1269,15 +1270,20 @@ export class INSWIntegrationService {
     return invocation;
   }
 
-  async getPemasukan(
+  private async getTransactions(
+    activity: INSWActivityCode,
     params: INSWGetDataParams
   ): Promise<INSWApiResponse<INSWTransaksiResponse[]>> {
-    const endpoint = this.useTestMode
-      ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.PEMASUKAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
-      : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.PEMASUKAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
+    const dates = normalizeINSWRetrievalParams(params);
+    const endpoint = new URL(this.useTestMode
+      ? INSW_ENDPOINTS.transaksi.temp
+      : INSW_ENDPOINTS.transaksi.real);
+    endpoint.pathname = `${endpoint.pathname.replace(/\/+$/, '')}/${activity}/`;
+    endpoint.searchParams.set('tglAwal', dates.tglAwal);
+    endpoint.searchParams.set('tglAkhir', dates.tglAkhir);
 
-    const response = await this.fetchINSW(endpoint, {
-      method: 'POST',
+    const response = await this.fetchINSW(endpoint.toString(), {
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         ...this.apiHeaders,
@@ -1285,60 +1291,30 @@ export class INSWIntegrationService {
     });
 
     return response.json();
+  }
+
+  async getPemasukan(
+    params: INSWGetDataParams
+  ): Promise<INSWApiResponse<INSWTransaksiResponse[]>> {
+    return this.getTransactions(INSWActivityCode.PEMASUKAN, params);
   }
 
   async getPengeluaran(
     params: INSWGetDataParams
   ): Promise<INSWApiResponse<INSWTransaksiResponse[]>> {
-    const endpoint = this.useTestMode
-      ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.PENGELUARAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
-      : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.PENGELUARAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
-
-    const response = await this.fetchINSW(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-    });
-
-    return response.json();
+    return this.getTransactions(INSWActivityCode.PENGELUARAN, params);
   }
 
   async getStockOpname(
     params: INSWGetDataParams
   ): Promise<INSWApiResponse<INSWTransaksiResponse[]>> {
-    const endpoint = this.useTestMode
-      ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.STOCK_OPNAME}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
-      : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.STOCK_OPNAME}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
-
-    const response = await this.fetchINSW(endpoint, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-    });
-
-    return response.json();
+    return this.getTransactions(INSWActivityCode.STOCK_OPNAME, params);
   }
 
   async getAdjustment(
     params: INSWGetDataParams
   ): Promise<INSWApiResponse<INSWTransaksiResponse[]>> {
-    const endpoint = this.useTestMode
-      ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.ADJUSTMENT}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
-      : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.ADJUSTMENT}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
-
-    const response = await this.fetchINSW(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-    });
-
-    return response.json();
+    return this.getTransactions(INSWActivityCode.ADJUSTMENT, params);
   }
 
   async cleansingData(npwp: string): Promise<INSWApiResponse> {

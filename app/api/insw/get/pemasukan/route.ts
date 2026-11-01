@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { INSWRetrievalDateError, normalizeINSWRetrievalParams } from '@/lib/utils/insw-retrieval-params';
 import { checkAuth } from '@/lib/api-auth';
 import { createInswIntegrationService } from '@/lib/services/insw-service.factory';
 
@@ -12,17 +13,8 @@ export async function POST(request: Request) {
     const { session } = authCheck as { authenticated: true; session: any };
     const companyCode = Number(session?.user?.companyCode);
     const body = await request.json();
-    const { tglAwal, tglAkhir } = body;
-
-    if (!tglAwal || !tglAkhir) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'tglAwal and tglAkhir are required (format: DD-MM-YYYY)',
-        },
-        { status: 400 }
-      );
-    }
+    const { tglAwal, tglAkhir } = body ?? {};
+    const params = normalizeINSWRetrievalParams({ tglAwal, tglAkhir });
 
     if (!Number.isFinite(companyCode) || companyCode <= 0) {
       return NextResponse.json(
@@ -36,7 +28,7 @@ export async function POST(request: Request) {
 
     const service = createInswIntegrationService(companyCode);
 
-    const result = await service.getPemasukan({ tglAwal, tglAkhir });
+    const result = await service.getPemasukan(params);
 
     return NextResponse.json({
       success: result.status,
@@ -45,6 +37,9 @@ export async function POST(request: Request) {
       inswResponse: result,
     });
   } catch (error: any) {
+    if (error instanceof INSWRetrievalDateError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    }
     console.error('Error getting Pemasukan from INSW:', error);
     return NextResponse.json(
       {
