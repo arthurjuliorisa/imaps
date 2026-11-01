@@ -65,10 +65,15 @@ test('policy validation and retry-after-initial budget fail closed', async () =>
 // exceptions statement- and caller-specific: no runtime/repository wildcard.
 const approvedQueueStatements: Record<string, string[]> = {
   'app/(authenticated)/insw/logs/page.tsx': [
-    "import { deliveryLabel, type OperationalState } from '@/lib/insw-queue/operational-state';",
+    "import { deliveryLabel, provenanceLabel, type OperationalState } from '@/lib/insw-queue/operational-state';",
+    "import type { AttemptHistoryEntry } from '@/lib/insw-queue/attempt-history';",
   ],
+  'app/(authenticated)/insw/queue-settings/page.tsx': ["import { intervalSettingsAccess } from '@/lib/insw-queue/interval-settings-http';"],
+  'app/(authenticated)/insw/queue-settings/QueueSettings.tsx': ["import type { intervalProjection } from '@/lib/insw-queue/interval-settings';"],
+  'app/api/insw/queue-settings/route.ts': ["import { intervalSettingsRequest } from '@/lib/insw-queue/interval-settings-http';"],
   'app/api/insw/logs/route.ts': ["import { operationalLogPage } from '@/lib/insw-queue/operational-logs';"],
   'app/api/insw/logs/[id]/route.ts': [
+    "import { attemptHistory } from '@/lib/insw-queue/attempt-history';",
     "import { currentQueueStates } from '@/lib/insw-queue/operational-logs';",
     "const queue = await prisma.insw_queue_cycle.findFirst({ where: { id: queueId, company_code: companyValidation.companyCode },\n        select: { id: true, operation: true, wms_reference: true, company_code: true, queued_at: true } });",
   ],
@@ -90,7 +95,8 @@ test('foundation is not imported by live code or runtime entry points beyond app
   const paths = [...walk('app'), ...walk('lib').filter(p => !p.startsWith('lib/insw-queue/') && !p.startsWith('lib/insw-worker/')), 'ecosystem.config.js'];
   for (const path of paths.filter(p => /\.(tsx?|js)$/.test(p))) expect(forbiddenQueueAccess(path, readFileSync(path, 'utf8')), path).toBe(false);
   for (const path of walk('lib/insw-queue')) expect(readFileSync(path, 'utf8'), path).not.toMatch(/\bfetch\s*\(|setInterval\s*\(|setTimeout\s*\(|INSWIntegrationService/);
-  // The sole client-facing exception must remain dependency-free presentation.
+  // The runtime client-facing exception remains dependency-free presentation;
+  // settings imports only an erased projection type.
   expect(readFileSync('lib/insw-queue/operational-state.ts', 'utf8')).not.toMatch(/\bimport\b|\brequire\s*\(|\bfetch\s*\(|\bprisma\b/);
 });
 

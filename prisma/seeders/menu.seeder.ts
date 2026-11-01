@@ -104,6 +104,7 @@ const menuStructure: MenuInput[] = [
       { menu_name: 'INSW UOM', menu_path: '/insw/uom', menu_icon: 'Category', menu_order: 2 },
       { menu_name: 'Pengaturan Integrasi', menu_path: '/insw/integration-settings', menu_icon: 'ToggleOn', menu_order: 3 },
       { menu_name: 'UOM Mapping', menu_path: '/insw/uom-mapping', menu_icon: 'SwapHoriz', menu_order: 4 },
+      { menu_name: 'INSW Queue Settings', menu_path: '/insw/queue-settings', menu_icon: 'Settings', menu_order: 5 },
     ],
   },
   {
