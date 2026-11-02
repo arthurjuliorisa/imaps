@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { INSWIntegrationService } from '../lib/services/insw-integration.service';
 import { INSW_ENDPOINTS } from '../lib/types/insw-api.types';
 import { normalizeINSWRetrievalParams } from '../lib/utils/insw-retrieval-params';
+import { createInswIntegrationService } from '../lib/services/insw-service.factory';
 
 const methods = [
   ['getPemasukan', '30'], ['getPengeluaran', '31'],
@@ -16,7 +17,9 @@ const accepted = { code: '01', status: true, message: 'fixture', data: [{
     kdBarang, jumlah: '2', nilai: '20',
   })),
 }] };
-const envKeys = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'NO_PROXY', 'no_proxy'] as const;
+const envKeys = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'NO_PROXY', 'no_proxy',
+  ...[1370, 1380].flatMap(company => ['USE_TEST_MODE', 'API_KEY', 'UNIQUE_KEY_TEST', 'UNIQUE_KEY_REAL']
+    .map(key => `INSW_${company}_${key}`))];
 let savedEnv: Array<string | undefined>;
 let savedFetch: typeof fetch;
 let calls: Array<{ endpoint: string; init: RequestInit & { dispatcher?: unknown } }>;
@@ -113,24 +116,87 @@ test('retrieval preserves JSON errors, network rejection and invalid JSON reject
   expect(calls).toHaveLength(3);
 });
 
-test('retrieval keeps existing proxy and NO_PROXY handling', async () => {
-  process.env.https_proxy = 'http://127.0.0.1:9';
-  const service = new INSWIntegrationService('dummy', 'dummy');
-  const internal = service as unknown as {
-    getProxyAgent: (url: string) => Promise<unknown>; undiciFetchPromise: Promise<typeof fetch>;
-  };
-  const proxyUrls: string[] = [];
-  const dispatcher = { synthetic: true };
-  internal.getProxyAgent = async url => { proxyUrls.push(url); return dispatcher; };
-  internal.undiciFetchPromise = Promise.resolve(globalThis.fetch);
-  await service.getPemasukan(dates);
-  expect(proxyUrls).toEqual(['http://127.0.0.1:9']);
-  expect(calls[0].init.dispatcher).toBe(dispatcher);
-  process.env.NO_PROXY = '.insw.go.id';
-  await service.getPemasukan(dates);
-  expect(calls[1].init.dispatcher).toBeUndefined();
-  expect(proxyUrls).toHaveLength(1);
+for (const company of [1370, 1380]) {
+  for (const mode of ['true', 'false']) {
+    test(`company factory ${company} ${mode === 'true' ? 'TEST' : 'REAL'} isolates GET and unchanged POST configuration`, async () => {
+      for (const code of [1370, 1380]) {
+        process.env[`INSW_${code}_USE_TEST_MODE`] = code === company ? mode : mode === 'true' ? 'false' : 'true';
+        process.env[`INSW_${code}_API_KEY`] = `synthetic-api-${code}`;
+        process.env[`INSW_${code}_UNIQUE_KEY_TEST`] = `synthetic-test-${code}`;
+        process.env[`INSW_${code}_UNIQUE_KEY_REAL`] = `synthetic-real-${code}`;
+      }
+      const service = createInswIntegrationService(company);
+      const base = INSW_ENDPOINTS.transaksi[mode === 'true' ? 'temp' : 'real'];
+      const headers = { 'Content-Type': 'application/json', 'x-insw-key': `synthetic-api-${company}`,
+        'x-unique-key': `synthetic-${mode === 'true' ? 'test' : 'real'}-${company}` };
+      for (const [method, activity] of methods) {
+        await service[method]({ tglAwal: '01-11-2026', tglAkhir: '02-11-2026' });
+        expect(calls.at(-1)).toEqual({ endpoint: `${base}/${activity}/?tglAwal=2026-11-01&tglAkhir=2026-11-02`,
+          init: { method: 'GET', headers } });
+      }
+      const payload = { data: [] };
+      for (const method of ['postPemasukan', 'postPengeluaran', 'postStockOpname', 'postAdjustment'] as const) {
+        await service[method](payload);
+        expect(calls.at(-1)).toEqual({ endpoint: base,
+          init: { method: 'POST', headers, body: JSON.stringify(payload) } });
+      }
+      expect(calls).toHaveLength(8);
+    });
+  }
+}
+
+test('factory rejects missing selected environment credentials and invalid mode before transport', () => {
+  process.env.INSW_1370_API_KEY = 'synthetic-api';
+  process.env.INSW_1370_UNIQUE_KEY_TEST = 'synthetic-test';
+  process.env.INSW_1370_USE_TEST_MODE = 'false';
+  expect(() => createInswIntegrationService(1370)).toThrow('INSW_1370_UNIQUE_KEY_REAL');
+  process.env.INSW_1370_USE_TEST_MODE = 'REAL';
+  expect(() => createInswIntegrationService(1370)).toThrow('must be "true" or "false"');
+  expect(() => createInswIntegrationService(1310)).toThrow('not supported');
+  expect(calls).toHaveLength(0);
 });
+
+test('HTTP failures cannot report successful retrieval through a contradictory JSON body', async () => {
+  for (const [method] of methods) {
+    for (const status of [404, 429, 500, 503]) {
+      respond = () => Response.json(accepted, { status });
+      expect(await new INSWIntegrationService('synthetic', 'synthetic')[method](dates))
+        .toEqual({ ...accepted, status: false });
+    }
+  }
+  expect(calls).toHaveLength(16);
+});
+
+test('retrieval rejects malformed envelopes and successful non-array data without retry', async () => {
+  for (const body of [null, [], {}, { status: 'true', data: [] }, { status: true, data: null },
+    { status: true, data: { rows: [], nextPage: 2 } }]) {
+    respond = () => Response.json(body);
+    await expect(new INSWIntegrationService('synthetic', 'synthetic').getPemasukan(dates))
+      .rejects.toThrow('Invalid INSW retrieval response');
+  }
+  expect(calls).toHaveLength(6);
+});
+
+for (const useTestMode of [true, false]) {
+  test(`retrieval keeps existing proxy and NO_PROXY handling in ${useTestMode ? 'TEST' : 'REAL'}`, async () => {
+    process.env.https_proxy = 'http://127.0.0.1:9';
+    const service = new INSWIntegrationService('dummy', 'dummy', useTestMode);
+    const internal = service as unknown as {
+      getProxyAgent: (url: string) => Promise<unknown>; undiciFetchPromise: Promise<typeof fetch>;
+    };
+    const proxyUrls: string[] = [];
+    const dispatcher = { synthetic: true };
+    internal.getProxyAgent = async url => { proxyUrls.push(url); return dispatcher; };
+    internal.undiciFetchPromise = Promise.resolve(globalThis.fetch);
+    await service.getPemasukan(dates);
+    expect(proxyUrls).toEqual(['http://127.0.0.1:9']);
+    expect(calls[0].init.dispatcher).toBe(dispatcher);
+    process.env.NO_PROXY = '.insw.go.id';
+    await service.getPemasukan(dates);
+    expect(calls[1].init.dispatcher).toBeUndefined();
+    expect(proxyUrls).toHaveLength(1);
+  });
+}
 
 for (const activity of ['pemasukan', 'pengeluaran']) {
   test(`${activity} route retains POST/auth/company/return contract and rejects invalid dates`, async () => {
@@ -169,6 +235,21 @@ for (const activity of ['pemasukan', 'pengeluaran']) {
       authenticated = false;
       expect((await route.POST(request(dates))).status).toBe(401);
       expect(companies).toHaveLength(2); expect(calls).toHaveLength(2);
+      authenticated = true;
+      company = 1370;
+      respond = () => Response.json(accepted, { status: 503 });
+      const failed = await route.POST(request(dates));
+      expect(failed.status).toBe(200); // Existing internal adapter contract.
+      expect(await failed.json()).toEqual({ success: false, message: accepted.message,
+        data: accepted.data, inswResponse: { ...accepted, status: false } });
+      expect(calls).toHaveLength(3);
+      const notFound = { code: '02', status: false, message: 'Data tidak ditemukan', data: [] };
+      respond = () => Response.json(notFound, { status: 404 });
+      const missing = await route.POST(request(dates));
+      expect(missing.status).toBe(200); // Existing internal adapter contract, retrieval failed.
+      expect(await missing.json()).toEqual({ success: false, message: notFound.message,
+        data: [], inswResponse: notFound });
+      expect(calls).toHaveLength(4);
     } finally {
       Object.assign(auth, { checkAuth: savedAuth });
       Object.assign(factory, { createInswIntegrationService: savedFactory });

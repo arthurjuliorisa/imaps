@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { INSWIntegrationService } from '../services/insw-integration.service';
 import { countSourceId, readCountSource } from './adjustment-stock-opname-source';
 import { boundedText, canonicalIdentity } from '../insw-queue/contracts';
@@ -12,7 +12,7 @@ export type CompletedSourceCapture = {
   businessDate: string;
   revision: string;
   requestedBy: string;
-  completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED';
+  completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' | 'MANUAL_REGENERATION_SERVER_CHECKS';
 } & ({
   operation: 'INCOMING' | 'MATERIAL_USAGE' | 'PRODUCTION_OUTPUT' | 'ADJUSTMENT' | 'STOCK_OPNAME';
   sourceId: number | bigint | string;
@@ -25,14 +25,25 @@ export type CompletedSourceCapture = {
 
 /** Internal completion API: invoke only after the existing WMS business promise
  * resolves, including its existing tolerated side-effect failures. The caller
- * declares completion; a visible header, HTTP 200 or arbitrary resolved promise
+ * declares completion (manual recovery uses server-observed source/history checks
+ * and its recheck/audit callbacks); a visible header, HTTP 200 or arbitrary resolved promise
  * cannot prove it. This is an internal producer contract, not an HTTP endpoint.
  * All six trusted WMS completions use this capture. Queue acceptance is never remote success.
  * No worker, finalizer, generic enqueue/claim/recovery or HTTP sender is exposed.
  */
-export async function captureCompletedWmsSource(db: PrismaClient, input: CompletedSourceCapture) {
+export type ManualCaptureChecks = {
+  recheck: (tx: Prisma.TransactionClient) => Promise<void>;
+  audit: (tx: Prisma.TransactionClient, queueId: string, payload: import('../types/insw-api.types').INSWTransaksiPayload) => Promise<void>;
+};
+
+export async function captureCompletedWmsSource(db: PrismaClient, input: CompletedSourceCapture, manual?: ManualCaptureChecks) {
   input = { ...input }; // retain declared scope across awaits
-  if (input.completion !== 'EXISTING_BUSINESS_COMPLETION_RESOLVED') throw new Error('BUSINESS_COMPLETION_AUTHORIZATION_REQUIRED');
+  // Manual local checks authorize only this initial queue; it does not assert
+  // that WMS acceptance independently proves completed business processing.
+  if (input.completion !== 'EXISTING_BUSINESS_COMPLETION_RESOLVED'
+    && !(manual && input.completion === 'MANUAL_REGENERATION_SERVER_CHECKS')) {
+    throw new Error('BUSINESS_COMPLETION_AUTHORIZATION_REQUIRED');
+  }
   if (!['INCOMING', 'OUTGOING', 'MATERIAL_USAGE', 'PRODUCTION_OUTPUT', 'ADJUSTMENT', 'STOCK_OPNAME'].includes(input.operation)) {
     throw new Error('UNSUPPORTED_WMS_QUEUE_OPERATION');
   }
@@ -95,6 +106,7 @@ export async function captureCompletedWmsSource(db: PrismaClient, input: Complet
   const prior = await db.insw_queue_cycle.findFirst({ where: { identity_key: identity.key }, orderBy: { cycle: 'asc' },
     select: { id: true, intent: true, source_log_id: true, wms_reference: true } });
   if (prior) {
+    if (manual) throw new Error('EXISTING_QUEUE_REQUIRES_REVIEW');
     if (prior.intent !== 'SOURCE_COMMIT' || prior.source_log_id !== null || prior.wms_reference !== source.reference) {
       throw new Error('PRIOR_SOURCE_CYCLE_CONFLICT');
     }
@@ -121,10 +133,19 @@ export async function captureCompletedWmsSource(db: PrismaClient, input: Complet
       : operation === 'PRODUCTION_OUTPUT' ? prepareProductionOutputHandoff(preparation, source.reversal)
         : prepareCountHandoff({ ...preparation, operation, sourceId: id });
   const result = await db.$transaction(async tx => {
+    if (manual) {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${identity.key}, 0))::text`;
+      await manual.recheck(tx);
+    }
     // Recheck persisted eligibility/identity after conversion, before queue writes.
     const current = await read(tx);
     if (JSON.stringify(current) !== JSON.stringify(source)) throw new Error('SOURCE_CHANGED_DURING_CAPTURE');
-    return handoffIncomingInTransaction(tx, prepared);
-  });
+    const queue = await handoffIncomingInTransaction(tx, prepared);
+    if (manual) {
+      if (!queue.created) throw new Error('EXISTING_QUEUE_REQUIRES_REVIEW');
+      await manual.audit(tx, queue.id, payload);
+    }
+    return queue;
+  }, manual ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable } : undefined);
   return { outcome: result.created ? 'CAPTURED' as const : 'ALREADY_CAPTURED' as const, id: result.id, created: result.created };
 }

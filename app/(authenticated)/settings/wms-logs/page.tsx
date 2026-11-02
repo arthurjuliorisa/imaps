@@ -35,6 +35,7 @@ import { useToast } from '@/app/components/ToastProvider';
 import { useSession } from 'next-auth/react';
 import dayjs from 'dayjs';
 import type { WmsInswStatus } from '@/lib/insw-queue/wms-log-status';
+import { regenerationMessage, REGENERATION_SUCCESS } from '@/lib/insw-regeneration-messages';
 import { WMS_INSW_STATUSES } from '@/lib/wms-insw-status-options';
 import { wmsLogFilterParams } from '@/lib/wms-log-filters';
 
@@ -94,6 +95,10 @@ export default function WMSTransmissionLogsPage() {
   const [confirmRetryOpen, setConfirmRetryOpen] = useState(false);
   const [pendingRetryLog, setPendingRetryLog] = useState<WMSTransmissionLog | null>(null);
   const [retryingDialog, setRetryingDialog] = useState(false);
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenerationReason, setRegenerationReason] = useState('');
+  const [regenerationError, setRegenerationError] = useState<string | null>(null);
  
   const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
   const userCompanyCode = session?.user?.companyCode as string | undefined;
@@ -331,6 +336,7 @@ export default function WMSTransmissionLogsPage() {
 
       if (result.success && Array.isArray(result.data)) {
         setLogs(result.data);
+        if (selectedLog) setSelectedLog(result.data.find((log: WMSTransmissionLog) => log.id === selectedLog.id) || null);
         setTotalCount(result.pagination?.total || 0);
         setError(null);
       } else {
@@ -407,6 +413,8 @@ export default function WMSTransmissionLogsPage() {
 
   const handleViewDetails = (log: WMSTransmissionLog) => {
     setSelectedLog(log);
+    setRegenerationError(null);
+    setRegenerationReason('');
     setDetailDialogOpen(true);
   };
 
@@ -758,9 +766,10 @@ export default function WMSTransmissionLogsPage() {
                     </Typography>
                     {selectedLog.insw.canInspectRegeneration && selectedLog.insw.label === 'Not queued' && (
                       <Tooltip title={selectedLog.insw.regenerationBlock}>
-                        <span tabIndex={0} aria-label={selectedLog.insw.regenerationBlock}><Button disabled sx={{ mt: 1 }}>Regenerate INSW Transmission</Button></span>
+                        <span tabIndex={0} aria-label={selectedLog.insw.regenerationBlock}><Button disabled={!selectedLog.insw.canRegenerate || regenerating} sx={{ mt: 1 }} onClick={() => setConfirmRegenerate(true)}>Regenerate INSW Transmission</Button></span>
                       </Tooltip>
                     )}
+                    {regenerationError && <Alert severity="error" role="alert" sx={{ mt: 1 }}>{regenerationError}</Alert>}
                     {selectedLog.insw.canViewInswLogs && (
                       <Button href="/insw/logs" sx={{ mt: 1 }}>Open INSW Logs</Button>
                     )}
@@ -878,6 +887,41 @@ export default function WMSTransmissionLogsPage() {
           <Button onClick={handleCloseDetailDialog} variant="contained">
             Close
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog fullWidth maxWidth="sm" aria-labelledby="regenerate-insw-title" aria-describedby="regenerate-insw-confirmation" open={confirmRegenerate} onClose={() => { if (!regenerating) setConfirmRegenerate(false); }}>
+        <DialogTitle id="regenerate-insw-title">Regenerate INSW Transmission</DialogTitle>
+        <DialogContent>
+          <Typography>WMS {selectedLog?.wms_id} · Company {selectedLog?.company_code} · {selectedLog?.action} · Destination {selectedLog?.insw?.regenerationDestination}</Typography>
+          <TextField autoFocus required fullWidth label="Reason" placeholder="Enter the reason for regeneration" value={regenerationReason}
+            disabled={regenerating} onChange={event => setRegenerationReason(event.target.value)} inputProps={{ maxLength: 500 }} sx={{ mt: 2 }} />
+          <Typography id="regenerate-insw-confirmation" sx={{ mt: 2 }}>Have you checked this transaction on the official INSW website and confirmed that it has not already been transmitted?</Typography>
+          {regenerationError && <Alert severity="error" role="alert" sx={{ mt: 2 }}>{regenerationError}</Alert>}
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={regenerating} onClick={() => setConfirmRegenerate(false)}>Cancel</Button>
+          <Button variant="contained" disabled={regenerating || !regenerationReason.trim() || !selectedLog?.insw?.canRegenerate} onClick={async () => {
+            if (!selectedLog || regenerating || !regenerationReason.trim()) return;
+            setRegenerating(true);
+            setRegenerationError(null);
+            let failureMessage = regenerationMessage(undefined);
+            try {
+              const response = await fetch(`/api/settings/wms-transmission-logs/${selectedLog.id}/regenerate-insw`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: regenerationReason }),
+              });
+              const result = await response.json();
+              if (!response.ok) { failureMessage = regenerationMessage(result.code); throw new Error(failureMessage); }
+              toast.success(REGENERATION_SUCCESS);
+              setConfirmRegenerate(false);
+              setDetailDialogOpen(false);
+            } catch {
+              setRegenerationError(failureMessage);
+            } finally {
+              await fetchLogs();
+              setRegenerating(false);
+            }
+          }}>{regenerating ? 'Queuing…' : 'Confirm Regeneration'}</Button>
         </DialogActions>
       </Dialog>
 

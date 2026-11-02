@@ -1,3 +1,4 @@
+import { resolveInswCompanyConfig } from '@/lib/config/insw-company-config';
 import { WMS_INSW_STATUSES } from '@/lib/wms-insw-status-options';
 import { Prisma, type wms_transmission_logs } from '@prisma/client';
 import { bindWmsCsvFilters } from '@/lib/wms-log-sql';
@@ -87,7 +88,13 @@ export async function GET(request: NextRequest) {
       ]);
       return logs.map(log => {
         const status = statuses.get(String(log.id));
+        let destination: 'TEST' | 'REAL' | undefined;
+        if (status?.canRegenerate) {
+          try { destination = resolveInswCompanyConfig(log.company_code!).useTestMode ? 'TEST' : 'REAL'; } catch { /* Configuration missing: fail closed. */ }
+        }
         return status ? { ...log, insw: { ...status,
+          canRegenerate: status.canRegenerate && authCheck.grants.canEdit && !!destination,
+          regenerationDestination: destination,
           canInspectRegeneration: authCheck.grants.canEdit,
           // INSW Logs uses the session company, even for SUPER_ADMIN.
           canViewInswLogs: inswGrants.canView && Number(authCheck.session.user.companyCode) === log.company_code,

@@ -176,7 +176,7 @@ async function projection(id: bigint) {
   return result;
 }
 for (const op of operations) {
-  test(`${op}: real committed source/details, no queue, no tracking is Not queued and regeneration stays blocked`, async () => {
+  test(`${op}: real committed source/details, no queue, no tracking is a local candidate requiring a reason and operator website confirmation`, async () => {
     const row = await source(op);
     const log = await audit(op, row.wms_id!);
     const before = await counts();
@@ -184,8 +184,8 @@ for (const op of operations) {
     const status = await projection(log.id);
     expect(statusQueryCount).toBe(1);
     expect(status.label).toBe('Not queued');
-    expect(status.canRegenerate).toBe(false);
-    expect(status.regenerationBlock).toContain('completed business processing');
+    expect(status.canRegenerate).toBe(true);
+    expect(status.regenerationBlock).toContain('A reason and your confirmation of a check on the official INSW website');
     expect(await counts()).toEqual(before);
   });
   test(`${op}: exact queued identity, duplicate audit and recovery audit share one batched status`, async () => {
@@ -279,7 +279,7 @@ test('two concurrent observations and WMS capture race never write source/stock 
   const log = await audit('INCOMING', row.wms_id!);
   const before = await db.incoming_good_items.findMany();
   const results = await Promise.all([projection(log.id), projection(log.id), captureCompletedWmsSource(db, input('INCOMING', row.id))]);
-  for (const r of results.slice(0, 2)) expect((r as { canRegenerate: boolean }).canRegenerate).toBe(false);
+  for (const r of results.slice(0, 2)) expect((r as { canRegenerate: boolean; label: string }).canRegenerate).toBe((r as { label: string }).label === 'Not queued');
   expect((await projection(log.id)).label).toBe('Queued');
   expect(await db.insw_queue_cycle.count()).toBe(1);
   expect(await db.incoming_goods.count()).toBe(1);
@@ -334,6 +334,7 @@ function actualRoute(role = 'USER', companyCode = 1370, client = db) {
     '@/lib/wms-log-sql': { bindWmsCsvFilters },
     '@/lib/menu-auth': { checkMenuAuth: async () => ({ authenticated: true, grants: { canEdit: false },
       session: { user: { role, companyCode } } }), resolveMenuGrants: async () => ({ canView: false }) },
+    '@/lib/config/insw-company-config': { resolveInswCompanyConfig: () => ({ useTestMode: true }) },
     '@/lib/insw-queue/wms-log-status': { wmsLogInswStatuses },
     '@/lib/bigint-serializer': { serializeBigInt }, '@/lib/wms-log-filters': { buildWmsLogWhere, WmsLogFilterError },
   };

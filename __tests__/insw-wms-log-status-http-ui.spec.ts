@@ -7,10 +7,11 @@ import { buildWmsLogWhere, WmsLogFilterError, wmsLogFilterParams } from '../lib/
 import { Prisma } from '@prisma/client';
 import { bindWmsCsvFilters } from '../lib/wms-log-sql';
 import { WMS_INSW_STATUSES } from '../lib/wms-insw-status-options';
+import * as regenerationMessages from '../lib/insw-regeneration-messages';
 import { serializeBigInt } from '../lib/bigint-serializer';
 
 function moduleFrom(path: string, imports: Record<string, unknown>, globals = {}) {
-  imports = { '@prisma/client': { Prisma }, '@/lib/wms-log-sql': { bindWmsCsvFilters }, '@/lib/wms-insw-status-options': { WMS_INSW_STATUSES }, ...imports };
+  imports = { '@/lib/insw-regeneration-messages': regenerationMessages, '@/lib/config/insw-company-config': { resolveInswCompanyConfig: () => ({ useTestMode: true }) }, '@prisma/client': { Prisma }, '@/lib/wms-log-sql': { bindWmsCsvFilters }, '@/lib/wms-insw-status-options': { WMS_INSW_STATUSES }, ...imports };
   const exports: Record<string, any> = {};
   vm.runInNewContext(ts.transpileModule(readFileSync(path, 'utf8'), { compilerOptions: {
     module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
@@ -75,16 +76,21 @@ test('actual page keeps BZ status unchanged and renders separate SEZ status plus
     return [slots[i], (value: any) => { slots[i] = value; }]; }, useEffect: () => {} };
   const mui = require('@mui/material');
   const requests: string[] = [];
+  const posted: RequestInit[] = [];
+  const successes: string[] = [];
+  let failureCode: string | undefined;
+  let networkFailure = false;
   const pageModule = moduleFrom('app/(authenticated)/settings/wms-logs/page.tsx', {
     react: hooks,
     '@mui/material': new Proxy({ useTheme: () => mui.createTheme(), alpha: mui.alpha }, { get: (o, k) => (o as any)[k] ?? k }),
     '@mui/icons-material': new Proxy({}, { get: (_o, k) => k }),
     '@/app/components/DataTable': { DataTable: 'DataTable' },
-    '@/app/components/ToastProvider': { useToast: () => ({ success: () => {}, error: () => {} }) },
+    '@/app/components/ToastProvider': { useToast: () => ({ success: (message: string) => successes.push(message), error: () => {} }) },
     'next-auth/react': { useSession: () => ({ data: { user: { role: 'ADMIN', companyCode: '1370' } } }) },
     dayjs: require('dayjs'), '@/lib/wms-log-filters': { wmsLogFilterParams },
     'react/jsx-runtime': { jsx: (type: string, props: any) => ({ type, props }), jsxs: (type: string, props: any) => ({ type, props }) },
-  }, { fetch: async (url: string) => { requests.push(url); return { ok: true, blob: async () => new Blob(['fixture']),
+  }, { fetch: async (url: string, init?: RequestInit) => { requests.push(url); if (init?.method === 'POST') { posted.push(init); if (networkFailure) throw new Error('raw network detail');
+    if (failureCode) return { ok: false, json: async () => ({ code: failureCode, message: 'raw VERIFICATION_INCONCLUSIVE detail' }) }; } return { ok: true, blob: async () => new Blob(['fixture']),
     json: async () => ({ success: true, data: [], pagination: { total: 0 } }) }; },
     URL: class extends URL { static createObjectURL() { return 'blob:fixture'; } static revokeObjectURL() {} },
     document: { createElement: () => ({ click() {}, remove() {} }), body: { appendChild() {} } }, setTimeout() {},
@@ -134,11 +140,57 @@ test('actual page keeps BZ status unchanged and renders separate SEZ status plus
     expect(buttons).toHaveLength(canInspectRegeneration ? 1 : 0);
     if (canInspectRegeneration) {
       expect(buttons[0].props!.disabled).toBe(true);
-      expect(buttons[0].props!.onClick).toBeUndefined();
+      expect(typeof buttons[0].props!.onClick).toBe('function');
       expect(nodes(tree).some(n => n.type === 'Tooltip' && n.props!.title === status.regenerationBlock)).toBe(true);
     }
     expect(nodes(tree).some(n => n.props?.href === '/insw/logs')).toBe(false);
   }
+  const candidate = { id: '9', wms_id: 'LEGACY-EXACT', company_code: 1370, action: 'WMS_PROCESS_INCOMING_GOODS', transmission_status: 'SUCCESS',
+    insw: { ...status, canInspectRegeneration: true, canRegenerate: true, regenerationDestination: 'TEST' } };
+  nodes(actions(null, candidate)).find(n => n.type === 'IconButton')!.props!.onClick(); tree = render();
+  const regenerate = nodes(tree).find(n => n.type === 'Button' && n.props!.children === 'Regenerate INSW Transmission')!;
+  expect(regenerate.props!.disabled).toBe(false); regenerate.props!.onClick(); tree = render();
+  expect(nodes(tree).some(n => n.type === 'Dialog' && n.props!.open)).toBe(true);
+  const confirmEmpty = nodes(tree).find(n => n.type === 'Button' && n.props!.children === 'Confirm Regeneration')!;
+  expect(confirmEmpty.props!.disabled).toBe(true);
+  const dialog = nodes(tree).find(n => n.type === 'Dialog' && n.props!['aria-labelledby'] === 'regenerate-insw-title')!;
+  expect(dialog.props).toMatchObject({ fullWidth: true, maxWidth: 'sm', 'aria-describedby': 'regenerate-insw-confirmation' });
+  expect(JSON.stringify(dialog)).not.toMatch(/fresh INSW duplicate check|Verifying/);
+  expect(nodes(dialog).some(n => n.props?.children === 'Have you checked this transaction on the official INSW website and confirmed that it has not already been transmitted?')).toBe(true);
+  const reviewField = nodes(tree).find(n => n.type === 'TextField' && n.props!.label === 'Reason')!;
+  expect(reviewField.props).toMatchObject({ required: true, autoFocus: true, placeholder: 'Enter the reason for regeneration', inputProps: { maxLength: 500 } });
+  reviewField.props!.onChange({ target: { value: 'Recover missing queue' } }); tree = render();
+  const confirm = nodes(tree).find(n => n.type === 'Button' && n.props!.children === 'Confirm Regeneration')!;
+  expect(confirm.props!.disabled).toBe(false);
+  const pending = confirm.props!.onClick(); tree = render();
+  expect(nodes(tree).some(n => n.type === 'Button' && n.props!.children === 'Queuing…' && n.props!.disabled)).toBe(true);
+  const pendingDialog = nodes(tree).find(n => n.type === 'Dialog' && n.props!['aria-labelledby'] === 'regenerate-insw-title')!;
+  expect(nodes(pendingDialog).find(n => n.type === 'TextField')!.props!.disabled).toBe(true);
+  expect(nodes(pendingDialog).find(n => n.type === 'Button' && n.props!.children === 'Cancel')!.props!.disabled).toBe(true);
+  pendingDialog.props!.onClose();
+  expect(nodes(render()).find(n => n.type === 'Dialog' && n.props!['aria-labelledby'] === 'regenerate-insw-title')!.props!.open).toBe(true);
+  await pending;
+  expect(requests.some(url => url.endsWith('/9/regenerate-insw'))).toBe(true);
+  const body = JSON.parse(posted[0].body as string);
+  expect(body).toEqual({ reason: 'Recover missing queue' });
+  expect(successes).toContain(regenerationMessages.REGENERATION_SUCCESS);
+  expect(requests.at(-1)).toContain('/api/settings/wms-transmission-logs?');
+  for (const code of ['VERIFICATION_INCONCLUSIVE', 'TRANSMISSION_HISTORY_EXISTS', 'NETWORK']) {
+    failureCode = code; networkFailure = code === 'NETWORK';
+    nodes(actions(null, candidate)).find(n => n.type === 'IconButton')!.props!.onClick(); tree = render();
+    nodes(tree).find(n => n.type === 'Button' && n.props!.children === 'Regenerate INSW Transmission')!.props!.onClick(); tree = render();
+    nodes(tree).find(n => n.type === 'TextField' && n.props!.label === 'Reason')!.props!.onChange({ target: { value: 'Retry missing queue' } }); tree = render();
+    await nodes(tree).find(n => n.type === 'Button' && n.props!.children === 'Confirm Regeneration')!.props!.onClick(); tree = render();
+    const dialog = nodes(tree).find(n => n.type === 'Dialog' && n.props!['aria-labelledby'] === 'regenerate-insw-title')!;
+    expect(dialog.props!.open).toBe(true);
+    const alert = nodes(dialog).find(n => n.type === 'Alert')!;
+    expect(alert.props!.children).toBe(regenerationMessages.regenerationMessage(code));
+    expect(alert.props!.children).not.toMatch(/VERIFICATION_INCONCLUSIVE|raw/);
+    expect(nodes(dialog).filter(n => n.type === 'TextField')).toHaveLength(1);
+    expect(nodes(dialog).some(n => n.type === 'Checkbox')).toBe(false);
+    expect(nodes(dialog).find(n => n.type === 'Button' && n.props!.children === 'Cancel')!.props!.disabled).toBe(false);
+  }
+
 });
 
 

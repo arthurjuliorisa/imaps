@@ -5,7 +5,7 @@ import { canonicalIdentity } from './contracts';
 
 // WMS audit IDs are never source IDs. These are the exact ingress actions,
 // including recovery audit entries; stock opname activation is not confirmation.
-const domains = [
+export const wmsSourceDomains = [
   ['INCOMING', 'WMS_PROCESS_INCOMING_GOODS', 'incoming_goods', 'incoming_date', 'incoming_good_items', 'incoming_good'],
   ['OUTGOING', 'WMS_PROCESS_OUTGOING_GOODS', 'outgoing_goods', 'outgoing_date', 'outgoing_good_items', 'outgoing_good'],
   ['MATERIAL_USAGE', 'WMS_PROCESS_MATERIAL_USAGE', 'material_usages', 'transaction_date', 'material_usage_items', 'material_usage'],
@@ -18,12 +18,13 @@ export type WmsInswStatus = {
   label: WmsInswStatusFilter;
   explanation: string;
   workerAuthorized: boolean;
-  canRegenerate: false;
+  canRegenerate: boolean;
+  regenerationDestination?: 'TEST' | 'REAL';
   canInspectRegeneration?: boolean;
   canViewInswLogs?: boolean;
   regenerationBlock: string;
 };
-type Facts = {
+export type WmsInswFacts = {
   log_id: bigint; company_code: number; operation: 'INCOMING' | 'OUTGOING' | 'MATERIAL_USAGE' | 'PRODUCTION_OUTPUT' | 'ADJUSTMENT' | 'STOCK_OPNAME';
   wms_id: string | null; transmission_status: string;
   source_id: bigint | null; source_matches: bigint; business_date: string | null;
@@ -33,9 +34,9 @@ type Facts = {
   history_count: number; remote_success: boolean; history_mismatch: boolean;
 };
 
-const regenerationBlock = 'Regeneration is blocked: durable queue-era membership and completed business processing are unproven. Queue absence alone cannot authorize a new submission.';
+const regenerationBlock = 'A reason and your confirmation of a check on the official INSW website are required for regeneration.';
 
-export function projectWmsInswStatus(row: Facts, workerAuthorized: boolean): WmsInswStatus {
+export function projectWmsInswStatus(row: WmsInswFacts, workerAuthorized: boolean): WmsInswStatus {
   const result = (label: WmsInswStatusFilter, explanation: string): WmsInswStatus => ({
     label, explanation, workerAuthorized, canRegenerate: false, regenerationBlock,
   });
@@ -70,7 +71,7 @@ export function projectWmsInswStatus(row: Facts, workerAuthorized: boolean): Wms
     return result('Unknown / unlinked', observed + 'Unrecognized lifecycle state requires reconciliation.');
   }
   if (row.history_count) return result('Unknown / unlinked', 'INSW tracking evidence exists without an exact queue association. Investigate legacy or ambiguous delivery; do not regenerate.');
-  return result('Not queued', 'WMS was accepted and a source with details is persisted, but no correlated queue or tracking evidence was found. This does not prove complete stock processing or permission to send. ' + regenerationBlock);
+  return { ...result('Not queued', 'WMS was accepted and a source with details is persisted, but no correlated queue or tracking evidence was found. This does not prove complete stock processing or permission to send. ' + regenerationBlock), canRegenerate: workerAuthorized };
 }
 
 /** One bounded SQL statement for the whole authorized page, across companies and
@@ -85,7 +86,7 @@ export async function wmsLogInswStatuses(db: Pick<PrismaClient, '$queryRaw'>,
   if (principal.role !== 'SUPER_ADMIN' && (!Number.isInteger(company) || company <= 0)) throw new Error('Assigned company required');
   let allowed: readonly number[] = [];
   try { allowed = resolveWorkerAllowedCompanies(); } catch { /* Missing fence never grants authority. */ }
-  const rows = await db.$queryRaw<Facts[]>(wmsInswFactsSql(Prisma.sql`w.id IN (${Prisma.join(ids)})
+  const rows = await db.$queryRaw<WmsInswFacts[]>(wmsInswFactsSql(Prisma.sql`w.id IN (${Prisma.join(ids)})
     ${principal.role === 'SUPER_ADMIN' ? Prisma.empty : Prisma.sql`AND w.company_code = ${company}`}`));
   return new Map(rows.map(row => [String(row.log_id), projectWmsInswStatus(row, allowed.includes(row.company_code))]));
 }
@@ -93,7 +94,7 @@ export async function wmsLogInswStatuses(db: Pick<PrismaClient, '$queryRaw'>,
 /** Shared source/queue/history facts for bounded page enrichment and pre-page filtering.
  * scopePredicate must be bound by the authorized list/export boundary. */
 export function wmsInswFactsSql(scopePredicate: Prisma.Sql): Prisma.Sql {
-  const sources = domains.map(([operation, action, table, date, items, prefix]) => {
+  const sources = wmsSourceDomains.map(([operation, action, table, date, items, prefix]) => {
     const stock = operation === 'STOCK_OPNAME';
     const details = stock
       ? Prisma.sql`EXISTS (SELECT 1 FROM wms_stock_opname_items i WHERE i.wms_stock_opname_id = g.id AND i.company_code = g.company_code)`

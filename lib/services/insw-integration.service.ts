@@ -1290,7 +1290,22 @@ export class INSWIntegrationService {
       },
     });
 
-    return response.json();
+    const result: unknown = await response.json();
+    if (!result || typeof result !== 'object' || Array.isArray(result) ||
+        typeof (result as { status?: unknown }).status !== 'boolean') {
+      throw new Error('Invalid INSW retrieval response');
+    }
+    const envelope = result as INSWApiResponse<INSWTransaksiResponse[]>;
+    if (!response.ok) {
+      // HTTP failure must never become success through a contradictory body.
+      return { ...envelope, status: false };
+    }
+    if (envelope.status && !Array.isArray(envelope.data)) {
+      throw new Error('Invalid INSW retrieval response');
+    }
+    // This is retrieval data only: an empty array is not proof of non-delivery.
+    // No completeness, provider consistency or absence guarantee is inferred.
+    return envelope;
   }
 
   async getPemasukan(
