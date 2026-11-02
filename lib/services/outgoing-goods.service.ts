@@ -1,6 +1,6 @@
 import { logger } from '@/lib/utils/logger';
+import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import {
   validateOutgoingGoodRequest,
   validateOutgoingGoodsDates,
@@ -65,6 +65,28 @@ interface RevisionInfo {
 }
 
 export class OutgoingGoodsService {
+  /** The trusted WMS continuation owns the complete repository promise and scope. */
+  private async captureCompletedOutgoing(
+    db: PrismaClient,
+    businessCompletion: Promise<void>,
+    scope: Readonly<{ companyCode: number; wmsReference: string; businessDate: string; requestedBy: string }>,
+  ) {
+    const expected = { ...scope }; // detach before awaiting the business promise
+    if (!businessCompletion || typeof businessCompletion.then !== 'function') {
+      throw new Error('BUSINESS_COMPLETION_CONTEXT_REQUIRED');
+    }
+    await businessCompletion;
+    try {
+      const { captureCompletedWmsSource } = await import('../insw-worker/completed-source-capture');
+      return await captureCompletedWmsSource(db, { ...expected, operation: 'OUTGOING',
+        revision: 'ACCEPTED_WMS_ID', completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' });
+    } catch (error) {
+      logger.error('Completed WMS Outgoing capture failed; no DIRECT fallback', {
+        error: error instanceof Error ? error.message : String(error), wmsId: expected.wmsReference,
+      });
+    }
+  }
+
   /**
    * Process outgoing goods request
    */
@@ -193,33 +215,12 @@ export class OutgoingGoodsService {
       // 10. Check stock and collect warnings (pass revision info)
       const stockCheckResult = await this.checkStockAndCollectWarnings(data, revisionInfo);
 
-      // 11. Queue async database insert + INSW auto-transmit
+      // 11. Capture after the complete async business insert; HTTP acceptance stays unchanged
       const repository = new OutgoingGoodsRepository();
-      repository.insertOutgoingGoodsAsync(data)
-        .then(async () => {
-          try {
-            // Check company type
-            const company = await prisma.companies.findUnique({
-              where: { code: data.company_code },
-              select: { company_type: true },
-            });
-
-            // Only transmit if SEZ company
-            if (company?.company_type === 'SEZ') {
-              const inswService = new INSWTransmissionService();
-              const result = await inswService.transmitOutgoingGoodsByWmsIds(data.company_code, [data.wms_id]);
-              if (result.status !== 'success') {
-                requestLogger.warn('Outgoing goods INSW transmission failed', { wmsId: data.wms_id });
-              } else {
-                requestLogger.info('Outgoing goods transmitted to INSW', { wmsId: data.wms_id });
-              }
-            } else {
-              requestLogger.info('Outgoing goods NOT transmitted to INSW (non-SEZ company)', { wmsId: data.wms_id, companyType: company?.company_type });
-            }
-          } catch (inswErr: any) {
-            requestLogger.error('INSW auto-transmit error for outgoing goods', { wmsId: data.wms_id, error: inswErr.message });
-          }
-        })
+      this.captureCompletedOutgoing(prisma, repository.insertOutgoingGoodsAsync(data), {
+        companyCode: data.company_code, wmsReference: data.wms_id,
+        businessDate: new Date(data.outgoing_date).toISOString().slice(0, 10), requestedBy: 'WMS_OUTGOING_COMPLETION',
+      })
         .catch((error) => {
           requestLogger.error('Failed to insert outgoing goods', { error, wmsId: data.wms_id });
           void logWmsAsyncFailure({

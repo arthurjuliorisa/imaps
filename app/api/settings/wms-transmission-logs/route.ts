@@ -1,6 +1,11 @@
+import { resolveInswCompanyConfig } from '@/lib/config/insw-company-config';
+import { WMS_INSW_STATUSES } from '@/lib/wms-insw-status-options';
+import { Prisma, type wms_transmission_logs } from '@prisma/client';
+import { bindWmsCsvFilters } from '@/lib/wms-log-sql';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { checkAuth } from '@/lib/api-auth';
+import { checkMenuAuth, resolveMenuGrants } from '@/lib/menu-auth';
+import { wmsLogInswStatuses } from '@/lib/insw-queue/wms-log-status';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 
 import { buildWmsLogWhere, WmsLogFilterError } from '@/lib/wms-log-filters';
@@ -10,7 +15,7 @@ const DEFAULT_PAGE_SIZE = 10;
 
 export async function GET(request: NextRequest) {
   try {
-    const authCheck = await checkAuth();
+    const authCheck = await checkMenuAuth('/settings/wms-logs');
     if (!authCheck.authenticated) {
       return authCheck.response;
     }
@@ -35,6 +40,7 @@ export async function GET(request: NextRequest) {
     // Filter options use the authorized date/company dataset, independently of
     // the current page and selected list filters.
     const filterMetadataWhere = { ...where };
+    delete filterMetadataWhere.insw_status;
     delete filterMetadataWhere.wms_id;
     delete filterMetadataWhere.action;
     delete filterMetadataWhere.error_type;
@@ -62,6 +68,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         filters: {
+          inswStatuses: WMS_INSW_STATUSES,
           actions: actions.map(({ action }) => action).sort(),
           transmissionStatuses: transmissionStatuses
             .map(({ transmission_status }) => transmission_status)
@@ -74,16 +81,48 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const enrich = async (logs: Awaited<ReturnType<typeof prisma.wms_transmission_logs.findMany>>) => {
+      const [statuses, inswGrants] = await Promise.all([
+        wmsLogInswStatuses(prisma, authCheck.session.user, logs.map(log => log.id)),
+        resolveMenuGrants(authCheck.session, '/insw/logs'),
+      ]);
+      return logs.map(log => {
+        const status = statuses.get(String(log.id));
+        let destination: 'TEST' | 'REAL' | undefined;
+        if (status?.canRegenerate) {
+          try { destination = resolveInswCompanyConfig(log.company_code!).useTestMode ? 'TEST' : 'REAL'; } catch { /* Configuration missing: fail closed. */ }
+        }
+        return status ? { ...log, insw: { ...status,
+          canRegenerate: status.canRegenerate && authCheck.grants.canEdit && !!destination,
+          regenerationDestination: destination,
+          canInspectRegeneration: authCheck.grants.canEdit,
+          // INSW Logs uses the session company, even for SUPER_ADMIN.
+          canViewInswLogs: inswGrants.canView && Number(authCheck.session.user.companyCode) === log.company_code,
+        } } : log;
+      });
+    };
+
+    // Both response variants share the same authorized predicate before count,
+    // deterministic ordering and LIMIT/OFFSET. ALL retains the existing fast path.
+    const { insw_status: inswStatus, ...ordinaryWhere } = where;
+    const predicate = inswStatus ? bindWmsCsvFilters(where) : undefined;
+    const listPage = () => predicate
+      ? prisma.$queryRaw<wms_transmission_logs[]>(Prisma.sql`SELECT log.* FROM wms_transmission_logs log
+          WHERE ${predicate} ORDER BY log.created_at DESC, log.id DESC LIMIT ${limit} OFFSET ${offset}`)
+      : prisma.wms_transmission_logs.findMany({ where: ordinaryWhere, take: limit, skip: offset,
+          orderBy: [{ created_at: 'desc' }, { id: 'desc' }] });
+    const countMatches = async () => {
+      if (!predicate) return prisma.wms_transmission_logs.count({ where: ordinaryWhere });
+      const [row] = await prisma.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT count(*) AS total
+        FROM wms_transmission_logs log WHERE ${predicate}`);
+      return Number(row.total);
+    };
+
     // Preserve the original combined response for callers that do not opt out.
     if (includeFilterMetadata) {
       const [logs, total, actions, transmissionStatuses, errorTypes] = await Promise.all([
-        prisma.wms_transmission_logs.findMany({
-          where,
-          take: limit,
-          skip: offset,
-          orderBy: { created_at: 'desc' },
-        }),
-        prisma.wms_transmission_logs.count({ where }),
+        listPage(),
+        countMatches(),
         prisma.wms_transmission_logs.findMany({ where: filterMetadataWhere, distinct: ['action'], select: { action: true } }),
         prisma.wms_transmission_logs.findMany({ where: filterMetadataWhere, distinct: ['transmission_status'], select: { transmission_status: true } }),
         prisma.wms_transmission_logs.findMany({ where: { ...filterMetadataWhere, error_type: { not: null } }, distinct: ['error_type'], select: { error_type: true } }),
@@ -92,7 +131,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        data: serializeBigInt(logs),
+        data: serializeBigInt(await enrich(logs)),
         pagination: {
           page,
           limit,
@@ -102,6 +141,7 @@ export async function GET(request: NextRequest) {
           hasPrevPage: page > 1,
         },
         filters: {
+          inswStatuses: WMS_INSW_STATUSES,
           actions: actions.map(({ action }) => action).sort(),
           transmissionStatuses: transmissionStatuses.map(({ transmission_status }) => transmission_status).sort(),
           errorTypes: errorTypes.map(({ error_type }) => error_type).filter((errorType): errorType is string => errorType !== null).sort(),
@@ -112,13 +152,8 @@ export async function GET(request: NextRequest) {
     // Normal pagination needs only the page and its filtered count. The UI
     // fetches stable dropdown metadata separately.
     const [logs, total] = await Promise.all([
-      prisma.wms_transmission_logs.findMany({
-        where,
-        take: limit,
-        skip: offset,
-        orderBy: { created_at: 'desc' },
-      }),
-      prisma.wms_transmission_logs.count({ where }),
+      listPage(),
+      countMatches(),
     ]);
 
     // Calculate pagination metadata
@@ -128,7 +163,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: serializeBigInt(logs),
+      data: serializeBigInt(await enrich(logs)),
       pagination: {
         page,
         limit,

@@ -8,7 +8,7 @@ import {
   type BatchValidationError,
 } from '@/lib/validators/schemas/material-usage.schema';
 import { MaterialUsageRepository } from '@/lib/repositories/material-usage.repository';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
+import { captureCompletedWmsSource } from '@/lib/insw-worker/completed-source-capture';
 import { prisma } from '@/lib/db/prisma';
 import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
@@ -188,7 +188,7 @@ export class MaterialUsageService {
         };
       }
 
-      // Step 7: Queue for immediate async insert (non-blocking) + auto-transmit to INSW
+      // Step 7: Queue for immediate async insert (non-blocking) + coordinated INSW capture
       this.repository
         .batchUpsert(data)
         .then(async () => {
@@ -197,9 +197,9 @@ export class MaterialUsageService {
             itemsCount: data.items.length,
           });
 
-          // Auto-transmit to INSW
+          // Capture after the complete business promise resolves
           try {
-            log.info('Starting auto-transmit to INSW', {
+            log.info('Starting INSW queue capture', {
               wmsId: data.wms_id,
               companyCode: data.company_code,
             });
@@ -226,25 +226,11 @@ export class MaterialUsageService {
 
             // Only transmit if SEZ company
             if (company?.company_type === 'SEZ') {
-              const inswService = new INSWTransmissionService();
-
-              const transmissionResult = await inswService.transmitMaterialUsage(
-                data.company_code,
-                [savedRecord.id],
-                [data.wms_id]
-              );
-
-              if (transmissionResult.status === 'success') {
-                log.info('Material usage transmitted to INSW successfully', {
-                  wmsId: data.wms_id,
-                  transmissionResult,
-                });
-              } else {
-                log.warn('Material usage INSW transmission failed', {
-                  wmsId: data.wms_id,
-                  transmissionResult,
-                });
-              }
+              await captureCompletedWmsSource(prisma, { operation: 'MATERIAL_USAGE', sourceId: savedRecord.id,
+                companyCode: data.company_code, businessDate: new Date(data.transaction_date).toISOString().slice(0, 10),
+                revision: 'ACCEPTED_WMS_ID', requestedBy: 'WMS_MATERIAL_USAGE_COMPLETION',
+                completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' });
+              log.info('WMS original accepted for coordinated INSW capture', { wmsId: data.wms_id });
             } else {
               log.info('Material usage NOT transmitted to INSW (non-SEZ company)', {
                 wmsId: data.wms_id,
@@ -252,7 +238,7 @@ export class MaterialUsageService {
               });
             }
           } catch (inswError: any) {
-            log.error('Error during INSW auto-transmit', {
+            log.error('INSW queue capture failed; no DIRECT fallback', {
               wmsId: data.wms_id,
               error: inswError.message,
             });

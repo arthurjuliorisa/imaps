@@ -70,3 +70,5 @@ playwright.config.ts
 
 # documentation
 /project-documentation
+
+/logs

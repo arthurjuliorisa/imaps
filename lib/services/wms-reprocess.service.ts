@@ -1,3 +1,4 @@
+import { captureCompletedWmsSource } from '@/lib/insw-worker/completed-source-capture';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { AdjustmentsRepository } from '@/lib/repositories/adjustments.repository';
@@ -6,7 +7,6 @@ import { MaterialUsageRepository } from '@/lib/repositories/material-usage.repos
 import { OutgoingGoodsRepository } from '@/lib/repositories/outgoing-goods.repository';
 import { ProductionOutputRepository } from '@/lib/repositories/production-output.repository';
 import { WipBalanceRepository } from '@/lib/repositories/wip-balance.repository';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import type { WipBalanceRecord } from '@/lib/types/wip-balance.types';
 import {
   checkAdjustmentDuplicates,
@@ -82,7 +82,7 @@ export type PersistedWmsTransaction = {
 
 export type WmsRetryInswResult = {
   attempted: boolean;
-  status: 'not_applicable' | 'skipped' | 'success' | 'failed';
+  status: 'not_applicable' | 'skipped' | 'success' | 'failed' | 'accepted';
   message: string;
 };
 
@@ -474,19 +474,43 @@ export async function continueWmsRetryToInsw(
     return { attempted: false, status: 'skipped', message: 'A successful INSW transmission is already recorded for this transaction' };
   }
 
-  const service = new INSWTransmissionService();
-  let result;
-  switch (transactionType) {
-    case 'incoming_goods': result = await service.transmitIncomingGoods(transaction.companyCode, [transaction.id]); break;
-    case 'outgoing_goods': result = await service.transmitOutgoingGoodsByWmsIds(transaction.companyCode, [transaction.wmsId]); break;
-    case 'material_usage': result = await service.transmitMaterialUsage(transaction.companyCode, [transaction.id], [transaction.wmsId]); break;
-    case 'production_output': result = await service.transmitProductionOutput(transaction.companyCode, [transaction.id], [transaction.wmsId]); break;
-    case 'adjustments': result = await service.transmitAdjustment(transaction.companyCode, transaction.id, transaction.wmsId); break;
-    default: return { attempted: false, status: 'not_applicable', message: 'This WMS transaction type does not auto-transmit to INSW' };
+  if (transactionType === 'incoming_goods') {
+    const source = await prisma.incoming_goods.findUniqueOrThrow({ where: { id: transaction.id } });
+    const result = await captureCompletedWmsSource(prisma, { operation: 'INCOMING', sourceId: transaction.id,
+      companyCode: transaction.companyCode, businessDate: source.incoming_date.toISOString().slice(0, 10),
+      revision: 'ACCEPTED_WMS_ID', requestedBy: 'WMS_INCOMING_REPROCESS', completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' });
+    return { attempted: result.created, status: result.created ? 'accepted' : 'skipped',
+      message: result.created ? 'Incoming accepted in queue; not yet delivered to INSW' : 'Existing Incoming queue cycle retained; no remote repost' };
   }
-  return result.status === 'success'
-    ? { attempted: true, status: 'success', message: result.message }
-    : { attempted: true, status: 'failed', message: result.message };
+
+  let result;
+  const scope = { companyCode: transaction.companyCode, requestedBy: 'WMS_PERSISTED_REPROCESS',
+    completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' as const };
+  switch (transactionType) {
+    case 'outgoing_goods': {
+      const source = await prisma.outgoing_goods.findUniqueOrThrow({ where: { id: transaction.id } });
+      result = await captureCompletedWmsSource(prisma, { ...scope, operation: 'OUTGOING', wmsReference: transaction.wmsId,
+        businessDate: source.outgoing_date.toISOString().slice(0, 10), revision: 'ACCEPTED_WMS_ID' }); break;
+    }
+    case 'material_usage': {
+      const source = await prisma.material_usages.findUniqueOrThrow({ where: { id: transaction.id } });
+      result = await captureCompletedWmsSource(prisma, { ...scope, operation: 'MATERIAL_USAGE', sourceId: transaction.id,
+        businessDate: source.transaction_date.toISOString().slice(0, 10), revision: 'ACCEPTED_WMS_ID' }); break;
+    }
+    case 'production_output': {
+      const source = await prisma.production_outputs.findUniqueOrThrow({ where: { id: transaction.id } });
+      result = await captureCompletedWmsSource(prisma, { ...scope, operation: 'PRODUCTION_OUTPUT', sourceId: transaction.id,
+        businessDate: source.transaction_date.toISOString().slice(0, 10), revision: 'ACCEPTED_WMS_ID' }); break;
+    }
+    case 'adjustments': {
+      const source = await prisma.adjustments.findUniqueOrThrow({ where: { id: transaction.id } });
+      result = await captureCompletedWmsSource(prisma, { ...scope, operation: 'ADJUSTMENT', sourceId: transaction.id,
+        businessDate: source.transaction_date.toISOString().slice(0, 10), revision: 'COMMITTED_SOURCE' }); break;
+    }
+    default: return { attempted: false, status: 'not_applicable', message: 'No INSW continuation for this domain' };
+  }
+  return { attempted: result.created, status: result.created ? 'accepted' : 'skipped',
+    message: result.created ? 'Original accepted in queue; not yet delivered to INSW' : 'Existing queue cycle retained; no remote repost' };
 }
 
 export async function createWmsRetryAttemptLog(params: {

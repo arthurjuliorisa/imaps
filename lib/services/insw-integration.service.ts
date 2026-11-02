@@ -1,4 +1,6 @@
 import { format } from 'date-fns';
+import { normalizeINSWRetrievalParams } from '@/lib/utils/insw-retrieval-params';
+import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/utils/logger';
 import {
@@ -59,9 +61,10 @@ export class INSWIntegrationService {
   constructor(
     apiKey: string,
     uniqueKey: string,
-    useTestMode: boolean = true
+    useTestMode: boolean = true,
+    private readonly incomingDatabase: PrismaClient = prisma
   ) {
-    this.repository = new INSWIntegrationRepository();
+    this.repository = new INSWIntegrationRepository(incomingDatabase);
     this.apiHeaders = {
       'x-insw-key': apiKey,
       'x-unique-key': uniqueKey,
@@ -176,7 +179,8 @@ export class INSWIntegrationService {
 
   private async fetchINSW(
     endpoint: string,
-    init: RequestInit
+    init: RequestInit,
+    onInvoked?: () => void
   ): Promise<Response> {
     const fetchInit: RequestInit & { dispatcher?: unknown } = { ...init };
     let fetchImpl = fetch;
@@ -194,7 +198,9 @@ export class INSWIntegrationService {
     }
 
     try {
-      const response = await fetchImpl(endpoint, fetchInit);
+      const invocation = fetchImpl(endpoint, fetchInit);
+      onInvoked?.();
+      const response = await invocation;
       if (!response.ok) {
         this.log.warn('INSW fetch returned non-success status', {
           httpStatus: response.status,
@@ -310,7 +316,7 @@ export class INSWIntegrationService {
   }
 
   private async loadUomMappings(): Promise<Map<string, string>> {
-    const mappings = await prisma.insw_uom_mapping.findMany({ where: { is_active: true } });
+    const mappings = await this.incomingDatabase.insw_uom_mapping.findMany({ where: { is_active: true } });
     return new Map(mappings.map((m) => [m.wms_uom.toUpperCase(), m.insw_uom]));
   }
 
@@ -826,7 +832,7 @@ export class INSWIntegrationService {
     // Get wms_id mapping from material_usages
     const wmsIdMap = new Map<number, string>();
     const uniqueTransactionIds = [...new Set(data.map((item) => item.transaction_id))];
-    const materialUsages = await prisma.material_usages.findMany({
+    const materialUsages = await this.incomingDatabase.material_usages.findMany({
       where: {
         id: { in: uniqueTransactionIds },
         company_code: companyCode,
@@ -899,7 +905,7 @@ export class INSWIntegrationService {
     // Get wms_id mapping from production_outputs
     const wmsIdMap = new Map<number, string>();
     const uniqueTransactionIds = [...new Set(data.map((item) => item.transaction_id))];
-    const productionOutputs = await prisma.production_outputs.findMany({
+    const productionOutputs = await this.incomingDatabase.production_outputs.findMany({
       where: {
         id: { in: uniqueTransactionIds },
         company_code: companyCode,
@@ -950,7 +956,7 @@ export class INSWIntegrationService {
     companyCode: number,
     stockOpnameId: number
   ): Promise<INSWTransaksiPayload> {
-    const opname = await prisma.wms_stock_opnames.findFirst({
+    const opname = await this.incomingDatabase.wms_stock_opnames.findFirst({
       where: { id: BigInt(stockOpnameId), company_code: companyCode },
       include: { items: true },
     });
@@ -1017,7 +1023,7 @@ export class INSWIntegrationService {
     companyCode: number,
     adjustmentId: number
   ): Promise<INSWTransaksiPayload> {
-    const adjustment = await prisma.adjustments.findFirst({
+    const adjustment = await this.incomingDatabase.adjustments.findFirst({
       where: { id: adjustmentId, company_code: companyCode, deleted_at: null },
       include: {
         items: {
@@ -1203,141 +1209,127 @@ export class INSWIntegrationService {
   async postPemasukan(
     payload: INSWTransaksiPayload
   ): Promise<INSWApiResponse> {
-    const endpoint = this.useTestMode
-      ? INSW_ENDPOINTS.transaksi.temp
-      : INSW_ENDPOINTS.transaksi.real;
-
-    return this.postINSW(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-      body: JSON.stringify(payload),
-    });
+    return this.postTransaction(payload);
   }
 
   async postPengeluaran(
     payload: INSWTransaksiPayload
   ): Promise<INSWApiResponse> {
-    const endpoint = this.useTestMode
-      ? INSW_ENDPOINTS.transaksi.temp
-      : INSW_ENDPOINTS.transaksi.real;
-
-    return this.postINSW(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-      body: JSON.stringify(payload),
-    });
+    return this.postTransaction(payload);
   }
 
   async postStockOpname(
     payload: INSWTransaksiPayload
   ): Promise<INSWApiResponse> {
-    const endpoint = this.useTestMode
-      ? INSW_ENDPOINTS.transaksi.temp
-      : INSW_ENDPOINTS.transaksi.real;
-
-    return this.postINSW(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-      body: JSON.stringify(payload),
-    });
+    return this.postTransaction(payload);
   }
 
   async postAdjustment(
     payload: INSWTransaksiPayload
   ): Promise<INSWApiResponse> {
+    return this.postTransaction(payload);
+  }
+
+  private transactionRequest(body: string, signal?: AbortSignal): {
+    endpoint: string; init: RequestInit;
+  } {
     const endpoint = this.useTestMode
       ? INSW_ENDPOINTS.transaksi.temp
       : INSW_ENDPOINTS.transaksi.real;
-
-    return this.postINSW(endpoint, {
+    return { endpoint, init: {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...this.apiHeaders,
       },
-      body: JSON.stringify(payload),
+      body,
+      ...(signal ? { signal } : {}),
+    } };
+  }
+
+  private postTransaction(payload: INSWTransaksiPayload): Promise<INSWApiResponse> {
+    const { endpoint, init } = this.transactionRequest(JSON.stringify(payload));
+    // Legacy response/error handling remains unchanged.
+    return this.postINSW(endpoint, init);
+  }
+
+  /**
+   * Raw transaction-only transport seam for a future reviewed worker adapter.
+   * Caller must verify the frozen hash and persist admission BEFORE invocation,
+   * then track invocation/body settlement. This method provides no ownership,
+   * source validation, toggle authorization, enqueue or domain finalization.
+   * Keeping the raw response/error lets the worker classify HTTP and ambiguity
+   * without the legacy wrapper converting network errors into business JSON.
+   */
+  requestFrozenTransaction(body: string, signal: AbortSignal,
+    transport?: (endpoint: string, init: RequestInit) => Promise<Response>, onInvoked?: () => void): Promise<Response> {
+    const { endpoint, init } = this.transactionRequest(body, signal);
+    if (!transport) return this.fetchINSW(endpoint, { ...init, redirect: 'error' }, onInvoked);
+    const invocation = transport(endpoint, { ...init, redirect: 'error' });
+    onInvoked?.();
+    return invocation;
+  }
+
+  private async getTransactions(
+    activity: INSWActivityCode,
+    params: INSWGetDataParams
+  ): Promise<INSWApiResponse<INSWTransaksiResponse[]>> {
+    const dates = normalizeINSWRetrievalParams(params);
+    const endpoint = new URL(this.useTestMode
+      ? INSW_ENDPOINTS.transaksi.temp
+      : INSW_ENDPOINTS.transaksi.real);
+    endpoint.pathname = `${endpoint.pathname.replace(/\/+$/, '')}/${activity}/`;
+    endpoint.searchParams.set('tglAwal', dates.tglAwal);
+    endpoint.searchParams.set('tglAkhir', dates.tglAkhir);
+
+    const response = await this.fetchINSW(endpoint.toString(), {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.apiHeaders,
+      },
     });
+
+    const result: unknown = await response.json();
+    if (!result || typeof result !== 'object' || Array.isArray(result) ||
+        typeof (result as { status?: unknown }).status !== 'boolean') {
+      throw new Error('Invalid INSW retrieval response');
+    }
+    const envelope = result as INSWApiResponse<INSWTransaksiResponse[]>;
+    if (!response.ok) {
+      // HTTP failure must never become success through a contradictory body.
+      return { ...envelope, status: false };
+    }
+    if (envelope.status && !Array.isArray(envelope.data)) {
+      throw new Error('Invalid INSW retrieval response');
+    }
+    // This is retrieval data only: an empty array is not proof of non-delivery.
+    // No completeness, provider consistency or absence guarantee is inferred.
+    return envelope;
   }
 
   async getPemasukan(
     params: INSWGetDataParams
   ): Promise<INSWApiResponse<INSWTransaksiResponse[]>> {
-    const endpoint = this.useTestMode
-      ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.PEMASUKAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
-      : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.PEMASUKAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
-
-    const response = await this.fetchINSW(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-    });
-
-    return response.json();
+    return this.getTransactions(INSWActivityCode.PEMASUKAN, params);
   }
 
   async getPengeluaran(
     params: INSWGetDataParams
   ): Promise<INSWApiResponse<INSWTransaksiResponse[]>> {
-    const endpoint = this.useTestMode
-      ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.PENGELUARAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
-      : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.PENGELUARAN}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
-
-    const response = await this.fetchINSW(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-    });
-
-    return response.json();
+    return this.getTransactions(INSWActivityCode.PENGELUARAN, params);
   }
 
   async getStockOpname(
     params: INSWGetDataParams
   ): Promise<INSWApiResponse<INSWTransaksiResponse[]>> {
-    const endpoint = this.useTestMode
-      ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.STOCK_OPNAME}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
-      : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.STOCK_OPNAME}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
-
-    const response = await this.fetchINSW(endpoint, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-    });
-
-    return response.json();
+    return this.getTransactions(INSWActivityCode.STOCK_OPNAME, params);
   }
 
   async getAdjustment(
     params: INSWGetDataParams
   ): Promise<INSWApiResponse<INSWTransaksiResponse[]>> {
-    const endpoint = this.useTestMode
-      ? `${INSW_ENDPOINTS.transaksi.temp}/${INSWActivityCode.ADJUSTMENT}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`
-      : `${INSW_ENDPOINTS.transaksi.real}/${INSWActivityCode.ADJUSTMENT}/tglAwal=${params.tglAwal}&tglAkhir=${params.tglAkhir}`;
-
-    const response = await this.fetchINSW(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.apiHeaders,
-      },
-    });
-
-    return response.json();
+    return this.getTransactions(INSWActivityCode.ADJUSTMENT, params);
   }
 
   async cleansingData(npwp: string): Promise<INSWApiResponse> {

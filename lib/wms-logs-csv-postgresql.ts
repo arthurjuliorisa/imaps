@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { CSV_TRIAL_BATCH_SIZE, CsvError } from './logs-csv';
 import type { WmsLogWhere } from './wms-log-filters';
+import { bindWmsCsvFilters } from './wms-log-sql';
+export { bindWmsCsvFilters } from './wms-log-sql';
 import type { WmsCsvRow } from './wms-logs-csv';
 
 type Cursor = { createdAt: string; id: bigint };
@@ -11,19 +13,6 @@ function cursor(row: WmsCsvCursorRow): Cursor {
       typeof row.id !== 'bigint' || row.id < BigInt('-9223372036854775808') || row.id > BigInt('9223372036854775807')) throw new CsvError('SOURCE');
   return { createdAt: row.created_at_exact, id: row.id };
 }
-/** Bind the shared list predicate once. No INSW exclusions or payload joins. */
-export function bindWmsCsvFilters(where: WmsLogWhere): Prisma.Sql {
-  const terms = [Prisma.sql`TRUE`];
-  if (where.company_code !== undefined) terms.push(Prisma.sql`log.company_code = ${where.company_code}`);
-  if (where.action !== undefined) terms.push(Prisma.sql`log.action = ${where.action}`);
-  if (where.transmission_status !== undefined) terms.push(Prisma.sql`log.transmission_status = ${where.transmission_status}`);
-  if (where.error_type !== undefined) terms.push(Prisma.sql`log.error_type = ${where.error_type}`);
-  if (where.wms_id) terms.push(Prisma.sql`log.wms_id ILIKE ${`%${where.wms_id.contains}%`} ESCAPE E'\\\\'`);
-  if (where.created_at?.gte) terms.push(Prisma.sql`log.created_at >= ${where.created_at.gte.toISOString()}::timestamptz`);
-  if (where.created_at?.lte) terms.push(Prisma.sql`log.created_at <= ${where.created_at.lte.toISOString()}::timestamptz`);
-  return Prisma.join(terms, ' AND ');
-}
-
 /** Trusted server boundary: where comes only from buildWmsLogWhere(session).
  * Live fenced read, not a historical snapshot. In-flight Prisma work settles
  * before returning on timeout/abort. Cursor never decodes through JS Date. */

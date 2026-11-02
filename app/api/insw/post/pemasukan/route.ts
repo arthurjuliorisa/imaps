@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
-import { checkAuth } from '@/lib/api-auth';
+import { IncomingAdmissionError, submitIncomingOriginals } from '@/lib/insw-queue/incoming-coordination';
+import { prisma } from '@/lib/db/prisma';
+import { checkInswAuth } from '@/lib/insw-auth';
 import { validateCompanyCode, validateSEZCompany } from '@/lib/company-validation';
 
 export async function POST(request: Request) {
   try {
-    const authCheck = await checkAuth();
+    const authCheck = await checkInswAuth('create');
     if (!authCheck.authenticated) {
       return authCheck.response;
     }
@@ -35,19 +36,10 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    const service = new INSWTransmissionService();
-
-    const result = await service.transmitIncomingGoods(companyCode, ids);
-
-    return NextResponse.json({
-      success: result.status === 'success',
-      message: result.message,
-      total: result.total,
-      success_count: result.success_count,
-      failed_count: result.failed_count,
-      results: result.results,
-    });
+    const result = await submitIncomingOriginals(prisma, companyCode, ids, String(session.user.id));
+    return NextResponse.json(result, { status: result.status === 'not_eligible' ? 409 : result.status === 'capture_failed' ? 503 : 202 });
   } catch (error: any) {
+    if (error instanceof IncomingAdmissionError) return NextResponse.json({ success: false, status: 'not_eligible', error: error.message }, { status: 409 });
     console.error('Error posting Pemasukan to INSW:', error);
     return NextResponse.json(
       {

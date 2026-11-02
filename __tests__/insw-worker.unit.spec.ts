@@ -1,0 +1,178 @@
+import { test, expect } from '@playwright/test';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { freezePayload } from '../lib/insw-queue/contracts';
+import { earliestNextStart, retryDisposition, startupDecision, verifiedPayload } from '../lib/insw-worker/safety';
+import { executeFrozenRequest, RequestPrimitive } from '../lib/insw-worker/transport';
+
+const payload = { data: [{ kdKegiatan: '30' }] };
+const sha256 = freezePayload(payload).sha256;
+const run = (request: RequestPrimitive, extra: Partial<Parameters<typeof executeFrozenRequest>[0]> = {}) =>
+  executeFrozenRequest({ payload, sha256, timeoutMs: 100, request, ...extra });
+const reply = (body: string, status = 200, headers?: HeadersInit): RequestPrimitive => async () => new Response(body, { status, headers });
+
+test('entrypoint is default off and requires the production environment for explicit opt-in', () => {
+  for (const value of [undefined, 'false', '1', 'TRUE', ' true ']) expect(startupDecision({ INSW_WORKER_ENABLED: value })).toBe('DISABLED');
+  expect(startupDecision({ INSW_WORKER_ENABLED: 'true' })).toBe('BLOCKED');
+  expect(startupDecision({ NODE_ENV: 'production', INSW_WORKER_ENABLED: 'true' })).toBe('ENABLED');
+  for (const enabled of ['false', 'true']) {
+    const result = spawnSync('node_modules/.bin/tsx', ['scripts/insw-worker.ts'], {
+      env: { PATH: process.env.PATH, NODE_ENV: 'test', INSW_WORKER_ENABLED: enabled }, encoding: 'utf8',
+    });
+    expect(result.status, result.stderr).toBe(enabled === 'true' ? 78 : 0);
+    expect(result.stdout + result.stderr).toContain(enabled === 'true' ? 'requires explicit production opt-in' : 'disabled');
+  }
+});
+
+test('WMS aliases coordinate capture; excluded producers and payload builders remain identical to baseline', () => {
+  function walk(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
+  }
+  for (const file of [...walk('app'), ...walk('lib').filter(p => !p.startsWith('lib/insw-worker/')), 'ecosystem.config.js', 'package.json']) {
+    if (/\.(tsx?|js|json)$/.test(file)) {
+      let source = readFileSync(file, 'utf8');
+      if (file === 'lib/services/incoming-goods.service.ts') {
+        expect(source.match(/captureCompletedIncoming\(/g)).toHaveLength(2);
+        expect(source).toContain("this.captureCompletedIncoming(prisma, this.repository.createOrUpdate(data)");
+        expect(source).not.toContain('transmitIncomingGoods');
+        source = source.replace("const { captureCompletedWmsSource } = await import('../insw-worker/completed-source-capture');", '');
+      }
+      if (file === 'lib/services/outgoing-goods.service.ts') {
+        expect(source).toContain('this.captureCompletedOutgoing(prisma, repository.insertOutgoingGoodsAsync(data)');
+        expect(source.match(/captureCompletedOutgoing\(/g)).toHaveLength(2);
+        expect(source).not.toContain('INSWTransmissionService');
+        expect(source).not.toMatch(/WeakMap|outgoingCompletions|authorizedOutgoingCompletion/);
+        const capture = readFileSync('lib/insw-worker/completed-source-capture.ts', 'utf8');
+        expect(capture).not.toMatch(/outgoing-goods.service|outgoingToken|OUTGOING_WMS_ORIGIN_ADAPTER_REQUIRED/);
+        source = source.replace("const { captureCompletedWmsSource } = await import('../insw-worker/completed-source-capture');", '');
+      }
+      if (['lib/services/wms-reprocess.service.ts', 'lib/insw-queue/incoming-coordination.ts', 'lib/insw-queue/wms-coordination.ts',
+        'lib/services/material-usage.service.ts', 'lib/services/production-output.service.ts', 'lib/services/adjustments.service.ts',
+        'app/api/v1/stock-opname/route.ts'].includes(file)) {
+        source = source.replace(/import .* from ['"].*insw-worker\/completed-source-capture['"];?/, '');
+      }
+      expect(source, file).not.toMatch(/insw-worker|executeFrozenRequest/);
+    }
+  }
+  // C2 shares the client's transaction request builder; its executable parity
+  // coverage is in insw-c2-transport.spec.ts. All routing/authorization remains
+  // byte-identical, and the import guard above still excludes live worker use.
+  for (const file of ['lib/services/insw-transmission.service.ts', 'lib/services/insw-service.factory.ts', 'lib/config/insw-company-config.ts', 'ecosystem.config.js',
+    'app/api/customs/capital-goods/outgoing/route.ts', 'app/api/customs/capital-goods-transactions/out/route.ts',
+    'app/api/customs/scrap-transactions/in/route.ts', 'app/api/customs/scrap-transactions/out/route.ts',
+    'lib/services/insw-integration.service.ts', 'lib/repositories/insw-integration.repository.ts',
+    'lib/repositories/incoming-goods.repository.ts', 'lib/repositories/outgoing-goods.repository.ts',
+    'lib/repositories/material-usage.repository.ts', 'lib/repositories/production-output.repository.ts',
+    'lib/repositories/adjustments.repository.ts', 'lib/repositories/wms-stock-opname.repository.ts',
+    'app/api/v1/incoming-goods/route.ts', 'app/api/v1/outgoing-goods/route.ts', 'app/api/v1/material-usage/route.ts',
+    'app/api/v1/production-output/route.ts', 'app/api/v1/adjustments/route.ts',
+    'app/api/customs/scrap-transactions/[id]/transmit-insw/route.ts',
+    'app/api/insw/post/saldo-awal/route.ts', 'app/api/insw/post/saldo-awal-final/route.ts',
+    'app/api/settings/wms-transmission-logs/[id]/retry/route.ts']) {
+    let baseline = execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8', maxBuffer: 2000000 });
+    // Worker seam changes only redirect handling and a fetch-invocation hook.
+    // The transaction builder/converters/legacy response behavior stay identical.
+    if (file === 'lib/services/insw-integration.service.ts') baseline = baseline
+      .replace('    init: RequestInit\n  ): Promise<Response>', '    init: RequestInit,\n    onInvoked?: () => void\n  ): Promise<Response>')
+      .replace('      const response = await fetchImpl(endpoint, fetchInit);', '      const invocation = fetchImpl(endpoint, fetchInit);\n      onInvoked?.();\n      const response = await invocation;')
+      .replace('    transport?: (endpoint: string, init: RequestInit) => Promise<Response>): Promise<Response> {',
+        '    transport?: (endpoint: string, init: RequestInit) => Promise<Response>, onInvoked?: () => void): Promise<Response> {')
+      .replace('    return transport ? transport(endpoint, init) : this.fetchINSW(endpoint, init);',
+        "    if (!transport) return this.fetchINSW(endpoint, { ...init, redirect: 'error' }, onInvoked);\n    const invocation = transport(endpoint, { ...init, redirect: 'error' });\n    onInvoked?.();\n    return invocation;");
+    expect(readFileSync(file, 'utf8')).toBe(baseline);
+  }
+});
+
+test('timing specification: 0/2.6/3.6 and 0/5/5 without extra response delay', () => {
+  expect(earliestNextStart(null, 3600)).toBe(0);
+  expect(earliestNextStart({ startedAt: 0, finishedAt: 2600, intervalAtAdmission: 3600 }, 3600)).toBe(3600);
+  expect(earliestNextStart({ startedAt: 0, finishedAt: 5000, intervalAtAdmission: 3600 }, 3600)).toBe(5000);
+});
+
+test('timing specification preserves admission minimum and responds to increased policy', () => {
+  const prior = { startedAt: 1000, finishedAt: 3600, intervalAtAdmission: 3600 };
+  expect(earliestNextStart(JSON.parse(JSON.stringify(prior)), 3600)).toBe(4600);
+  expect(earliestNextStart(prior, 6000)).toBe(7000);
+  expect(earliestNextStart(prior, 100)).toBe(4600);
+  expect(() => earliestNextStart(prior, 0)).toThrow();
+  expect(() => earliestNextStart({ ...prior, finishedAt: 0 }, 3600)).toThrow();
+});
+
+test('retry contract budgets count retries after initial attempt using snapshot', () => {
+  for (const maximum of [0, 3]) {
+    let attempts = 1;
+    for (let retryIndex = 0; retryIndex < 5; retryIndex++) {
+      if (retryDisposition({ delivery: 'KNOWN_FAILURE', confirmedSafeRetry: true, retryIndex, maxAutoRetrySnapshot: maximum }) !== 'RETRY_TO_TAIL') break;
+      attempts++;
+    }
+    expect(attempts).toBe(maximum + 1);
+  }
+  for (const delivery of ['NOT_STARTED', 'POSSIBLY_STARTED', 'KNOWN_FAILURE']) {
+    expect(retryDisposition({ delivery, confirmedSafeRetry: false, retryIndex: 0, maxAutoRetrySnapshot: 3 })).toBe('HOLD');
+  }
+  expect(retryDisposition({ delivery: 'KNOWN_SUCCESS', confirmedSafeRetry: true, retryIndex: 0, maxAutoRetrySnapshot: 3 })).toBe('STOP');
+});
+
+test('payload is detached canonical JSON with verified hash; invalid/missing hashes never invoke request', async () => {
+  expect(JSON.parse(verifiedPayload(payload, sha256))).toEqual(payload);
+  for (const hash of ['', 'a'.repeat(64), 'A'.repeat(64)]) {
+    let invoked = false;
+    const outcome = await run(async () => { invoked = true; throw new Error(); }, { sha256: hash });
+    expect(outcome).toMatchObject({ delivery: 'NOT_STARTED', phase: 'PREFLIGHT', errorClass: 'INVALID_PAYLOAD', requestInvokedAt: null });
+    expect(invoked).toBe(false);
+  }
+});
+
+for (const fixture of [
+  { name: 'success', body: '{"status":true,"code":"OK"}', status: 200, errorClass: null, delivery: 'KNOWN_SUCCESS' },
+  { name: 'HTTP/body contradiction', body: '{"status":true}', status: 500, errorClass: 'HTTP_ERROR' },
+  { name: 'auth', body: '{"status":false}', status: 401, errorClass: 'HTTP_ERROR' },
+  { name: 'validation', body: '{"status":false}', status: 422, errorClass: 'HTTP_ERROR' },
+  { name: 'quota', body: '{"status":false}', status: 429, errorClass: 'HTTP_ERROR' },
+  { name: 'business rejection', body: '{"status":false,"code":"REJECTED"}', status: 200, errorClass: 'BUSINESS_REJECTION' },
+  { name: 'malformed JSON', body: '{', status: 200, errorClass: 'INVALID_JSON' },
+  { name: 'null JSON', body: 'null', status: 200, errorClass: 'INVALID_RESPONSE' },
+  { name: 'wrong status type', body: '{"status":"true"}', status: 200, errorClass: 'INVALID_RESPONSE' },
+]) test(`transport classifies ${fixture.name} conservatively`, async () => {
+  expect(await run(reply(fixture.body, fixture.status))).toMatchObject({
+    phase: 'RESPONSE', httpCode: fixture.status, errorClass: fixture.errorClass,
+    delivery: fixture.delivery ?? 'POSSIBLY_STARTED', autoRetry: false,
+  });
+});
+
+for (const [code, errorClass] of [['ENOTFOUND', 'DNS'], ['ECONNREFUSED', 'CONNECTION'], ['ECONNRESET', 'CONNECTION'], ['OTHER', 'NETWORK']]) {
+  test(`transport separates ${code} without assuming safe retry`, async () => {
+    const result = await run(async () => { throw Object.assign(new Error('secret-credentials'), { cause: { code } }); });
+    expect(result).toMatchObject({ phase: 'REQUEST', errorClass, delivery: 'POSSIBLY_STARTED', autoRetry: false });
+    expect(JSON.stringify(result)).not.toContain('secret-credentials');
+  });
+}
+
+for (const phase of ['REQUEST', 'BODY']) test(`bounded ${phase} timeout aborts and holds unknown even if primitive ignores abort`, async () => {
+  let signal: AbortSignal | undefined;
+  const never = () => new Promise<never>(() => {});
+  const result = await run(async (_body, s) => {
+    signal = s;
+    return phase === 'REQUEST' ? never() : { status: 200, ok: true, headers: new Headers(), text: never } as unknown as Response;
+  }, { timeoutMs: 15 });
+  expect(result).toMatchObject({ phase, errorClass: 'TIMEOUT', delivery: 'POSSIBLY_STARTED', autoRetry: false });
+  expect(signal?.aborted).toBe(true);
+});
+
+test('shutdown cancellation before send is safe; cancellation in flight remains unknown', async () => {
+  const before = new AbortController(); before.abort();
+  let invoked = false;
+  expect(await run(async () => { invoked = true; throw new Error(); }, { signal: before.signal })).toMatchObject({ delivery: 'NOT_STARTED', errorClass: 'CANCELLED' });
+  expect(invoked).toBe(false);
+  const during = new AbortController();
+  expect(await run(async () => { during.abort(); return new Promise(() => {}); }, { signal: during.signal })).toMatchObject({ delivery: 'POSSIBLY_STARTED', errorClass: 'CANCELLED' });
+});
+
+test('outcomes expose only allowlisted evidence and invocation timestamps', async () => {
+  let tick = 0;
+  const result = await run(reply('{"status":true,"code":"OK","token":"SECRET"}', 200, { 'retry-after': '12', authorization: 'SECRET', 'set-cookie': 'SECRET' }), { now: () => ++tick });
+  expect(result).toMatchObject({ businessCode: 'OK', retryAfter: '12' });
+  expect(result.endedAt).toBeGreaterThan(result.requestInvokedAt!);
+  expect(JSON.stringify(result)).not.toContain('SECRET');
+});

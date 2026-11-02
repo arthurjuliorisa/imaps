@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { checkAuth } from '@/lib/api-auth';
+import { checkInswAuth } from '@/lib/insw-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { prisma } from '@/lib/prisma';
 
@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authCheck = await checkAuth();
+    const authCheck = await checkInswAuth();
     if (!authCheck.authenticated) {
       return authCheck.response;
     }
@@ -54,6 +54,8 @@ export async function GET(
     const adjustmentCount = await prisma.adjustment_items.count({
       where: {
         stockcount_order_number: wmsId,
+        adjustment_company: companyCode,
+        adjustment: { deleted_at: null },
         deleted_at: null,
       },
     });

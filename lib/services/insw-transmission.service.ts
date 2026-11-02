@@ -1612,7 +1612,7 @@ export class INSWTransmissionService {
       ...(filters.transaction_type && { transaction_type: filters.transaction_type }),
       ...(filters.insw_status && { insw_status: filters.insw_status }),
       ...(filters.wms_id && { wms_id: { contains: filters.wms_id, mode: 'insensitive' } }),
-      ...(dateFilter && { sent_at: dateFilter }),
+      ...(dateFilter && { OR: [{ sent_at: dateFilter }, { sent_at: null, created_at: dateFilter }] }),
     };
   }
 
@@ -1639,6 +1639,7 @@ export class INSWTransmissionService {
 
   private readonly listSelect = {
     id: true,
+    queue_attempt_id: true,
     transaction_type: true,
     transaction_id: true,
     wms_id: true,

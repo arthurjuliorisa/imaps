@@ -1,9 +1,10 @@
 import { IncomingGoodsRepository } from '../repositories/incoming-goods.repository';
+import type { IncomingGoodsCreateResult } from '../repositories/incoming-goods.repository';
+import type { PrismaClient } from '@prisma/client';
 import { validateIncomingGoodRequest, validateIncomingGoodsDates, validateItemTypes, checkIncomingGoodsDuplicates, validateIncomingGoodsItemTypeConsistency } from '../validators/schemas/incoming-goods.schema';
 import type { IncomingGoodRequestInput } from '../validators/schemas/incoming-goods.schema';
 import type { ErrorDetail, SuccessResponse } from '../types/api-response';
 import { logger } from '../utils/logger';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { prisma } from '@/lib/db/prisma';
 import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
@@ -11,6 +12,31 @@ import { validateSezFreeMovementCustomsDocumentType } from '@/lib/validators/fre
 import { validateNonFacilityMarker } from '@/lib/validators/non-facility-marker.validator';
 
 export class IncomingGoodsService {
+  /** Capture only after the complete existing repository promise settles.
+   * Queue failure preserves local acceptance and never falls back to DIRECT.
+   */
+  private async captureCompletedIncoming(
+    db: PrismaClient,
+    businessCompletion: Promise<IncomingGoodsCreateResult>,
+    requestedBy: string,
+  ): Promise<IncomingGoodsCreateResult> {
+    if (!businessCompletion || typeof businessCompletion.then !== 'function') {
+      throw new Error('BUSINESS_COMPLETION_CONTEXT_REQUIRED');
+    }
+    const result = await businessCompletion;
+    try {
+      const { captureCompletedWmsSource } = await import('../insw-worker/completed-source-capture');
+      await captureCompletedWmsSource(db, { operation: 'INCOMING', sourceId: result.id,
+        companyCode: result.company_code, businessDate: result.incoming_date.toISOString().slice(0, 10),
+        requestedBy, revision: 'ACCEPTED_WMS_ID', completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' });
+    } catch (error) {
+      logger.error('Completed WMS Incoming capture failed; no DIRECT fallback', {
+        error: error instanceof Error ? error.message : String(error), wmsId: result.wms_id,
+      });
+    }
+    return result;
+  }
+
   private repository: IncomingGoodsRepository;
 
   constructor() {
@@ -144,9 +170,9 @@ export class IncomingGoodsService {
         return { success: false, errors: duplicateWmsIdErrors };
       }
 
-      // 8. Queue for immediate async insert (non-blocking) + auto-transmit to INSW
-      this.repository.createOrUpdate(data)
-        .then(async (result) => {
+      // 8. Persist asynchronously, then capture one frozen Incoming queue job.
+      this.captureCompletedIncoming(prisma, this.repository.createOrUpdate(data), 'WMS_INCOMING_COMPLETION')
+        .then((result) => {
           requestLogger.info(
             'Incoming goods saved successfully',
             {
@@ -155,29 +181,6 @@ export class IncomingGoodsService {
               itemsCount: result.items_count,
             }
           );
-
-          try {
-            // Check company type
-            const company = await prisma.companies.findUnique({
-              where: { code: data.company_code },
-              select: { company_type: true },
-            });
-
-            // Only transmit if SEZ company
-            if (company?.company_type === 'SEZ') {
-              const inswService = new INSWTransmissionService();
-              const transmissionResult = await inswService.transmitIncomingGoods(data.company_code, [result.id]);
-              if (transmissionResult.status === 'success') {
-                requestLogger.info('Incoming goods transmitted to INSW', { wmsId: data.wms_id });
-              } else {
-                requestLogger.warn('Incoming goods INSW transmission failed', { wmsId: data.wms_id });
-              }
-            } else {
-              requestLogger.info('Incoming goods NOT transmitted to INSW (non-SEZ company)', { wmsId: data.wms_id, companyType: company?.company_type });
-            }
-          } catch (err: any) {
-            requestLogger.error('INSW auto-transmit error', { wmsId: data.wms_id, error: err.message });
-          }
         })
         .catch((err: any) => {
           requestLogger.error('Incoming goods insert failed', {

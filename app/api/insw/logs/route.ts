@@ -1,6 +1,8 @@
+import { prisma } from '@/lib/db/prisma';
 import { NextResponse } from 'next/server';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
-import { checkAuth } from '@/lib/api-auth';
+import { operationalLogPage } from '@/lib/insw-queue/operational-logs';
+import { logResendEligibility } from '@/lib/insw-log-actions';
+import { checkInswAuth } from '@/lib/insw-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 
 /**
@@ -24,7 +26,7 @@ import { validateCompanyCode } from '@/lib/company-validation';
  */
 export async function GET(request: Request) {
   try {
-    const authCheck = await checkAuth();
+    const authCheck = await checkInswAuth();
     if (!authCheck.authenticated) {
       return authCheck.response;
     }
@@ -50,10 +52,10 @@ export async function GET(request: Request) {
     const allowedLimits = [5, 10, 25, 50];
     const limit = allowedLimits.includes(rawLimit) ? rawLimit : 10;
     const offset = (page - 1) * limit;
-    const service = new INSWTransmissionService();
 
-    // Resolve technical-claim visibility once, then run count and rows together.
-    const { total: totalCount, logs } = await service.getTransmissionLogPage({
+
+    // Paginate history and cycles without outcome logs together.
+    const { total: totalCount, logs } = await operationalLogPage(prisma, {
       company_code: companyCode,
       transaction_type: transactionType || undefined,
       insw_status: inswStatus || undefined,
@@ -65,9 +67,11 @@ export async function GET(request: Request) {
     });
 
     // Transform BigInt fields to strings for JSON serialization
+    const eligible = authCheck.grants.canEdit ? await logResendEligibility(prisma, companyCode, logs) : new Set<string>();
     const serializedLogs = logs.map((log) => ({
       ...log,
       id: log.id.toString(),
+      can_resend: authCheck.grants.canEdit && eligible.has(log.id.toString()),
     }));
 
     // Calculate pagination metadata

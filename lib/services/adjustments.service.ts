@@ -9,7 +9,7 @@ import {
 import { AdjustmentsRepository } from '@/lib/repositories/adjustments.repository';
 import { transformZodErrors } from '@/lib/utils/error-transformer';
 import type { SuccessResponse, ErrorResponse, ErrorDetail } from '@/lib/types/api-response';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
+import { captureCompletedWmsSource } from '@/lib/insw-worker/completed-source-capture';
 import { prisma } from '@/lib/db/prisma';
 import { logWmsAsyncFailure } from '@/lib/utils/wms-async-failure-log';
 import { assertWmsIdNotExists } from '@/lib/services/wms-duplicate.service';
@@ -204,13 +204,11 @@ export class AdjustmentsService {
 
               // Only transmit if SEZ company
               if (company?.company_type === 'SEZ') {
-                const inswTransmission = new INSWTransmissionService();
-                const res = await inswTransmission.transmitAdjustment(
-                  data.company_code,
-                  result.header.id,
-                  data.wms_id
-                );
-                log.info('INSW adjustment transmitted', { wmsId: data.wms_id, status: res.status });
+                await captureCompletedWmsSource(prisma, { operation: 'ADJUSTMENT', sourceId: result.header.id,
+                  companyCode: data.company_code, businessDate: new Date(data.transaction_date).toISOString().slice(0, 10),
+                  revision: 'COMMITTED_SOURCE', requestedBy: 'WMS_ADJUSTMENT_COMPLETION',
+                  completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' });
+                log.info('INSW adjustment queue capture complete', { wmsId: data.wms_id });
               } else {
                 log.info('INSW adjustment NOT transmitted (non-SEZ company)', { 
                   wmsId: data.wms_id,
@@ -218,7 +216,7 @@ export class AdjustmentsService {
                 });
               }
             } catch (err: any) {
-              log.error('INSW adjustment transmission error', { wmsId: data.wms_id, error: err.message });
+              log.error('INSW adjustment capture failed; no DIRECT fallback', { wmsId: data.wms_id, error: err.message });
             }
           })();
         })

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -47,7 +47,11 @@ export default function AccessMenuPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserOption | null>(null);
-  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+  const [permissions, setPermissions] = useState<Record<string, Omit<Permission, 'menuId'>>>({});
+  const [permissionsLoading, setPermissionsLoading] = useState(false);
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
+  const permissionRequestVersion = useRef(0);
+  const permissionFields = ['canView', 'canCreate', 'canEdit', 'canDelete'] as const;
   const [loading, setLoading] = useState(false);
   const [menusLoading, setMenusLoading] = useState(true);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -90,7 +94,10 @@ export default function AccessMenuPage() {
     if (selectedUser) {
       fetchUserPermissions(selectedUser.id);
     } else {
+      ++permissionRequestVersion.current;
       setPermissions({});
+      setLoadedUserId(null);
+      setPermissionsLoading(false);
     }
   }, [selectedUser]);
 
@@ -224,35 +231,48 @@ export default function AccessMenuPage() {
   };
 
   const fetchUserPermissions = async (userId: string) => {
+    const version = ++permissionRequestVersion.current;
+    setPermissionsLoading(true);
+    setLoadedUserId(null);
     try {
       const response = await fetch(`/api/settings/access-menu/user-permissions?userId=${userId}`);
       if (!response.ok) throw new Error('Failed to fetch user permissions');
       const data = await response.json();
 
       // Convert array of permissions to a map
-      const permissionsMap: Record<string, boolean> = {};
+      const permissionsMap: Record<string, Omit<Permission, 'menuId'>> = {};
       // Handle multiple API response formats: direct array, { data: [] }, { permissions: [] }
       const permissionsArray = Array.isArray(data) ? data : (data.data || data.permissions || []);
       permissionsArray.forEach((perm: Permission) => {
-        permissionsMap[perm.menuId] = perm.canView;
+        permissionsMap[perm.menuId] = {
+          canView: perm.canView, canCreate: perm.canCreate, canEdit: perm.canEdit, canDelete: perm.canDelete,
+        };
       });
+      if (version !== permissionRequestVersion.current) return;
       setPermissions(permissionsMap);
+      setLoadedUserId(userId);
     } catch (err) {
+      if (version !== permissionRequestVersion.current) return;
       console.error('Error fetching user permissions:', err);
       toast.error('Failed to load user permissions');
       setPermissions({});
+    } finally {
+      if (version === permissionRequestVersion.current) setPermissionsLoading(false);
     }
   };
 
-  const handleTogglePermission = (menuId: string) => {
+  const handleTogglePermission = (menuId: string, field: typeof permissionFields[number]) => {
     setPermissions((prev) => ({
       ...prev,
-      [menuId]: !prev[menuId],
+      [menuId]: {
+        ...(prev[menuId] ?? { canView: false, canCreate: false, canEdit: false, canDelete: false }),
+        [field]: !prev[menuId]?.[field],
+      },
     }));
   };
 
   const handleSave = async () => {
-    if (!selectedUser) {
+    if (!selectedUser || loadedUserId !== selectedUser.id || permissionsLoading) {
       toast.error('Please select a user first');
       return;
     }
@@ -262,10 +282,7 @@ export default function AccessMenuPage() {
       // Build permissions array from the map
       const permissionsArray: Permission[] = Object.keys(permissions).map((menuId) => ({
         menuId,
-        canView: permissions[menuId],
-        canCreate: permissions[menuId],
-        canEdit: permissions[menuId],
-        canDelete: permissions[menuId],
+        ...permissions[menuId],
       }));
 
       const response = await fetch('/api/settings/access-menu/user-permissions', {
@@ -291,6 +308,23 @@ export default function AccessMenuPage() {
     }
   };
 
+  function renderPermissionMenu(item: MenuItem, depth = 0): React.ReactNode {
+    return <Box key={item.id} sx={{ ml: depth ? 3 : 0, mb: 1.5, p: 1.5,
+      borderRadius: 2, border: `1px solid ${alpha(theme.palette.primary.main, 0.08)}` }}>
+      <Typography fontWeight={depth ? 500 : 700}>{item.label}</Typography>
+      <Stack direction="row" flexWrap="wrap">
+        {permissionFields.map((field) => <FormControlLabel key={field}
+          label={field.slice(3).toUpperCase()}
+          control={<Checkbox size="small" checked={permissions[item.id]?.[field] ?? false}
+            inputProps={{ 'aria-label': `${item.label} ${field.slice(3).toUpperCase()}` }}
+            disabled={loading || permissionsLoading || loadedUserId !== selectedUser?.id}
+            onChange={() => handleTogglePermission(item.id, field)} />}
+        />)}
+      </Stack>
+      {item.children?.map(child => renderPermissionMenu(child, depth + 1))}
+    </Box>;
+  }
+
   return (
     <Box>
       <Box
@@ -313,6 +347,7 @@ export default function AccessMenuPage() {
           <Autocomplete
             fullWidth
             options={users}
+            disabled={loading}
             value={selectedUser}
             onChange={(_event, newValue) => setSelectedUser(newValue)}
             isOptionEqualToValue={(option, value) => option.id === value.id}
@@ -333,82 +368,11 @@ export default function AccessMenuPage() {
                 Menu Permissions
               </Typography>
 
+              <Typography variant="body2" color="text.secondary">
+                VIEW controls menu visibility. INSW uses CREATE for submissions and EDIT for recovery.
+              </Typography>
               <FormGroup>
-                {menuItems.map((item) => (
-                  <Box
-                    key={item.id}
-                    sx={{
-                      mb: 2,
-                      p: 2,
-                      borderRadius: 2,
-                      bgcolor: alpha(theme.palette.primary.main, 0.02),
-                      border: `1px solid ${alpha(theme.palette.primary.main, 0.08)}`,
-                    }}
-                  >
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={permissions[item.id] || false}
-                          onChange={() => handleTogglePermission(item.id)}
-                          sx={{
-                            '&.Mui-checked': {
-                              color: theme.palette.primary.main,
-                            },
-                          }}
-                        />
-                      }
-                      label={
-                        <Typography
-                          fontWeight={700}
-                          fontSize="1.05rem"
-                          color="primary"
-                        >
-                          {item.label}
-                        </Typography>
-                      }
-                    />
-                    {item.children && item.children.length > 0 && (
-                      <Box
-                        sx={{
-                          pl: 4,
-                          mt: 1.5,
-                          pt: 1.5,
-                          borderTop: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-                        }}
-                      >
-                        <FormGroup>
-                          {item.children.map((child) => (
-                            <FormControlLabel
-                              key={child.id}
-                              control={
-                                <Checkbox
-                                  checked={permissions[child.id] || false}
-                                  onChange={() => handleTogglePermission(child.id)}
-                                  disabled={!permissions[item.id]}
-                                  size="small"
-                                  sx={{
-                                    '&.Mui-checked': {
-                                      color: theme.palette.primary.main,
-                                    },
-                                  }}
-                                />
-                              }
-                              label={
-                                <Typography
-                                  fontSize="0.95rem"
-                                  color={permissions[item.id] ? 'text.primary' : 'text.disabled'}
-                                >
-                                  {child.label}
-                                </Typography>
-                              }
-                              sx={{ mb: 0.5 }}
-                            />
-                          ))}
-                        </FormGroup>
-                      </Box>
-                    )}
-                  </Box>
-                ))}
+                {menuItems.map((item) => renderPermissionMenu(item))}
               </FormGroup>
 
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
@@ -416,7 +380,7 @@ export default function AccessMenuPage() {
                   variant="contained"
                   startIcon={<Save />}
                   onClick={handleSave}
-                  disabled={!selectedUser || loading || menusLoading}
+                  disabled={!selectedUser || loading || menusLoading || permissionsLoading || loadedUserId !== selectedUser.id}
                   sx={{
                     borderRadius: 2,
                     textTransform: 'none',

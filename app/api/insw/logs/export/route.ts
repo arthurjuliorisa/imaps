@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import dayjs from 'dayjs';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
-import { checkAuth } from '@/lib/api-auth';
+import { checkInswAuth } from '@/lib/insw-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 
 // Single-process admission for the existing buffered path. No waiting queue.
@@ -11,7 +11,7 @@ let exportActive = false;
 export async function GET(request: Request) {
   let admitted = false;
   try {
-    const authCheck = await checkAuth();
+    const authCheck = await checkInswAuth();
     if (!authCheck.authenticated) {
       return authCheck.response;
     }
@@ -62,6 +62,12 @@ export async function GET(request: Request) {
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('INSW Logs');
+    const info = workbook.addWorksheet('Export Info');
+    info.addRow(['Historical attempt outcomes; current queue state is shown in the application.']);
+    // Oversized probes return 413 above, so every accepted result is complete.
+    info.addRow(['Matching rows', logs.length]);
+    info.addRow(['Exported rows', logs.length]);
+    info.addRow(['Truncated', 'NO']);
 
     worksheet.columns = [
       { header: 'No', key: 'no', width: 6 },

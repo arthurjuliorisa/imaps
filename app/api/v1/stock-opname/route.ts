@@ -6,7 +6,7 @@ import { createStockOpnameSchema, updateStockOpnameSchema } from '@/lib/validato
 import { logger } from '@/lib/utils/logger';
 import { logActivity } from '@/lib/log-activity';
 import { prisma } from '@/lib/prisma';
-import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
+import { captureCompletedWmsSource } from '@/lib/insw-worker/completed-source-capture';
 
 /**
  * POST /api/v1/stock-opname
@@ -261,13 +261,11 @@ export async function PATCH(request: NextRequest) {
           });
 
           if (company?.company_type === 'SEZ') {
-            const inswTransmission = new INSWTransmissionService();
-            const res = await inswTransmission.transmitStockOpname(
-              Number(result.company_code),
-              Number(result.id),
-              result.wms_id
-            );
-            log.info('INSW stock opname transmitted', { wmsId: result.wms_id, status: res.status });
+            await captureCompletedWmsSource(prisma, { operation: 'STOCK_OPNAME', sourceId: result.id,
+              companyCode: Number(result.company_code), businessDate: result.document_date,
+              revision: `CONFIRMED:${result.confirmed_at}`, requestedBy: 'WMS_STOCK_OPNAME_CONFIRMATION',
+              completion: 'EXISTING_BUSINESS_COMPLETION_RESOLVED' });
+            log.info('INSW confirmed stock opname queue capture complete', { wmsId: result.wms_id });
           } else {
             log.info('INSW stock opname NOT transmitted (non-SEZ company)', {
               wmsId: result.wms_id,
@@ -276,7 +274,7 @@ export async function PATCH(request: NextRequest) {
             });
           }
         } catch (err: any) {
-          log.error('INSW stock opname transmission error', { wmsId: result.wms_id, error: err.message });
+          log.error('INSW stock opname capture failed; no DIRECT fallback', { wmsId: result.wms_id, error: err.message });
         }
       })();
     }

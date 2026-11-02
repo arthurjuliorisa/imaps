@@ -36,6 +36,9 @@ import {
 import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import dayjs from 'dayjs';
+import { transmissionStatus, transmissionResult, transmissionError } from '@/lib/insw-log-presentation';
+import type { AttemptHistoryEntry } from '@/lib/insw-queue/attempt-history';
+import { provenanceLabel, type OperationalState } from '@/lib/insw-queue/operational-state';
 
 interface INSWLog {
   id: string;
@@ -50,8 +53,13 @@ interface INSWLog {
   insw_error: string | null;
   sent_at: string | null;
   retry_count: number;
+  can_resend?: boolean;
+  current_queue?: OperationalState | null;
+  queue_id?: string | null;
+  queue_attempt_id?: string | null;
   created_at: string;
-  metadata?: { endpoint_url?: string } | null;
+  attempt_history?: { entries: AttemptHistoryEntry[]; truncated: boolean } | null;
+  metadata?: { endpoint_url?: string; rehearsalProvenance?: string } | null;
 }
 
 interface ChartDataPoint {
@@ -299,12 +307,17 @@ export default function INSWLogsPage() {
   const [exporting, setExporting] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [loadedListKey, setLoadedListKey] = useState<string | null>(null);
-  const listRequestVersion = useRef(0);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<INSWLog | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const detailRequestVersion = useRef(0);
+  const listRequestVersion = useRef(0);
+  const metadataRequestVersion = useRef(0);
+  const chartRequestVersion = useRef(0);
+  const resendLatch = useRef(false);
+  const refreshLatch = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const [dateFrom, setDateFrom] = useState(dayjs().subtract(7, 'day').format('YYYY-MM-DD'));
@@ -324,12 +337,14 @@ export default function INSWLogsPage() {
   const [adjustmentCheckResult, setAdjustmentCheckResult] = useState<{ hasAdjustments: boolean } | null>(null);
   const [confirmationMessage, setConfirmationMessage] = useState<string>('Apakah Anda yakin ingin mengirim ulang data ini ke INSW?');
 
+  const [detailError, setDetailError] = useState<string | null>(null);
+
   const columns: Column[] = [
     {
       id: 'sent_at',
       label: 'Sent At',
       minWidth: 160,
-      format: (value: any) => value ? dayjs(value).format('MM/DD/YYYY HH:mm:ss') : '-',
+      format: (value: any) => value ? dayjs(value).format('DD-MMMM-YY HH:mm:ss') : '-',
     },
     {
       id: 'transaction_type',
@@ -357,31 +372,18 @@ export default function INSWLogsPage() {
     },
     {
       id: 'insw_status',
-      label: 'Status',
-      minWidth: 120,
-      format: (value: string) => {
-        const upperValue = value?.toUpperCase() || '';
-        let color: 'success' | 'error' | 'warning' | 'info' = 'info';
-        if (upperValue === 'SUCCESS') color = 'success';
-        else if (upperValue === 'FAILED') color = 'error';
-        else if (upperValue === 'PENDING' || upperValue === 'SENT') color = 'warning';
-        else if (upperValue === 'PENDING_RESOLVED') color = 'success';
-
-        return (
-          <Chip
-            label={upperValue}
-            color={color}
-            size="small"
-            sx={{ fontWeight: 'bold' }}
-          />
-        );
+      label: 'Recorded Result',
+      minWidth: 150,
+      format: (value: string, row: INSWLog) => {
+        const result = transmissionResult(value, undefined, row.metadata?.rehearsalProvenance);
+        return <Chip label={result.label} color={result.color} size="small" />;
       },
     },
     {
-      id: 'retry_count',
-      label: 'Retries',
-      minWidth: 80,
-      format: (value: any) => value || 0,
+      id: 'current_queue',
+      label: 'INSW Status',
+      minWidth: 280,
+      format: (_value: any, row: INSWLog) => renderQueueState(row),
     },
     {
       id: 'actions',
@@ -392,16 +394,18 @@ export default function INSWLogsPage() {
           <Tooltip title="View Details">
             <IconButton
               size="small"
+              aria-label={`View details for log ${row.id}`}
               color="primary"
               onClick={() => handleViewDetails(row as INSWLog)}
             >
               <Visibility fontSize="small" />
             </IconButton>
           </Tooltip>
-          {((row as INSWLog).insw_status === 'FAILED' || (row as INSWLog).insw_status === 'PENDING') && (
+          {(row as INSWLog).can_resend === true && (
             <Tooltip title="Kirim Ulang">
               <span>
                 <IconButton
+                  aria-label="Kirim Ulang"
                   size="small"
                   color="warning"
                   onClick={() => {
@@ -465,30 +469,34 @@ export default function INSWLogsPage() {
 
       const response = await fetch(`/api/insw/logs?${params}`);
       const result = await response.json();
-      if (requestVersion !== listRequestVersion.current) return;
+      if (requestVersion !== listRequestVersion.current) return false;
 
-      if (result.success && Array.isArray(result.data)) {
+      if (response.ok && result.success && Array.isArray(result.data)) {
         setLoadedListKey(requestKey);
         setLogs(result.data);
         setTotalCount(result.pagination?.total || 0);
         setError(null);
+        return true;
       } else {
         setLogs([]);
         setTotalCount(0);
-        setError(result.error || 'Failed to fetch logs');
+        setError(result.error || result.message || 'Failed to fetch logs');
+        return false;
       }
     } catch (err) {
-      if (requestVersion !== listRequestVersion.current) return;
+      if (requestVersion !== listRequestVersion.current) return false;
       console.error('Error fetching INSW logs:', err);
       setLogs([]);
       setTotalCount(0);
       setError('Failed to fetch INSW logs');
+      return false;
     } finally {
       if (requestVersion === listRequestVersion.current) setLoading(false);
     }
   };
 
   const fetchFilterMetadata = async () => {
+    const version = ++metadataRequestVersion.current;
     try {
       const params = new URLSearchParams({
         ...(dateFrom && { date_from: dateFrom }),
@@ -496,31 +504,41 @@ export default function INSWLogsPage() {
       });
       const response = await fetch(`/api/insw/logs/metadata?${params}`);
       const result = await response.json();
-      if (result.success) {
+      if (version !== metadataRequestVersion.current) return false;
+      if (response.ok && result.success) {
         setTransactionTypes(result.data?.transactionTypes || []);
         setStatuses(result.data?.statuses || []);
+        return true;
       }
+      return false;
     } catch (err) {
       console.error('Error fetching INSW log filter metadata:', err);
+      return false;
     }
   };
 
   const fetchChartData = async () => {
+    const version = ++chartRequestVersion.current;
     setChartLoading(true);
     try {
       const response = await fetch('/api/insw/logs/chart-stats');
       const result = await response.json();
 
-      if (result.success && Array.isArray(result.data)) {
+      if (version !== chartRequestVersion.current) return false;
+      if (response.ok && result.success && Array.isArray(result.data)) {
         setChartData(result.data);
+        return true;
       } else {
         setChartData([]);
+        return false;
       }
     } catch (err) {
+      if (version !== chartRequestVersion.current) return false;
       console.error('Error fetching chart data:', err);
       setChartData([]);
+      return false;
     } finally {
-      setChartLoading(false);
+      if (version === chartRequestVersion.current) setChartLoading(false);
     }
   };
 
@@ -539,15 +557,31 @@ export default function INSWLogsPage() {
     setPage(0);
   };
 
-  const handleRefresh = () => {
-    fetchLogs();
-    fetchChartData();
-    toast.success('INSW logs refreshed');
+  const handleRefresh = async () => {
+    if (refreshLatch.current) return;
+    refreshLatch.current = true;
+    setRefreshing(true);
+    try {
+      const requests = [fetchLogs(), fetchChartData(), fetchFilterMetadata()];
+      const versions = [listRequestVersion.current, chartRequestVersion.current, metadataRequestVersion.current];
+      const results = await Promise.all(requests);
+      // A completed request may have been superseded while another was pending.
+      const currentVersions = [listRequestVersion.current, chartRequestVersion.current, metadataRequestVersion.current];
+      if (results.every(Boolean) && versions.every((version, index) => version === currentVersions[index])) {
+        toast.success('INSW logs refreshed');
+      } else {
+        toast.error('Refresh incomplete; a request failed or was superseded.');
+      }
+    } finally {
+      refreshLatch.current = false;
+      setRefreshing(false);
+    }
   };
 
   const handleExportExcel = async () => {
     if (!exportReady || exporting) return;
     const params = new URLSearchParams({
+      ...(wmsIdSearch && { wms_id: wmsIdSearch }),
       ...(dateFrom && { date_from: dateFrom }),
       ...(dateTo && { date_to: dateTo }),
       ...(transactionTypeFilter !== 'ALL' && { transaction_type: transactionTypeFilter }),
@@ -591,9 +625,11 @@ export default function INSWLogsPage() {
       const response = await fetch(`/api/insw/logs/export/csv?${params}`);
       if (!response.ok) {
         const result = await response.json().catch(() => null);
-        throw new Error(result?.error || 'Unable to export INSW CSV');
+        throw new Error(result?.error || result?.message || 'Unable to export INSW CSV');
       }
-      const url = URL.createObjectURL(await response.blob());
+      const blob = await response.blob();
+      const empty = blob.size === new TextEncoder().encode('\uFEFFNo,Sent At,Type,WMS ID,Activity,Status,Retries\r\n').length;
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || 'insw-logs.csv';
@@ -601,6 +637,7 @@ export default function INSWLogsPage() {
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success(empty ? 'No matching logs. Downloaded CSV contains headers only.' : 'INSW CSV downloaded.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to export INSW CSV');
     } finally {
@@ -615,6 +652,7 @@ export default function INSWLogsPage() {
     // List rows intentionally omit payloads. Clear the previous detail before
     // loading so it cannot be shown under the newly selected row.
     setSelectedLog(null);
+    setDetailError(null);
     setDetailDialogOpen(true);
     setDetailLoading(true);
     try {
@@ -626,6 +664,7 @@ export default function INSWLogsPage() {
       setSelectedLog(result.data);
     } catch (err: any) {
       if (detailRequestVersion.current === requestVersion) {
+        setDetailError(err.message || 'Failed to load log details');
         toast.error(err.message || 'Failed to load log details');
       }
     } finally {
@@ -671,6 +710,7 @@ export default function INSWLogsPage() {
     payloadType: 'request' | 'response',
     logId: string
   ) => {
+    if (payload == null) return <Typography variant="body2" color="text.secondary">No recorded {payloadType} payload.</Typography>;
     if (isLargePayload(payload)) {
       const filename = `insw-${payloadType}-payload-${logId}.json`;
 
@@ -748,19 +788,48 @@ export default function INSWLogsPage() {
   };
 
   const handleResend = async (logId: string) => {
+    if (resendLatch.current) return;
+    resendLatch.current = true;
     setResendingId(logId);
     try {
       const res = await fetch(`/api/insw/logs/${logId}/resend`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Gagal mengirim ulang data');
-      toast.success('Data berhasil dikirim ulang ke INSW');
-      fetchLogs();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if ([403, 404, 409].includes(res.status)) {
+          // Remove the stale action immediately, even if the authoritative reload fails.
+          handleCloseDetailDialog();
+          await fetchLogs();
+        }
+        const fallback = res.status === 403 ? 'Permission denied. Refresh your access before trying again.'
+          : res.status === 404 ? 'Log no longer available in this company.'
+          : res.status === 409 ? 'Eligibility changed. Review the refreshed queue state.' : 'Gagal mengirim ulang data';
+        throw new Error(data.message || data.error || fallback);
+      }
+      toast.success(res.status === 202 || data.status === 'accepted'
+        ? 'Accepted to queue; not delivered' : 'Data berhasil dikirim ulang ke INSW');
+      handleCloseDetailDialog();
+      await fetchLogs();
     } catch (err: any) {
       toast.error(err.message || 'Gagal mengirim ulang data');
     } finally {
+      resendLatch.current = false;
       setResendingId(null);
     }
   };
+
+  function renderQueueState(log: INSWLog) {
+    const q = log.current_queue;
+    const status = transmissionStatus(log);
+    return <Stack spacing={0.5} sx={{ overflowWrap: 'anywhere' }}>
+      <Chip label={status.label} color={status.color} size="small" sx={{ alignSelf: 'flex-start' }} />
+      <Typography variant="body2">{status.explanation}</Typography>
+      {status.provenance && <Typography variant="caption">{status.provenance}</Typography>}
+      {status.time && <Typography variant="caption">Last activity: {dayjs(status.time).format('DD-MMMM-YY HH:mm:ss')}</Typography>}
+      {q?.error_message && <Typography variant="caption">{transmissionError(q.error_message)}</Typography>}
+      {q && !q.latest_log_id && q.id !== log.queue_id && !log.id.startsWith('queue:') && <Button size="small" onClick={() => handleViewDetails({ ...log, id: `queue:${q.id}` })}>View latest transmission</Button>}
+      {q?.latest_log_id && q.latest_log_id !== log.id && <Button size="small" onClick={() => handleViewDetails({ ...log, id: q.latest_log_id! })}>View latest transmission</Button>}
+    </Stack>;
+  }
 
   const totalSuccess = chartData.reduce((sum, d) => sum + d.success, 0);
   const totalFailed = chartData.reduce((sum, d) => sum + d.failed, 0);
@@ -780,6 +849,8 @@ export default function INSWLogsPage() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 2,
           mb: 3,
           pb: 2,
           borderBottom: `2px solid ${alpha(theme.palette.primary.main, 0.1)}`,
@@ -793,7 +864,7 @@ export default function INSWLogsPage() {
             Monitor INSW API transmission history and status
           </Typography>
         </Box>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
           <Tooltip title="Export Excel">
             <span>
               <IconButton onClick={handleExportExcel} color="success" disabled={!exportReady || exporting} aria-label="Export Excel" aria-busy={exporting}>
@@ -807,7 +878,7 @@ export default function INSWLogsPage() {
             Export CSV (max 100,000 rows)
           </Button>
           <Tooltip title="Refresh">
-            <IconButton onClick={handleRefresh} color="primary">
+            <IconButton aria-label="Refresh INSW logs" aria-busy={refreshing} onClick={handleRefresh} disabled={refreshing} color="primary">
               <Refresh />
             </IconButton>
           </Tooltip>
@@ -836,10 +907,10 @@ export default function INSWLogsPage() {
           >
             <Box>
               <Typography variant="subtitle1" fontWeight="bold" sx={{ lineHeight: 1.3 }}>
-                Statistik 7 Hari Terakhir
+                Historical attempt outcomes — last 7 days
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Distribusi log INSW berdasarkan status per hari
+                Historical FAILED includes retries and uncertain delivery; these are not live queue counts.
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -946,7 +1017,7 @@ export default function INSWLogsPage() {
       {/* Filter Card */}
       <Card sx={{ mb: 3, boxShadow: 1 }}>
         <CardContent>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} useFlexGap flexWrap="wrap">
             <TextField
               label="Dari Tanggal"
               type="date"
@@ -1024,11 +1095,13 @@ export default function INSWLogsPage() {
         onClose={handleCloseDetailDialog}
         maxWidth="md"
         fullWidth
+        aria-labelledby="insw-detail-title"
       >
-        <DialogTitle sx={{ fontWeight: 'bold' }}>
+        <DialogTitle id="insw-detail-title" sx={{ fontWeight: 'bold' }}>
           Transmission Details
         </DialogTitle>
-        <DialogContent dividers>
+        <DialogContent dividers sx={{ overflowWrap: 'anywhere' }}>
+          {detailError && <Alert severity="error" action={<Button color="inherit" onClick={() => selectedLogId && handleViewDetails({ id: selectedLogId } as INSWLog)}>Retry</Button>}>{detailError}</Alert>}
           {detailLoading && (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
               <CircularProgress size={24} />
@@ -1037,6 +1110,13 @@ export default function INSWLogsPage() {
           {selectedLog && selectedLogId === String(selectedLog.id) && !detailLoading && (
             <Box>
               <Stack spacing={2}>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Transmission Status
+                  </Typography>
+                  {renderQueueState(selectedLog)}
+                </Box>
+
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary">
                     Transaction Type
@@ -1064,25 +1144,25 @@ export default function INSWLogsPage() {
                   </Typography>
                 </Box>
 
-                <Box>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Endpoint URL
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                    {selectedLog.metadata?.endpoint_url ?? '-'}
-                  </Typography>
-                </Box>
-
-                <Box>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    INSW Status
-                  </Typography>
-                  <Chip
-                    label={selectedLog.insw_status}
-                    color={selectedLog.insw_status === 'SUCCESS' ? 'success' : 'error'}
-                    size="small"
-                  />
-                </Box>
+                {selectedLog.attempt_history && <Box component="section" aria-label="Transmission History">
+                  <Typography variant="subtitle2">Transmission History</Typography>
+                  <Typography variant="caption">Oldest first. The latest transmission status is shown above.</Typography>
+                  {selectedLog.attempt_history.truncated && <Alert severity="info">Showing the first 100 records. Filter by WMS ID to find other logs.</Alert>}
+                  {selectedLog.attempt_history.entries.length === 0 && <Typography variant="body2">No transmissions recorded yet.</Typography>}
+                  <Stack component="ol" spacing={1} sx={{ pl: 3 }}>
+                    {selectedLog.attempt_history.entries.map((entry, index) => {
+                      const result = transmissionResult(entry.outcome, entry.delivery_state, entry.provenance);
+                      return <Box component="li" key={`${entry.id}:${entry.log_id}`} sx={{ borderBottom: 1, borderColor: 'divider', pb: 1 }}>
+                        <Typography variant="body2" fontWeight={600}>Transmission {index + 1} · {result.label}{entry.log_id === selectedLog.id ? ' · selected record' : ''}</Typography>
+                        <Typography variant="caption" display="block">{dayjs(entry.completed_at || entry.started_at || entry.claimed_at).format('DD-MMMM-YY HH:mm:ss')}{!entry.started_at ? ' · sending did not start' : ''}</Typography>
+                        <Typography variant="body2">{result.explanation}</Typography>
+                        {provenanceLabel(entry.provenance) && <Typography variant="caption">{provenanceLabel(entry.provenance)}</Typography>}
+                        {entry.reason && <Typography variant="body2">{transmissionError(entry.reason)}</Typography>}
+                        {(entry.reason || entry.http_code) && <Box component="details"><Box component="summary">Recorded error</Box><Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{entry.http_code ? `HTTP ${entry.http_code}: ` : ''}{entry.reason}</Typography></Box>}
+                      </Box>;
+                    })}
+                  </Stack>
+                </Box>}
 
                 {selectedLog.insw_error && (
                   <Box>
@@ -1090,71 +1170,60 @@ export default function INSWLogsPage() {
                       Error Message
                     </Typography>
                     <Typography variant="body2" color="error">
-                      {selectedLog.insw_error}
+                      {transmissionError(selectedLog.insw_error)}
                     </Typography>
                   </Box>
                 )}
 
-                <Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                    <Typography variant="subtitle2" color="text.secondary">
-                      Request Payload
-                    </Typography>
-                    {!isLargePayload(selectedLog.insw_request_payload) && (
-                      <Tooltip title={copiedKey === 'payload' ? 'Tersalin!' : 'Salin'}>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleCopy('payload', selectedLog.insw_request_payload)}
-                          sx={{ color: copiedKey === 'payload' ? 'success.main' : 'text.secondary' }}
-                        >
-                          {copiedKey === 'payload' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </Box>
-                  {renderPayloadContent(selectedLog.insw_request_payload, 'request', selectedLog.id)}
-                </Box>
-
-                {selectedLog.insw_response && (
+                <Box component="details">
+                  <Box component="summary" sx={{ cursor: 'pointer' }}>Technical details</Box>
+                  <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>Recorded result: {selectedLog.insw_status} · Reference: {selectedLog.queue_attempt_id || selectedLog.id}</Typography>
+                  <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectedLog.metadata?.endpoint_url}</Typography>
+                  {selectedLog.insw_error && <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectedLog.insw_error}</Typography>}
                   <Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
                       <Typography variant="subtitle2" color="text.secondary">
-                        INSW Response
+                        Request Payload
                       </Typography>
-                      {!isLargePayload(selectedLog.insw_response) && (
-                        <Tooltip title={copiedKey === 'response' ? 'Tersalin!' : 'Salin'}>
+                      {selectedLog.insw_request_payload != null && !isLargePayload(selectedLog.insw_request_payload) && (
+                        <Tooltip title={copiedKey === 'payload' ? 'Copied!' : 'Copy'}>
                           <IconButton
+                            aria-label="Copy request payload"
                             size="small"
-                            onClick={() => handleCopy('response', selectedLog.insw_response)}
-                            sx={{ color: copiedKey === 'response' ? 'success.main' : 'text.secondary' }}
+                            onClick={() => handleCopy('payload', selectedLog.insw_request_payload)}
+                            sx={{ color: copiedKey === 'payload' ? 'success.main' : 'text.secondary' }}
                           >
-                            {copiedKey === 'response' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                            {copiedKey === 'payload' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
                           </IconButton>
                         </Tooltip>
                       )}
                     </Box>
-                    {renderPayloadContent(selectedLog.insw_response, 'response', selectedLog.id)}
+                    {renderPayloadContent(selectedLog.insw_request_payload, 'request', selectedLog.id)}
                   </Box>
-                )}
 
-                <Box>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Sent At
-                  </Typography>
-                  <Typography variant="body1">
-                    {selectedLog.sent_at
-                      ? dayjs(selectedLog.sent_at).format('MMMM D, YYYY HH:mm:ss')
-                      : 'Not sent yet'}
-                  </Typography>
-                </Box>
+                  {selectedLog.insw_response && (
+                    <Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Typography variant="subtitle2" color="text.secondary">
+                          INSW Response
+                        </Typography>
+                        {!isLargePayload(selectedLog.insw_response) && (
+                          <Tooltip title={copiedKey === 'response' ? 'Copied!' : 'Copy'}>
+                            <IconButton
+                              aria-label="Copy INSW response"
+                              size="small"
+                              onClick={() => handleCopy('response', selectedLog.insw_response)}
+                              sx={{ color: copiedKey === 'response' ? 'success.main' : 'text.secondary' }}
+                            >
+                              {copiedKey === 'response' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </Box>
+                      {renderPayloadContent(selectedLog.insw_response, 'response', selectedLog.id)}
+                    </Box>
+                  )}
 
-                <Box>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Retry Count
-                  </Typography>
-                  <Typography variant="body1">
-                    {selectedLog.retry_count}
-                  </Typography>
                 </Box>
               </Stack>
             </Box>
@@ -1162,7 +1231,7 @@ export default function INSWLogsPage() {
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'space-between' }}>
           <Box>
-            {(selectedLog?.insw_status === 'FAILED' || selectedLog?.insw_status === 'PENDING') && (
+            {selectedLog && selectedLog.can_resend === true && (
               <Button
                 onClick={() => {
                   if (selectedLog && selectedLog.transaction_type === 'stock_opname' && (selectedLog.insw_status === 'FAILED' || selectedLog.insw_status === 'PENDING')) {

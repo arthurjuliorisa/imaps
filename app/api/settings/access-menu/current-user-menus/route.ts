@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { resolveMenuGrants } from '@/lib/menu-auth';
 
 /**
  * Menu structure for sidebar
@@ -27,7 +28,7 @@ interface MenuResponse {
  *
  * @returns Array of menus the user can view
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     // Get current user session
     const session = await getServerSession(authOptions);
@@ -37,6 +38,10 @@ export async function GET() {
         { message: 'Unauthorized' },
         { status: 401 }
       );
+    }
+
+    if (new URL(request.url).searchParams.get('grantsFor') === '/insw/logs') {
+      return NextResponse.json(await resolveMenuGrants(session, '/insw/logs'));
     }
 
     const userId = session.user.id;
@@ -64,6 +69,15 @@ export async function GET() {
         canDelete: true,
       }));
 
+      // Additive navigation for existing installations; no destructive reseed or
+      // operational database write is needed to discover the administrator page.
+      if (!adminMenus.some(menu => menu.menuPath === '/insw/queue-settings')) {
+        const parent = allMenus.find(menu => menu.menu_name === 'Host to Host INSW' && !menu.parent_id);
+        adminMenus.push({ id: 'admin-queue-settings', menuName: 'INSW Queue Settings',
+          menuPath: '/insw/queue-settings', menuIcon: 'Settings', parentId: parent?.id ?? null,
+          menuOrder: 5, canView: true, canCreate: false, canEdit: true, canDelete: false });
+      }
+
       return NextResponse.json(adminMenus);
     }
 
@@ -85,7 +99,7 @@ export async function GET() {
 
     // Filter only menus that user has access to (where can_view = true)
     const menusWithAccess = menus
-      .filter((menu) => menu.user_access_menus.length > 0)
+      .filter((menu) => menu.menu_path !== '/insw/queue-settings' && menu.user_access_menus.length > 0)
       .map((menu): MenuResponse => {
         const access = menu.user_access_menus[0];
         return {
