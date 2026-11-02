@@ -1,4 +1,4 @@
-import { checkAuth } from '@/lib/api-auth';
+import { checkInswAuth } from '@/lib/insw-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { INSWTransmissionService } from '@/lib/services/insw-transmission.service';
 import { InswCsvError } from '@/lib/insw-logs-csv';
@@ -14,7 +14,7 @@ function json(error: string, status: number, code: string, headers?: HeadersInit
 export async function GET(request: Request) {
   let release: (() => void) | undefined;
   try {
-    const auth = await checkAuth();
+    const auth = await checkInswAuth();
     if (!auth.authenticated) return auth.response;
     const company = validateCompanyCode(auth.session);
     if (!company.success) return company.response;

@@ -20,13 +20,13 @@ function keys(value: Record<string, unknown>, allowed: readonly string[]) {
 }
 
 /** Deliberately accepts only buildLogWhere(filters, {})'s exact shape.
- * No AND/OR, relation filters, caller SQL, dynamic columns or arbitrary operators.
+ * Only the canonical date OR is accepted; no arbitrary Boolean/relation filters or caller SQL.
  * Copy bound primitives now so later caller mutation cannot change traversal. */
 export function bindInswCsvFilters(canonicalWhere: Prisma.insw_tracking_logWhereInput): {
   companyCode: number; predicate: Prisma.Sql;
 } {
   const where = record(canonicalWhere);
-  keys(where, ['company_code', 'transaction_type', 'insw_status', 'wms_id', 'sent_at']);
+  keys(where, ['company_code', 'transaction_type', 'insw_status', 'wms_id', 'sent_at', 'OR']);
   const companyCode = where.company_code;
   if (typeof companyCode !== 'number' || !Number.isInteger(companyCode) ||
       companyCode < -2147483648 || companyCode > 2147483647) return refuse();
@@ -49,20 +49,38 @@ export function bindInswCsvFilters(canonicalWhere: Prisma.insw_tracking_logWhere
     // ILIKE stays in PostgreSQL, including its NULL and collation semantics.
     terms.push(Prisma.sql`log.wms_id ILIKE ${`%${wms.contains}%`} ESCAPE E'\\\\'`);
   }
-  if ('sent_at' in where) {
-    const date = record(where.sent_at);
+  const dateTerms = (value: unknown, column: 'sent_at' | 'created_at') => {
+    const date = record(value);
     keys(date, ['gte', 'lt']);
     if (!Object.keys(date).length) refuse();
+    const bounds: Prisma.Sql[] = [];
     for (const bound of ['gte', 'lt'] as const) {
       if (!(bound in date)) continue;
       const value = date[bound];
       if (!(value instanceof Date) || !Number.isFinite(value.getTime())) refuse();
-      // Parsing/calendar arithmetic already happened in buildLogWhere. An
-      // explicit offset in transport avoids a database session-TZ assumption.
       const instant = (value as Date).toISOString();
-      terms.push(bound === 'gte' ? Prisma.sql`log.sent_at >= ${instant}::timestamptz`
-        : Prisma.sql`log.sent_at < ${instant}::timestamptz`);
+      const field = column === 'sent_at' ? Prisma.sql`log.sent_at` : Prisma.sql`log.created_at`;
+      bounds.push(bound === 'gte' ? Prisma.sql`${field} >= ${instant}::timestamptz`
+        : Prisma.sql`${field} < ${instant}::timestamptz`);
     }
+    return Prisma.join(bounds, ' AND ');
+  };
+  if ('sent_at' in where) terms.push(dateTerms(where.sent_at, 'sent_at'));
+  if ('OR' in where) {
+    if ('sent_at' in where || !Array.isArray(where.OR) || where.OR.length !== 2) refuse();
+    const sent = record((where.OR as unknown[])[0]);
+    const unsent = record((where.OR as unknown[])[1]);
+    keys(sent, ['sent_at']);
+    keys(unsent, ['sent_at', 'created_at']);
+    if (unsent.sent_at !== null) refuse();
+    if (Object.keys(record(sent.sent_at)).sort().join(',') !==
+        Object.keys(record(unsent.created_at)).sort().join(',')) refuse();
+    const sentDates = dateTerms(sent.sent_at, 'sent_at');
+    const createdDates = dateTerms(unsent.created_at, 'created_at');
+    // Both branches must carry identical canonical bounds, never a wider OR.
+    if (JSON.stringify(sentDates.values) !== JSON.stringify(createdDates.values) ||
+        sentDates.values.length !== createdDates.values.length) refuse();
+    terms.push(Prisma.sql`((${sentDates}) OR (log.sent_at IS NULL AND ${createdDates}))`);
   }
   return { companyCode, predicate: Prisma.join(terms, ' AND ') };
 }

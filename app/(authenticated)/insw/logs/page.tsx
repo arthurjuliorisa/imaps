@@ -36,8 +36,9 @@ import {
 import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import dayjs from 'dayjs';
+import { transmissionStatus, transmissionResult, transmissionError } from '@/lib/insw-log-presentation';
 import type { AttemptHistoryEntry } from '@/lib/insw-queue/attempt-history';
-import { deliveryLabel, provenanceLabel, type OperationalState } from '@/lib/insw-queue/operational-state';
+import { provenanceLabel, type OperationalState } from '@/lib/insw-queue/operational-state';
 
 interface INSWLog {
   id: string;
@@ -371,37 +372,18 @@ export default function INSWLogsPage() {
     },
     {
       id: 'insw_status',
-      label: 'Historical attempt outcome',
-      minWidth: 120,
-      format: (value: string) => {
-        const upperValue = value?.toUpperCase() || '';
-        let color: 'success' | 'error' | 'warning' | 'info' = 'info';
-        if (upperValue === 'SUCCESS') color = 'success';
-        else if (upperValue === 'FAILED') color = 'error';
-        else if (upperValue === 'PENDING' || upperValue === 'SENT') color = 'warning';
-        else if (upperValue === 'PENDING_RESOLVED') color = 'success';
-
-        return (
-          <Chip
-            label={upperValue}
-            color={color}
-            size="small"
-            sx={{ fontWeight: 'bold' }}
-          />
-        );
+      label: 'Recorded Result',
+      minWidth: 150,
+      format: (value: string, row: INSWLog) => {
+        const result = transmissionResult(value, undefined, row.metadata?.rehearsalProvenance);
+        return <Chip label={result.label} color={result.color} size="small" />;
       },
     },
     {
       id: 'current_queue',
-      label: 'Current delivery / latest cycle',
+      label: 'INSW Status',
       minWidth: 280,
       format: (_value: any, row: INSWLog) => renderQueueState(row),
-    },
-    {
-      id: 'retry_count',
-      label: 'Historical retry index',
-      minWidth: 80,
-      format: (value: any) => value || 0,
     },
     {
       id: 'actions',
@@ -643,9 +625,11 @@ export default function INSWLogsPage() {
       const response = await fetch(`/api/insw/logs/export/csv?${params}`);
       if (!response.ok) {
         const result = await response.json().catch(() => null);
-        throw new Error(result?.error || 'Unable to export INSW CSV');
+        throw new Error(result?.error || result?.message || 'Unable to export INSW CSV');
       }
-      const url = URL.createObjectURL(await response.blob());
+      const blob = await response.blob();
+      const empty = blob.size === new TextEncoder().encode('\uFEFFNo,Sent At,Type,WMS ID,Activity,Status,Retries\r\n').length;
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || 'insw-logs.csv';
@@ -653,6 +637,7 @@ export default function INSWLogsPage() {
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success(empty ? 'No matching logs. Downloaded CSV contains headers only.' : 'INSW CSV downloaded.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to export INSW CSV');
     } finally {
@@ -834,24 +819,15 @@ export default function INSWLogsPage() {
 
   function renderQueueState(log: INSWLog) {
     const q = log.current_queue;
-    return <Stack spacing={0.5}>
-      <Typography variant="body2">{deliveryLabel(q)}</Typography>
-      {log.queue_attempt_id && <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>Historical attempt {log.queue_attempt_id}</Typography>}
-      {q && <>
-        <Typography variant="caption">Cycle {q.cycle} · {q.intent} · retry index {q.retry_index}/{q.max_auto_retry_snapshot}</Typography>
-        <Typography variant="caption">{q.attempts_started ?? 'Unknown'} attempts started · policy: {q.max_auto_retry_snapshot} additional retries, at most {q.max_auto_retry_snapshot + 1} total attempts.</Typography>
-        {q.status === 'HELD' && <Alert severity="warning">{q.delivery_state === 'KNOWN_SUCCESS'
-          ? 'Remote success is known. Investigate local finalization; do not retransmit.'
-          : q.hold_reason === 'DELIVERY_UNKNOWN' || q.delivery_state === 'POSSIBLY_STARTED'
-            ? 'Delivery may have occurred. Automatic retry and normal RESEND are blocked. Investigate the remote outcome before any further action.'
-            : 'Queue held. Investigate the hold reason; automatic retry and normal RESEND are blocked.'}</Alert>}
-        <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>Queue {q.id}{log.id.startsWith('queue:') ? '' : ' (latest)'}</Typography>
-        <Typography variant="caption">Queued {dayjs(q.queued_at).format('DD-MMMM-YY HH:mm:ss')} · {q.completed_at ? `Completed ${dayjs(q.completed_at).format('DD-MMMM-YY HH:mm:ss')}` : q.claimed_at ? `Claimed ${dayjs(q.claimed_at).format('DD-MMMM-YY HH:mm:ss')}` : `Eligible ${dayjs(q.next_eligible_at).format('DD-MMMM-YY HH:mm:ss')}`}</Typography>
-        {q.attempt && <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>Latest attempt {q.attempt.id} · {q.attempt.delivery_state} · started {q.attempt.started_at ? dayjs(q.attempt.started_at).format('DD-MMMM-YY HH:mm:ss') : 'not started'} · completed {q.attempt.completed_at ? dayjs(q.attempt.completed_at).format('DD-MMMM-YY HH:mm:ss') : 'pending'}</Typography>}
-        {q.error_message && <Typography variant="caption">{q.error_message}</Typography>}
-        {!q.latest_log_id && q.id !== log.queue_id && !log.id.startsWith('queue:') && <Button size="small" onClick={() => handleViewDetails({ ...log, id: `queue:${q.id}` })}>View current cycle</Button>}
-        {q.latest_log_id && q.latest_log_id !== log.id && <Button size="small" onClick={() => handleViewDetails({ ...log, id: q.latest_log_id! })}>Latest cycle attempt #{q.latest_log_id}</Button>}
-      </>}
+    const status = transmissionStatus(log);
+    return <Stack spacing={0.5} sx={{ overflowWrap: 'anywhere' }}>
+      <Chip label={status.label} color={status.color} size="small" sx={{ alignSelf: 'flex-start' }} />
+      <Typography variant="body2">{status.explanation}</Typography>
+      {status.provenance && <Typography variant="caption">{status.provenance}</Typography>}
+      {status.time && <Typography variant="caption">Last activity: {dayjs(status.time).format('DD-MMMM-YY HH:mm:ss')}</Typography>}
+      {q?.error_message && <Typography variant="caption">{transmissionError(q.error_message)}</Typography>}
+      {q && !q.latest_log_id && q.id !== log.queue_id && !log.id.startsWith('queue:') && <Button size="small" onClick={() => handleViewDetails({ ...log, id: `queue:${q.id}` })}>View latest transmission</Button>}
+      {q?.latest_log_id && q.latest_log_id !== log.id && <Button size="small" onClick={() => handleViewDetails({ ...log, id: q.latest_log_id! })}>View latest transmission</Button>}
     </Stack>;
   }
 
@@ -1136,6 +1112,13 @@ export default function INSWLogsPage() {
               <Stack spacing={2}>
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary">
+                    Transmission Status
+                  </Typography>
+                  {renderQueueState(selectedLog)}
+                </Box>
+
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
                     Transaction Type
                   </Typography>
                   <Typography variant="body1">
@@ -1161,42 +1144,23 @@ export default function INSWLogsPage() {
                   </Typography>
                 </Box>
 
-                <Box>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Endpoint URL
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                    {selectedLog.metadata?.endpoint_url ?? '-'}
-                  </Typography>
-                </Box>
-
-                <Box>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    INSW Status
-                  </Typography>
-                  {renderQueueState(selectedLog)}
-                  <Chip
-                    label={`Historical attempt: ${selectedLog.insw_status}`}
-                    color={selectedLog.insw_status === 'SUCCESS' ? 'success' : 'default'}
-                    size="small"
-                  />
-                </Box>
-
-                {provenanceLabel(selectedLog.metadata?.rehearsalProvenance) && <Chip size="small" label={provenanceLabel(selectedLog.metadata?.rehearsalProvenance)} />}
-                {selectedLog.attempt_history && <Box component="section" aria-label="Chronological attempt history">
-                  <Typography variant="subtitle2">Attempt history — oldest first</Typography>
-                  <Typography variant="caption">Historical snapshots by cycle. Current delivery is shown above. Retry index 0 is the initial attempt.</Typography>
-                  {selectedLog.attempt_history.truncated && <Alert severity="info">Showing the first 100 history records. Use WMS ID filtering and pagination for other logs.</Alert>}
-                  {selectedLog.attempt_history.entries.length === 0 && <Typography variant="body2">No attempts recorded yet.</Typography>}
+                {selectedLog.attempt_history && <Box component="section" aria-label="Transmission History">
+                  <Typography variant="subtitle2">Transmission History</Typography>
+                  <Typography variant="caption">Oldest first. The latest transmission status is shown above.</Typography>
+                  {selectedLog.attempt_history.truncated && <Alert severity="info">Showing the first 100 records. Filter by WMS ID to find other logs.</Alert>}
+                  {selectedLog.attempt_history.entries.length === 0 && <Typography variant="body2">No transmissions recorded yet.</Typography>}
                   <Stack component="ol" spacing={1} sx={{ pl: 3 }}>
-                    {selectedLog.attempt_history.entries.map((entry) => <Box component="li" key={`${entry.id}:${entry.log_id}`} sx={{ borderBottom: 1, borderColor: 'divider', pb: 1 }}>
-                      <Typography variant="body2" fontWeight={600}>Cycle {entry.cycle} · Attempt {entry.retry_index + 1} · retry index {entry.retry_index}/{entry.max_auto_retry_snapshot}{entry.log_id === selectedLog.id ? ' · selected log' : ''}</Typography>
-                      <Typography variant="caption" display="block">Policy snapshot: {entry.max_auto_retry_snapshot} additional retries / {entry.max_auto_retry_snapshot + 1} maximum total attempts</Typography>
-                      <Typography variant="body2">{entry.outcome ?? 'No recorded log outcome'} · {entry.delivery_state}{entry.http_code ? ` · HTTP ${entry.http_code}` : ''}</Typography>
-                      <Typography variant="caption" display="block">{entry.started_at ? `Started ${dayjs(entry.started_at).format('DD-MMMM-YY HH:mm:ss')}` : `Claimed ${dayjs(entry.claimed_at).format('DD-MMMM-YY HH:mm:ss')} · not started`} · {entry.completed_at ? `Completed ${dayjs(entry.completed_at).format('DD-MMMM-YY HH:mm:ss')}` : 'Not completed'}</Typography>
-                      {provenanceLabel(entry.provenance) && <Typography variant="body2">{provenanceLabel(entry.provenance)}</Typography>}
-                      {entry.reason && <Typography variant="body2">{entry.reason}</Typography>}
-                    </Box>)}
+                    {selectedLog.attempt_history.entries.map((entry, index) => {
+                      const result = transmissionResult(entry.outcome, entry.delivery_state, entry.provenance);
+                      return <Box component="li" key={`${entry.id}:${entry.log_id}`} sx={{ borderBottom: 1, borderColor: 'divider', pb: 1 }}>
+                        <Typography variant="body2" fontWeight={600}>Transmission {index + 1} · {result.label}{entry.log_id === selectedLog.id ? ' · selected record' : ''}</Typography>
+                        <Typography variant="caption" display="block">{dayjs(entry.completed_at || entry.started_at || entry.claimed_at).format('DD-MMMM-YY HH:mm:ss')}{!entry.started_at ? ' · sending did not start' : ''}</Typography>
+                        <Typography variant="body2">{result.explanation}</Typography>
+                        {provenanceLabel(entry.provenance) && <Typography variant="caption">{provenanceLabel(entry.provenance)}</Typography>}
+                        {entry.reason && <Typography variant="body2">{transmissionError(entry.reason)}</Typography>}
+                        {(entry.reason || entry.http_code) && <Box component="details"><Box component="summary">Recorded error</Box><Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{entry.http_code ? `HTTP ${entry.http_code}: ` : ''}{entry.reason}</Typography></Box>}
+                      </Box>;
+                    })}
                   </Stack>
                 </Box>}
 
@@ -1206,73 +1170,60 @@ export default function INSWLogsPage() {
                       Error Message
                     </Typography>
                     <Typography variant="body2" color="error">
-                      {selectedLog.insw_error}
+                      {transmissionError(selectedLog.insw_error)}
                     </Typography>
                   </Box>
                 )}
 
-                <Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                    <Typography variant="subtitle2" color="text.secondary">
-                      Request Payload
-                    </Typography>
-                    {selectedLog.insw_request_payload != null && !isLargePayload(selectedLog.insw_request_payload) && (
-                      <Tooltip title={copiedKey === 'payload' ? 'Tersalin!' : 'Salin'}>
-                        <IconButton
-                          aria-label="Copy request payload"
-                          size="small"
-                          onClick={() => handleCopy('payload', selectedLog.insw_request_payload)}
-                          sx={{ color: copiedKey === 'payload' ? 'success.main' : 'text.secondary' }}
-                        >
-                          {copiedKey === 'payload' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </Box>
-                  {renderPayloadContent(selectedLog.insw_request_payload, 'request', selectedLog.id)}
-                </Box>
-
-                {selectedLog.insw_response && (
+                <Box component="details">
+                  <Box component="summary" sx={{ cursor: 'pointer' }}>Technical details</Box>
+                  <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>Recorded result: {selectedLog.insw_status} · Reference: {selectedLog.queue_attempt_id || selectedLog.id}</Typography>
+                  <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectedLog.metadata?.endpoint_url}</Typography>
+                  {selectedLog.insw_error && <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectedLog.insw_error}</Typography>}
                   <Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
                       <Typography variant="subtitle2" color="text.secondary">
-                        INSW Response
+                        Request Payload
                       </Typography>
-                      {!isLargePayload(selectedLog.insw_response) && (
-                        <Tooltip title={copiedKey === 'response' ? 'Tersalin!' : 'Salin'}>
+                      {selectedLog.insw_request_payload != null && !isLargePayload(selectedLog.insw_request_payload) && (
+                        <Tooltip title={copiedKey === 'payload' ? 'Copied!' : 'Copy'}>
                           <IconButton
-                            aria-label="Copy INSW response"
+                            aria-label="Copy request payload"
                             size="small"
-                            onClick={() => handleCopy('response', selectedLog.insw_response)}
-                            sx={{ color: copiedKey === 'response' ? 'success.main' : 'text.secondary' }}
+                            onClick={() => handleCopy('payload', selectedLog.insw_request_payload)}
+                            sx={{ color: copiedKey === 'payload' ? 'success.main' : 'text.secondary' }}
                           >
-                            {copiedKey === 'response' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                            {copiedKey === 'payload' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
                           </IconButton>
                         </Tooltip>
                       )}
                     </Box>
-                    {renderPayloadContent(selectedLog.insw_response, 'response', selectedLog.id)}
+                    {renderPayloadContent(selectedLog.insw_request_payload, 'request', selectedLog.id)}
                   </Box>
-                )}
 
-                <Box>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Sent At
-                  </Typography>
-                  <Typography variant="body1">
-                    {selectedLog.sent_at
-                      ? dayjs(selectedLog.sent_at).format('DD-MMMM-YY HH:mm:ss')
-                      : 'Not sent yet'}
-                  </Typography>
-                </Box>
+                  {selectedLog.insw_response && (
+                    <Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Typography variant="subtitle2" color="text.secondary">
+                          INSW Response
+                        </Typography>
+                        {!isLargePayload(selectedLog.insw_response) && (
+                          <Tooltip title={copiedKey === 'response' ? 'Copied!' : 'Copy'}>
+                            <IconButton
+                              aria-label="Copy INSW response"
+                              size="small"
+                              onClick={() => handleCopy('response', selectedLog.insw_response)}
+                              sx={{ color: copiedKey === 'response' ? 'success.main' : 'text.secondary' }}
+                            >
+                              {copiedKey === 'response' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </Box>
+                      {renderPayloadContent(selectedLog.insw_response, 'response', selectedLog.id)}
+                    </Box>
+                  )}
 
-                <Box>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Historical retry index (0 = initial attempt)
-                  </Typography>
-                  <Typography variant="body1">
-                    {selectedLog.retry_count}
-                  </Typography>
                 </Box>
               </Stack>
             </Box>

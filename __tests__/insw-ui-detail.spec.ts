@@ -6,6 +6,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import * as mui from '@mui/material';
 import dayjs from 'dayjs';
+import * as presentation from '../lib/insw-log-presentation';
 import * as operational from '../lib/insw-queue/operational-state';
 
 // Render the actual page JSX with fixture state. This is static component
@@ -23,7 +24,7 @@ function render(overrides: Record<number, unknown> = {}) {
     '@/app/components/DataTable': { DataTable: ({ columns, data, loading }: any) => React.createElement('div', null,
       loading ? 'Loading logs' : data.length ? data.map((row: any) => React.createElement('div', { key: row.id }, columns.map((c: any) => React.createElement('div', { key: c.id }, c.format ? c.format(row[c.id], row) : row[c.id])))) : 'No data available') },
     '@/app/components/ToastProvider': { useToast: () => ({}) }, dayjs,
-    '@/lib/insw-queue/operational-state': operational, 'react/jsx-runtime': require('react/jsx-runtime'),
+    '@/lib/insw-queue/operational-state': operational, '@/lib/insw-log-presentation': presentation, 'react/jsx-runtime': require('react/jsx-runtime'),
   };
   const source = readFileSync('app/(authenticated)/insw/logs/page.tsx', 'utf8');
   const exports: any = {};
@@ -42,13 +43,13 @@ const log = { id: '11', transaction_type: 'incoming', insw_status: 'FAILED', ret
     claimed_at: '2026-11-01T00:00:00Z', started_at: null, completed_at: null, log_id: String(i + 1),
     provenance: i === 0 ? 'SIMULATED_REMOTE_REJECTION' : i === 2 ? 'REAL_INSW_TEST_RESPONSE' : null, http_code: '503' })) } };
 
-test('rendered history shows numbered chronology, policy snapshot and explicit persisted provenance', () => {
+test('rendered history shows readable chronology and explicit persisted provenance', () => {
   const view = render({ 1: false, 15: true, 16: '11', 17: log });
-  expect(view.text).toContain('11 attempts started');
-  expect(view.text).toContain('10 additional retries, at most 11 total attempts');
-  expect(view.text.indexOf('Attempt 1')).toBeLessThan(view.text.indexOf('Attempt 2'));
-  expect(view.text.indexOf('Attempt 2')).toBeLessThan(view.text.indexOf('Attempt 3'));
-  expect(view.text).toContain('2 additional retries / 3 maximum total attempts');
+  expect(view.text).not.toContain('retry index');
+  expect(view.text).not.toContain('SOURCE_COMMIT');
+  expect(view.text.indexOf('Transmission 1')).toBeLessThan(view.text.indexOf('Transmission 2'));
+  expect(view.text.indexOf('Transmission 2')).toBeLessThan(view.text.indexOf('Transmission 3'));
+  expect(view.text).not.toContain('Policy snapshot');
   expect(view.text.match(/Simulated remote rejection/g)).toHaveLength(1);
   expect(view.text).toContain('Actual INSW TEST response');
   expect(view.text).toContain('HTTP 503');
@@ -59,19 +60,19 @@ for (const status of ['READY', 'CLAIMED', 'FAILED', 'SUCCEEDED', 'HELD']) {
   test(`rendered ${status} state remains separate from historical FAILED; server flag controls RESEND`, () => {
     const row = { ...log, current_queue: { ...q, status, hold_reason: status === 'HELD' ? 'DELIVERY_UNKNOWN' : null } };
     const view = render({ 0: [row], 1: false });
-    expect(view.text).toContain(status);
-    expect(view.text).toContain('FAILED');
+    expect(view.text).toContain(({ READY: 'Queued', CLAIMED: 'Sending', FAILED: 'Failed', SUCCEEDED: 'Sent Successfully', HELD: 'Delivery Uncertain' } as Record<string, string>)[status]);
+    expect(view.text).toContain('Failed');
     expect(view.html).toContain('aria-label="View details for log 11"');
     expect(view.html).toContain('aria-label="Refresh INSW logs"');
     expect(view.html).not.toContain('aria-label="Kirim Ulang"');
-    if (status === 'HELD') expect(view.text).toContain('Automatic retry and normal RESEND are blocked');
+    if (status === 'HELD') expect(view.text).toContain('confirm receipt before sending again');
   });
 }
 
-test('server-eligible row offers RESEND and zero retry policy means one maximum attempt', () => {
+test('server-eligible row offers RESEND with concise failure guidance', () => {
   const view = render({ 0: [{ ...log, can_resend: true, current_queue: { ...q, retry_index: 0, max_auto_retry_snapshot: 0, attempts_started: 1 } }], 1: false });
   expect(view.html).toContain('aria-label="Kirim Ulang"');
-  expect(view.text).toContain('0 additional retries, at most 1 total attempts');
+  expect(view.text).toContain('Review the error before using Resend');
 });
 
 test('detail loading, failure/retry and empty history have visible feedback', () => {
@@ -80,6 +81,6 @@ test('detail loading, failure/retry and empty history have visible feedback', ()
   const error = render({ 15: true, 32: 'Fixture detail unavailable' });
   expect(error.text).toContain('Fixture detail unavailable');
   expect(error.text).toContain('Retry');
-  expect(render({ 15: true, 16: '11', 17: { ...log, attempt_history: { entries: [], truncated: false } } }).text).toContain('No attempts recorded yet');
+  expect(render({ 15: true, 16: '11', 17: { ...log, attempt_history: { entries: [], truncated: false } } }).text).toContain('No transmissions recorded yet');
   expect(render({ 1: false }).text).toContain('No data available');
 });

@@ -6,28 +6,30 @@ import dayjs from 'dayjs';
 
 /** Execute actual component closures with hook/import doubles. No renderer,
  * session, database or network: this is deliberately not a browser test. */
-function component(source: string, fetcher: (url: string, init?: any) => Promise<any>) {
+function component(source: string, fetcher: (url: string, init?: any) => Promise<any>, overrides: Record<number, unknown> = {}) {
   const state: any[] = [];
   const successes: string[] = [];
+  const downloads: string[] = [];
   const errors: string[] = [];
   const react = { useState: (initial: any) => {
     const index = state.length; state.push(initial);
-    return [initial, (next: any) => { state[index] = next; }];
+    return [index in overrides ? overrides[index] : initial, (next: any) => { state[index] = next; }];
   }, useRef: (value: any) => ({ current: value }), useEffect: () => {} };
   const imports: Record<string, any> = {
     react, '@mui/material': { useTheme: () => ({ palette: { mode: 'light' } }) },
     '@mui/icons-material': {}, recharts: {}, '@/app/components/DataTable': {},
     '@/app/components/ToastProvider': { useToast: () => ({ success: (s: string) => successes.push(s), error: (s: string) => errors.push(s) }) },
-    dayjs, 'react/jsx-runtime': {}, '@/lib/insw-queue/operational-state': {},
+    dayjs, 'react/jsx-runtime': {}, '@/lib/insw-queue/operational-state': {}, '@/lib/insw-log-presentation': {},
   };
-  const instrumented = source.replace('  const totalSuccess =', '  return { fetchLogs, fetchChartData, fetchFilterMetadata, handleRefresh, handleResend } as any;\n  const totalSuccess =');
+  const instrumented = source.replace('  const totalSuccess =', '  return { fetchLogs, fetchChartData, fetchFilterMetadata, handleRefresh, handleResend, handleExportCsv } as any;\n  const totalSuccess =');
   const js = ts.transpileModule(instrumented, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
   const exports: any = {};
   vm.runInNewContext(js, { exports, require: (name: string) => {
     if (!(name in imports)) throw new Error(`Unmocked import ${name}`);
     return imports[name];
-  }, fetch: fetcher, URLSearchParams, console: { error: () => {} } });
-  return { handlers: exports.default(), state, successes, errors };
+  }, fetch: fetcher, URLSearchParams, TextEncoder, URL: { createObjectURL: () => 'blob:fixture', revokeObjectURL: () => {} }, setTimeout: () => {},
+    document: { body: { appendChild: () => {} }, createElement: () => { const link = { href: '', download: '', click: () => downloads.push(link.download), remove: () => {} }; return link; } }, console: { error: () => {} } });
+  return { handlers: exports.default(), state, successes, errors, downloads };
 }
 const source = readFileSync('app/(authenticated)/insw/logs/page.tsx', 'utf8');
 function reply(data: any = [], ok = true) { return { ok, json: async () => ({ success: ok, data, pagination: { total: data.length } }) }; }
@@ -173,4 +175,32 @@ test('HTTP 202 is described as queued even without a status marker or server mes
     ? { ok: true, status: 202, json: async () => ({}) } : reply());
   await view.handlers.handleResend('synthetic');
   expect(view.successes).toEqual(['Accepted to queue; not delivered']);
+});
+
+
+test('CSV click closure preserves filters, downloads filename and distinguishes empty and errors', async () => {
+  const key = JSON.stringify(['ALL', 'ALL', '', dayjs().subtract(7, 'day').format('YYYY-MM-DD'), dayjs().format('YYYY-MM-DD'), 0, 10]);
+  for (const mode of ['success', 'empty', 'failure', 'network']) {
+    const calls: string[] = [];
+    const view = component(source, async url => {
+      calls.push(url);
+      if (mode === 'network') throw new Error('Connection failed');
+      if (mode === 'failure') return Response.json({ error: 'Export busy' }, { status: 429 });
+      return new Response('\uFEFFNo,Sent At,Type,WMS ID,Activity,Status,Retries\r\n' + (mode === 'success' ? '1,,incoming,WMS-A,30,FAILED,0\r\n' : ''),
+        { headers: { 'Content-Disposition': 'attachment; filename="filtered.csv"' } });
+    }, { 1: false, 14: key });
+    await view.handlers.handleExportCsv();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('/api/insw/logs/export/csv?date_from=');
+    expect(calls[0]).toContain('&date_to=');
+    expect(view.state[13]).toBe(false);
+    if (mode === 'failure' || mode === 'network') {
+      expect(view.downloads).toEqual([]);
+      expect(view.errors).toEqual([mode === 'failure' ? 'Export busy' : 'Unable to export INSW CSV']);
+      expect(view.successes).toEqual([]);
+    } else {
+      expect(view.downloads).toEqual(['filtered.csv']);
+      expect(view.successes).toEqual([mode === 'empty' ? 'No matching logs. Downloaded CSV contains headers only.' : 'INSW CSV downloaded.']);
+    }
+  }
 });
