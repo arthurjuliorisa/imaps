@@ -5,6 +5,7 @@ import { boundedText, canonicalIdentity } from '../insw-queue/contracts';
 import {
   handoffIncomingInTransaction, prepareIncomingHandoff, prepareOutgoingHandoff, prepareMaterialUsageHandoff,
   prepareProductionOutputHandoff, prepareCountHandoff,
+  lockIncomingBusinessReference, assertNoConflictingBusinessReference,
 } from '../insw-queue/incoming-handoff';
 
 export type CompletedSourceCapture = {
@@ -69,7 +70,13 @@ export async function captureCompletedWmsSource(db: PrismaClient, input: Complet
   const outgoingReference = input.operation === 'OUTGOING' ? input.wmsReference : undefined;
   async function read(database: PrismaClient | Prisma.TransactionClient) {
     if (operation === 'ADJUSTMENT' || operation === 'STOCK_OPNAME') {
-      return { ...await readCountSource(database, operation, input.companyCode, id), reversal: null };
+      const source = await readCountSource(database, operation, input.companyCode, id);
+      const where = { company_code: input.companyCode, wms_id: source.reference };
+      const matches = operation === 'ADJUSTMENT'
+        ? await database.adjustments.findMany({ where: { ...where, deleted_at: null }, take: 2, select: { id: true } })
+        : await database.wms_stock_opnames.findMany({ where, take: 2, select: { id: true } });
+      if (matches.length !== 1 || String(matches[0].id) !== String(id)) throw new Error('AMBIGUOUS_ORIGINAL_SOURCE');
+      return { ...source, reversal: null };
     }
     const where = { id, company_code: input.companyCode, deleted_at: null, company: { company_type: 'SEZ' as const } };
     const row = operation === 'INCOMING'
@@ -103,16 +110,14 @@ export async function captureCompletedWmsSource(db: PrismaClient, input: Complet
   const identity = canonicalIdentity(operation === 'ADJUSTMENT' || operation === 'STOCK_OPNAME'
     ? { kind: 'SOURCE_HEADER', operation, companyCode: input.companyCode, sourceId: id, ...source }
     : { kind: 'WMS_REFERENCE', operation, companyCode: input.companyCode, ...source });
-  const prior = await db.insw_queue_cycle.findFirst({ where: { identity_key: identity.key }, orderBy: { cycle: 'asc' },
-    select: { id: true, intent: true, source_log_id: true, wms_reference: true } });
-  if (prior) {
-    if (manual) throw new Error('EXISTING_QUEUE_REQUIRES_REVIEW');
-    if (prior.intent !== 'SOURCE_COMMIT' || prior.source_log_id !== null || prior.wms_reference !== source.reference) {
-      throw new Error('PRIOR_SOURCE_CYCLE_CONFLICT');
-    }
-    return { outcome: 'ALREADY_CAPTURED' as const, id: prior.id, created: false };
-  }
-  {
+  const scope = { companyCode: input.companyCode, operation, wmsReference: source.reference };
+  // Fast diagnostic only; the handoff repeats this check under the stable lock.
+  await assertNoConflictingBusinessReference(db, scope, identity.key);
+  const prior = await db.insw_queue_cycle.findFirst({ where: { identity_key: identity.key }, select: { id: true } });
+  if (manual && prior) throw new Error('EXISTING_QUEUE_REQUIRES_REVIEW');
+  // A matching queue's tracking is expected after delivery. Validate its frozen
+  // payload below rather than treating that tracking as an unrelated legacy send.
+  if (!prior) {
     const legacy = await db.insw_tracking_log.findFirst({ where: { company_code: input.companyCode,
       transaction_type: operation.toLowerCase(), transaction_id: id, insw_status: { in: ['SUCCESS', 'PENDING', 'RETRYING', 'PENDING_RESOLVED', 'FAILED', 'SENT'] } }, select: { id: true } });
     if (legacy) throw new Error('LEGACY_DELIVERY_REQUIRES_INVESTIGATION_OR_LOCAL_REPAIR');
@@ -133,6 +138,7 @@ export async function captureCompletedWmsSource(db: PrismaClient, input: Complet
       : operation === 'PRODUCTION_OUTPUT' ? prepareProductionOutputHandoff(preparation, source.reversal)
         : prepareCountHandoff({ ...preparation, operation, sourceId: id });
   const result = await db.$transaction(async tx => {
+    await lockIncomingBusinessReference(tx, scope);
     if (manual) {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${identity.key}, 0))::text`;
       await manual.recheck(tx);
@@ -146,6 +152,6 @@ export async function captureCompletedWmsSource(db: PrismaClient, input: Complet
       await manual.audit(tx, queue.id, payload);
     }
     return queue;
-  }, manual ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable } : undefined);
+  }, { isolationLevel: manual ? Prisma.TransactionIsolationLevel.Serializable : Prisma.TransactionIsolationLevel.ReadCommitted });
   return { outcome: result.created ? 'CAPTURED' as const : 'ALREADY_CAPTURED' as const, id: result.id, created: result.created };
 }

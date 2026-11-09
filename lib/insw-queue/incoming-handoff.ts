@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Prisma, InswQueueStatus } from '@prisma/client';
+import type { Prisma, InswQueueStatus, InswQueueOperation } from '@prisma/client';
 import type { INSWTransaksiPayload } from '../types/insw-api.types';
 import { boundedText, canonicalIdentity, freezePayload } from './contracts';
 import type { EnqueueInput } from './queue.repository';
@@ -98,6 +98,39 @@ export function prepareProductionOutputHandoff(input: IncomingPreparation, rever
   return prepareGoodsHandoff(input, 'PRODUCTION_OUTPUT', reversal);
 }
 
+type ReferenceScope = { companyCode: number; operation: InswQueueOperation; wmsReference: string };
+
+export class SourceAdmissionConflict extends Error {
+  readonly code = 'INSW_SOURCE_ADMISSION_CONFLICT';
+  constructor(scope: ReferenceScope, public readonly existingCycleId: string,
+    public readonly reason: 'BUSINESS_REFERENCE_ALREADY_QUEUED' | 'FROZEN_IDENTITY_CONFLICT') {
+    // Existing completion callers log error.message without changing WMS acceptance.
+    // JSON escapes reference characters; never include payloads or credentials.
+    super(`INSW_SOURCE_ADMISSION_CONFLICT ${JSON.stringify({ ...scope, existingCycleId, reason })}`);
+  }
+}
+
+/** Lock order: business reference, then canonical identity, then source/audit rows.
+ * Date/revision/PK are deliberately excluded: no automatic same-reference revision
+ * policy exists. RESEND only takes the identity lock and never requests this lock.
+ */
+export async function lockIncomingBusinessReference(tx: Prisma.TransactionClient, scope: ReferenceScope) {
+  const key = JSON.stringify(['insw-source-reference', scope.companyCode, scope.operation, scope.wmsReference]);
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))::text`;
+}
+
+export async function assertNoConflictingBusinessReference(
+  db: Pick<Prisma.TransactionClient, 'insw_queue_cycle'>, scope: ReferenceScope, identityKey: string,
+) {
+  // Existing correlation index starts with exactly these three equalities. No
+  // status/intent/tracking predicate: terminal and detached history still fences.
+  const prior = await db.insw_queue_cycle.findFirst({ where: {
+    company_code: scope.companyCode, operation: scope.operation,
+    wms_reference: scope.wmsReference, identity_key: { not: identityKey },
+  }, select: { id: true } });
+  if (prior) throw new SourceAdmissionConflict(scope, prior.id, 'BUSINESS_REFERENCE_ALREADY_QUEUED');
+}
+
 /** Detached single committed header; never a WMS acceptance hook. */
 export function prepareCountHandoff(input: IncomingPreparation & {
   operation: 'ADJUSTMENT' | 'STOCK_OPNAME'; sourceId: number;
@@ -168,9 +201,12 @@ export async function handoffIncomingInTransaction(tx: Prisma.TransactionClient,
   if (!input) throw new Error('Unrecognized Incoming preparation');
   if ('$transaction' in tx) throw new Error('Caller transaction client required');
   const identity = canonicalIdentity(input.identity);
+  const scope = { companyCode: identity.companyCode, operation: identity.operation, wmsReference: input.wmsReference! };
+  await lockIncomingBusinessReference(tx, scope);
   // Same lock/key as Phase B. Source retries remain idempotent even after a
   // terminal cycle. Explicit manual resubmission continues to belong elsewhere.
   await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${identity.key}, 0))::text`;
+  await assertNoConflictingBusinessReference(tx, scope, identity.key);
   const existing = await tx.insw_queue_cycle.findFirst({
     where: { identity_key: identity.key }, orderBy: { cycle: 'asc' },
     select: { id: true, cycle: true, status: true, tail_key: true, max_auto_retry_snapshot: true,
@@ -179,7 +215,7 @@ export async function handoffIncomingInTransaction(tx: Prisma.TransactionClient,
   if (existing) {
     if (existing.intent !== 'SOURCE_COMMIT' || existing.payload_sha256 !== input.sha256 ||
         existing.wms_reference !== input.wmsReference || existing.source_log_id !== null) {
-      throw new Error('Incoming transmission identity conflicts with prior handoff');
+      throw new SourceAdmissionConflict(scope, existing.id, 'FROZEN_IDENTITY_CONFLICT');
     }
     return { id: existing.id, cycle: existing.cycle, status: existing.status,
       tail_key: existing.tail_key, max_auto_retry_snapshot: existing.max_auto_retry_snapshot, created: false };
