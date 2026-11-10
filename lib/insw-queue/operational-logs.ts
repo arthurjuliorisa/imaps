@@ -71,6 +71,15 @@ export async function currentQueueStates(db: PrismaClient, companyCode: number, 
       'id', q.id, 'status', q.status, 'delivery_state', q.delivery_state, 'cycle', q.cycle,
       'intent', q.intent, 'retry_index', q.retry_index, 'max_auto_retry_snapshot', q.max_auto_retry_snapshot,
       'hold_reason', q.hold_reason, 'error_message', q.error_message, 'queued_at', q.queued_at,
+      -- Same stable-reference fence as admission/resend. Same-identity cycles
+      -- (including source recreation under WMS_REFERENCE) are not conflicts.
+      -- The correlation index bounds this EXISTS; tracking is not required.
+      'stable_reference_conflict', (q.operation::text IN
+        ('INCOMING', 'OUTGOING', 'MATERIAL_USAGE', 'PRODUCTION_OUTPUT', 'ADJUSTMENT', 'STOCK_OPNAME')
+        AND q.wms_reference IS NOT NULL AND q.wms_reference <> ''
+        AND EXISTS (SELECT 1 FROM insw_queue_cycle conflict
+          WHERE conflict.company_code = q.company_code AND conflict.operation = q.operation
+            AND conflict.wms_reference = q.wms_reference AND conflict.identity_key <> q.identity_key)),
       'next_eligible_at', q.next_eligible_at, 'claimed_at', q.claimed_at, 'completed_at', q.completed_at,
       'attempt', CASE WHEN a.id IS NULL THEN NULL ELSE jsonb_build_object('id', a.id,
         'delivery_state', a.delivery_state, 'claimed_at', a.claimed_at, 'started_at', a.started_at, 'completed_at', a.completed_at) END,

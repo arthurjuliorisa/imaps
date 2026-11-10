@@ -75,6 +75,53 @@ test('server-eligible row offers RESEND with concise failure guidance', () => {
   expect(view.text).toContain('Review the error before using Resend');
 });
 
+for (const message of ['data barang 0471A11000PR tidak ada',
+  'Atas nomor dokumen kegiatan DOC sudah pernah dikirim', 'API rate limit exceeded']) {
+  test(`reviewed recorded error is literal in list and detail: ${message}`, () => {
+    const row = { ...log, insw_error: message, current_queue: { ...q, error_message: 'MISSING_ITEM_VALIDATION' } };
+    const list = render({ 0: [row], 1: false });
+    const detail = render({ 1: false, 15: true, 16: '11', 17: row });
+    expect(list.text).toContain(`Recorded error: ${message}`);
+    expect(detail.text).toContain(`Recorded error: ${message}`);
+    expect(detail.text).toContain(message);
+    expect(list.text).toContain('Failed');
+    expect(list.text).not.toContain('MISSING_ITEM_VALIDATION');
+  });
+}
+
+for (const message of ['<script>secret-token</script>', '{"token":"secret-token"}',
+  'Atas nomor dokumen kegiatan ' + 'X'.repeat(501) + ' sudah pernah dikirim', 'unreviewed technical secret-token']) {
+  test(`untrusted list error is summarized: ${message.slice(0, 40)}`, () => {
+    const view = render({ 0: [{ ...log, insw_error: message }], 1: false });
+    expect(view.text).toContain('Recorded error: Transmission could not be completed.');
+    expect(view.html).not.toContain(message);
+    expect(view.html).not.toContain('secret-token');
+  });
+}
+
+test('historical error stays attached to selected attempt after current cycle succeeds; queue fallback remains safe', () => {
+  const message = 'data barang ITEM tidak ada';
+  const row = { ...log, insw_error: message, current_queue: { ...q, status: 'SUCCEEDED', latest_log_id: '12' } };
+  const view = render({ 0: [row], 1: false });
+  expect(view.text).toContain('Success');
+  expect(view.text).toContain('Failed');
+  expect(view.text).toContain(`Recorded error: ${message}`);
+  expect(view.text).toContain('View latest transmission');
+  const fallback = render({ 0: [{ ...log, current_queue: { ...q, error_message: '<html>secret-token</html>' } }], 1: false });
+  expect(fallback.text).toContain('Review the recorded error with support');
+  expect(fallback.html).not.toContain('secret-token');
+});
+
+test('linked identity conflict shows On Hold in list and detail without changing the recorded Failed result', () => {
+  const row = { ...log, current_queue: { ...q, status: 'SUCCEEDED', stable_reference_conflict: true } };
+  for (const view of [render({ 0: [row], 1: false }), render({ 1: false, 15: true, 16: '11', 17: row })]) {
+    expect(view.text).toContain('On Hold');
+    expect(view.text).toContain('Conflicting queue identities');
+    expect(view.text).toContain('Failed');
+    expect(view.text).not.toContain('successful response is recorded for the current cycle');
+  }
+});
+
 test('detail loading, failure/retry and empty history have visible feedback', () => {
   expect(render({ 15: true, 18: true }).html).toContain('role="progressbar"');
   // Last useState slot is the newly appended detail error state.

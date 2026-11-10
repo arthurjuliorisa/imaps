@@ -7,6 +7,8 @@ export interface OperationalState {
   attempts_started?: number;
   latest_log_id: string | null;
   provenance?: string | null;
+  /** Read-only evidence from persisted queues; never a stored lifecycle change. */
+  stable_reference_conflict?: boolean;
 }
 export function deliveryLabel(state: OperationalState | null | undefined) {
   if (!state) return 'Legacy DIRECT / unlinked history';

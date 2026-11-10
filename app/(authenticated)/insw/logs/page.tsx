@@ -825,7 +825,8 @@ export default function INSWLogsPage() {
       <Typography variant="body2">{status.explanation}</Typography>
       {status.provenance && <Typography variant="caption">{status.provenance}</Typography>}
       {status.time && <Typography variant="caption">Last activity: {dayjs(status.time).format('DD-MMMM-YY HH:mm:ss')}</Typography>}
-      {q?.error_message && <Typography variant="caption">{transmissionError(q.error_message)}</Typography>}
+      {log.insw_error ? <Typography variant="caption">Recorded error: {transmissionError(log.insw_error)}</Typography>
+        : q?.error_message && <Typography variant="caption">{transmissionError(q.error_message)}</Typography>}
       {q && !q.latest_log_id && q.id !== log.queue_id && !log.id.startsWith('queue:') && <Button size="small" onClick={() => handleViewDetails({ ...log, id: `queue:${q.id}` })}>View latest transmission</Button>}
       {q?.latest_log_id && q.latest_log_id !== log.id && <Button size="small" onClick={() => handleViewDetails({ ...log, id: q.latest_log_id! })}>View latest transmission</Button>}
     </Stack>;

@@ -13,6 +13,7 @@ import { classifyResponse, classifyTransportFailure } from '../lib/insw-worker/c
 import { prepareWmsFinalizer } from '../lib/insw-worker/incoming-finalizer';
 import { executeFrozenRequest } from '../lib/insw-worker/transport';
 import { canonicalIdentity, freezePayload } from '../lib/insw-queue/contracts';
+import { assertNoConflictingBusinessReference, SourceAdmissionConflict } from '../lib/insw-queue/incoming-handoff';
 
 const connect = net.Socket.prototype.connect;
 const fetch = globalThis.fetch;
@@ -118,7 +119,20 @@ for (const size of [10, 50]) test(`list/detail: ${size} rows share one category 
   expect(sql).toContain('conflict.transaction_id IS DISTINCT FROM l.transaction_id');
   expect(queries[0].values).toContain(1370);
   calls = 0;
-  const statesDb = { $queryRaw: async () => { calls++; return []; } } as any;
+  const statesDb = { $queryRaw: async (query: any) => {
+    calls++;
+    expect(query.sql).toContain('conflict.company_code = q.company_code AND conflict.operation = q.operation');
+    expect(query.sql).toContain('conflict.wms_reference = q.wms_reference AND conflict.identity_key <> q.identity_key');
+    expect(query.sql).toContain('original.company_code =');
+    expect(query.sql).toContain('latest.company_code =');
+    expect(query.sql).toContain('q.wms_reference IS NOT NULL AND q.wms_reference');
+    expect(query.values).toContain(1370);
+    // IDs are deduplicated, parameterized, and no raw provider body is fetched.
+    expect(query.values.filter((v: unknown) => v === '00000000-0000-4000-8000-000000000001')).toHaveLength(1);
+    expect(query.sql).not.toContain('frozen_payload');
+    expect(query.sql).not.toContain('insw_response');
+    return [];
+  } } as any;
   await currentQueueStates(statesDb, 1370, Array(size).fill('00000000-0000-4000-8000-000000000001'));
   expect(calls).toBe(1);
   calls = 0;
@@ -131,6 +145,56 @@ for (const size of [10, 50]) test(`list/detail: ${size} rows share one category 
   } } as any, { company_code: 1370, limit: size, offset: 0 });
   expect(calls).toBe(2);
 });
+
+test('A28: linked conflict overrides each normal lifecycle; stored results and missing-start uncertainty survive', async () => {
+  for (const status of ['READY', 'CLAIMED', 'FAILED', 'SUCCEEDED', 'REMOTE_SUCCEEDED', 'HELD']) {
+    const state = { ...cycle, id: 'q', status, stable_reference_conflict: true,
+      retry_index: 0, attempt: { id: 'a', started_at: null }, attempts_started: 0 } as any;
+    let calls = 0;
+    const db = { $queryRaw: async () => { calls++; return [{ original_id: 'q', state }]; } } as any;
+    const selected = (await currentQueueStates(db, 1370, ['00000000-0000-4000-8000-000000000001'])).get('q');
+    expect(calls).toBe(1);
+    for (const [insw_status, recorded] of [['FAILED', 'Failed'], ['PENDING', 'Not Recorded'],
+      ['SUCCESS', 'Success'], ['NO_ATTEMPT_LOG', 'Not Recorded']]) {
+      const row = { insw_status, current_queue: selected };
+      expect(transmissionStatus(row).label).toBe('On Hold');
+      expect(recordedResult(row).label).toBe(recorded);
+    }
+    expect(selected?.status).toBe(status); // Projection never rewrites the stored state.
+    const missingTracking = { insw_status: 'NO_ATTEMPT_LOG', current_queue: { ...state, attempt: null } };
+    expect(recordedResult(missingTracking).label).toBe('Not Recorded');
+    expect(transmissionStatus(missingTracking).label).toBe('On Hold');
+    expect(transmissionStatus({ insw_status: 'FAILED', current_queue: { ...state, provenance: 'SIMULATED_REMOTE_REJECTION' } }).explanation)
+      .toContain('Conflicting queue identities');
+  }
+});
+
+// Exercise the existing authoritative reference fence with in-memory rows.
+// The query-shape checks above pin the read projection to that same predicate;
+// these fixtures do not execute PostgreSQL or certify a query plan.
+for (const variant of ['different identity', 'same identity successor', 'recreated WMS source',
+  'different company', 'different operation', 'different reference'] as const) {
+  test(`A28 reference semantics and presentation: ${variant}`, async () => {
+    const scope = { companyCode: 1370, operation: 'PRODUCTION_OUTPUT' as const, wmsReference: 'DOC' };
+    const key = canonicalIdentity({ kind: 'WMS_REFERENCE', ...scope, reference: scope.wmsReference,
+      revision: 'ACCEPTED_WMS_ID', businessDate: '2026-11-10' }).key;
+    const otherKey = canonicalIdentity({ kind: 'WMS_REFERENCE', ...scope, reference: scope.wmsReference,
+      revision: 'ACCEPTED_WMS_ID', businessDate: '2026-11-09' }).key;
+    const row = { company_code: variant === 'different company' ? 1380 : 1370,
+      operation: variant === 'different operation' ? 'INCOMING' : 'PRODUCTION_OUTPUT',
+      wms_reference: variant === 'different reference' ? 'OTHER' : 'DOC',
+      identity_key: variant === 'same identity successor' || variant === 'recreated WMS source' ? key : otherKey };
+    const db = { insw_queue_cycle: { findFirst: async ({ where }: any) =>
+      row.company_code === where.company_code && row.operation === where.operation
+        && row.wms_reference === where.wms_reference && row.identity_key !== where.identity_key.not ? { id: 'other' } : null } } as any;
+    const conflict = await assertNoConflictingBusinessReference(db, scope, key)
+      .then(() => false, error => { expect(error).toBeInstanceOf(SourceAdmissionConflict); return true; });
+    expect(conflict).toBe(variant === 'different identity');
+    const current_queue = { ...cycle, id: 'q', status: 'READY', retry_index: 0, stable_reference_conflict: conflict } as any;
+    expect(transmissionStatus({ insw_status: 'FAILED', current_queue }).label).toBe(conflict ? 'On Hold' : 'Waiting');
+    expect(recordedResult({ insw_status: 'FAILED', current_queue }).label).toBe('Failed');
+  });
+}
 
 function resendDb(metadata: any = evidence) {
   const events: string[] = [];

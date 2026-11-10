@@ -16,7 +16,7 @@ export function transmissionResult(outcome: string | null | undefined, _delivery
 
 export function recordedResult(log: { insw_status: string; current_queue?: OperationalState | null }) {
   const q = log.current_queue;
-  if (log.insw_status === 'NO_ATTEMPT_LOG' && q && ['READY', 'CLAIMED'].includes(q.status) && q.retry_index === 0
+  if (log.insw_status === 'NO_ATTEMPT_LOG' && q && !q.stable_reference_conflict && ['READY', 'CLAIMED'].includes(q.status) && q.retry_index === 0
     && q.delivery_state !== 'KNOWN_SUCCESS' && !q.attempt?.completed_at && (q.status === 'CLAIMED' || !q.attempt && !q.attempts_started)) return { label: '—', explanation: 'No new recorded attempt.', color: 'info' as const };
   return transmissionResult(log.insw_status);
 }
@@ -36,7 +36,8 @@ export function transmissionStatus(log: {
     : !q || q.latest_log_id === log.id ? log.metadata?.rehearsalProvenance : undefined);
   let result = q ? transmissionResult(undefined, q.delivery_state, latestProvenance)
     : transmissionResult(log.insw_status, undefined, latestProvenance);
-  if (q?.status === 'READY') result = { label: q.retry_index > 0 ? 'Retry' : 'Waiting', explanation: 'Waiting to send to INSW. No action is needed.', color: 'info' };
+  if (q?.stable_reference_conflict) result = { label: 'On Hold', explanation: 'Conflicting queue identities share this WMS reference. Ask support to reconcile the associations before sending again.', color: 'warning' };
+  else if (q?.status === 'READY') result = { label: q.retry_index > 0 ? 'Retry' : 'Waiting', explanation: 'Waiting to send to INSW. No action is needed.', color: 'info' };
   else if (q?.status === 'CLAIMED') result = { label: 'Sending', explanation: 'Transmission is in progress. Wait for the result.', color: 'info' };
   else if (q?.status === 'HELD' || q?.status === 'REMOTE_SUCCEEDED') {
     result = { label: 'On Hold', explanation: q.error_message === 'MISSING_ITEM_VALIDATION'
@@ -47,7 +48,7 @@ export function transmissionStatus(log: {
   } else if (q?.status === 'FAILED') result = { label: 'Failed', explanation: 'This delivery cycle stopped. Review the recorded cause.', color: 'error' };
   else if (q?.status === 'SUCCEEDED') result = { label: 'Success', explanation: 'A successful response is recorded for the current cycle.', color: 'success' };
   else if (!q && !['SUCCESS', 'FAILED'].includes(log.insw_status)) result = { label: 'On Hold', explanation: 'Historical outcome requires review; no new delivery is authorized.', color: 'warning' };
-  if (typeof latestProvenance === 'string' && latestProvenance.startsWith('SIMULATED_')) result = { ...result, explanation: 'Simulated lifecycle state; this does not confirm receipt by INSW.', color: 'info' };
+  if (typeof latestProvenance === 'string' && latestProvenance.startsWith('SIMULATED_')) result = { ...result, explanation: `${q?.stable_reference_conflict ? result.explanation + ' ' : ''}Simulated lifecycle state; this does not confirm receipt by INSW.`, color: 'info' };
   else if (latestProvenance === 'REAL_INSW_TEST_RESPONSE') result = { ...result, explanation: `${result.explanation} This TEST outcome does not confirm production receipt.` };
   if (result.label === 'Failed' && log.can_resend === true) result = { ...result, explanation: `${result.explanation} Review the error before using Resend.` };
   return { ...result, time: q ? q.completed_at || q.attempt?.completed_at || q.attempt?.started_at || q.claimed_at || q.queued_at : log.sent_at || log.created_at,
