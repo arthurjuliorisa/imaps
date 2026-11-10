@@ -249,7 +249,8 @@ export async function persistOutcome(db: PrismaClient, token: string, job: Admit
     if (gate.busy_attempt_id !== job.attemptId) throw new Error('ATTEMPT_MISMATCH');
     const disposition = classifiedRetryDisposition({ classification: outcome.classification, delivery: outcome.delivery,
       retryIndex: job.retry_index, maxAutoRetrySnapshot: Math.min(10, job.max_auto_retry_snapshot),
-      clientApprovedAmbiguousRetry: true, exclusiveStreamProven: true, priorInvocationEnded: true, outcomeDurablyRecorded: true });
+      // The fallback has no independent authority to replay uncertain delivery.
+      clientApprovedAmbiguousRetry: false, exclusiveStreamProven: true, priorInvocationEnded: true, outcomeDurablyRecorded: true });
     // The decision and evidence commit together. No raw body/headers/errors stored.
     const success = outcome.delivery === 'KNOWN_SUCCESS';
     const retry = disposition === 'RETRY_TO_TAIL';

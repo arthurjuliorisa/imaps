@@ -193,11 +193,11 @@ test('duplicate possibility holds; mismatched document stays UNKNOWN; auth and v
   ]);
 });
 
-test('abort-cooperative real HTTP timeout drains socket before retry; bounded max=1', async () => {
+test('abort-cooperative real HTTP timeout drains socket and holds with Option B off', async () => {
   await policy(10, 1); await enqueue('A'); handler = () => {};
-  launch(200); await finished(2);
-  expect(arrivals).toHaveLength(2);
-  expect(await db.insw_queue_cycle.findFirst()).toMatchObject({ status: 'FAILED', error_code: 'REQUEST_TIMEOUT' });
+  launch(200); await finished(1);
+  expect(arrivals).toHaveLength(1);
+  expect(await db.insw_queue_cycle.findFirst()).toMatchObject({ status: 'HELD', retry_index: 0, error_code: 'REQUEST_TIMEOUT' });
 });
 
 test('abort-ignoring invocation holds busy after timeout; no next HTTP until it actually settles', async () => {
