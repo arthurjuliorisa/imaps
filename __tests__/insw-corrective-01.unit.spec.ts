@@ -179,9 +179,11 @@ test('producer checks payload even for same canonical identity; manual lock orde
 test('C1-RESEND-01: existing pure owner/lease/retry/HELD gates remain enforced', () => {
   const failed = { status: 'FAILED', delivery_state: 'KNOWN_FAILURE', retry_index: 10, max_auto_retry_snapshot: 10,
     owner_token: null, lease_until: null } as const;
-  expect(wmsResendEligible(failed)).toBe(true);
+  const evidence = { classification: 'TRANSIENT_FAILURE', reasonCode: 'RATE_LIMIT_REJECTION', responseEvidence: 'COMPLETE', providerStatus: false, providerMessage: 'API rate limit exceeded', httpCode: 429 };
+  expect(wmsResendEligible(failed, evidence)).toBe(true);
+  expect(wmsResendEligible(failed)).toBe(false);
   for (const change of [{ status: 'HELD' }, { delivery_state: 'POSSIBLY_STARTED' }, { retry_index: 9 },
-    { owner_token: 'owner' }, { lease_until: new Date() }]) expect(wmsResendEligible({ ...failed, ...change } as any)).toBe(false);
+    { owner_token: 'owner' }, { lease_until: new Date() }]) expect(wmsResendEligible({ ...failed, ...change } as any, evidence)).toBe(false);
 });
 
 test('C1-PO-01: full producer repeat with tracking retains history after source recreation', async () => {

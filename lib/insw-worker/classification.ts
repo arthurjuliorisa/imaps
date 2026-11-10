@@ -25,12 +25,16 @@ export function singleFrozenDocument(payload: unknown): string | null {
 
 export function classifyResponse(httpStatus: number, body: unknown, frozenPayload: unknown): Classification {
   const response = record(body);
-  if (httpStatus >= 200 && httpStatus < 300 && response?.status === true) return result('KNOWN_REMOTE_SUCCESS', 'REMOTE_SUCCESS');
+  if (httpStatus >= 200 && httpStatus < 300 && response?.status === true && !['02', '2', 2].includes(response.code as string | number)) return result('KNOWN_REMOTE_SUCCESS', 'REMOTE_SUCCESS');
   // Contradictory responses never authorize retry or claim success.
   if (response?.status === true) return result('UNKNOWN', 'CONTRADICTORY_RESPONSE');
   // Numeric/coerced duplicate codes are ambiguous, never validated duplicates
   // or ordinary permanent validation failures.
   if (httpStatus === 400 && (response?.code === 2 || response?.code === '2')) return result('UNKNOWN', 'UNRECOGNIZED_CODE_02');
+  if (httpStatus === 400 && response?.status === false && response.code === '02'
+    && typeof response.message === 'string' && /^data barang [A-Za-z0-9._/-]{1,100} tidak ada$/.test(response.message)) {
+    return result('PERMANENT_FAILURE', 'MISSING_ITEM_VALIDATION');
+  }
   if (httpStatus === 400 && response?.code === '02' && response.status === false) {
     const expected = singleFrozenDocument(frozenPayload);
     const message = response.message;
@@ -39,12 +43,16 @@ export function classifyResponse(httpStatus: number, body: unknown, frozenPayloa
     if (expected && match && documentId(match[1]) === expected) return result('DUPLICATE_POSSIBILITY', 'DUPLICATE_POSSIBILITY');
     return result('UNKNOWN', 'UNRECOGNIZED_CODE_02');
   }
-  if ([429, 500, 502, 503, 504].includes(httpStatus)) return result('TRANSIENT_FAILURE', 'TEMPORARY_UNAVAILABILITY', true);
+  if (['02', '2', 2].includes(response?.code as string | number)) return result('UNKNOWN', 'UNRECOGNIZED_CODE_02');
+  if (httpStatus === 429 && (body === 'API rate limit exceeded'
+    || response?.message === 'API rate limit exceeded' && (response.status === false || response.status === undefined))) {
+    return result('TRANSIENT_FAILURE', 'RATE_LIMIT_REJECTION', true);
+  }
+  // HTTP availability alone does not establish remote rejection or nonreceipt.
+  if ([429, 500, 502, 503, 504].includes(httpStatus)) return result('UNKNOWN', 'UNCONFIRMED_REMOTE_OUTCOME');
   if ([401, 403].includes(httpStatus)) return result('PERMANENT_FAILURE', 'AUTHORIZATION_FAILURE');
   if (!response || typeof response.status !== 'boolean') return result('UNKNOWN', 'MALFORMED_RESPONSE');
-  if (response.status === false && (httpStatus === 400 || httpStatus === 422 || (httpStatus >= 200 && httpStatus < 300))) {
-    return result('PERMANENT_FAILURE', 'BUSINESS_VALIDATION_FAILURE');
-  }
+  // No reviewed generic validation or temporary-rejection template is supplied.
   return result('UNKNOWN', 'UNCLASSIFIED_RESPONSE');
 }
 

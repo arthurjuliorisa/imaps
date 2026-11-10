@@ -1,6 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { resolveWorkerAllowedCompanies } from '../config/insw-worker-config';
-import type { WmsInswStatusFilter } from '../wms-insw-status-options';
+import { wmsInswStatusLabel, type WmsInswStatusFilter } from '../wms-insw-status-options';
 import { canonicalIdentity } from './contracts';
 
 // WMS audit IDs are never source IDs. These are the exact ingress actions,
@@ -16,6 +16,7 @@ export const wmsSourceDomains = [
 
 export type WmsInswStatus = {
   label: WmsInswStatusFilter;
+  operationalLabel?: string;
   explanation: string;
   workerAuthorized: boolean;
   canRegenerate: boolean;
@@ -30,7 +31,7 @@ export type WmsInswFacts = {
   source_id: bigint | null; source_matches: bigint; business_date: string | null;
   revision: string | null; source_valid: boolean | null;
   queues: { identity_key: string; business_date: string; source_revision: string; cycle: number;
-    status: string; delivery_state: string; hold_reason: string | null }[];
+    status: string; delivery_state: string; hold_reason: string | null; retry_index?: number }[];
   history_count: number; remote_success: boolean; history_mismatch: boolean;
 };
 
@@ -38,7 +39,7 @@ const regenerationBlock = 'A reason and your confirmation of a check on the offi
 
 export function projectWmsInswStatus(row: WmsInswFacts, workerAuthorized: boolean): WmsInswStatus {
   const result = (label: WmsInswStatusFilter, explanation: string): WmsInswStatus => ({
-    label, explanation, workerAuthorized, canRegenerate: false, regenerationBlock,
+    label, operationalLabel: wmsInswStatusLabel(label), explanation, workerAuthorized, canRegenerate: false, regenerationBlock,
   });
   const observed = 'Current persisted identity status, shared by matching audit entries; not the outcome of this individual WMS request. ';
   if (row.transmission_status !== 'SUCCESS') return result('Unknown / unlinked', 'This WMS audit entry does not prove successful local processing. No INSW submission is authorized.');
@@ -60,12 +61,12 @@ export function projectWmsInswStatus(row: WmsInswFacts, workerAuthorized: boolea
   const success = row.remote_success || queues.some(q => q.delivery_state === 'KNOWN_SUCCESS' || q.status === 'SUCCEEDED' || q.status === 'REMOTE_SUCCEEDED');
   if (success) {
     if (latest && !['SUCCEEDED', 'REMOTE_SUCCEEDED'].includes(latest.status)) return result('Unknown / unlinked', observed + 'Known remote success conflicts with another queue state. Reconcile locally; never send again.');
-    return result('Succeeded', observed + (latest?.status === 'REMOTE_SUCCEEDED' || !latest
-      ? 'Known remote success; local finalization/reconciliation may be required. Never send again.' : 'Remote INSW success recorded.'));
+    return { ...result('Succeeded', observed + (latest?.status === 'REMOTE_SUCCEEDED' || !latest
+      ? 'Known remote success; local finalization/reconciliation may be required. Never send again.' : 'Remote INSW success recorded.')), operationalLabel: latest?.status === 'REMOTE_SUCCEEDED' ? 'On Hold' : 'Success' };
   }
   if (latest) {
     if (latest.status === 'HELD' || latest.hold_reason === 'DELIVERY_UNKNOWN') return result('Held / Delivery unknown', observed + 'Held work requires investigation through the existing INSW workflow; regeneration is blocked.');
-    if (latest.status === 'READY') return result('Queued', observed + (workerAuthorized ? 'Waiting for asynchronous processing, including any scheduled automatic retry.' : 'Queue exists; worker authorization is not established in this application process.'));
+    if (latest.status === 'READY') return { ...result('Queued', observed + (workerAuthorized ? 'Waiting for asynchronous processing, including any scheduled automatic retry.' : 'Queue exists; worker authorization is not established in this application process.')), operationalLabel: latest.retry_index && latest.retry_index > 0 ? 'Retry' : 'Waiting' };
     if (latest.status === 'CLAIMED') return result('Processing', observed + 'Queue ownership exists; remote delivery is not yet confirmed.');
     if (latest.status === 'FAILED') return result('Failed', observed + 'An existing INSW cycle failed. Use guarded RESEND only when eligible in INSW Logs; never regenerate a missing queue.');
     return result('Unknown / unlinked', observed + 'Unrecognized lifecycle state requires reconciliation.');
@@ -126,7 +127,7 @@ export function wmsInswFactsSql(scopePredicate: Prisma.Sql): Prisma.Sql {
     LEFT JOIN LATERAL (
       SELECT jsonb_agg(jsonb_build_object('identity_key', q.identity_key, 'business_date', q.business_date,
         'source_revision', q.source_revision, 'cycle', q.cycle, 'status', q.status,
-        'delivery_state', q.delivery_state, 'hold_reason', q.hold_reason)) AS queues
+        'delivery_state', q.delivery_state, 'hold_reason', q.hold_reason, 'retry_index', q.retry_index)) AS queues
       FROM insw_queue_cycle q WHERE q.company_code = s.company_code AND q.operation::text = s.operation
         AND (q.wms_reference = s.wms_id OR q.wms_reference IS NULL
           OR starts_with(q.identity_key, concat('["insw-v1",', s.company_code, ',"', s.operation, '","',

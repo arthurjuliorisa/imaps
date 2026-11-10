@@ -108,7 +108,7 @@ export async function executeFrozenRequest(input: {
     base.phase = 'RESPONSE';
     let parsed: unknown;
     try { parsed = JSON.parse(raw); }
-    catch { return { ...base, errorClass: response.ok ? 'INVALID_JSON' : 'HTTP_ERROR', classification: classifyResponse(response.status, undefined, input.payload), endedAt: now() }; }
+    catch { return { ...base, errorClass: response.ok ? 'INVALID_JSON' : 'HTTP_ERROR', classification: classifyResponse(response.status, raw, JSON.parse(body)), endedAt: now() }; }
     // Use the exact verified request JSON, never rebuild from mutable sources.
     base.classification = classifyResponse(response.status, parsed, JSON.parse(body));
     const record = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
@@ -119,6 +119,7 @@ export async function executeFrozenRequest(input: {
     if (!response.ok) return { ...base, errorClass: 'HTTP_ERROR', endedAt: now() };
     if (!record || typeof record.status !== 'boolean') return { ...base, errorClass: 'INVALID_RESPONSE', endedAt: now() };
     if (!record.status) return { ...base, errorClass: 'BUSINESS_REJECTION', endedAt: now() };
+    if (base.classification.kind !== 'KNOWN_REMOTE_SUCCESS') return { ...base, errorClass: 'INVALID_RESPONSE', endedAt: now() };
     return { ...base, delivery: 'KNOWN_SUCCESS', endedAt: now() };
   } catch (error) {
     if (base.responseEvidence?.state === 'TOO_LARGE') return { ...base, errorClass: 'INVALID_RESPONSE',

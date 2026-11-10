@@ -60,7 +60,7 @@ for (const status of ['READY', 'CLAIMED', 'FAILED', 'SUCCEEDED', 'HELD']) {
   test(`rendered ${status} state remains separate from historical FAILED; server flag controls RESEND`, () => {
     const row = { ...log, current_queue: { ...q, status, hold_reason: status === 'HELD' ? 'DELIVERY_UNKNOWN' : null } };
     const view = render({ 0: [row], 1: false });
-    expect(view.text).toContain(({ READY: 'Queued', CLAIMED: 'Sending', FAILED: 'Failed', SUCCEEDED: 'Sent Successfully', HELD: 'Delivery Uncertain' } as Record<string, string>)[status]);
+    expect(view.text).toContain(({ READY: 'Retry', CLAIMED: 'Sending', FAILED: 'Failed', SUCCEEDED: 'Success', HELD: 'On Hold' } as Record<string, string>)[status]);
     expect(view.text).toContain('Failed');
     expect(view.html).toContain('aria-label="View details for log 11"');
     expect(view.html).toContain('aria-label="Refresh INSW logs"');

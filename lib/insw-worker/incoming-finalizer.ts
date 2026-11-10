@@ -122,7 +122,7 @@ export async function prepareWmsFinalizer(db: PrismaClient, token: string, admit
   const sourceId = sources[0].id;
   // Snapshot scalar identity; never consult mutable source views after send.
   const job = { ...admitted, frozen_payload: payload };
-  let retained: { fingerprint: string; outcome: Outcome; response: Prisma.InputJsonValue | null; explicitRejection: boolean; endedAt: number } | undefined;
+  let retained: { fingerprint: string; outcome: Outcome; response: Prisma.InputJsonValue | null; explicitRejection: boolean; providerStatus: boolean | null; providerMessage: string | null; endedAt: number } | undefined;
   return async (received: Outcome, locallyEndedAt: number): Promise<void> => {
     // One bounded outcome is retained for all local retries, even if the caller
     // mutates/replaces its object. A contradictory repair cannot replace evidence.
@@ -137,14 +137,24 @@ export async function prepareWmsFinalizer(db: PrismaClient, token: string, admit
       const outcome: Outcome = JSON.parse(serialized);
       let response: Prisma.InputJsonValue | null = null;
       let explicitRejection = false;
+      let providerStatus: boolean | null = null;
+      let providerMessage: string | null = null;
       if (evidence.state === 'COMPLETE') {
         if (evidence.raw === null || evidence.bytes !== Buffer.byteLength(evidence.raw)) throw new Error('INVALID_RESPONSE_EVIDENCE');
         let parsed: unknown;
         try { parsed = JSON.parse(evidence.raw); } catch { parsed = undefined; }
         explicitRejection = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
           && (parsed as { status?: unknown }).status === false;
-        const classification = classifyResponse(outcome.httpCode!, parsed, payload);
+        const classification = classifyResponse(outcome.httpCode!, parsed === undefined ? evidence.raw : parsed, payload);
+        const rawRecord = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+        providerStatus = typeof rawRecord?.status === 'boolean' ? rawRecord.status : null;
+        // Retain the reviewed literal only; arbitrary responses stay in existing
+        // response evidence and are never added to batched action projections.
+        providerMessage = classification.reasonCode === 'RATE_LIMIT_REJECTION'
+          ? typeof rawRecord?.message === 'string' ? rawRecord.message : typeof parsed === 'string' ? parsed : evidence.raw : null;
+        explicitRejection ||= classification.reasonCode === 'RATE_LIMIT_REJECTION';
         if (classification.kind !== outcome.classification.kind || classification.reasonCode !== outcome.classification.reasonCode
+          || classification.retryCandidate !== outcome.classification.retryCandidate
           || (outcome.delivery === 'KNOWN_SUCCESS') !== (classification.kind === 'KNOWN_REMOTE_SUCCESS')) {
           throw new Error('CONTRADICTORY_OUTCOME_EVIDENCE');
         }
@@ -165,12 +175,12 @@ export async function prepareWmsFinalizer(db: PrismaClient, token: string, admit
         }
       } else if (outcome.delivery === 'KNOWN_SUCCESS' || outcome.classification.kind === 'KNOWN_REMOTE_SUCCESS'
         || evidence.raw !== null) throw new Error('SUCCESS_REQUIRES_COMPLETE_RESPONSE');
-      retained = { fingerprint, outcome, response, explicitRejection, endedAt: locallyEndedAt };
+      retained = { fingerprint, outcome, response, explicitRejection, providerStatus, providerMessage, endedAt: locallyEndedAt };
     }
-    const { outcome, response, explicitRejection, endedAt } = retained;
+    const { outcome, response, explicitRejection, providerStatus, providerMessage, endedAt } = retained;
     const success = outcome.delivery === 'KNOWN_SUCCESS';
     const responseRecord = response as Record<string, unknown> | null;
-    const remoteMessage = typeof responseRecord?.message === 'string' ? responseRecord.message : null;
+    const remoteMessage = providerMessage || (typeof responseRecord?.message === 'string' ? responseRecord.message : null);
     // Checkpoint certainty separately. If finalization later fails, no selector
     // can repost. If this checkpoint fails too, the sticky busy claim remains.
     if (success) await db.$transaction(async tx => {
@@ -213,11 +223,12 @@ export async function prepareWmsFinalizer(db: PrismaClient, token: string, admit
         retryIndex: job.retry_index, maxAutoRetrySnapshot: Math.min(10, job.max_auto_retry_snapshot),
         clientApprovedAmbiguousRetry: false, exclusiveStreamProven: true, priorInvocationEnded: true, outcomeDurablyRecorded: true });
       const retry = !success && disposition === 'RETRY_TO_TAIL';
-      const failure = !success && disposition === 'STOP';
+      const failure = !success && disposition === 'STOP' && outcome.classification.reasonCode !== 'MISSING_ITEM_VALIDATION';
       const metadata = { adapter: 'WMS_QUEUE_FINALIZER', outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
           endpoint_url: endpointUrl, classification: outcome.classification.kind,
           reasonCode: outcome.classification.reasonCode, delivery: outcome.delivery, phase: outcome.phase,
           httpCode: outcome.httpCode, businessCode: outcome.businessCode, responseEvidence: evidence.state,
+          providerStatus, providerMessage,
           responseBytes: evidence.bytes, requestBytes, policyVersion: job.admissionPolicyVersion,
           invokedAt: outcome.requestInvokedAt, boundedOutcomeEndedAt: outcome.endedAt, locallyDrainedAt: endedAt };
       // Keep the exact legacy JSON fields and one insert, binding the already
@@ -236,7 +247,7 @@ export async function prepareWmsFinalizer(db: PrismaClient, token: string, admit
       } });
       await tx.insw_queue_cycle.update({ where: { id: cycle.id }, select: { id: true }, data: {
         status: success ? 'SUCCEEDED' : retry ? 'READY' : failure ? 'FAILED' : 'HELD',
-        delivery_state: success ? 'KNOWN_SUCCESS' : retry ? 'NOT_STARTED' : failure ? 'KNOWN_FAILURE' : outcome.delivery,
+        delivery_state: success ? 'KNOWN_SUCCESS' : retry ? 'NOT_STARTED' : failure && explicitRejection ? 'KNOWN_FAILURE' : outcome.delivery,
         completed_at: success || failure ? new Date() : null, owner_token: null, lease_until: null,
         hold_reason: success || retry || failure ? null : 'DELIVERY_UNKNOWN',
         error_category: outcome.classification.kind, error_code: outcome.classification.reasonCode,

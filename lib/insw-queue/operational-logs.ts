@@ -75,12 +75,15 @@ export async function currentQueueStates(db: PrismaClient, companyCode: number, 
       'attempt', CASE WHEN a.id IS NULL THEN NULL ELSE jsonb_build_object('id', a.id,
         'delivery_state', a.delivery_state, 'claimed_at', a.claimed_at, 'started_at', a.started_at, 'completed_at', a.completed_at) END,
       'attempts_started', (SELECT count(*) FROM insw_queue_attempt started WHERE started.queue_id = q.id AND started.started_at IS NOT NULL),
-      'latest_log_id', l.id::text) AS state
+      'latest_log_id', l.id::text,
+      'provenance', CASE WHEN l.metadata->>'rehearsalProvenance' IN
+        ('SIMULATED_REMOTE_REJECTION', 'SIMULATED_TRANSPORT_FAULT', 'REAL_INSW_TEST_RESPONSE')
+        THEN l.metadata->>'rehearsalProvenance' ELSE NULL END) AS state
     FROM insw_queue_cycle original
     JOIN LATERAL (SELECT * FROM insw_queue_cycle latest WHERE latest.identity_key = original.identity_key
       AND latest.company_code = ${companyCode} ORDER BY latest.cycle DESC LIMIT 1) q ON true
     LEFT JOIN LATERAL (SELECT * FROM insw_queue_attempt attempt WHERE attempt.queue_id = q.id ORDER BY retry_index DESC LIMIT 1) a ON true
-    LEFT JOIN LATERAL (SELECT id FROM insw_tracking_log log WHERE log.queue_attempt_id = a.id
+    LEFT JOIN LATERAL (SELECT id, metadata FROM insw_tracking_log log WHERE log.queue_attempt_id = a.id
       AND log.company_code = ${companyCode} ORDER BY id DESC LIMIT 1) l ON true
     WHERE original.company_code = ${companyCode} AND original.id IN (${Prisma.join([...new Set(queueIds)].map(id => Prisma.sql`${id}::uuid`))})`);
   return new Map(rows.map(row => [row.original_id, row.state]));

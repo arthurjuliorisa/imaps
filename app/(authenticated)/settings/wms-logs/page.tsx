@@ -36,7 +36,7 @@ import { useSession } from 'next-auth/react';
 import dayjs from 'dayjs';
 import type { WmsInswStatus } from '@/lib/insw-queue/wms-log-status';
 import { regenerationMessage, REGENERATION_SUCCESS } from '@/lib/insw-regeneration-messages';
-import { WMS_INSW_STATUSES } from '@/lib/wms-insw-status-options';
+import { WMS_INSW_STATUSES, wmsInswStatusLabel } from '@/lib/wms-insw-status-options';
 import { wmsLogFilterParams } from '@/lib/wms-log-filters';
 
 interface WMSTransmissionLog {
@@ -171,8 +171,8 @@ export default function WMSTransmissionLogsPage() {
       minWidth: 210,
       format: (_value: unknown, row: WMSTransmissionLog) => row.insw ? (
         <Tooltip title={row.insw.explanation}>
-          <Chip label={row.insw.label} size="small" variant="outlined"
-            color={row.insw.label === 'Succeeded' ? 'success' : row.insw.label === 'Failed' ? 'error' : 'default'} />
+          <Chip label={row.insw.operationalLabel || wmsInswStatusLabel(row.insw.label)} size="small" variant="outlined"
+            color={row.insw.operationalLabel === 'On Hold' ? 'warning' : row.insw.label === 'Succeeded' ? 'success' : row.insw.label === 'Failed' ? 'error' : 'default'} />
         </Tooltip>
       ) : '—',
     },
@@ -608,7 +608,7 @@ export default function WMSTransmissionLogsPage() {
             <TextField select label="INSW Status" value={inswStatusFilter}
               onChange={handleFilterChange(setInswStatusFilter)} size="small" sx={{ minWidth: 220 }}>
               <MenuItem value="ALL">All INSW Status</MenuItem>
-              {WMS_INSW_STATUSES.map(status => <MenuItem key={status} value={status}>{status}</MenuItem>)}
+              {WMS_INSW_STATUSES.map(status => <MenuItem key={status} value={status}>{status === 'Queued' ? 'Waiting / Retry' : wmsInswStatusLabel(status)}</MenuItem>)}
             </TextField>
             <TextField
               select
@@ -757,7 +757,7 @@ export default function WMSTransmissionLogsPage() {
 
                 {selectedLog.insw && (
                   <Box>
-                    <Typography variant="subtitle2">INSW transmission: {selectedLog.insw.label}</Typography>
+                    <Typography variant="subtitle2">INSW transmission: {selectedLog.insw.operationalLabel || wmsInswStatusLabel(selectedLog.insw.label)}</Typography>
                     <Typography variant="body2" sx={{ mt: 1 }}>{selectedLog.insw.explanation}</Typography>
                     <Typography variant="body2" sx={{ mt: 1 }}>
                       {selectedLog.insw.workerAuthorized

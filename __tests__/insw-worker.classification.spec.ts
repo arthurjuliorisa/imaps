@@ -50,10 +50,10 @@ test('document identity uses only one actual envelope document with conservative
 
 test('response matrix distinguishes success, permanent failure, temporary availability, and unknown', () => {
   expect(classifyResponse(200, { status: true }, payload).kind).toBe('KNOWN_REMOTE_SUCCESS');
-  for (const status of [400, 422, 200]) expect(classifyResponse(status, { status: false }, payload).kind).toBe('PERMANENT_FAILURE');
+  for (const status of [400, 422, 200]) expect(classifyResponse(status, { status: false }, payload).kind).toBe('UNKNOWN');
   for (const status of [401, 403]) expect(classifyResponse(status, undefined, payload).kind).toBe('PERMANENT_FAILURE');
   for (const status of [429, 500, 502, 503, 504]) {
-    expect(classifyResponse(status, undefined, payload)).toMatchObject({ kind: 'TRANSIENT_FAILURE', retryCandidate: true });
+    expect(classifyResponse(status, undefined, payload)).toMatchObject({ kind: 'UNKNOWN', retryCandidate: false });
     expect(classifyResponse(status, { status: true }, payload).kind).toBe('UNKNOWN');
   }
   for (const body of [null, [], {}, { status: 'true' }, 'non-JSON']) expect(classifyResponse(200, body, payload).kind).toBe('UNKNOWN');

@@ -36,7 +36,7 @@ import {
 import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import dayjs from 'dayjs';
-import { transmissionStatus, transmissionResult, transmissionError } from '@/lib/insw-log-presentation';
+import { transmissionStatus, transmissionResult, transmissionError, recordedResult } from '@/lib/insw-log-presentation';
 import type { AttemptHistoryEntry } from '@/lib/insw-queue/attempt-history';
 import { provenanceLabel, type OperationalState } from '@/lib/insw-queue/operational-state';
 
@@ -375,7 +375,7 @@ export default function INSWLogsPage() {
       label: 'Recorded Result',
       minWidth: 150,
       format: (value: string, row: INSWLog) => {
-        const result = transmissionResult(value, undefined, row.metadata?.rehearsalProvenance);
+        const result = recordedResult(row);
         return <Chip label={result.label} color={result.color} size="small" />;
       },
     },
@@ -1154,7 +1154,7 @@ export default function INSWLogsPage() {
                       const result = transmissionResult(entry.outcome, entry.delivery_state, entry.provenance);
                       return <Box component="li" key={`${entry.id}:${entry.log_id}`} sx={{ borderBottom: 1, borderColor: 'divider', pb: 1 }}>
                         <Typography variant="body2" fontWeight={600}>Transmission {index + 1} · {result.label}{entry.log_id === selectedLog.id ? ' · selected record' : ''}</Typography>
-                        <Typography variant="caption" display="block">{dayjs(entry.completed_at || entry.started_at || entry.claimed_at).format('DD-MMMM-YY HH:mm:ss')}{!entry.started_at ? ' · sending did not start' : ''}</Typography>
+                        <Typography variant="caption" display="block">{dayjs(entry.completed_at || entry.started_at || entry.claimed_at).format('DD-MMMM-YY HH:mm:ss')}{!entry.started_at ? ' · start not recorded' : ''}</Typography>
                         <Typography variant="body2">{result.explanation}</Typography>
                         {provenanceLabel(entry.provenance) && <Typography variant="caption">{provenanceLabel(entry.provenance)}</Typography>}
                         {entry.reason && <Typography variant="body2">{transmissionError(entry.reason)}</Typography>}

@@ -112,7 +112,7 @@ export class SourceAdmissionConflict extends Error {
 
 /** Lock order: business reference, then canonical identity, then source/audit rows.
  * Date/revision/PK are deliberately excluded: no automatic same-reference revision
- * policy exists. RESEND only takes the identity lock and never requests this lock.
+ * policy exists. RESEND uses this same stable-reference-first lock order.
  */
 export async function lockIncomingBusinessReference(tx: Prisma.TransactionClient, scope: ReferenceScope) {
   const key = JSON.stringify(['insw-source-reference', scope.companyCode, scope.operation, scope.wmsReference]);

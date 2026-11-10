@@ -6,6 +6,7 @@ export interface OperationalState {
   attempt: { id: string; delivery_state: string; claimed_at: string; started_at: string | null; completed_at: string | null } | null;
   attempts_started?: number;
   latest_log_id: string | null;
+  provenance?: string | null;
 }
 export function deliveryLabel(state: OperationalState | null | undefined) {
   if (!state) return 'Legacy DIRECT / unlinked history';
