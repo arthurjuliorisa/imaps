@@ -227,13 +227,14 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
     await tx.$executeRaw`UPDATE insw_dispatch_gate SET busy_attempt_id = ${attempt.id}::uuid,
       last_started_at = clock_timestamp(), recovery_barrier_at = NULL, prior_interval_ms = ${interval}
       WHERE id = 1 AND owner_token = ${token}::uuid`;
-    return { waitMs: 0, job: { ...job, attemptId: attempt.id, admissionPolicyVersion: policy.version } };
+    return { waitMs: 0, elapsedIntervalMs: Math.max(interval, gate.prior_interval_ms ?? interval),
+      job: { ...job, attemptId: attempt.id, admissionPolicyVersion: policy.version } };
   });
 }
 export type AdmittedJob = NonNullable<Awaited<ReturnType<typeof admitNext>>['job']>;
 
 // Called immediately after starting the primitive. The DB timestamp is an upper
-// bound on actual invocation, so the next start cannot be too early. If it fails,
+// bound in wall time only; ElapsedPacing independently guards elapsed time. If it fails,
 // the worker drains the invocation and exits retaining busy ownership.
 export async function recordActualStart(db: PrismaClient, token: string, job: AdmittedJob) {
   await db.$transaction(async tx => {

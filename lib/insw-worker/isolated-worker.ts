@@ -3,6 +3,7 @@ import { resolveWorkerAllowedCompanies, validateWorkerAllowedCompanies } from '.
 import { PrismaClient } from '@prisma/client';
 import { executeFrozenRequest, RequestPrimitive, Outcome } from './transport';
 import { acquireOperationalOwnership, admitNext, persistOutcome, recordActualStart, holdPreflight, AdmittedJob } from './operational.repository';
+import { ElapsedPacing } from './elapsed-pacing';
 
 export function isolatedDatabaseUrl(env: NodeJS.ProcessEnv): string {
   if (env.NODE_ENV !== 'test' || env.INSW_ISOLATED_WORKER_ENABLED !== 'true') throw new Error('ISOLATED_TEST_OPT_IN_REQUIRED');
@@ -34,6 +35,7 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
   const allowedCompanies = input.allowedCompanies === undefined ? resolveWorkerAllowedCompanies()
     : validateWorkerAllowedCompanies(input.allowedCompanies);
   const token = await acquireOperationalOwnership(input.db);
+  const pacing = new ElapsedPacing();
   input.onEvent?.('owned', { token });
   let idleMs = 250;
   let count = 0;
@@ -55,10 +57,18 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
       continue;
     }
     input.onEvent?.('admitted', { id: job.id });
+    // Admission's wall-clock deadline can expire early after a forward jump.
+    // Sticky ownership excludes every other process until verified recovery;
+    // this fresh-owner quarantine also covers starts with no persisted timing.
+    if (!await pacing.wait(admission.elapsedIntervalMs, input.signal)) {
+      await holdPreflight(input.db, token, job);
+      break;
+    }
     let invocation: Promise<Response> | undefined;
     let body: Promise<string> | undefined;
     let started: Promise<void> | undefined;
     let startFailed = false;
+    let invocationMarked = false;
     const outcome = await executeFrozenRequest({ payload: job.frozen_payload, sha256: job.payload_sha256,
       timeoutMs: input.timeoutMs, signal: input.signal,
       captureResponse: !!finalize, onBodyRead: reading => { body = reading; },
@@ -66,6 +76,7 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
         // executeFrozenRequest can return at its deadline; these separately tracked
         // promises must settle before ANY result releases the stream.
         const markStarted = () => {
+          if (input.tracksInvocationStart) { pacing.mark(); invocationMarked = true; }
           started = recordActualStart(input.db, token, job).catch(() => { startFailed = true; });
         };
         invocation = Promise.resolve().then(() => input.request(json, signal, markStarted));
@@ -80,6 +91,9 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
         if (body) await body;
         else if (response.body) await response.body.cancel();
       } catch { /* The locally tracked invocation has ended; outcome stays conservative. */ }
+      // Legacy primitives have no trustworthy physical-start callback. Drain is
+      // a conservative upper bound; never use their pre-invocation DB marker.
+      if (!invocationMarked) pacing.mark();
     }
     await started;
     if (startFailed) throw new Error('START_EVIDENCE_FAILED_STREAM_RETAINED');
