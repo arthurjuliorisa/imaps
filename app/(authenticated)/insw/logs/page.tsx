@@ -36,6 +36,8 @@ import {
 import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import dayjs from 'dayjs';
+import { AdminResolve } from '@/app/components/AdminResolve';
+import { canResolveQueue } from '@/lib/insw-queue/operational-state';
 import { transmissionStatus, transmissionResult, transmissionError, recordedResult } from '@/lib/insw-log-presentation';
 import type { AttemptHistoryEntry } from '@/lib/insw-queue/attempt-history';
 import { provenanceLabel, type OperationalState } from '@/lib/insw-queue/operational-state';
@@ -817,12 +819,18 @@ export default function INSWLogsPage() {
     }
   };
 
-  function renderQueueState(log: INSWLog) {
+  function renderQueueState(log: INSWLog, detail = false) {
     const q = log.current_queue;
     const status = transmissionStatus(log);
     return <Stack spacing={0.5} sx={{ overflowWrap: 'anywhere' }}>
+      <AdminResolve queueId={q?.id} eligible={canResolveQueue(q)} resolution={q?.resolution} detail={detail} onResolved={async () => {
+        await fetchLogs();
+        if (detailDialogOpen && selectedLogId) await handleViewDetails({ id: selectedLogId } as INSWLog);
+      }} />
       <Chip label={status.label} color={status.color} size="small" sx={{ alignSelf: 'flex-start' }} />
       <Typography variant="body2">{status.explanation}</Typography>
+      {detail && q?.resolution && <Typography variant="body2">Historical queue state: {q.status} · {q.delivery_state}{q.hold_reason ? ` · ${q.hold_reason}` : ''}</Typography>}
+      {detail && q?.stable_reference_conflict && <Alert severity="warning">Conflicting queue identities share this WMS reference. This resolution applies only to queue {q.id}.</Alert>}
       {status.provenance && <Typography variant="caption">{status.provenance}</Typography>}
       {status.time && <Typography variant="caption">Last activity: {dayjs(status.time).format('DD-MMMM-YY HH:mm:ss')}</Typography>}
       {log.insw_error ? <Typography variant="caption">Recorded error: {transmissionError(log.insw_error)}</Typography>
@@ -1052,7 +1060,7 @@ export default function INSWLogsPage() {
             </TextField>
             <TextField
               select
-              label="Status"
+              label="Recorded Result"
               value={statusFilter}
               onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
               size="small"
@@ -1115,7 +1123,7 @@ export default function INSWLogsPage() {
                   <Typography variant="subtitle2" color="text.secondary">
                     Transmission Status
                   </Typography>
-                  {renderQueueState(selectedLog)}
+                  {renderQueueState(selectedLog, true)}
                 </Box>
 
                 <Box>

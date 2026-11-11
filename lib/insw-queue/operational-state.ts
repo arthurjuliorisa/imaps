@@ -5,6 +5,8 @@ export interface OperationalState {
   claimed_at: string | null; completed_at: string | null;
   attempt: { id: string; delivery_state: string; claimed_at: string; started_at: string | null; completed_at: string | null } | null;
   attempts_started?: number;
+  resolve_eligible?: boolean;
+  resolution?: AdminResolution | null;
   latest_log_id: string | null;
   provenance?: string | null;
   /** Read-only evidence from persisted queues; never a stored lifecycle change. */
@@ -25,4 +27,11 @@ export function provenanceLabel(value: unknown): string | null {
     case 'REAL_INSW_TEST_RESPONSE': return 'Actual INSW TEST response';
     default: return null;
   }
+}
+
+export type AdminResolution = { resolved_by: string; resolved_at: string; notes: string };
+/** Only stable terminal failures/holds. In-flight gate/attempt checks are server authoritative. */
+export function canResolveQueue(q: { status: string; owner_token?: unknown; lease_until?: unknown; resolve_eligible?: boolean; resolution?: AdminResolution | null } | null | undefined): boolean {
+  return !!q && !q.resolution && ['FAILED', 'HELD'].includes(q.status)
+    && (q.resolve_eligible === true || q.owner_token === null && q.lease_until === null);
 }

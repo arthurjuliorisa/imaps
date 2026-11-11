@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
           try { destination = resolveInswCompanyConfig(log.company_code!).useTestMode ? 'TEST' : 'REAL'; } catch { /* Configuration missing: fail closed. */ }
         }
         return status ? { ...log, insw: { ...status,
+          canResolve: status.canResolve && authCheck.session.user.role === 'ADMIN' && Number(authCheck.session.user.companyCode) === log.company_code,
           canRegenerate: status.canRegenerate && authCheck.grants.canEdit && !!destination,
           regenerationDestination: destination,
           canInspectRegeneration: authCheck.grants.canEdit,

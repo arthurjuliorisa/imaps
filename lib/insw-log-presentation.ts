@@ -36,7 +36,8 @@ export function transmissionStatus(log: {
     : !q || q.latest_log_id === log.id ? log.metadata?.rehearsalProvenance : undefined);
   let result = q ? transmissionResult(undefined, q.delivery_state, latestProvenance)
     : transmissionResult(log.insw_status, undefined, latestProvenance);
-  if (q?.stable_reference_conflict) result = { label: 'On Hold', explanation: 'Conflicting queue identities share this WMS reference. Ask support to reconcile the associations before sending again.', color: 'warning' };
+  if (q?.resolution) result = { label: 'Resolved', explanation: 'Administrative resolution only; this does not confirm receipt by INSW or resend the transaction.', color: 'info' };
+  else if (q?.stable_reference_conflict) result = { label: 'On Hold', explanation: 'Conflicting queue identities share this WMS reference. Ask support to reconcile the associations before sending again.', color: 'warning' };
   else if (q?.status === 'READY') result = { label: q.retry_index > 0 ? 'Retry' : 'Waiting', explanation: 'Waiting to send to INSW. No action is needed.', color: 'info' };
   else if (q?.status === 'CLAIMED') result = { label: 'Sending', explanation: 'Transmission is in progress. Wait for the result.', color: 'info' };
   else if (q?.status === 'HELD' || q?.status === 'REMOTE_SUCCEEDED') {
@@ -51,7 +52,7 @@ export function transmissionStatus(log: {
   if (typeof latestProvenance === 'string' && latestProvenance.startsWith('SIMULATED_')) result = { ...result, explanation: `${q?.stable_reference_conflict ? result.explanation + ' ' : ''}Simulated lifecycle state; this does not confirm receipt by INSW.`, color: 'info' };
   else if (latestProvenance === 'REAL_INSW_TEST_RESPONSE') result = { ...result, explanation: `${result.explanation} This TEST outcome does not confirm production receipt.` };
   if (result.label === 'Failed' && log.can_resend === true) result = { ...result, explanation: `${result.explanation} Review the error before using Resend.` };
-  return { ...result, time: q ? q.completed_at || q.attempt?.completed_at || q.attempt?.started_at || q.claimed_at || q.queued_at : log.sent_at || log.created_at,
+  return { ...result, time: q ? q.resolution?.resolved_at || q.completed_at || q.attempt?.completed_at || q.attempt?.started_at || q.claimed_at || q.queued_at : log.sent_at || log.created_at,
     provenance: provenanceLabel(latestProvenance) };
 }
 

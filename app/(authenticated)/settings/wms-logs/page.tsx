@@ -34,6 +34,7 @@ import { DataTable, Column } from '@/app/components/DataTable';
 import { useToast } from '@/app/components/ToastProvider';
 import { useSession } from 'next-auth/react';
 import dayjs from 'dayjs';
+import { AdminResolve } from '@/app/components/AdminResolve';
 import type { WmsInswStatus } from '@/lib/insw-queue/wms-log-status';
 import { regenerationMessage, REGENERATION_SUCCESS } from '@/lib/insw-regeneration-messages';
 import { WMS_INSW_STATUSES, wmsInswStatusLabel } from '@/lib/wms-insw-status-options';
@@ -170,10 +171,10 @@ export default function WMSTransmissionLogsPage() {
       label: 'INSW Status',
       minWidth: 210,
       format: (_value: unknown, row: WMSTransmissionLog) => row.insw ? (
-        <Tooltip title={row.insw.explanation}>
+        <Stack spacing={0.5}><AdminResolve queueId={row.insw.queueId} eligible={row.insw.canResolve} resolution={row.insw.resolution} onResolved={fetchLogs} /><Tooltip title={row.insw.explanation}>
           <Chip label={row.insw.operationalLabel || wmsInswStatusLabel(row.insw.label)} size="small" variant="outlined"
             color={row.insw.operationalLabel === 'On Hold' ? 'warning' : row.insw.label === 'Succeeded' ? 'success' : row.insw.label === 'Failed' ? 'error' : 'default'} />
-        </Tooltip>
+        </Tooltip></Stack>
       ) : '—',
     },
     {
@@ -757,6 +758,7 @@ export default function WMSTransmissionLogsPage() {
 
                 {selectedLog.insw && (
                   <Box>
+                    <AdminResolve queueId={selectedLog.insw.queueId} eligible={selectedLog.insw.canResolve} resolution={selectedLog.insw.resolution} detail onResolved={fetchLogs} />
                     <Typography variant="subtitle2">INSW transmission: {selectedLog.insw.operationalLabel || wmsInswStatusLabel(selectedLog.insw.label)}</Typography>
                     <Typography variant="body2" sx={{ mt: 1 }}>{selectedLog.insw.explanation}</Typography>
                     <Typography variant="body2" sx={{ mt: 1 }}>

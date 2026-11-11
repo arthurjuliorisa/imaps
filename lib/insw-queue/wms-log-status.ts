@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { resolveWorkerAllowedCompanies } from '../config/insw-worker-config';
 import { wmsInswStatusLabel, type WmsInswStatusFilter } from '../wms-insw-status-options';
+import { canResolveQueue, type AdminResolution } from './operational-state';
 import { canonicalIdentity } from './contracts';
 
 // WMS audit IDs are never source IDs. These are the exact ingress actions,
@@ -15,6 +16,9 @@ export const wmsSourceDomains = [
 ] as const;
 
 export type WmsInswStatus = {
+  queueId?: string;
+  canResolve?: boolean;
+  resolution?: AdminResolution | null;
   label: WmsInswStatusFilter;
   operationalLabel?: string;
   explanation: string;
@@ -30,7 +34,7 @@ export type WmsInswFacts = {
   wms_id: string | null; transmission_status: string;
   source_id: bigint | null; source_matches: bigint; business_date: string | null;
   revision: string | null; source_valid: boolean | null;
-  queues: { identity_key: string; business_date: string; source_revision: string; cycle: number;
+  queues: { id?: string; resolve_eligible?: boolean; owner_token?: string | null; lease_until?: string | null; resolution?: AdminResolution | null; identity_key: string; business_date: string; source_revision: string; cycle: number;
     status: string; delivery_state: string; hold_reason: string | null; retry_index?: number }[];
   history_count: number; remote_success: boolean; history_mismatch: boolean;
 };
@@ -58,17 +62,20 @@ export function projectWmsInswStatus(row: WmsInswFacts, workerAuthorized: boolea
   }
   const queues = [...row.queues].sort((a, b) => b.cycle - a.cycle);
   const latest = queues[0];
+  if (latest?.resolution) return { ...result('Resolved', `Administrative resolution only; this does not confirm successful receipt by INSW and does not resend the transaction. Historical queue state: ${latest.status} / ${latest.delivery_state}${latest.hold_reason ? ' / ' + latest.hold_reason : ''}.`),
+    queueId: latest.id, resolution: latest.resolution };
+  const resolutionTarget = latest?.id ? { queueId: latest.id, canResolve: canResolveQueue(latest) } : {};
   const success = row.remote_success || queues.some(q => q.delivery_state === 'KNOWN_SUCCESS' || q.status === 'SUCCEEDED' || q.status === 'REMOTE_SUCCEEDED');
   if (success) {
-    if (latest && !['SUCCEEDED', 'REMOTE_SUCCEEDED'].includes(latest.status)) return result('Unknown / unlinked', observed + 'Known remote success conflicts with another queue state. Reconcile locally; never send again.');
+    if (latest && !['SUCCEEDED', 'REMOTE_SUCCEEDED'].includes(latest.status)) return { ...result('Unknown / unlinked', observed + 'Known remote success conflicts with another queue state. Reconcile locally; never send again.'), ...resolutionTarget };
     return { ...result('Succeeded', observed + (latest?.status === 'REMOTE_SUCCEEDED' || !latest
       ? 'Known remote success; local finalization/reconciliation may be required. Never send again.' : 'Remote INSW success recorded.')), operationalLabel: latest?.status === 'REMOTE_SUCCEEDED' ? 'On Hold' : 'Success' };
   }
   if (latest) {
-    if (latest.status === 'HELD' || latest.hold_reason === 'DELIVERY_UNKNOWN') return result('Held / Delivery unknown', observed + 'Held work requires investigation through the existing INSW workflow; regeneration is blocked.');
+    if (latest.status === 'HELD' || latest.hold_reason === 'DELIVERY_UNKNOWN') return { ...result('Held / Delivery unknown', observed + 'Held work requires investigation through the existing INSW workflow; regeneration is blocked.'), ...resolutionTarget };
     if (latest.status === 'READY') return { ...result('Queued', observed + (workerAuthorized ? 'Waiting for asynchronous processing, including any scheduled automatic retry.' : 'Queue exists; worker authorization is not established in this application process.')), operationalLabel: latest.retry_index && latest.retry_index > 0 ? 'Retry' : 'Waiting' };
     if (latest.status === 'CLAIMED') return result('Processing', observed + 'Queue ownership exists; remote delivery is not yet confirmed.');
-    if (latest.status === 'FAILED') return result('Failed', observed + 'An existing INSW cycle failed. Use guarded RESEND only when eligible in INSW Logs; never regenerate a missing queue.');
+    if (latest.status === 'FAILED') return { ...result('Failed', observed + 'An existing INSW cycle failed. Use guarded RESEND only when eligible in INSW Logs; never regenerate a missing queue.'), ...resolutionTarget };
     return result('Unknown / unlinked', observed + 'Unrecognized lifecycle state requires reconciliation.');
   }
   if (row.history_count) return result('Unknown / unlinked', 'INSW tracking evidence exists without an exact queue association. Investigate legacy or ambiguous delivery; do not regenerate.');
@@ -125,7 +132,11 @@ export function wmsInswFactsSql(scopePredicate: Prisma.Sql): Prisma.Sql {
       h.history_count, h.remote_success, h.history_mismatch
     FROM sources s
     LEFT JOIN LATERAL (
-      SELECT jsonb_agg(jsonb_build_object('identity_key', q.identity_key, 'business_date', q.business_date,
+      SELECT jsonb_agg(jsonb_build_object('id', q.id, 'resolve_eligible', (q.status IN ('FAILED', 'HELD') AND q.owner_token IS NULL AND q.lease_until IS NULL
+        AND NOT EXISTS (SELECT 1 FROM insw_queue_attempt pending WHERE pending.queue_id = q.id
+          AND (pending.completed_at IS NULL OR EXISTS (SELECT 1 FROM insw_dispatch_gate g WHERE g.busy_attempt_id = pending.id)))),
+        'resolution', (SELECT jsonb_build_object('resolved_by', r.resolved_by, 'resolved_at', r.resolved_at, 'notes', r.notes) FROM insw_admin_resolution r WHERE r.queue_id = q.id),
+        'identity_key', q.identity_key, 'business_date', q.business_date,
         'source_revision', q.source_revision, 'cycle', q.cycle, 'status', q.status,
         'delivery_state', q.delivery_state, 'hold_reason', q.hold_reason, 'retry_index', q.retry_index)) AS queues
       FROM insw_queue_cycle q WHERE q.company_code = s.company_code AND q.operation::text = s.operation
@@ -169,6 +180,7 @@ export function wmsInswClassifiedSql(scopePredicate: Prisma.Sql): Prisma.Sql {
       WHERE q->>'identity_key' IS DISTINCT FROM canonical_key
         OR q->>'business_date' IS DISTINCT FROM business_date
         OR q->>'source_revision' IS DISTINCT FROM revision) THEN 'Unknown / unlinked'
+    WHEN latest->'resolution' IS NOT NULL AND latest->'resolution' <> 'null'::jsonb THEN 'Resolved'
     WHEN remote_success OR EXISTS (SELECT 1 FROM jsonb_array_elements(queues) q
       WHERE q->>'delivery_state' = 'KNOWN_SUCCESS' OR q->>'status' IN ('SUCCEEDED', 'REMOTE_SUCCEEDED'))
       THEN CASE WHEN latest IS NOT NULL AND latest->>'status' NOT IN ('SUCCEEDED', 'REMOTE_SUCCEEDED')

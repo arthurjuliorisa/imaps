@@ -27,6 +27,9 @@ export async function enqueueInTransaction(tx: Prisma.TransactionClient, input: 
   if (input.sourceLogId !== undefined && (typeof input.sourceLogId !== 'bigint' || input.sourceLogId <= BigInt(0) || input.sourceLogId > BigInt('9223372036854775807'))) throw new Error('Invalid source log ID');
   // Hash collisions only serialize unrelated identities; uniqueness uses the full key.
   await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${identity.key}, 0))::text`;
+  const resolved = await tx.$queryRaw<{ queue_id: string }[]>`SELECT r.queue_id FROM insw_admin_resolution r
+    JOIN insw_queue_cycle q ON q.id = r.queue_id WHERE q.identity_key = ${identity.key} LIMIT 1`;
+  if (resolved.length) throw new Error('ADMINISTRATIVELY_RESOLVED');
   const existing = await tx.insw_queue_cycle.findFirst({
     where: { identity_key: identity.key, status: { in: [...active] } },
     select: { ...summary, payload_sha256: true, intent: true, wms_reference: true, source_log_id: true },
@@ -63,7 +66,8 @@ export async function claimJob(db: PrismaClient, leaseMs: number): Promise<Claim
     const rows = await tx.$queryRaw<Omit<Claim, 'attemptId'>[]>`
       WITH candidate AS (
         SELECT id FROM insw_queue_cycle
-        WHERE status = 'READY' AND next_eligible_at <= clock_timestamp()
+        WHERE NOT EXISTS (SELECT 1 FROM insw_admin_resolution r JOIN insw_queue_cycle resolved ON resolved.id = r.queue_id WHERE resolved.identity_key = insw_queue_cycle.identity_key)
+          AND status = 'READY' AND next_eligible_at <= clock_timestamp()
         ORDER BY tail_key, id FOR UPDATE SKIP LOCKED LIMIT 1
       )
       UPDATE insw_queue_cycle q SET status = 'CLAIMED', owner_token = ${token}::uuid,

@@ -97,7 +97,8 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
     // Invalid rows stay untouched and cannot hide valid work later in the tail.
     // All six isolated domains verify committed source association in SQL.
     const candidates = await tx.$queryRaw<{ id: string }[]>`SELECT q.id FROM insw_queue_cycle q
-      WHERE q.status = 'READY' AND q.next_eligible_at <= clock_timestamp()
+      WHERE NOT EXISTS (SELECT 1 FROM insw_admin_resolution r JOIN insw_queue_cycle resolved ON resolved.id = r.queue_id WHERE resolved.identity_key = q.identity_key)
+        AND q.status = 'READY' AND q.next_eligible_at <= clock_timestamp()
         AND q.company_code IN (${Prisma.join(companies)})
         AND q.operation IN ('INCOMING', 'OUTGOING', 'MATERIAL_USAGE', 'PRODUCTION_OUTPUT', 'ADJUSTMENT', 'STOCK_OPNAME')
         AND EXISTS (SELECT 1 FROM companies eligible_company

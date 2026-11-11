@@ -65,6 +65,7 @@ export async function wmsLogResendEligibility(db: PrismaClient | Prisma.Transact
       AND l.insw_status = 'FAILED' AND p.company_code = l.company_code AND p.company_code IN (1370, 1380)
       AND p.status = 'FAILED' AND p.delivery_state = 'KNOWN_FAILURE' AND p.retry_index >= p.max_auto_retry_snapshot
       AND p.owner_token IS NULL AND p.lease_until IS NULL
+      AND NOT EXISTS (SELECT 1 FROM insw_admin_resolution r WHERE r.queue_id = p.id)
       -- Retry index is persisted execution order, unique within a cycle. A
       -- historical failure must never inherit the terminal cycle's eligibility.
       AND a.retry_index = p.retry_index

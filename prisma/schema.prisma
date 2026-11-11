@@ -184,6 +184,7 @@ model users {
   company           companies?          @relation(fields: [company_code], references: [code], onDelete: NoAction, onUpdate: NoAction)
   user_access_menus user_access_menus[]
   activity_logs     activity_logs[]
+  insw_resolutions  insw_admin_resolution[]
 
   @@index([username])
   @@index([email])
@@ -1360,6 +1361,7 @@ model insw_queue_cycle {
   error_category          String?              @db.VarChar(50)
   error_code              String?              @db.VarChar(100)
   error_message           String?              @db.VarChar(500)
+  resolution              insw_admin_resolution?
   attempts                insw_queue_attempt[]
 
   @@unique([identity_key, cycle])
@@ -1437,4 +1439,14 @@ model insw_preparation_ledger {
 
   @@unique([company_code, source_kind, wms_reference])
   @@index([rollout_id, state, next_eligible_at])
+}
+
+// Administrative overlay only; company and cycle are fixed by the queue FK.
+model insw_admin_resolution {
+  queue_id    String           @id @db.Uuid
+  resolved_by String
+  resolved_at DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  notes       String           @db.VarChar(2000)
+  queue       insw_queue_cycle @relation(fields: [queue_id], references: [id], onDelete: Restrict)
+  actor       users            @relation(fields: [resolved_by], references: [id], onDelete: Restrict)
 }

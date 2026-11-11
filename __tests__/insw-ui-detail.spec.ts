@@ -7,11 +7,22 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import * as mui from '@mui/material';
 import dayjs from 'dayjs';
 import * as presentation from '../lib/insw-log-presentation';
+import * as wmsOptions from '../lib/wms-insw-status-options';
+import * as regeneration from '../lib/insw-regeneration-messages';
+import * as wmsFilters from '../lib/wms-log-filters';
+import net from 'node:net';
 import * as operational from '../lib/insw-queue/operational-state';
+
+const savedConnect = net.Socket.prototype.connect, savedFetch = globalThis.fetch;
+test.beforeAll(() => {
+  net.Socket.prototype.connect = (() => { throw new Error('UI_NO_NETWORK'); }) as typeof savedConnect;
+  globalThis.fetch = async () => { throw new Error('UI_NO_NETWORK'); };
+});
+test.afterAll(() => { net.Socket.prototype.connect = savedConnect; globalThis.fetch = savedFetch; });
 
 // Render the actual page JSX with fixture state. This is static component
 // verification, not an authenticated browser or CSS/keyboard acceptance test.
-function render(overrides: Record<number, unknown> = {}) {
+function render(overrides: Record<number, unknown> = {}, page: 'insw' | 'wms' = 'insw') {
   let slot = 0;
   const hooks = { ...React, useState: (initial: unknown) => {
     const index = slot++; return [index in overrides ? overrides[index] : initial, () => {}];
@@ -19,14 +30,21 @@ function render(overrides: Record<number, unknown> = {}) {
   const Empty = () => null;
   const charts = new Proxy({}, { get: () => Empty });
   const imports: Record<string, unknown> = {
+    'next-auth/react': { useSession: () => ({ data: { user: { role: 'ADMIN', companyCode: '1370' } } }) },
     react: hooks, '@mui/material': { ...mui, useTheme: () => mui.createTheme() },
     '@mui/icons-material': require('@mui/icons-material'), recharts: charts,
     '@/app/components/DataTable': { DataTable: ({ columns, data, loading }: any) => React.createElement('div', null,
       loading ? 'Loading logs' : data.length ? data.map((row: any) => React.createElement('div', { key: row.id }, columns.map((c: any) => React.createElement('div', { key: c.id }, c.format ? c.format(row[c.id], row) : row[c.id])))) : 'No data available') },
     '@/app/components/ToastProvider': { useToast: () => ({}) }, dayjs,
+    '@/lib/wms-insw-status-options': wmsOptions, '@/lib/insw-regeneration-messages': regeneration, '@/lib/wms-log-filters': wmsFilters,
     '@/lib/insw-queue/operational-state': operational, '@/lib/insw-log-presentation': presentation, 'react/jsx-runtime': require('react/jsx-runtime'),
   };
-  const source = readFileSync('app/(authenticated)/insw/logs/page.tsx', 'utf8');
+  const resolveExports: any = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync('app/components/AdminResolve.tsx', 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+  }).outputText, { exports: resolveExports, require: (name: string) => imports[name] });
+  imports['@/app/components/AdminResolve'] = resolveExports;
+  const source = readFileSync(page === 'insw' ? 'app/(authenticated)/insw/logs/page.tsx' : 'app/(authenticated)/settings/wms-logs/page.tsx', 'utf8');
   const exports: any = {};
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText,
     { exports, require: (name: string) => imports[name], URLSearchParams });
@@ -130,4 +148,63 @@ test('detail loading, failure/retry and empty history have visible feedback', ()
   expect(error.text).toContain('Retry');
   expect(render({ 15: true, 16: '11', 17: { ...log, attempt_history: { entries: [], truncated: false } } }).text).toContain('No transmissions recorded yet');
   expect(render({ 1: false }).text).toContain('No data available');
+});
+
+
+test('Resolved list retains Failed; detail shows actor/time/notes and historical conflict', () => {
+  const row = { ...log, current_queue: { ...q, stable_reference_conflict: true,
+    resolution: { resolved_by: 'Admin identity', resolved_at: '2026-11-11T01:00:00Z', notes: 'Externally reconciled <script>text</script>' } } };
+  const list = render({ 0: [row], 1: false });
+  expect(list.text).toContain('Resolved');
+  expect(list.text).toContain('Failed');
+  expect(list.text).not.toContain('Externally reconciled');
+  const detail = render({ 1: false, 15: true, 16: '11', 17: row });
+  for (const text of ['Resolved By', 'Admin identity', 'Resolved At', 'Resolution Notes', 'Externally reconciled', 'Historical queue state', 'Conflicting queue identities']) expect(detail.text).toContain(text);
+  expect(detail.html).not.toContain('<script>text</script>');
+  expect(detail.text).not.toContain('Confirm resolution');
+});
+
+function renderResolveControl(role: string, values: unknown[] = [true, '', false, null]) {
+  let index = 0;
+  const hooks = { ...React, useState: () => [values[index++], () => {}], useRef: () => ({ current: false }) };
+  const imports: any = { react: hooks, 'react/jsx-runtime': require('react/jsx-runtime'),
+    'next-auth/react': { useSession: () => ({ data: { user: { role } } }) }, dayjs,
+    '@mui/material': { ...mui, Dialog: ({ open, children }: any) => open ? React.createElement('section', null, children) : null } };
+  const exports: any = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync('app/components/AdminResolve.tsx', 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+  }).outputText, { exports, require: (name: string) => imports[name] });
+  const html = renderToStaticMarkup(React.createElement(exports.AdminResolve, { queueId: 'exact-queue', eligible: true, onResolved: async () => {} }));
+  return { html, text: html.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, '') };
+}
+
+test('Admin Resolve dialog renders required bounded notes and explicit no-receipt/no-resend confirmation', () => {
+  const view = renderResolveControl('ADMIN');
+  expect(view.text).toContain('exact-queue');
+  expect(view.text).toContain('This records an administrative resolution only. It does not confirm successful receipt by INSW and does not resend the transaction.');
+  expect(view.html).toContain('maxLength="2000"');
+  expect(view.html).toContain('required');
+  expect(view.html).toMatch(/<button[^>]*disabled[^>]*>Confirm resolution<\/button>/);
+});
+
+test('Shared Resolve control hides action from non-Admins and disables submission during save', () => {
+  expect(renderResolveControl('USER').html).toBe('');
+  expect(renderResolveControl('SUPER_ADMIN').html).toBe('');
+  const saving = renderResolveControl('ADMIN', [true, 'Checked externally', true, null]);
+  expect(saving.html).toMatch(/<button[^>]*disabled[^>]*>Saving…<\/button>/);
+});
+
+
+test('WMS list/detail use shared Resolve control and resolution details without rewriting WMS SUCCESS', () => {
+  const row = { id: '1', action: 'WMS_PROCESS_INCOMING_GOODS', wms_id: 'DOC', company_code: 1370,
+    transmission_status: 'SUCCESS', summary: 'Accepted locally', created_at: '2026-11-11T01:00:00Z', expires_at: '2026-12-11T01:00:00Z',
+    insw: { label: 'Failed', operationalLabel: 'Failed', queueId: 'exact-queue', canResolve: true, explanation: 'Failed externally' } };
+  const eligible = render({ 0: [row], 3: false }, 'wms');
+  expect(eligible.text).toContain('Resolve'); expect(eligible.text).toContain('SUCCESS');
+  const resolved = { ...row, insw: { ...row.insw, label: 'Resolved', operationalLabel: 'Resolved', canResolve: false,
+    resolution: { resolved_by: 'Admin identity', resolved_at: '2026-11-11T01:00:00Z', notes: 'Externally reconciled' } } };
+  const list = render({ 0: [resolved], 3: false }, 'wms');
+  expect(list.text).toContain('Resolved'); expect(list.text).toContain('SUCCESS'); expect(list.text).not.toContain('Externally reconciled');
+  const detail = render({ 3: false, 13: true, 14: resolved }, 'wms');
+  for (const text of ['Resolved By', 'Resolved At', 'Resolution Notes', 'Admin identity', 'Externally reconciled']) expect(detail.text).toContain(text);
 });

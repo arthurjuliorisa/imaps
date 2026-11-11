@@ -68,6 +68,10 @@ export async function currentQueueStates(db: PrismaClient, companyCode: number, 
   if (!queueIds.length) return new Map<string, OperationalState>();
   const rows = await db.$queryRaw<{ original_id: string; state: OperationalState }[]>(Prisma.sql`
     SELECT original.id AS original_id, jsonb_build_object(
+      'resolution', (SELECT jsonb_build_object('resolved_by', r.resolved_by, 'resolved_at', r.resolved_at, 'notes', r.notes) FROM insw_admin_resolution r WHERE r.queue_id = q.id),
+      'resolve_eligible', (q.status IN ('FAILED', 'HELD') AND q.owner_token IS NULL AND q.lease_until IS NULL
+        AND NOT EXISTS (SELECT 1 FROM insw_queue_attempt pending WHERE pending.queue_id = q.id
+          AND (pending.completed_at IS NULL OR EXISTS (SELECT 1 FROM insw_dispatch_gate g WHERE g.busy_attempt_id = pending.id)))),
       'id', q.id, 'status', q.status, 'delivery_state', q.delivery_state, 'cycle', q.cycle,
       'intent', q.intent, 'retry_index', q.retry_index, 'max_auto_retry_snapshot', q.max_auto_retry_snapshot,
       'hold_reason', q.hold_reason, 'error_message', q.error_message, 'queued_at', q.queued_at,
