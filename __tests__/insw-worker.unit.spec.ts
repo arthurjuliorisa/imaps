@@ -102,6 +102,14 @@ test('WMS aliases coordinate capture; excluded producers and payload builders re
         '    transport?: (endpoint: string, init: RequestInit) => Promise<Response>, onInvoked?: () => void): Promise<Response> {')
       .replace('    return transport ? transport(endpoint, init) : this.fetchINSW(endpoint, init);',
         "    if (!transport) return this.fetchINSW(endpoint, { ...init, redirect: 'error' }, onInvoked);\n    const invocation = transport(endpoint, { ...init, redirect: 'error' });\n    onInvoked?.();\n    return invocation;");
+    // HEAD may already contain the original post-invocation observer. Permit
+    // exactly the existing pre-invocation observer additions as well.
+    if (file === 'lib/services/insw-integration.service.ts' && !baseline.includes('beforeInvocation?:')) baseline = baseline
+      .replace('    onInvoked?: () => void\n  ): Promise<Response>', '    onInvoked?: () => void,\n    beforeInvocation?: (endpoint: string) => void\n  ): Promise<Response>')
+      .replace('      const invocation = fetchImpl(endpoint, fetchInit);', '      beforeInvocation?.(endpoint);\n      const invocation = fetchImpl(endpoint, fetchInit);')
+      .replace('onInvoked?: () => void): Promise<Response> {', 'onInvoked?: () => void,\n    beforeInvocation?: (endpoint: string) => void): Promise<Response> {')
+      .replace("redirect: 'error' }, onInvoked);", "redirect: 'error' }, onInvoked, beforeInvocation);")
+      .replace('    const invocation = transport(endpoint,', '    beforeInvocation?.(endpoint);\n    const invocation = transport(endpoint,');
     expect(readFileSync(file, 'utf8')).toBe(baseline);
   }
 });

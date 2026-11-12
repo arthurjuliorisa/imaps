@@ -16,6 +16,8 @@ export async function runProductionDispatcher(input: {
   onEvent?: (event: string, data?: unknown) => void;
   // Explicit test seam, never supplied by the CLI. Must keep the built request.
   transport?: (endpoint: string, init: RequestInit) => Promise<Response>;
+  // Optional caller-owned sender telemetry. No environment activation or faults.
+  beforePost?: (endpoint: string, job: { id: string; wms_reference: string | null; company_code: number; attemptId: string; retry_index: number; max_auto_retry_snapshot: number }) => void;
 }) {
   const allowedCompanies = input.allowedCompanies === undefined ? resolveWorkerAllowedCompanies()
     : validateWorkerAllowedCompanies(input.allowedCompanies);
@@ -26,6 +28,7 @@ export async function runProductionDispatcher(input: {
   });
   const services = new Map<number, typeof companies[number][1]>(companies);
   let active: typeof companies[number][1] | undefined;
+  let activeJob: { id: string; wms_reference: string | null; company_code: number; attemptId: string; retry_index: number; max_auto_retry_snapshot: number } | undefined;
   return runIsolatedWorker({ ...input, allowedCompanies, tracksInvocationStart: true, minimumIntervalMs: 3600, timeoutMs: input.timeoutMs ?? 60000,
     prepareFinalizer: async (token, job) => {
       active = undefined;
@@ -34,11 +37,13 @@ export async function runProductionDispatcher(input: {
       if (!company || !operation) throw new Error('UNSUPPORTED_WMS_QUEUE_JOB');
       const finalizer = await prepareWmsFinalizer(input.db, token, job, { endpointUrl: company.endpoint }, operation);
       active = company;
+      activeJob = job;
       return finalizer;
     },
     request: (body, signal, onInvoked) => {
       if (!active) throw new Error('VALIDATED_COMPANY_REQUIRED');
-      return active.service.requestFrozenTransaction(body, signal, input.transport, onInvoked);
+      return active.service.requestFrozenTransaction(body, signal, input.transport, onInvoked,
+        input.beforePost ? endpoint => input.beforePost!(endpoint, activeJob!) : undefined);
     },
   });
 }

@@ -180,7 +180,8 @@ export class INSWIntegrationService {
   private async fetchINSW(
     endpoint: string,
     init: RequestInit,
-    onInvoked?: () => void
+    onInvoked?: () => void,
+    beforeInvocation?: (endpoint: string) => void
   ): Promise<Response> {
     const fetchInit: RequestInit & { dispatcher?: unknown } = { ...init };
     let fetchImpl = fetch;
@@ -198,6 +199,7 @@ export class INSWIntegrationService {
     }
 
     try {
+      beforeInvocation?.(endpoint);
       const invocation = fetchImpl(endpoint, fetchInit);
       onInvoked?.();
       const response = await invocation;
@@ -1262,9 +1264,11 @@ export class INSWIntegrationService {
    * without the legacy wrapper converting network errors into business JSON.
    */
   requestFrozenTransaction(body: string, signal: AbortSignal,
-    transport?: (endpoint: string, init: RequestInit) => Promise<Response>, onInvoked?: () => void): Promise<Response> {
+    transport?: (endpoint: string, init: RequestInit) => Promise<Response>, onInvoked?: () => void,
+    beforeInvocation?: (endpoint: string) => void): Promise<Response> {
     const { endpoint, init } = this.transactionRequest(body, signal);
-    if (!transport) return this.fetchINSW(endpoint, { ...init, redirect: 'error' }, onInvoked);
+    if (!transport) return this.fetchINSW(endpoint, { ...init, redirect: 'error' }, onInvoked, beforeInvocation);
+    beforeInvocation?.(endpoint);
     const invocation = transport(endpoint, { ...init, redirect: 'error' });
     onInvoked?.();
     return invocation;
