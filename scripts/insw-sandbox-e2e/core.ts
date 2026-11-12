@@ -13,7 +13,7 @@ export const domains = {
 } as const;
 export type Family = keyof typeof domains;
 export type Source = Record<string, unknown>;
-export type Entry = { index: number; id: string; family: Family | null; state: 'ELIGIBLE' | 'INVALID' | 'UNSUPPORTED' | 'PRE_EXISTING'; issues: string[]; items: number; checks?: { reversal: string | null; workOrderHash: string | null; itemsHash: string } };
+export type Entry = { index: number; id: string; family: Family | null; state: 'ELIGIBLE' | 'INVALID' | 'UNSUPPORTED' | 'PRE_EXISTING'; issues: string[]; items: number; checks?: { reversal: string | null; workOrderHash: string | null; itemsHash: string; sourceItemCount?: number } };
 export type Assertion = { scenario: string; status: 'PASS' | 'FAIL' | 'BLOCKED' | 'NOT RUN' | 'NOT VERIFIED'; reason: string };
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 export function requireSafe(condition: unknown, code: string): asserts condition { if (!condition) throw new Error(code); }
@@ -102,9 +102,14 @@ export async function inventory(input: unknown): Promise<Entry[]> {
       if (!parsed.success) issues.push(...parsed.error.issues.map(e => `${e.path.join('.')}:${e.code}`));
       else {
         const data = parsed.data as Source;
+        // Material persistence expands each trace entry into its own item row;
+        // its schema intentionally strips item-level qty. Mirror that projection.
+        const persistedItems = family === 'material'
+          ? (data.items as Source[]).flatMap(item => (item.traceability_data as Source[]).map(trace => ({ ...item, qty: trace.qty })))
+          : data.items as Source[];
         checks = { reversal: typeof data.reversal === 'string' ? data.reversal : null,
           workOrderHash: typeof data.work_order_number === 'string' ? hash(data.work_order_number) : null,
-          itemsHash: itemHash(data.items as Source[]) };
+          itemsHash: itemHash(persistedItems), sourceItemCount: persistedItems.length };
       }
       // Do not dispatch parsed.data: Zod transformations must not rewrite source.
     }

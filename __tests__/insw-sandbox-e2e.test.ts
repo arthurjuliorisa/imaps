@@ -572,3 +572,127 @@ test('offline gate process identity distinguishes a proven live local owner and 
   assert.equal(reaped.identity.state,'REAPED_LOCAL'); assert.equal(reaped.safe,false);
   assert.doesNotMatch(JSON.stringify(live), /withheld/);
 });
+
+test('R06 splits absent duplicate coverage from source failures; provider rejection remains independent of HELD', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'insw-r06-components-'));
+  const e = new Evidence(root, 'simulated', false);
+  try {
+    const entries = await inventory([adjustment]);
+    const entry = entries[0];
+    const observation = {
+      sources: [{ table: 'adjustments', id: 1, wms_id: entry.id, item_count: 1, reversal: entry.checks!.reversal,
+        work_order_hash: entry.checks!.workOrderHash, item_hash: entry.checks!.itemsHash }],
+      queue: [{ id: 'queue', operation: 'ADJUSTMENT', wms_reference: entry.id, status: 'HELD', delivery_state: 'POSSIBLY_STARTED',
+        payload_sha256: 'hash', retry_index: 0, max_auto_retry_snapshot: 2 }],
+      attempts: [{ id: 'attempt', queue_id: 'queue', retry_index: 0, started_at: new Date(), completed_at: new Date(), delivery_state: 'POSSIBLY_STARTED' }],
+      logs: [{ id: 'log', queue_attempt_id: 'attempt', transaction_id: 1, transaction_type: 'adjustment', wms_id: entry.id,
+        insw_status: 'FAILED', http_code: 400, provider_status: false, classification: 'PERMANENT_FAILURE',
+        reason_code: 'MISSING_ITEM_VALIDATION', payload_sha256: 'hash' }],
+      wmsLogs: [{ id: 1, wms_id: entry.id, transmission_status: 'SUCCESS' }], gate: null,
+    } as unknown as NonNullable<Parameters<typeof reports>[3]>;
+    const starts: Start[] = [{ wms_id: entry.id, queue_id: 'queue', attempt_id: 'attempt', monotonic_ns: '1', boot_id: 'boot', active: 1, wall_time: '' }];
+    const run = (duplicate?: boolean) => reports(e, entries, { [entry.id]: { state: 'ACCEPTED', http: 200 } }, observation, starts, true, true, true, duplicate);
+    assert.equal(run().find(a => a.scenario === 'R06')!.status, 'NOT VERIFIED');
+    const saved = JSON.parse(readFileSync(join(e.dir, 'assertions.json'), 'utf8'));
+    assert.deepEqual(saved.r06Checks, { preservation: 'PASS', frozen_hashes: 'PASS', source_contract: 'PASS', duplicate_probe: 'NOT RUN', retry_coverage: 'NOT RUN' });
+    assert.equal(saved.realSandboxPostsObserved, 1);
+    const csv = readFileSync(join(e.dir, 'transmissions.csv'), 'utf8');
+    assert.match(csv, /"ON_HOLD","ACCEPTED","RESPONSE_OBSERVED","REJECTED"/);
+    assert.match(readFileSync(join(e.dir, 'summary.md'), 'utf8'), /0 ACCEPTED, 1 REJECTED/);
+    assert.equal(run(false).find(a => a.scenario === 'R06')!.status, 'FAIL');
+    assert.equal(run(true).find(a => a.scenario === 'R06')!.status, 'NOT VERIFIED'); // no actual retries
+    observation.sources[0].item_hash = 'mismatched';
+    assert.equal(run().find(a => a.scenario === 'R06')!.status, 'FAIL');
+    const failed = JSON.parse(readFileSync(join(e.dir, 'assertions.json'), 'utf8'));
+    assert.equal(failed.r06Checks.source_contract, 'FAIL');
+    assert.equal(failed.r06Checks.duplicate_probe, 'NOT RUN');
+    observation.logs[0].classification = 'UNKNOWN';
+    run();
+    assert.match(readFileSync(join(e.dir, 'transmissions.csv'), 'utf8'), /"RESPONSE_OBSERVED","UNKNOWN"/);
+  } finally { e.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('offline Incoming route + service + duplicate guard return 409 without source/queue/attempt insertions', async () => {
+  const vm = await import('node:vm');
+  const ts = await import('typescript');
+  const { NextResponse } = await import('next/server');
+  const rows = { sources: [{ id: 7, company_code: 1370, wms_id: 'OFFLINE-EXISTING', deleted_at: null }], queues: [{ id: 'existing-queue' }], attempts: [{ id: 'existing-attempt' }] };
+  const before = JSON.stringify(rows);
+  let reads = 0;
+  let writes = 0;
+  const forbiddenWrite = () => { writes++; throw new Error('OFFLINE_WRITE_FORBIDDEN'); };
+  const logger = { info() {}, warn() {}, error() {}, child() { return logger; } };
+  const prisma = {
+    incoming_goods: { findFirst: async (query: unknown) => {
+      reads++;
+      assert.deepEqual(JSON.parse(JSON.stringify(query)), { where: { company_code: 1370, wms_id: 'OFFLINE-EXISTING', deleted_at: null }, select: { id: true } });
+      return rows.sources[0];
+    }, create: forbiddenWrite },
+    insw_queue_cycle: { create: forbiddenWrite }, insw_queue_attempt: { create: forbiddenWrite },
+    $transaction: forbiddenWrite,
+  };
+  const noErrors = () => [];
+  const stubs: Record<string, unknown> = {
+    '@/lib/db/prisma': { prisma },
+    '../repositories/incoming-goods.repository': { IncomingGoodsRepository: class { createOrUpdate = forbiddenWrite; } },
+    '../validators/schemas/incoming-goods.schema': {
+      validateIncomingGoodRequest: (data: unknown) => ({ success: true, data }), validateIncomingGoodsDates: noErrors,
+      validateItemTypes: noErrors, checkIncomingGoodsDuplicates: noErrors, validateIncomingGoodsItemTypeConsistency: noErrors,
+    },
+    '../utils/logger': { logger },
+    '@/lib/utils/logger': { createRequestLogger: () => ({ logger }), logRequest: async () => {}, logResponse() {} },
+    '@/lib/utils/wms-async-failure-log': { logWmsAsyncFailure: forbiddenWrite },
+    '@/lib/validators/free-movement-customs-document': { validateSezFreeMovementCustomsDocumentType: noErrors },
+    '@/lib/validators/non-facility-marker.validator': { validateNonFacilityMarker: noErrors },
+    '@/lib/middleware/auth.middleware': { authenticate: async () => ({ authenticated: true }) },
+    '@/lib/middleware/rate-limiter.middleware': { rateLimiterMiddleware: () => ({ success: true }) },
+    '@/lib/middleware/error-handler.middleware': { errorHandler: forbiddenWrite },
+    '@/lib/log-activity': { logActivity: forbiddenWrite },
+    'next/server': { NextResponse },
+  };
+  const files: Record<string, string> = {
+    '@/lib/services/wms-duplicate.service': 'lib/services/wms-duplicate.service.ts',
+    '@/lib/services/incoming-goods.service': 'lib/services/incoming-goods.service.ts',
+    route: 'app/api/v1/incoming-goods/route.ts',
+  };
+  const cache: Record<string, Record<string, unknown>> = {};
+  const load = (name: string): Record<string, unknown> => {
+    if (name in stubs) return stubs[name] as Record<string, unknown>;
+    if (cache[name]) return cache[name];
+    assert.ok(files[name], `Unexpected resource import: ${name}`);
+    const exports: Record<string, unknown> = {};
+    cache[name] = exports;
+    vm.runInNewContext(ts.transpileModule(readFileSync(files[name], 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText, { exports, module: { exports }, require: load, crypto: globalThis.crypto, Date });
+    return exports;
+  };
+  // Earlier validation is mocked; the real service's duplicate branch and the
+  // real route's HTTP mapping run unchanged. No resource import can escape load.
+  const service = load('@/lib/services/incoming-goods.service').IncomingGoodsService as { prototype: { validateBusiness: () => Promise<unknown[]> } };
+  service.prototype.validateBusiness = async () => [];
+  const route = load('route').POST as (request: unknown) => Promise<Response>;
+  const response = await route({ json: async () => ({ wms_id: 'OFFLINE-EXISTING', company_code: 1370, items: [{ qty: 1 }] }) });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).errors[0].code, 'DUPLICATE_WMS_ID_NOT_ALLOWED');
+  assert.equal(reads, 1);
+  assert.equal(writes, 0);
+  assert.equal(JSON.stringify(rows), before);
+  assert.equal(rows.queues.length, 1);
+  assert.equal(rows.attempts.length, 1);
+});
+
+test('material source digest uses trace quantities after schema strips item qty; input row counts stay original', async () => {
+  const { itemHash } = await import('../scripts/insw-sandbox-e2e/core');
+  const payload = { wms_id: 'OFFLINE-MATERIAL', owner: 1370, company_code: 1370, reversal: 'Y',
+    transaction_date: '2026-01-01', internal_evidence_number: 'FIXTURE', timestamp: '2026-01-01T00:00:00Z', work_order_number: 'WO-FIXTURE',
+    items: [{ item_type: 'ROH', item_code: 'FIXTURE', item_name: 'fixture', qty: 3, uom: 'PC',
+      traceability_data: [{ ppkek_number: null, qty: 1 }, { ppkek_number: null, qty: 2 }] }] };
+  const before = JSON.stringify(payload);
+  const [entry] = await inventory([payload]);
+  assert.equal(entry.state, 'ELIGIBLE');
+  assert.equal(entry.items, 1); // input inventory
+  assert.equal(entry.checks!.sourceItemCount, 2); // persisted trace rows
+  assert.equal(entry.checks!.itemsHash, itemHash([{ item_code: 'FIXTURE', uom: 'PC', qty: 1 }, { item_code: 'FIXTURE', uom: 'PC', qty: 2 }]));
+  assert.equal(JSON.stringify(payload), before);
+});

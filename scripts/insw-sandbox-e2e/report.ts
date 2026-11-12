@@ -18,10 +18,19 @@ export function reports(e: Evidence, entries: Entry[], records: Record<string, {
       : l.some(l => l.classification === 'PERMANENT_FAILURE') ? 'PROVIDER_REJECTED'
       : q.some(q => q.status === 'FAILED' && q.delivery_state === 'KNOWN_FAILURE') ? 'FAILED_RETRYABLE'
       : a.some(a => a.started_at) ? 'POST_STARTED' : 'QUEUED';
+    // Provider business outcome is independent of local HELD/FAILED lifecycle.
+    const providerResult = l.length && l.every(log => log.classification === 'KNOWN_REMOTE_SUCCESS' && log.provider_status === true
+      && log.http_code !== null && log.http_code >= 200 && log.http_code < 300) ? 'ACCEPTED'
+      : l.length && l.every(log => log.classification === 'PERMANENT_FAILURE' && log.reason_code === 'MISSING_ITEM_VALIDATION'
+        && log.http_code === 400 && log.provider_status === false) ? 'REJECTED'
+      : status === 'WMS_REJECTED' && !a.length && !l.length ? 'NOT_SENT' : 'UNKNOWN';
+    const dispatch = l.some(l => l.queue_attempt_id && l.http_code !== null && a.some(a =>
+      a.id === l.queue_attempt_id && a.started_at && starts.some(s => s.attempt_id === a.id && s.queue_id === a.queue_id)))
+      ? 'RESPONSE_OBSERVED' : a.some(a => a.started_at) ? 'POST_STARTED' : q.length ? 'QUEUED' : 'NOT_OBSERVED';
     const sourceContract = src.length === 1 && !!entry.checks && src[0].reversal === entry.checks.reversal
       && src[0].work_order_hash === entry.checks.workOrderHash && src[0].item_hash === entry.checks.itemsHash;
-    return { source_contract_matches: sourceContract, wms_id: entry.id, family: entry.family, state, wms_http: records[entry.id]?.http,
-      source_ids: src.map(s => s.id).join(';'), source_item_count: src.reduce((n,s) => n+s.item_count,0), expected_item_count: entry.items,
+    return { source_contract_matches: sourceContract, wms_id: entry.id, family: entry.family, state, wms_submission: status ?? 'UNKNOWN', dispatch_observation: dispatch, provider_business_result: providerResult, wms_http: records[entry.id]?.http,
+      source_ids: src.map(s => s.id).join(';'), source_item_count: src.reduce((n,s) => n+s.item_count,0), expected_item_count: entry.checks?.sourceItemCount ?? entry.items,
       wms_log_ids: wms.map(l => l.id).join(';'), queue_ids: q.map(q => q.id).join(';'), attempt_ids: a.map(a => a.id).join(';'),
       tracking_log_ids: l.map(l => l.id).join(';'), local_status: q.map(q => q.status).join(';'),
       provider_http: l.map(l => l.http_code).join(';'), provider_status: l.map(l => l.provider_status).join(';'),
@@ -33,6 +42,7 @@ export function reports(e: Evidence, entries: Entry[], records: Record<string, {
     status: physical && blocker ? 'BLOCKED' : 'NOT RUN', reason: blocker ?? 'Real local database/provider execution not performed.' }));
   const set = (n: number, status: Assertion['status'], reason: string) => { assertions[n-1] = { scenario: `R${String(n).padStart(2,'0')}`, status, reason }; };
   set(2, 'NOT VERIFIED', 'No complete live sender invocation telemetry.');
+  let r06Checks: Record<string, Assertion['status']> | undefined;
   if (physical && o) {
     const linked = entries.every(entry => {
       const qs = o.queue.filter(q => q.wms_reference === entry.id);
@@ -69,23 +79,30 @@ export function reports(e: Evidence, entries: Entry[], records: Record<string, {
     }) ? 'PASS' : 'FAIL' : 'NOT RUN', 'Natural permanent provider rejection only; no deliberately malformed provider input.');
     const frozen = o.logs.every(l => !l.queue_attempt_id || o.queue.some(q => q.payload_sha256 === l.payload_sha256
       && o.attempts.some(a => a.id === l.queue_attempt_id && a.queue_id === q.id)));
-    set(6, preserved === false || !frozen || rows.some(r => r.source_item_count !== r.expected_item_count || !r.source_contract_matches) || duplicate === false ? 'FAIL'
-      : duplicate === true && preserved && retries.length ? 'PASS' : 'NOT VERIFIED',
-      `Unrelated source headers/items preserved=${preserved}; frozen hashes consistent=${frozen}; duplicate 409/no-extra-queue-attempt=${duplicate}; actual retries=${retries.length}. Header reversal/WO and sorted item code/UOM/quantity/WO/planned-quantity digests checked; derived allocation totals remain outside this check.`);
+    r06Checks = {
+      preservation: preserved === undefined ? 'NOT VERIFIED' : preserved ? 'PASS' : 'FAIL',
+      frozen_hashes: !o.logs.length ? 'NOT VERIFIED' : frozen ? 'PASS' : 'FAIL',
+      source_contract: !rows.length ? 'NOT VERIFIED' : rows.every(r => r.source_item_count === r.expected_item_count && r.source_contract_matches) ? 'PASS' : 'FAIL',
+      duplicate_probe: duplicate === undefined ? 'NOT RUN' : duplicate ? 'PASS' : 'FAIL',
+      retry_coverage: retries.length ? 'PASS' : 'NOT RUN',
+    };
+    set(6, Object.values(r06Checks).includes('FAIL') ? 'FAIL'
+      : Object.values(r06Checks).every(s => s === 'PASS') ? 'PASS' : 'NOT VERIFIED',
+      `Checks=${JSON.stringify(r06Checks)}; unrelated source headers/items preserved=${preserved}; frozen hashes consistent=${frozen}; duplicate 409/no-extra-queue-attempt=${duplicate === undefined ? 'NOT RUN (no probe result recorded)' : duplicate}; actual retries=${retries.length}. Source contract mismatches=${rows.filter(r => !r.source_contract_matches || r.source_item_count !== r.expected_item_count).map(r => r.wms_id).join(',') || 'none'}. Header reversal/WO and sorted item code/UOM/quantity/WO/planned-quantity digests checked; derived allocation totals remain outside this check.`);
     set(8, entries.length > 0 && rows.every(r => ['SUCCEEDED','ON_HOLD','PROVIDER_REJECTED','FAILED_RETRYABLE','WMS_REJECTED'].includes(r.state)) ? 'PASS' : 'FAIL',
       'Bounded batch polling; unfinished sources/queue/backlog are included in transmissions.csv.');
     set(9, blocker ? 'BLOCKED' : 'PASS', blocker ?? 'Server PID/environment/listener, database, global gate, policy, test keys, Sandbox destination and isolation acknowledgement verified before starting owned worker.');
     set(10, complete ? 'PASS' : 'NOT VERIFIED', complete ? 'Owned child drained and reaped; reports preserved; no queue history deleted.' : 'Sender observation incomplete; sticky ownership requires review.');
   }
   set(7, 'NOT RUN', 'Physical restart/crash/clock jump tests intentionally excluded; no existing PM2 process is touched.');
-  e.write('transmissions.csv', csv(rows, ['wms_id','family','state','wms_http','source_ids','source_item_count','expected_item_count','source_contract_matches','wms_log_ids','queue_ids','attempt_ids','tracking_log_ids','local_status','provider_http','provider_status','retry_index','frozen_hash']));
+  e.write('transmissions.csv', csv(rows, ['wms_id','family','state','wms_submission','dispatch_observation','provider_business_result','wms_http','source_ids','source_item_count','expected_item_count','source_contract_matches','wms_log_ids','queue_ids','attempt_ids','tracking_log_ids','local_status','provider_http','provider_status','retry_index','frozen_hash']));
   const attemptRows = o?.attempts.map(a => { const log = o.logs.find(l => l.queue_attempt_id === a.id);
     return { ...a, tracking_log_id: log?.id, provider_http: log?.http_code, provider_status: log?.provider_status,
       classification: log?.classification, reason_code: log?.reason_code, frozen_hash: log?.payload_sha256 }; }) ?? [];
   e.write('attempts.csv', csv(attemptRows, ['id','queue_id','retry_index','started_at','completed_at','delivery_state','tracking_log_id','provider_http','provider_status','classification','reason_code','frozen_hash']));
   e.write('sender-post-starts.csv', csv(starts, ['wms_id','queue_id','attempt_id','monotonic_ns','boot_id','active','wall_time']));
-  e.write('assertions.json', { assertions, timing, realSandboxPostsObserved: starts.length, injection: 'NONE', observationComplete: complete });
-  e.write('summary.md', `# INSW Sandbox acceptance\n\nPhysical execution: ${physical ? 'operator opt-in' : 'NOT RUN (no physical Sandbox execution)'}\n\nObserved real Sandbox POST starts: ${starts.length}. Injection: none.\n\n| Scenario | Result | Reason |\n|---|---|---|\n${assertions.map(a => `| ${a.scenario} | ${a.status} | ${a.reason.replace(/\|/g,'/')} |`).join('\n')}\n\nSelected WMS IDs: ${entries.map(e => JSON.stringify(e.id)).join(', ')}\n\nQueue history is retained. No Sandbox Cleanup/DELETE performed.\n`);
+  e.write('assertions.json', { assertions, r06Checks, timing, realSandboxPostsObserved: starts.length, injection: 'NONE', observationComplete: complete });
+  e.write('summary.md', `# INSW Sandbox acceptance\n\nPhysical execution: ${physical ? 'operator opt-in' : 'NOT RUN (no physical Sandbox execution)'}\n\nObserved real Sandbox POST starts: ${starts.length}. Injection: none. Assertion PASS counts are test checks, not provider business acceptances.\n\nProvider business results: ${rows.filter(r => r.provider_business_result === 'ACCEPTED').length} ACCEPTED, ${rows.filter(r => r.provider_business_result === 'REJECTED').length} REJECTED, ${rows.filter(r => r.provider_business_result === 'UNKNOWN').length} UNKNOWN, ${rows.filter(r => r.provider_business_result === 'NOT_SENT').length} NOT_SENT. Local queue states are retained independently in transmissions.csv.\n\n| Scenario | Result | Reason |\n|---|---|---|\n${assertions.map(a => `| ${a.scenario} | ${a.status} | ${a.reason.replace(/\|/g,'/')} |`).join('\n')}\n\nSelected WMS IDs: ${entries.map(e => JSON.stringify(e.id)).join(', ')}\n\nQueue history is retained. No Sandbox Cleanup/DELETE performed.\n`);
   return assertions;
 }
 
