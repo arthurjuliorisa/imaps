@@ -21,7 +21,7 @@ export function options(args: string[]) {
   const { values: v } = parseArgs({ args, strict: true, options: {
     help: { type: 'boolean' }, 'payload-file': { type: 'string', default: process.env.INSW_SANDBOX_PAYLOAD_FILE || join(homedir(), '.local/share/imaps-insw-sandbox/payloads.json') }, 'evidence-root': { type: 'string', default: process.env.INSW_SANDBOX_EVIDENCE_ROOT || join(homedir(), '.local/share/imaps-insw-sandbox/evidence') },
     db: { type: 'string', default: 'imaps_db_vps' }, company: { type: 'string', default: '1370' },
-    profile: { type: 'string', default: 'smoke' }, 'max-transmissions': { type: 'string' },
+    profile: { type: 'string', default: 'smoke' }, 'selection-mode': { type: 'string', default: 'transport' }, 'max-transmissions': { type: 'string' },
     'max-sandbox-posts': { type: 'string' }, 'timeout-minutes': { type: 'string', default: '15' },
     'max-retries': { type: 'string' }, resume: { type: 'string' },
     'preflight-only': { type: 'boolean' }, 'allow-real-sandbox': { type: 'boolean' },
@@ -33,6 +33,8 @@ export function options(args: string[]) {
     const n = Number(value ?? fallback); requireSafe(Number.isSafeInteger(n) && n <= max, 'LIMIT_OUT_OF_RANGE'); return n;
   };
   requireSafe(['smoke', 'core', 'full'].includes(v.profile!), 'UNKNOWN_PROFILE');
+  requireSafe(['transport', 'business-independent'].includes(v['selection-mode']!), 'UNKNOWN_SELECTION_MODE');
+  requireSafe(!v.resume || v['selection-mode'] === 'transport', 'BUSINESS_RESUME_NOT_SUPPORTED');
   requireSafe(v.company === '1370' && v.db === 'imaps_db_vps', 'EXACT_COMPANY_AND_DATABASE_REQUIRED');
   requireSafe(v['max-retries'] === undefined || /^(0|[1-9]|10)$/.test(v['max-retries']), 'RETRY_LIMIT_INVALID');
   requireSafe(!v.resume || v['allow-real-sandbox'], 'RESUME_REQUIRES_REAL_OPT_IN');

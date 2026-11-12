@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { PrismaClient } from '@prisma/client';
 import { options, inventory, select, environment, databaseEnvironment, dispatchBlockers, policyBudgets, credentialKeys, hash, requireSafe, type Entry, type Start, spacing } from './insw-sandbox-e2e/core';
+import { dependencyPlan } from './insw-sandbox-e2e/dependencies';
 import { submitOne } from './insw-sandbox-e2e/submission';
 import { Evidence } from './insw-sandbox-e2e/evidence';
 import { inspect, collisionIds, observe, preservation, type Observation } from './insw-sandbox-e2e/database';
@@ -15,7 +16,7 @@ import { type ProcessIdentity } from '../lib/insw-worker/process-identity';
 
 type RecordState = { state: string; http?: number };
 type Manifest = { version: 1; run: string; inputHash: string; selected: Entry[]; records: Record<string, RecordState>;
-  posts: number; retries: number; max: number; profile: string; child?: ProcessIdentity; token?: string;
+  posts: number; retries: number; max: number; profile: string; selectionMode?: string; child?: ProcessIdentity; token?: string;
   target?: ReturnType<typeof environment>; before?: Record<string, unknown>; starts: Start[];
   workerDrained: boolean; finished: boolean; recovery?: string; lastError?: string };
 const help = `INSW Sandbox E2E — no network/database access by default.
@@ -24,6 +25,8 @@ Overrides: --payload-file <JSON> --evidence-root <private external directory>
 Modes: --preflight-only (default, offline) | --verify-local-state (read-only DB) | --allow-real-sandbox
 Target: --db imaps_db_vps --company 1370
 Selection: --profile smoke|core|full (default smoke:3, core:10, full:363)
+Selection mode: --selection-mode transport|business-independent (default transport); business mode selects independent incoming only.
+Source-only plan: --preflight-only --selection-mode business-independent (no DB/network; dependency-plan.json).
 Budgets: --max-transmissions N --max-sandbox-posts N --max-retries 0..10 --timeout-minutes N
 App listener: discovered automatically; optional --app-pid <actual listener PID>
 Recovery: --resume <run-id> (same input and evidence root, original budgets retained)
@@ -55,7 +58,7 @@ export async function main(args = process.argv.slice(2), local = {
   const run = opts.resume ?? `sandbox-${new Date().toISOString().replace(/[:.]/g,'-')}-${randomUUID().slice(0,8)}`;
   const evidence = new Evidence(opts['evidence-root'], run, !!opts.resume);
   let m: Manifest = { version: 1, run, inputHash: hash(raw), selected: [], records: Object.create(null), starts: [], posts: opts.posts,
-    retries: opts.retries, max: opts.max, profile: opts.profile!, workerDrained: false, finished: false };
+    retries: opts.retries, max: opts.max, profile: opts.profile!, selectionMode: opts['selection-mode'], workerDrained: false, finished: false };
   let db: PrismaClient | undefined; let worker: ChildProcess | undefined;
   let observation: Observation | undefined; let preserved: boolean | undefined; let duplicate: boolean | undefined;
   let blocker: string | undefined; let drained = false; let workerExited = false; let childError = false; let batchDone = false;
@@ -65,6 +68,14 @@ export async function main(args = process.argv.slice(2), local = {
   process.once('SIGINT', cancel); process.once('SIGTERM', cancel);
   const deadline = Date.now() + opts.timeoutMs;
   const timer = setTimeout(() => { terminationReason = 'RUN_TIMEOUT'; stop.abort(); }, opts.timeoutMs);
+  const choose = (collisionsChecked: boolean) => {
+    if (opts['selection-mode'] === 'transport') return select(entries, opts.max, opts.profile!);
+    const plan = dependencyPlan(input as Record<string, unknown>[], entries, opts, collisionsChecked);
+    evidence.write('dependency-plan.json', plan);
+    m.posts = plan.budgets.postCap;
+    m.retries = plan.budgets.retryCap;
+    return plan.selected;
+  };
   const save = () => evidence.write('run-manifest.json', m);
   const progress = (message: string) => process.stdout.write(`${message}\n`);
   try {
@@ -73,7 +84,7 @@ export async function main(args = process.argv.slice(2), local = {
       m.records = Object.assign(Object.create(null), m.records);
       requireSafe(m.version === 1 && m.run === run && m.inputHash === hash(raw) && !m.finished, 'RESUME_INPUT_OR_RUN_MISMATCH_OR_FINISHED');
       requireSafe((!opts.explicitPosts || m.posts === opts.posts) && (!opts.explicitRetries || m.retries === opts.retries)
-        && m.max === opts.max && m.profile === opts.profile, 'RESUME_BUDGETS_MUST_MATCH');
+        && m.max === opts.max && m.profile === opts.profile && (m.selectionMode ?? 'transport') === opts['selection-mode'], 'RESUME_BUDGETS_MUST_MATCH');
       opts.posts = m.posts; opts.retries = m.retries; opts.explicitPosts = true; opts.explicitRetries = true;
     }
     evidence.write('input-inventory.json', { ...tally(), contentHash: hash(raw), collisionsChecked: false, entries, validation: 'Current Zod schema; DB/business validation occurs only at real WMS API.' });
@@ -82,7 +93,7 @@ export async function main(args = process.argv.slice(2), local = {
     const blockers = [...config.blockers, ...dispatchBlockers(process.env)];
     const preflight: Record<string, unknown> = {
       mode: opts.real ? 'REAL_SANDBOX' : opts['verify-local-state'] ? 'READ_ONLY_DATABASE' : 'SOURCE_ONLY',
-      target, blockers, credentials: Object.fromEntries(credentialKeys.map(k => [k, process.env[k]?.trim() ? 'SET' : 'MISSING'])),
+      selectionMode: opts['selection-mode'], target, blockers, credentials: Object.fromEntries(credentialKeys.map(k => [k, process.env[k]?.trim() ? 'SET' : 'MISSING'])),
       stateVerification: 'NOT QUERIED: source-only mode', collisions: 'NOT VERIFIED', physicalSandbox: 'NOT RUN AT PREFLIGHT; physical results belong to assertions.json',
     };
     const writePreflight = () => {
@@ -95,7 +106,7 @@ export async function main(args = process.argv.slice(2), local = {
     if (!opts.real && !opts['verify-local-state']) {
       printReadiness();
       progress(`Configuration blockers (DB/processes not inspected): ${blockers.join(', ') || 'none'}`);
-      if (!opts.resume) m.selected = select(entries, opts.max, opts.profile!);
+      if (!opts.resume) m.selected = choose(false);
       m.target = target; save();
       progress(`Run ${run}: SOURCE_ONLY; ${entries.length} inputs, ${entries.filter(e => e.state === 'ELIGIBLE').length} schema eligible; collision state NOT VERIFIED.`);
       progress(`Inventory: ${JSON.stringify(tally())}`);
@@ -152,7 +163,11 @@ export async function main(args = process.argv.slice(2), local = {
     progress(`Observed DB identity: ${JSON.stringify(state.identity)}`);
     const collisions = await collisionIds(db, entries.map(e => e.id).filter(Boolean));
     for (const entry of entries) if (entry.state === 'ELIGIBLE' && collisions.has(entry.id)) entry.state = 'PRE_EXISTING';
-    if (!opts.resume) m.selected = select(entries, opts.max, opts.profile!);
+    if (opts['selection-mode'] === 'business-independent' && !opts.explicitRetries
+      && state.policy && Number.isInteger(state.policy.max_auto_retry) && state.policy.max_auto_retry >= 0 && state.policy.max_auto_retry <= 10) {
+      opts.retries = state.policy.max_auto_retry;
+    }
+    if (!opts.resume) m.selected = choose(true);
     else {
       requireSafe(m.selected.every(e => entries.some(x => x.id === e.id && x.index === e.index)), 'RESUME_SELECTION_MISMATCH');
       // Existing IDs are expected only where an intent was durably recorded.
@@ -262,7 +277,7 @@ export async function main(args = process.argv.slice(2), local = {
         evidence.write('observations.json', observation);
         if (m.workerDrained) { await recoverOwned(db, m); }
         // Core duplicate probe is API-only after the sender child has exited.
-        if (!cancelled && batchDone && m.workerDrained && !blocker && m.profile !== 'smoke' && !opts.resume) {
+        if (!cancelled && batchDone && m.workerDrained && !blocker && m.profile !== 'smoke' && opts['selection-mode'] === 'transport' && !opts.resume) {
           const candidate = m.selected.find(e => observation!.queue.some(q => q.wms_reference === e.id && q.status === 'SUCCEEDED'));
           if (candidate) {
             const app = verifyLocalApp(opts['app-pid'], opts['app-url'], process.env);
@@ -290,7 +305,7 @@ export async function main(args = process.argv.slice(2), local = {
     if (!opts.real) m.workerDrained = false;
     if (blocker) progress(`BLOCKED: ${blocker}`);
     m.lastError = blocker;
-    const assertions = reports(evidence, m.selected, m.records, observation, m.starts, m.workerDrained, opts.real, preserved, duplicate, blocker);
+    const assertions = reports(evidence, m.selected, m.records, observation, m.starts, m.workerDrained, opts.real, preserved, duplicate, blocker, opts['selection-mode']);
     m.finished = opts.real && m.workerDrained && !!observation && m.selected.every(e =>
       m.records[e.id]?.state === 'WMS_REJECTED' || observation!.queue.some(q => q.wms_reference === e.id && ['SUCCEEDED','FAILED','HELD'].includes(q.status)));
     save();

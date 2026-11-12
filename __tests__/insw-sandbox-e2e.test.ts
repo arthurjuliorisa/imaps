@@ -530,6 +530,20 @@ test('offline ready read-only command computes 3 WMS/9 POST budgets but never se
     assert.ok(statements.length>0); assert.match(output,/dispatch: READY/);
     const assertions=JSON.parse(readFileSync(join(run,'assertions.json'),'utf8'));
     assert.equal(assertions.realSandboxPostsObserved,0); assert.ok(assertions.assertions.every((a:{status:string})=>a.status!=='PASS'));
+    // Same in-memory DB policy, business cap of four POSTs: one fixture at 1+2 retries.
+    queries=0;
+    writeFileSync(payload,JSON.stringify([0,1,2].map(n=>incomingFixture(`BUSINESS-${n}`))));
+    await main(['--payload-file',payload,'--evidence-root',join(root,'business-evidence'),'--verify-local-state',
+      '--selection-mode','business-independent','--max-sandbox-posts','4'], {
+      database:()=>db,processes:()=>[],app:()=>({pid:123,url:'http://127.0.0.1:3000',verified:true,environmentSource:'OFFLINE_FIXTURE'}),
+    });
+    const businessRun=join(root,'business-evidence',readdirSync(join(root,'business-evidence'))[0]);
+    const plan=JSON.parse(readFileSync(join(businessRun,'dependency-plan.json'),'utf8'));
+    const businessManifest=JSON.parse(readFileSync(join(businessRun,'run-manifest.json'),'utf8'));
+    assert.equal(plan.selected.length,1);assert.equal(plan.budgets.retryCap,2);assert.equal(plan.budgets.postCap,4);
+    assert.equal(plan.budgets.plannedWorstCasePosts,3);
+    assert.deepEqual(plan.selected,businessManifest.selected);
+    assert.equal(requests,0);assert.equal(process.exitCode,0);
   } finally {
     for (const [k,v] of Object.entries(previous)) { if(v===undefined) delete process.env[k]; else process.env[k]=v; }
     globalThis.fetch=oldFetch; process.exitCode=oldExit; process.stdout.write=oldWrite; rmSync(root,{recursive:true,force:true});
@@ -599,6 +613,12 @@ test('R06 splits absent duplicate coverage from source failures; provider reject
     const csv = readFileSync(join(e.dir, 'transmissions.csv'), 'utf8');
     assert.match(csv, /"ON_HOLD","ACCEPTED","RESPONSE_OBSERVED","REJECTED"/);
     assert.match(readFileSync(join(e.dir, 'summary.md'), 'utf8'), /0 ACCEPTED, 1 REJECTED/);
+    reports(e, entries, { [entry.id]: { state: 'ACCEPTED', http: 200 } }, observation, starts, true, true, true, undefined, undefined, 'business-independent');
+    const business = JSON.parse(readFileSync(join(e.dir, 'business-acceptance.json'), 'utf8'));
+    assert.equal(business.status, 'UNMET');
+    assert.equal(business.rows[0].providerAcceptance, 'EXPECTED_BUSINESS_REJECTION');
+    assert.equal(business.rows[0].localStatus, 'HELD');
+    assert.equal(business.rows[0].localDeliveryState, 'POSSIBLY_STARTED');
     assert.equal(run(false).find(a => a.scenario === 'R06')!.status, 'FAIL');
     assert.equal(run(true).find(a => a.scenario === 'R06')!.status, 'NOT VERIFIED'); // no actual retries
     observation.sources[0].item_hash = 'mismatched';
@@ -695,4 +715,109 @@ test('material source digest uses trace quantities after schema strips item qty;
   assert.equal(entry.checks!.sourceItemCount, 2); // persisted trace rows
   assert.equal(entry.checks!.itemsHash, itemHash([{ item_code: 'FIXTURE', uom: 'PC', qty: 1 }, { item_code: 'FIXTURE', uom: 'PC', qty: 2 }]));
   assert.equal(JSON.stringify(payload), before);
+});
+
+import { dependencyPlan } from '../scripts/insw-sandbox-e2e/dependencies';
+import { providerOutcome } from '../scripts/insw-sandbox-e2e/provider-outcome';
+import type { Source } from '../scripts/insw-sandbox-e2e/core';
+import type { Observation } from '../scripts/insw-sandbox-e2e/database';
+const incomingFixture = (id: string, overrides: Source = {}): Source => ({
+  wms_id: id, company_code: 1370, owner: 1370, ppkek_number: 'PP-ONE', customs_document_type: 'BC23',
+  customs_registration_date: '2026-01-01', incoming_date: '2026-01-02', incoming_evidence_number: id,
+  shipper_name: 'offline', timestamp: '2026-01-02T00:00:00Z',
+  items: [{ item_type: 'ROH', item_code: 'TG70M4JAJL03', item_name: 'offline', uom: 'CAR', qty: 5, currency: 'USD', amount: 1 }], ...overrides,
+});
+const outgoingFixture = (): Source => ({ ...incomingFixture('PMI0126070300001-01-TEST-7df9e60c'),
+  customs_document_type: 'BC30', invoice_number: 'offline', invoice_date: '2026-01-01', incoming_date: undefined, outgoing_date: '2026-07-03', recipient_name: 'offline', outgoing_evidence_number: 'offline',
+  items: [{ item_type: 'ROH', item_code: 'TG70M4JAJL03', item_name: 'offline', uom: 'CAR', qty: 1, currency: 'USD', amount: 1,
+    work_order_allocations: [{ ppkek_number: 'N', work_order_number: null, qty: 1 }] }],
+});
+function outgoingSource() { const p = outgoingFixture(); delete p.incoming_date; return p; }
+const businessOptions = (...args: string[]) => options(['--selection-mode', 'business-independent', ...args]);
+
+test('business decision gate: five actual-shape candidates never prove PMI upstream; defaults unchanged', async () => {
+  const data = [outgoingSource(), ...['3753e0cd','6fec3ac4','f41225d1','d8f405e6','38519f29'].map(id => incomingFixture(id))];
+  const before = JSON.stringify(data); const entries = await inventory(data);
+  assert.ok(entries.every(e => e.state === 'ELIGIBLE'));
+  assert.equal(entries[0].family, 'outgoing');
+  const plan = dependencyPlan(data, entries, businessOptions());
+  assert.deepEqual(plan.selected.map(e => e.index), [1,2,3]);
+  assert.deepEqual(plan.graph.edges, []);
+  assert.equal(plan.diagnostics[0].status, 'UNRESOLVED');
+  const diagnostic = plan.diagnostics[0]; assert.ok('requirements' in diagnostic);
+  assert.equal(diagnostic.requirements[0].itemCandidates.length, 5);
+  assert.equal(diagnostic.requirements[0].references[0].reason, 'MISSING_AUTHORITATIVE_INCOMING_REFERENCE');
+  assert.deepEqual(select(entries,3,'smoke').map(e => e.index), [1,0,2]);
+  assert.deepEqual(select(entries,3,'core').map(e => e.index), [1,0,2]);
+  assert.deepEqual(select(entries,3,'full').map(e => e.index), [0,1,2]);
+  assert.equal(JSON.stringify(data), before);
+});
+
+test('PPKEK/UOM/company/quantity are diagnostic boundaries, including ambiguity and missing inventory', async () => {
+  const out = outgoingSource();
+  (out.items as Source[])[0].qty = 6;
+  (out.items as Source[])[0].work_order_allocations = [{ ppkek_number: 'PP-ONE', qty: 6 }];
+  const data = [out, incomingFixture('low'), incomingFixture('duplicate-pp'),
+    incomingFixture('wrong-uom', { items: [{ ...(incomingFixture('x').items as Source[])[0], uom: 'KG', qty: 100 }] }),
+    incomingFixture('wrong-pp', { ppkek_number: 'OTHER' }), incomingFixture('wrong-company', { company_code: 1380, owner: 1380 })];
+  const entries = await inventory(data); const plan = dependencyPlan(data,entries,businessOptions());
+  const diagnostic = plan.diagnostics[0]; assert.ok('requirements' in diagnostic);
+  const req = diagnostic.requirements[0];
+  assert.equal(req.itemCandidates.length,4); assert.equal(req.uomCandidates.length,3);
+  assert.equal(req.references[0].candidates.length,2); assert.equal(req.references[0].quantityCompatibleCandidates.length,0);
+  assert.equal(req.references[0].reason,'AMBIGUOUS_PPKEK_CANDIDATES');
+  const missing = dependencyPlan([out],await inventory([out]),businessOptions());
+  assert.equal(missing.selected.length,0); assert.equal(missing.diagnostics[0].status,'UNRESOLVED');
+  assert.deepEqual(missing.graph.edges,[]);
+});
+
+test('business budgets, duplicate eligibility and pre-existing unverified fixtures cannot authorize replay', async () => {
+  const data = [incomingFixture('one'),incomingFixture('two'),incomingFixture('three')];
+  const entries = await inventory(data); entries[0].state='PRE_EXISTING';
+  const plan = dependencyPlan(data,entries,businessOptions('--max-retries','2','--max-sandbox-posts','4'),true);
+  assert.deepEqual(plan.selected.map(e=>e.id),['two']);
+  assert.equal(plan.budgets.plannedWorstCasePosts,3); assert.equal(plan.diagnostics[0].status,'BLOCKED');
+  assert.equal(plan.diagnostics[2].reason,'INSUFFICIENT_WMS_OR_POST_RETRY_BUDGET');
+  const zero = dependencyPlan(data,entries,businessOptions('--max-retries','2','--max-sandbox-posts','1'));
+  assert.equal(zero.selected.length,0);
+  const duplicate = [data[0],data[0]];
+  assert.equal(dependencyPlan(duplicate,await inventory(duplicate),businessOptions()).selected.length,0);
+  assert.throws(()=>businessOptions('--allow-real-sandbox','--resume','old'));
+});
+
+test('untrusted cyclic/forward references do not construct edges or make dependent/reversal fixtures eligible', async () => {
+  const a = outgoingSource(); const b = { ...outgoingSource(), wms_id:'second', upstream_wms_id:a.wms_id };
+  a.upstream_wms_id=b.wms_id;
+  const data = [a,b,{ ...adjustment, reversal:'Y' }];
+  const plan=dependencyPlan(data,await inventory(data),businessOptions());
+  assert.deepEqual(plan.graph.edges,[]); assert.equal(plan.selected.length,0);
+  assert.ok(plan.diagnostics.every(d=>d.status==='UNRESOLVED' || d.status==='SKIPPED'));
+});
+
+test('provider evidence is independent of actual queue hold; HTTP alone never establishes acceptance/rejection', () => {
+  const log = { id:BigInt(1), queue_attempt_id:'a', transaction_id:1, transaction_type:'outgoing',wms_id:'pmi',insw_status:'FAILED',
+    http_code:400, provider_status:false,classification:'PERMANENT_FAILURE',reason_code:'MISSING_ITEM_VALIDATION',payload_sha256:'hash' } as Observation['logs'][number];
+  assert.equal(providerOutcome([log]),'EXPECTED_BUSINESS_REJECTION');
+  assert.equal(providerOutcome([{...log,reason_code:'UNRECOGNIZED_CODE_02',classification:'UNKNOWN'}]),'UNKNOWN');
+  assert.equal(providerOutcome([{...log,http_code:200}]),'UNKNOWN');
+  assert.equal(providerOutcome([{...log,http_code:200,provider_status:true,classification:'KNOWN_REMOTE_SUCCESS',insw_status:'SUCCESS'}]),'ACCEPTED');
+  assert.equal(providerOutcome([]),'UNKNOWN');
+});
+
+test('source-only business plan never invokes DB, process, app or network and keeps physical assertions NOT RUN', async () => {
+  const root=mkdtempSync(join(tmpdir(),'insw-business-')); const previousFetch=globalThis.fetch;
+  const refuse=()=>{ throw new Error('OFFLINE_BOUNDARY_CALLED'); };
+  globalThis.fetch=async()=>refuse();
+  try {
+    const payload=join(root,'source.json');writeFileSync(payload,JSON.stringify([incomingFixture('incoming'),outgoingSource()]));
+    await main(['--preflight-only','--selection-mode','business-independent','--payload-file',payload,'--evidence-root',join(root,'evidence')],
+      { database:refuse, processes:refuse, app:refuse });
+    const run=join(root,'evidence',readdirSync(join(root,'evidence'))[0]);
+    const plan=JSON.parse(readFileSync(join(run,'dependency-plan.json'),'utf8'));
+    assert.equal(plan.selected.length,1);assert.equal(plan.collisions,'NOT VERIFIED: source-only plan');
+    const business=JSON.parse(readFileSync(join(run,'business-acceptance.json'),'utf8'));
+    assert.equal(business.status,'NOT RUN');
+    const assertions=JSON.parse(readFileSync(join(run,'assertions.json'),'utf8'));
+    assert.ok(assertions.assertions.every((a:{status:string})=>a.status!=='PASS'));
+  } finally {globalThis.fetch=previousFetch;rmSync(root,{recursive:true,force:true});}
 });

@@ -1,9 +1,10 @@
+import { providerOutcome } from './provider-outcome';
 import { type Entry, type Assertion, type Start, domains, spacing, csv } from './core';
 import type { Observation } from './database';
 import type { Evidence } from './evidence';
 export function reports(e: Evidence, entries: Entry[], records: Record<string, { state: string; http?: number }>,
   observation: Observation | undefined, starts: Start[], complete: boolean, physical: boolean,
-  preserved?: boolean, duplicate?: boolean, blocker?: string) {
+  preserved?: boolean, duplicate?: boolean, blocker?: string, selectionMode = 'transport') {
   const o = observation;
   const rows = entries.map(entry => {
     const q = o?.queue.filter(q => q.wms_reference === entry.id) ?? [];
@@ -29,10 +30,10 @@ export function reports(e: Evidence, entries: Entry[], records: Record<string, {
       ? 'RESPONSE_OBSERVED' : a.some(a => a.started_at) ? 'POST_STARTED' : q.length ? 'QUEUED' : 'NOT_OBSERVED';
     const sourceContract = src.length === 1 && !!entry.checks && src[0].reversal === entry.checks.reversal
       && src[0].work_order_hash === entry.checks.workOrderHash && src[0].item_hash === entry.checks.itemsHash;
-    return { source_contract_matches: sourceContract, wms_id: entry.id, family: entry.family, state, wms_submission: status ?? 'UNKNOWN', dispatch_observation: dispatch, provider_business_result: providerResult, wms_http: records[entry.id]?.http,
+    return { source_contract_matches: sourceContract, wms_id: entry.id, family: entry.family, state, wms_submission: status ?? 'UNKNOWN', dispatch_observation: dispatch, provider_business_result: providerResult, provider_acceptance: providerOutcome(l), wms_http: records[entry.id]?.http,
       source_ids: src.map(s => s.id).join(';'), source_item_count: src.reduce((n,s) => n+s.item_count,0), expected_item_count: entry.checks?.sourceItemCount ?? entry.items,
       wms_log_ids: wms.map(l => l.id).join(';'), queue_ids: q.map(q => q.id).join(';'), attempt_ids: a.map(a => a.id).join(';'),
-      tracking_log_ids: l.map(l => l.id).join(';'), local_status: q.map(q => q.status).join(';'),
+      tracking_log_ids: l.map(l => l.id).join(';'), local_status: q.map(q => q.status).join(';'), local_delivery_state: q.map(q => q.delivery_state).join(';'),
       provider_http: l.map(l => l.http_code).join(';'), provider_status: l.map(l => l.provider_status).join(';'),
       retry_index: q.map(q => q.retry_index).join(';'), frozen_hash: q.map(q => q.payload_sha256).join(';') };
   });
@@ -95,12 +96,18 @@ export function reports(e: Evidence, entries: Entry[], records: Record<string, {
     set(10, complete ? 'PASS' : 'NOT VERIFIED', complete ? 'Owned child drained and reaped; reports preserved; no queue history deleted.' : 'Sender observation incomplete; sticky ownership requires review.');
   }
   set(7, 'NOT RUN', 'Physical restart/crash/clock jump tests intentionally excluded; no existing PM2 process is touched.');
-  e.write('transmissions.csv', csv(rows, ['wms_id','family','state','wms_submission','dispatch_observation','provider_business_result','wms_http','source_ids','source_item_count','expected_item_count','source_contract_matches','wms_log_ids','queue_ids','attempt_ids','tracking_log_ids','local_status','provider_http','provider_status','retry_index','frozen_hash']));
+  e.write('transmissions.csv', csv(rows, ['wms_id','family','state','wms_submission','dispatch_observation','provider_business_result','wms_http','source_ids','source_item_count','expected_item_count','source_contract_matches','wms_log_ids','queue_ids','attempt_ids','tracking_log_ids','local_status','provider_http','provider_status','retry_index','frozen_hash','provider_acceptance','local_delivery_state']));
   const attemptRows = o?.attempts.map(a => { const log = o.logs.find(l => l.queue_attempt_id === a.id);
     return { ...a, tracking_log_id: log?.id, provider_http: log?.http_code, provider_status: log?.provider_status,
       classification: log?.classification, reason_code: log?.reason_code, frozen_hash: log?.payload_sha256 }; }) ?? [];
   e.write('attempts.csv', csv(attemptRows, ['id','queue_id','retry_index','started_at','completed_at','delivery_state','tracking_log_id','provider_http','provider_status','classification','reason_code','frozen_hash']));
   e.write('sender-post-starts.csv', csv(starts, ['wms_id','queue_id','attempt_id','monotonic_ns','boot_id','active','wall_time']));
+  e.write('business-acceptance.json', { selectionMode, physical: physical ? 'OPERATOR_OPT_IN' : 'NOT RUN',
+    status: selectionMode === 'transport' ? 'NOT RUN' : !physical || !o ? 'NOT RUN'
+      : entries.length > 0 && rows.every(r => r.provider_acceptance === 'ACCEPTED') ? 'PASS' : 'UNMET',
+    reason: 'Business mode requires observed provider acceptance for every selected fixture. Expected rejection still leaves acceptance unmet; queue states remain unchanged.',
+    rows: rows.map(r => ({ wms_id: r.wms_id, providerAcceptance: r.provider_acceptance, localStatus: r.local_status, localDeliveryState: r.local_delivery_state,
+      dispatch: r.dispatch_observation, wmsSubmission: r.wms_submission })) });
   e.write('assertions.json', { assertions, r06Checks, timing, realSandboxPostsObserved: starts.length, injection: 'NONE', observationComplete: complete });
   e.write('summary.md', `# INSW Sandbox acceptance\n\nPhysical execution: ${physical ? 'operator opt-in' : 'NOT RUN (no physical Sandbox execution)'}\n\nObserved real Sandbox POST starts: ${starts.length}. Injection: none. Assertion PASS counts are test checks, not provider business acceptances.\n\nProvider business results: ${rows.filter(r => r.provider_business_result === 'ACCEPTED').length} ACCEPTED, ${rows.filter(r => r.provider_business_result === 'REJECTED').length} REJECTED, ${rows.filter(r => r.provider_business_result === 'UNKNOWN').length} UNKNOWN, ${rows.filter(r => r.provider_business_result === 'NOT_SENT').length} NOT_SENT. Local queue states are retained independently in transmissions.csv.\n\n| Scenario | Result | Reason |\n|---|---|---|\n${assertions.map(a => `| ${a.scenario} | ${a.status} | ${a.reason.replace(/\|/g,'/')} |`).join('\n')}\n\nSelected WMS IDs: ${entries.map(e => JSON.stringify(e.id)).join(', ')}\n\nQueue history is retained. No Sandbox Cleanup/DELETE performed.\n`);
   return assertions;
