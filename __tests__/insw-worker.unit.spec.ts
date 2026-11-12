@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
+import vm from 'node:vm';
+import ts from 'typescript';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { freezePayload } from '../lib/insw-queue/contracts';
@@ -12,16 +14,26 @@ const run = (request: RequestPrimitive, extra: Partial<Parameters<typeof execute
   executeFrozenRequest({ payload, sha256, timeoutMs: 100, request, ...extra });
 const reply = (body: string, status = 200, headers?: HeadersInit): RequestPrimitive => async () => new Response(body, { status, headers });
 
-test('entrypoint is default off and requires the production environment for explicit opt-in', () => {
+test('entrypoint is default off and requires the production environment for explicit opt-in', async () => {
   for (const value of [undefined, 'false', '1', 'TRUE', ' true ']) expect(startupDecision({ INSW_WORKER_ENABLED: value })).toBe('DISABLED');
   expect(startupDecision({ INSW_WORKER_ENABLED: 'true' })).toBe('BLOCKED');
   expect(startupDecision({ NODE_ENV: 'production', INSW_WORKER_ENABLED: 'true' })).toBe('ENABLED');
   for (const enabled of ['false', 'true']) {
-    const result = spawnSync('node_modules/.bin/tsx', ['scripts/insw-worker.ts'], {
-      env: { PATH: process.env.PATH, NODE_ENV: 'test', INSW_WORKER_ENABLED: enabled }, encoding: 'utf8',
-    });
-    expect(result.status, result.stderr).toBe(enabled === 'true' ? 78 : 0);
-    expect(result.stdout + result.stderr).toContain(enabled === 'true' ? 'requires explicit production opt-in' : 'disabled');
+    // Execute the real entrypoint without the tsx CLI's IPC socket or child
+    // process sandbox. Any resource import is forbidden in both startup states.
+    const output: string[] = [], exports: any = {};
+    vm.runInNewContext(ts.transpileModule(readFileSync('scripts/insw-worker.ts', 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText, { exports, module: { exports }, process: {
+      stdout: { write: (message: string) => output.push(message) },
+      stderr: { write: (message: string) => output.push(message) },
+    }, require: (name: string) => {
+      if (name === '../lib/insw-worker/safety') return { startupDecision };
+      if (name === '../lib/config/insw-worker-config') return {};
+      throw new Error(`Unexpected resource import during disabled/blocked startup: ${name}`);
+    } });
+    expect(await exports.main({ NODE_ENV: 'test', INSW_WORKER_ENABLED: enabled })).toBe(enabled === 'true' ? 78 : 0);
+    expect(output.join('')).toContain(enabled === 'true' ? 'requires explicit production opt-in' : 'disabled');
   }
 });
 
@@ -52,6 +64,13 @@ test('WMS aliases coordinate capture; excluded producers and payload builders re
         'app/api/v1/stock-opname/route.ts'].includes(file)) {
         source = source.replace(/import .* from ['"].*insw-worker\/completed-source-capture['"];?/, '');
       }
+      if (file === 'lib/insw-queue/manual-regeneration.ts') {
+        source = source.replace("import { captureCompletedWmsSource, type CompletedSourceCapture } from '../insw-worker/completed-source-capture';", '')
+          .replace("import { resolveWorkerAllowedCompanies } from '../config/insw-worker-config';", '');
+      }
+      if (file === 'lib/insw-queue/wms-log-status.ts') {
+        source = source.replace("import { resolveWorkerAllowedCompanies } from '../config/insw-worker-config';", '');
+      }
       expect(source, file).not.toMatch(/insw-worker|executeFrozenRequest/);
     }
   }
@@ -70,7 +89,10 @@ test('WMS aliases coordinate capture; excluded producers and payload builders re
     'app/api/customs/scrap-transactions/[id]/transmit-insw/route.ts',
     'app/api/insw/post/saldo-awal/route.ts', 'app/api/insw/post/saldo-awal-final/route.ts',
     'app/api/settings/wms-transmission-logs/[id]/retry/route.ts']) {
-    let baseline = execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8', maxBuffer: 2000000 });
+    const baselineResult = spawnSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8', maxBuffer: 2000000 });
+    expect(baselineResult.status, baselineResult.stderr).toBe(0);
+    expect(baselineResult.stdout.length).toBeGreaterThan(0);
+    let baseline = baselineResult.stdout;
     // Worker seam changes only redirect handling and a fetch-invocation hook.
     // The transaction builder/converters/legacy response behavior stay identical.
     if (file === 'lib/services/insw-integration.service.ts') baseline = baseline

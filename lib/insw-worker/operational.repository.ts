@@ -7,6 +7,7 @@ import { reserveTail } from '../insw-queue/queue.repository';
 import { Outcome } from './transport';
 import { classifiedRetryDisposition } from './retry';
 import { ProcessIdentity, processIdentity, verifyReaped } from './process-identity';
+import { CloneManifest, cloneDatabaseUrl, digest, sameIdentity, verifyCloneFence } from './clone-fence';
 
 type Tx = Prisma.TransactionClient;
 export async function owned(tx: Tx, token: string) {
@@ -39,14 +40,58 @@ export async function acquireOperationalOwnership(db: PrismaClient): Promise<str
 export async function recoverOperationalOwnership(db: PrismaClient, input: {
   expectedToken: string; operator: string; evidence: string; shutdownAcknowledged: boolean;
 }) {
+  return recoverOwnership(db, input);
+}
+
+// Separate operator-only entry point; no startup, HTTP or Cleanup caller.
+// The clone path refuses busy/unfinished work, preserving all ambiguity evidence.
+export async function recoverPostRestoreOwnership(db: PrismaClient, manifest: CloneManifest, reviewSha256?: string) {
+  cloneDatabaseUrl(process.env, manifest);
+  return recoverOwnership(db, { expectedToken: manifest.expectedToken, operator: manifest.operator,
+    evidence: `post-restore clone; manifest-sha256=${digest(manifest)}`,
+    shutdownAcknowledged: true }, { manifest, reviewSha256 });
+}
+
+async function recoverOwnership(db: PrismaClient, input: {
+  expectedToken: string; operator: string; evidence: string; shutdownAcknowledged: boolean;
+}, clone?: { manifest: CloneManifest; reviewSha256?: string }) {
   boundedText(input.operator, 'operator', 100); boundedText(input.evidence, 'shutdown evidence', 500);
   if (!input.shutdownAcknowledged) throw new Error('SHUTDOWN_ACKNOWLEDGEMENT_REQUIRED');
   return db.$transaction(async tx => {
-    const gate = await owned(tx, input.expectedToken);
+    if (clone) {
+      if (!clone.reviewSha256) await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+      else await tx.$executeRaw`LOCK TABLE insw_dispatch_gate, insw_queue_cycle,
+        insw_queue_attempt, insw_admin_resolution, insw_preparation_rollout,
+        insw_preparation_member, insw_preparation_ledger, insw_tracking_log
+        IN SHARE ROW EXCLUSIVE MODE NOWAIT`;
+    }
+    const target = clone ? await verifyCloneFence(tx, clone.manifest) : undefined;
+    const gate = clone && !clone.reviewSha256
+      ? (await tx.$queryRaw<{ last_started_at: Date | null; prior_interval_ms: number | null; busy_attempt_id: string | null }[]>`
+        SELECT last_started_at, prior_interval_ms, busy_attempt_id FROM insw_dispatch_gate
+        WHERE id = 1 AND owner_token = ${input.expectedToken}::uuid`)[0]
+      : await owned(tx, input.expectedToken);
+    if (!gate) throw new Error('STREAM_OWNER_LOST');
     const [row] = await tx.$queryRaw<{ process_identity: ProcessIdentity | null }[]>`
       SELECT process_identity FROM insw_dispatch_gate WHERE id = 1`;
     if (!row.process_identity) throw new Error('LEGACY_OWNER_REQUIRES_EXTERNAL_FENCING_REVIEW');
-    verifyReaped(row.process_identity);
+    if (clone) {
+      if (!sameIdentity(row.process_identity, clone.manifest.expectedIdentity)) throw new Error('CLONE_STORED_IDENTITY_MISMATCH');
+      if (gate.busy_attempt_id !== null || (gate.last_started_at === null) !== (gate.prior_interval_ms === null)
+        || gate.prior_interval_ms !== null && gate.prior_interval_ms < 3600) throw new Error('CLONE_BUSY_OR_INCONSISTENT_GATE');
+      const [timing] = await tx.$queryRaw<{ recovery_barrier_at: Date | null; expired: boolean }[]>`
+        SELECT recovery_barrier_at, lease_until IS NOT NULL AND lease_until <= clock_timestamp() AS expired
+        FROM insw_dispatch_gate WHERE id = 1`;
+      if (!timing?.expired) throw new Error('CLONE_OWNER_LEASE_ACTIVE_OR_UNKNOWN');
+      if (gate.last_started_at === null && timing.recovery_barrier_at !== null) throw new Error('CLONE_BUSY_OR_INCONSISTENT_GATE');
+      const { backend_pid: _backendPid, ...verifiedTarget } = target!;
+      const review = { mode: 'post-restore-controlled-nonproduction', target: verifiedTarget, gate, timing,
+        oldIdentity: row.process_identity, manifestSha256: digest(clone.manifest),
+        intendedChanges: 'audit recovery; clear expected ownership only; preserve timing, policy, queue and transmission evidence' };
+      const reviewSha256 = digest(review);
+      if (!clone.reviewSha256) return { held: 0, applied: false, review, reviewSha256 };
+      if (clone.reviewSha256 !== reviewSha256) throw new Error('CLONE_DRY_RUN_REVIEW_MISMATCH');
+    } else verifyReaped(row.process_identity);
     // Resolve exactly the gate's single attempt by primary key; never scan a
     // backlog for stale owners or infer ownership from expired job leases.
     const attempt = gate.busy_attempt_id ? await tx.insw_queue_attempt.findUnique({

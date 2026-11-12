@@ -17,6 +17,8 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  Checkbox,
+  FormControlLabel,
   Alert,
   LinearProgress,
   useTheme,
@@ -37,7 +39,7 @@ interface INSWCleanupModeProps {
   onBack: () => void;
 }
 
-type ConfirmationStep = 'preview' | 'password' | 'executing' | 'completed' | 'error';
+type ConfirmationStep = 'preview' | 'confirm' | 'executing' | 'completed' | 'error';
 
 export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
   const theme = useTheme();
@@ -46,23 +48,24 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
   const companyCode = session?.user?.companyCode;
 
   const [step, setStep] = useState<ConfirmationStep>('preview');
-  const [password, setPassword] = useState('');
-  const [passwordError, setPasswordError] = useState('');
+  const [confirmationText, setConfirmationText] = useState('');
+  const [producersStopped, setProducersStopped] = useState(false);
+  const [confirmationError, setConfirmationError] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<any>(null);
 
   const handleStartCleanup = () => {
-    setStep('password');
+    setStep('confirm');
   };
 
-  const handleConfirmPassword = async () => {
-    if (!password) {
-      setPasswordError('Password is required');
+  const handleConfirmCleanup = async () => {
+    if (confirmationText !== `RESET ${companyCode}` || !producersStopped) {
+      setConfirmationError(`Enter RESET ${companyCode} and confirm all producers are stopped`);
       return;
     }
 
-    setPasswordError('');
+    setConfirmationError('');
     setStep('executing');
     setIsExecuting(true);
     setError(null);
@@ -73,21 +76,22 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ confirmation: confirmationText, producersStopped }),
       });
 
       const data = await res.json();
 
-      if (!res.ok) {
-        setError(data.message || data.error || 'Cleanup failed');
+      if (!res.ok || !data.success) {
+        const message = data.error?.message || data.message || 'Cleanup failed';
+        setError(message);
         setStep('error');
-        showToast(`Cleanup failed: ${data.message || data.error}`, 'error');
+        showToast(`Cleanup failed: ${message}`, 'error');
         return;
       }
 
       setResponse(data);
       setStep('completed');
-      showToast('INSW temporary data and local tracking logs cleaned successfully', 'success');
+      showToast(data.message || 'INSW temporary data and local tracking logs cleaned successfully', 'success');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Cleanup failed';
       setError(errorMsg);
@@ -129,7 +133,9 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
                   <Typography variant="body2">
                     This operation removes temporary transaction data from INSW and clears the local
                     INSW transmission logs for your current company. Logs belonging to other
-                    companies are not affected.
+                    companies are not affected. In Development/Staging, this also removes local
+                    operational queues, attempts, manual resolutions and preparation records. Stop
+                    all workers and producers and wait for transmissions to finish before cleanup.
                   </Typography>
                 </Alert>
 
@@ -147,7 +153,7 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
                         Endpoint:
                       </Typography>
                       <Typography variant="body2" color="textSecondary">
-                        https://api.insw.go.id/api-prod/inventory/temp/transaksi
+                        INSW Sandbox temporary transaction cleanup (external DELETE)
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -178,7 +184,7 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
                 {/* Warning */}
                 <Alert severity="warning" icon={<Warning />}>
                   <Typography variant="body2">
-                    This operation will permanently delete temporary transaction data from INSW for
+                    This invokes real external INSW Sandbox cleanup and permanently discards local test queues, attempts and logs in Development/Staging, including uncertain-delivery history, for
                     company {companyCode || 'your current company'} only. Data belonging to other
                     companies will not be affected. Local INSW tracking logs for this company will
                     also be deleted after the external cleanup succeeds. This action cannot be undone.
@@ -203,31 +209,38 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
           </Card>
         )}
 
-        {/* Password Confirmation Step */}
-        {step === 'password' && (
+        {/* Destructive Confirmation Step */}
+        {step === 'confirm' && (
           <Dialog open={true} onClose={() => setStep('preview')} maxWidth="sm" fullWidth>
-            <DialogTitle>Confirm Password</DialogTitle>
+            <DialogTitle>Confirm INSW Cleanup</DialogTitle>
             <DialogContent>
               <Stack spacing={2} sx={{ pt: 2 }}>
                 <Typography variant="body2" color="textSecondary">
-                  Please enter your password to confirm this INSW cleanup operation for company{' '}
+                  Type RESET followed by the company code to irrevocably discard test data and invoke external INSW Sandbox cleanup for company{' '}
                   {companyCode || 'your current company'} only.
+                </Typography>
+                <FormControlLabel
+                  control={<Checkbox checked={producersStopped} onChange={e => setProducersStopped(e.target.checked)} />}
+                  label="I confirm all INSW workers and producers are stopped and there are no active transmissions."
+                />
+                <Typography variant="caption">
+                  The database cannot prove remote HTTP requests have stopped. Confirm this with the operators of every producer before continuing.
                 </Typography>
                 <TextField
                   fullWidth
-                  label="Password"
-                  type="password"
-                  value={password}
+                  label={`Type RESET ${companyCode}`}
+                  autoComplete="off"
+                  value={confirmationText}
                   onChange={(e) => {
-                    setPassword(e.target.value);
-                    setPasswordError('');
+                    setConfirmationText(e.target.value);
+                    setConfirmationError('');
                   }}
-                  error={!!passwordError}
-                  helperText={passwordError}
+                  error={!!confirmationError}
+                  helperText={confirmationError}
                   disabled={isExecuting}
-                  onKeyPress={(e) => {
+                  onKeyDown={(e) => {
                     if (e.key === 'Enter') {
-                      handleConfirmPassword();
+                      handleConfirmCleanup();
                     }
                   }}
                 />
@@ -241,10 +254,10 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
                 Cancel
               </Button>
               <Button
-                onClick={handleConfirmPassword}
+                onClick={handleConfirmCleanup}
                 variant="contained"
                 color="warning"
-                disabled={isExecuting || !password}
+                disabled={isExecuting || confirmationText !== `RESET ${companyCode}` || !producersStopped}
               >
                 {isExecuting ? 'Processing...' : 'Confirm'}
               </Button>
@@ -305,6 +318,14 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
                         {(response.localTrackingLogCleanup?.deletedRows ?? 0).toLocaleString()}
                       </Typography>
                     </Box>
+                    {response.localQueueCleanup?.success && (
+                      <Typography variant="caption">
+                        Queues: {response.localQueueCleanup.queues}; attempts: {response.localQueueCleanup.attempts};
+                        {' '}manual resolutions: {response.localQueueCleanup.resolutions};
+                        {' '}preparation ledgers: {response.localQueueCleanup.preparationLedgers};
+                        {' '}preparation members: {response.localQueueCleanup.preparationMembers}
+                      </Typography>
+                    )}
                     {response.timestamp && (
                       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                         <Typography variant="caption" sx={{ fontWeight: 600 }}>
@@ -358,7 +379,8 @@ export function INSWCleanupMode({ onBack }: INSWCleanupModeProps) {
                     variant="outlined"
                     onClick={() => {
                       setStep('preview');
-                      setPassword('');
+                      setConfirmationText('');
+                      setProducersStopped(false);
                       setError(null);
                     }}
                     fullWidth

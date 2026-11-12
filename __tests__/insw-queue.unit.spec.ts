@@ -64,8 +64,18 @@ test('policy validation and retry-after-initial budget fail closed', async () =>
 // The committed rollout now exposes these specific read/admission facades. Keep
 // exceptions statement- and caller-specific: no runtime/repository wildcard.
 const approvedQueueStatements: Record<string, string[]> = {
+  "app/components/AdminResolve.tsx": ["import type { AdminResolution } from '@/lib/insw-queue/operational-state';"],
+  "lib/insw-log-presentation.ts": ["import type { OperationalState } from './insw-queue/operational-state';", "import { provenanceLabel } from './insw-queue/operational-state';"],
+  "lib/wms-log-sql.ts": ["import { wmsInswMatchingIds } from './insw-queue/wms-log-status';"],
+  "app/(authenticated)/settings/wms-logs/page.tsx": ["import type { WmsInswStatus } from '@/lib/insw-queue/wms-log-status';"],
+  "app/api/settings/wms-transmission-logs/route.ts": ["import { wmsLogInswStatuses } from '@/lib/insw-queue/wms-log-status';"],
+  "app/api/settings/wms-transmission-logs/[id]/regenerate-insw/route.ts": ["import { regenerateWmsInsw, RegenerationError, validateRegenerationRequest } from '@/lib/insw-queue/manual-regeneration';"],
+  "app/api/insw/queues/[id]/resolve/route.ts": ["import { resolveQueue, ResolutionError } from '@/lib/insw-queue/admin-resolution';"],
+
+  'app/api/admin/insw-cleanup/route.ts': ["import { assertINSWCleanupIdle, deleteINSWOperationalData, includesINSWQueueCleanup, hasKnownINSWCleanupPhase, INSWCleanupBusyError, INSWCleanupResidualError } from '@/lib/insw-queue/cleanup';"],
   'app/(authenticated)/insw/logs/page.tsx': [
-    "import { deliveryLabel, provenanceLabel, type OperationalState } from '@/lib/insw-queue/operational-state';",
+    "import { canResolveQueue } from '@/lib/insw-queue/operational-state';",
+    "import { provenanceLabel, type OperationalState } from '@/lib/insw-queue/operational-state';",
     "import type { AttemptHistoryEntry } from '@/lib/insw-queue/attempt-history';",
   ],
   'app/(authenticated)/insw/queue-settings/page.tsx': ["import { intervalSettingsAccess } from '@/lib/insw-queue/interval-settings-http';"],
