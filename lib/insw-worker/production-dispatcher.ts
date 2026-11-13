@@ -5,6 +5,7 @@ import { INSWIntegrationService } from '../services/insw-integration.service';
 import { INSW_ENDPOINTS } from '../types/insw-api.types';
 import { prepareWmsFinalizer } from './incoming-finalizer';
 import { runIsolatedWorker } from './isolated-worker';
+import { resolveWorkerTestEndpoint, workerDispatchTransport } from './test-endpoint';
 
 const operations = ['INCOMING', 'OUTGOING', 'MATERIAL_USAGE', 'PRODUCTION_OUTPUT', 'ADJUSTMENT', 'STOCK_OPNAME'] as const;
 
@@ -21,12 +22,18 @@ export async function runProductionDispatcher(input: {
 }) {
   const allowedCompanies = input.allowedCompanies === undefined ? resolveWorkerAllowedCompanies()
     : validateWorkerAllowedCompanies(input.allowedCompanies);
+  const testEndpoint = resolveWorkerTestEndpoint();
+  const transport = workerDispatchTransport(testEndpoint, input.transport);
   const companies = allowedCompanies.map(code => {
     const config = resolveInswCompanyConfig(code);
-    return [code, { endpoint: config.useTestMode ? INSW_ENDPOINTS.transaksi.temp : INSW_ENDPOINTS.transaksi.real,
+    if (testEndpoint && !config.useTestMode) throw new Error('INSW_WORKER_TEST_REQUIRES_SANDBOX_COMPANY');
+    return [code, { endpoint: testEndpoint ?? (config.useTestMode ? INSW_ENDPOINTS.transaksi.temp : INSW_ENDPOINTS.transaksi.real),
       service: new INSWIntegrationService(config.apiKey, config.uniqueKey, config.useTestMode, input.db) }] as const;
   });
   const services = new Map<number, typeof companies[number][1]>(companies);
+  for (const [companyCode, company] of companies) input.onEvent?.('WORKER_TARGET', {
+    companyCode, endpoint: company.endpoint, testOverride: Boolean(testEndpoint),
+  });
   let active: typeof companies[number][1] | undefined;
   let activeJob: { id: string; wms_reference: string | null; company_code: number; attemptId: string; retry_index: number; max_auto_retry_snapshot: number } | undefined;
   return runIsolatedWorker({ ...input, allowedCompanies, tracksInvocationStart: true, minimumIntervalMs: 3600, timeoutMs: input.timeoutMs ?? 60000,
@@ -42,8 +49,8 @@ export async function runProductionDispatcher(input: {
     },
     request: (body, signal, onInvoked) => {
       if (!active) throw new Error('VALIDATED_COMPANY_REQUIRED');
-      return active.service.requestFrozenTransaction(body, signal, input.transport, onInvoked,
-        input.beforePost ? endpoint => input.beforePost!(endpoint, activeJob!) : undefined);
+      return active.service.requestFrozenTransaction(body, signal, transport, onInvoked,
+        input.beforePost ? () => input.beforePost!(active!.endpoint, activeJob!) : undefined);
     },
   });
 }
