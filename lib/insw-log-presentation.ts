@@ -41,7 +41,9 @@ export function transmissionStatus(log: {
   else if (q?.status === 'READY') result = { label: q.retry_index > 0 ? 'Retry' : 'Waiting', explanation: 'Waiting to send to INSW. No action is needed.', color: 'info' };
   else if (q?.status === 'CLAIMED') result = { label: 'Sending', explanation: 'Transmission is in progress. Wait for the result.', color: 'info' };
   else if (q?.status === 'HELD' || q?.status === 'REMOTE_SUCCEEDED') {
-    result = { label: 'On Hold', explanation: q.error_message === 'MISSING_ITEM_VALIDATION'
+    result = { label: 'On Hold', explanation: log.can_resend === true
+      ? 'External delivery is uncertain. Review operational evidence and accept duplicate-processing risk before using Resend.'
+      : q.error_message === 'MISSING_ITEM_VALIDATION'
       ? 'INSW reported missing item data. Review the item setup; ordinary Manual Resend is unavailable.'
       : q.delivery_state === 'KNOWN_SUCCESS'
       ? 'INSW confirmed receipt. Local recording or finalization needs review; do not send again.'

@@ -155,8 +155,13 @@ export async function admitNext(db: PrismaClient, token: string, minimumInterval
               JOIN insw_queue_cycle p ON p.id = a.queue_id
               WHERE l.id = q.source_log_id AND l.transaction_type = lower(q.operation::text) AND l.insw_status = 'FAILED'
                 AND l.company_code = q.company_code AND p.identity_key = q.identity_key AND p.cycle = q.cycle - 1
-                AND p.status = 'FAILED' AND p.delivery_state = 'KNOWN_FAILURE'
-                AND p.retry_index >= p.max_auto_retry_snapshot AND p.owner_token IS NULL AND p.lease_until IS NULL
+                AND (p.status = 'FAILED' AND p.delivery_state = 'KNOWN_FAILURE'
+                  OR p.status = 'SUPERSEDED' AND EXISTS (SELECT 1 FROM insw_manual_supersession retired
+                    WHERE retired.parent_queue_id = p.id AND retired.successor_queue_id = q.id
+                      AND retired.source_log_id = l.id AND retired.commitment))
+                AND p.owner_token IS NULL AND p.lease_until IS NULL
+                -- Category/budget/history are rechecked by verifyWmsManualCycle before dispatch.
+                AND a.completed_at IS NOT NULL
                 AND p.payload_sha256 = q.payload_sha256 AND p.frozen_payload = q.frozen_payload
                 AND l.metadata#>>'{manual_resend,queue_id}' = q.id::text
             )

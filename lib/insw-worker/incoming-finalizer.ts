@@ -223,7 +223,9 @@ export async function prepareWmsFinalizer(db: PrismaClient, token: string, admit
         retryIndex: job.retry_index, maxAutoRetrySnapshot: Math.min(10, job.max_auto_retry_snapshot),
         clientApprovedAmbiguousRetry: false, exclusiveStreamProven: true, priorInvocationEnded: true, outcomeDurablyRecorded: true });
       const retry = !success && disposition === 'RETRY_TO_TAIL';
-      const failure = !success && disposition === 'STOP' && outcome.classification.reasonCode !== 'MISSING_ITEM_VALIDATION';
+      // A14 is a classified explicit rejection, so it uses the same terminal
+      // failure path as other permanent rejections. Unknown outcomes still HOLD.
+      const failure = !success && disposition === 'STOP' && explicitRejection;
       const metadata = { adapter: 'WMS_QUEUE_FINALIZER', outcome_sha256: fingerprint, payload_sha256: job.payload_sha256,
           endpoint_url: endpointUrl, classification: outcome.classification.kind,
           reasonCode: outcome.classification.reasonCode, delivery: outcome.delivery, phase: outcome.phase,

@@ -24,9 +24,9 @@ test.beforeAll(() => {
 test.afterAll(() => { net.Socket.prototype.connect = connect; globalThis.fetch = fetch; });
 const evidence = { classification: 'TRANSIENT_FAILURE', reasonCode: 'RATE_LIMIT_REJECTION',
   responseEvidence: 'COMPLETE', providerStatus: false, providerMessage: 'API rate limit exceeded', httpCode: 429 };
-const cycle = { status: 'FAILED', delivery_state: 'KNOWN_FAILURE', retry_index: 10,
-  max_auto_retry_snapshot: 10, owner_token: null, lease_until: null } as const;
 const payload = { data: [{ kdKegiatan: '30', dokumenKegiatan: [{ nomorDokKegiatan: 'DOC', barangTransaksi: [{ kdBarang: 'ITEM' }] }] }] };
+const cycle = { status: 'FAILED', delivery_state: 'KNOWN_FAILURE', retry_index: 10,
+  max_auto_retry_snapshot: 10, owner_token: null, lease_until: null, frozen_payload: payload, payload_sha256: freezePayload(payload).sha256 } as const;
 const rate = { status: false, message: 'API rate limit exceeded' };
 
 for (const budget of [0, 10]) test(`A05/A20: budget ${budget}, last cause and raw evidence control ordinary resend`, () => {
@@ -200,39 +200,47 @@ function resendDb(metadata: any = evidence) {
   const events: string[] = [];
   const queries: any[] = [];
   let latest = 'parent';
-  const parent = { ...cycle, id: 'parent', operation: 'INCOMING', wms_reference: 'DOC', identity_key: identity, cycle: 1, payload_sha256: 'frozen' };
+  const parent: any = { ...cycle, id: 'parent', operation: 'INCOMING', wms_reference: 'DOC', identity_key: identity, cycle: 1, payload_sha256: cycle.payload_sha256 };
   const tx = {
     insw_tracking_log: { findFirst: async () => ({ metadata, queue_attempt: { queue: parent } }),
-      update: async () => { events.push('audit'); } },
+      update: async (_args: any) => { events.push('audit'); } },
     insw_queue_cycle: { findFirst: async () => null },
     insw_transmission_policy: { findUnique: async () => ({ min_processing_interval_ms: 3600, max_auto_retry: 10, version: 1 }) },
+    $executeRaw: async () => { events.push('supersession-audit'); return 1; },
     $queryRaw: async (query: any, ...values: any[]) => {
       const sql = Array.isArray(query) ? query.join('?') : query.sql;
       queries.push(query);
       if (sql.includes('pg_advisory')) { events.push(String(values[0])); return []; }
       if (sql.includes('FOR UPDATE')) return [{ id: latest }];
+      if (sql.includes('UPDATE insw_queue_cycle')) {
+        if (parent.status !== 'HELD') return [];
+        parent.status = 'SUPERSEDED'; events.push('retire'); return [{ id: parent.id }];
+      }
       if (sql.includes('INSERT INTO')) { events.push('insert'); latest = 'successor'; return [{ id: latest }]; }
-      return [{ id: BigInt(1), ...cycle, metadata }];
+      return [{ ...parent, id: BigInt(1), metadata }];
     },
   };
-  const db = { ...tx, $transaction: async (fn: any) => fn(tx) } as any;
-  return { db, events, queries, parent };
+  const db = { ...tx, $transaction: async (fn: any) => {
+    const before = structuredClone(parent); const previousLatest = latest;
+    try { return await fn(tx); } catch (error) { Object.assign(parent, before); latest = previousLatest; throw error; }
+  } } as any;
+  return { db, tx, events, queries, parent };
 }
 test('admission: stable reference before identity/row lock; frozen copy; repeated click cannot create a second successor', async () => {
   const mock = resendDb();
-  expect(await coordination.resendWmsLog(mock.db, 1370, BigInt(1), 'operator', 'reviewed')).toMatchObject({ status: 'accepted' });
+  expect(await coordination.resendWmsLog(mock.db, 1370, BigInt(1), 'operator', 'reviewed', true)).toMatchObject({ status: 'accepted' });
   expect(mock.events[0]).toContain('insw-source-reference'); expect(mock.events[1]).toBe(identity);
   expect(mock.events.filter(e => e === 'insert')).toHaveLength(1);
   const insert = mock.queries.find(q => Array.isArray(q) && q.join('').includes('INSERT INTO'));
   expect(insert.join('')).toContain('frozen_payload, payload_sha256');
-  await expect(coordination.resendWmsLog(mock.db, 1370, BigInt(1), 'operator', 'again')).rejects.toThrow('not definitively failed');
+  await expect(coordination.resendWmsLog(mock.db, 1370, BigInt(1), 'operator', 'again', true)).rejects.toThrow('Manual Resend unavailable');
   expect(mock.events.filter(e => e === 'insert')).toHaveLength(1);
 });
 test('worker parent: category, frozen hash, history/identity and authorized successor are rechecked', async () => {
   for (const invalid of [false, true]) {
     const mock = resendDb({ ...evidence, ...(invalid ? { reasonCode: 'AUTHORIZATION_FAILURE' } : {}), manual_resend: { queue_id: 'successor' } });
     const successor = { id: 'successor', operation: 'INCOMING', source_log_id: BigInt(1), identity_key: identity, cycle: 2,
-      payload_sha256: 'frozen', company_code: 1370 } as any;
+      payload_sha256: cycle.payload_sha256, company_code: 1370 } as any;
     if (invalid) await expect(coordination.verifyWmsManualCycle(mock.db, successor)).rejects.toThrow('INVALID_WMS_MANUAL_SUCCESSOR');
     else {
       await coordination.verifyWmsManualCycle(mock.db, successor);
@@ -243,7 +251,7 @@ test('worker parent: category, frozen hash, history/identity and authorized succ
   }
 });
 
-function route(db: any, authenticated = true) {
+function route(db: any, authenticated = true, body: unknown = { reason: 'reviewed', commitment: true }) {
   const exports: any = {};
   const imports: any = { '@/lib/insw-queue/wms-coordination': coordination, 'next/server': { NextResponse },
     '@/lib/prisma': { prisma: db }, '@/lib/insw-auth': { checkInswAuth: async (action: string) => {
@@ -254,7 +262,7 @@ function route(db: any, authenticated = true) {
     { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports, require: (name: string) => {
       if (!(name in imports)) throw new Error(`Unmocked import ${name}`); return imports[name];
     }, BigInt, console });
-  return () => exports.POST(new Request('http://local/resend', { method: 'POST', body: '{}' }), { params: Promise.resolve({ id: '1' }) });
+  return () => exports.POST(new Request('http://local/resend', { method: 'POST', body: JSON.stringify(body) }), { params: Promise.resolve({ id: '1' }) });
 }
 test('direct POST: unauthorized denied before lookup; unsafe/legacy categories return 409 with zero admission/POST', async () => {
   let reads = 0;
@@ -276,9 +284,10 @@ test('direct POST: unauthorized denied before lookup; unsafe/legacy categories r
 for (const [status, response, expected] of [
   [429, rate, 'READY'], [429, { message: 'API rate limit exceeded' }, 'READY'],
   [429, 'API rate limit exceeded', 'READY'], [502, { status: false, message: 'Bad Gateway' }, 'HELD'],
-  [400, { status: false, code: '02', message: 'data barang ITEM tidak ada' }, 'HELD'],
+  [400, { status: false, code: '02', message: 'data barang ITEM tidak ada' }, 'FAILED'],
   [400, { status: false, code: '02', message: 'data belum diproses' }, 'HELD'],
-  [401, { message: 'Unauthorized' }, 'FAILED'],
+  [401, { message: 'Unauthorized' }, 'HELD'],
+  [403, { status: false, message: 'Unauthorized' }, 'FAILED'],
 ] as const) test(`finalizer raw HTTP ${status}/${typeof response === 'string' ? response : JSON.stringify(response)}: ${expected}, no implicit second POST`, async () => {
   const frozen = freezePayload(payload);
   const job = { id: 'q', attemptId: 'a', company_code: 1370, operation: 'INCOMING', intent: 'SOURCE_COMMIT', source_log_id: null,
@@ -303,6 +312,9 @@ for (const [status, response, expected] of [
   expect(metadata.providerStatus).toBe(typeof response !== 'string' && 'status' in response && response.status === false ? false : null);
   expect(inserts[0].some((v: any) => typeof v === 'string' && v.includes(typeof response === 'string' ? response : response.message))).toBe(true);
   if (status === 401) expect(updates.at(-1).delivery_state).toBe('POSSIBLY_STARTED');
+  if (expected === 'FAILED' && typeof response !== 'string' && 'status' in response && response.status === false) {
+    expect(updates.at(-1).delivery_state).toBe('KNOWN_FAILURE');
+  }
   // A locally manufactured normalized false cannot replace raw provenance.
   const contradictory = { ...outcome, classification: classifyResponse(429, rate, payload), httpCode: 429,
     responseEvidence: { state: 'COMPLETE' as const, raw: '{}', bytes: 2, contentType: 'application/json' } };
@@ -329,4 +341,235 @@ test('unknown 02 with HTTP 200/status:true cannot override classification into t
   const outcome = await executeFrozenRequest({ payload, sha256: freezePayload(payload).sha256, timeoutMs: 100,
     request: async () => new Response(JSON.stringify({ status: true, code: '02', message: 'unreviewed' })) });
   expect(outcome).toMatchObject({ delivery: 'POSSIBLY_STARTED', errorClass: 'INVALID_RESPONSE', classification: { kind: 'UNKNOWN' } });
+});
+
+const manualCategories = [
+  ['A14', { classification: 'PERMANENT_FAILURE', reasonCode: 'MISSING_ITEM_VALIDATION', httpCode: 400, providerStatus: false }],
+  // A15 has no reviewed literal classifier: use its existing unknown-02 bucket.
+  ['A15', { classification: 'UNKNOWN', reasonCode: 'UNRECOGNIZED_CODE_02', httpCode: 400, providerStatus: false }],
+  ['A17/400', { classification: 'UNKNOWN', reasonCode: 'UNCLASSIFIED_RESPONSE', httpCode: 400, providerStatus: false }],
+  ['A17/422', { classification: 'UNKNOWN', reasonCode: 'UNCLASSIFIED_RESPONSE', httpCode: 422, providerStatus: false }],
+  ['A18/401', { classification: 'PERMANENT_FAILURE', reasonCode: 'AUTHORIZATION_FAILURE', httpCode: 401, providerStatus: null }],
+  ['A18/403', { classification: 'PERMANENT_FAILURE', reasonCode: 'AUTHORIZATION_FAILURE', httpCode: 403, providerStatus: false }],
+  ['A19/malformed', { classification: 'UNKNOWN', reasonCode: 'MALFORMED_RESPONSE', httpCode: 200, providerStatus: null }],
+  ['A19/contradictory', { classification: 'UNKNOWN', reasonCode: 'CONTRADICTORY_RESPONSE', httpCode: 400, providerStatus: true }],
+] as const;
+for (const [category, details] of manualCategories) test(`${category}: terminal manual policy, UI projection, direct API and worker share gates`, async () => {
+  const metadata = { ...details, responseEvidence: 'COMPLETE' };
+  const parent = { ...cycle, retry_index: 0 }; // Remaining numeric budget is not an automatic retry entitlement.
+  expect(coordination.wmsResendEligible(parent, metadata)).toBe(true);
+  const projection = await logResendEligibility({ $queryRaw: async () => [{ id: BigInt(1), ...parent, metadata }] } as any,
+    1370, [{ id: '1', transaction_type: 'incoming' }]);
+  expect(projection.has('1')).toBe(true);
+  for (const patch of [{ status: 'READY' }, { status: 'CLAIMED' },
+    { delivery_state: 'POSSIBLY_STARTED' }, { delivery_state: 'KNOWN_SUCCESS' }, { delivery_state: 'NOT_STARTED' },
+    { owner_token: 'owner' }, { lease_until: new Date() }]) {
+    expect(coordination.wmsResendEligible({ ...parent, ...patch } as any, metadata)).toBe(false);
+  }
+  const h = resendDb(metadata);
+  Object.assign(h.parent, parent);
+  const original = JSON.stringify(metadata);
+  const apiDb = { ...h.db, insw_tracking_log: { findFirst: async () => ({ transaction_type: 'incoming' }) } };
+  expect((await route(apiDb)()).status).toBe(202);
+  expect(JSON.stringify(metadata)).toBe(original); // No ambiguity reclassification.
+  expect(h.events.filter(e => e === 'insert')).toHaveLength(1);
+  await coordination.verifyWmsManualCycle(resendDb({ ...metadata, manual_resend: { queue_id: 'successor', commitment: true } }).db,
+    { id: 'successor', operation: 'INCOMING', source_log_id: BigInt(1), identity_key: identity,
+      cycle: 2, payload_sha256: cycle.payload_sha256, company_code: 1370 } as any);
+});
+
+test('forged API requires a bounded reason and explicit boolean acknowledgement; no admission side effects', async () => {
+  for (const body of [{}, null, { reason: 'reviewed' }, { reason: 'reviewed', commitment: 'true' },
+    { commitment: true }, { reason: '', commitment: true }, { reason: ' '.repeat(2), commitment: true },
+    { reason: 'x'.repeat(501), commitment: true }, { reason: 'bad\nreason', commitment: true }]) {
+    const h = resendDb();
+    const db = { ...h.db, insw_tracking_log: { findFirst: async () => ({ transaction_type: 'incoming' }) } };
+    expect((await route(db, true, body)()).status).toBe(400);
+    expect(h.events).toEqual([]);
+  }
+  const h = resendDb();
+  await expect(coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'reviewed')).rejects.toThrow('acknowledgement');
+  expect(h.events).toEqual([]);
+});
+
+test('admission audits commitment and preserves frozen parent/history; simultaneous clicks serialize once', async () => {
+  const h = resendDb({ classification: 'PERMANENT_FAILURE', reasonCode: 'AUTHORIZATION_FAILURE',
+    responseEvidence: 'COMPLETE', httpCode: 403 });
+  const parent = structuredClone(h.parent);
+  let audit: any;
+  h.db.insw_tracking_log.update = async ({ data }: any) => { audit = data.metadata; };
+  // Model the existing transactional gate/reference/identity locks, not a DB race proof.
+  const transaction = h.db.$transaction;
+  let tail = Promise.resolve();
+  h.db.$transaction = (fn: any) => {
+    const result = tail.then(() => transaction(fn));
+    tail = result.then(() => undefined, () => undefined);
+    return result;
+  };
+  const outcomes = await Promise.allSettled([1, 2].map(() => coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'reviewed', true)));
+  expect(outcomes.map(o => o.status).sort()).toEqual(['fulfilled', 'rejected']);
+  expect(h.events.filter(e => e === 'insert')).toHaveLength(1);
+  expect(h.parent).toEqual(parent);
+  expect(audit).toMatchObject({ classification: 'PERMANENT_FAILURE', reasonCode: 'AUTHORIZATION_FAILURE',
+    manual_resend: { operator: 'op', reason: 'reviewed', commitment: true, queue_id: 'successor', prior_queue_id: 'parent' } });
+  expect(audit.manual_resend.authorized_at).toEqual(expect.any(String));
+  const gate = h.queries.find(q => Array.isArray(q) && q.join('').includes('insw_dispatch_gate'));
+  expect(gate.join('')).toContain('FOR UPDATE');
+});
+
+test('batched SQL preserves exact history, known success, completed attempt, ownership and source fences', async () => {
+  const queries: any[] = [];
+  const db = { $queryRaw: async (sql: any) => { queries.push(sql); return []; } } as any;
+  await coordination.wmsLogResendEligibility(db, 1370, [BigInt(1), BigInt(2)]);
+  const sql = queries[0].sql;
+  for (const guard of ['a.completed_at IS NOT NULL', 'unfinished.completed_at IS NULL', "history.delivery_state = 'KNOWN_SUCCESS'",
+    'gate.owner_token IS NULL', 'gate.busy_attempt_id IS NULL', 'gate.process_identity IS NULL', 'newer.cycle > p.cycle',
+    'newer_attempt.retry_index > a.retry_index', "conflict.insw_status = 'SUCCESS'", 'p.company_code = l.company_code',
+    'l.transaction_type = lower(p.operation::text)', 'g.id = l.transaction_id', 'jsonb_typeof(p.frozen_payload)',
+    'conflict.identity_key <> p.identity_key']) expect(sql).toContain(guard);
+  await coordination.wmsLogResendEligibility(db, 1370, [BigInt(1)], 'successor');
+  expect(queries[1].sql).not.toContain('gate.owner_token IS NULL'); // The admitted worker owns the gate itself.
+  expect(queries[1].sql).toContain('history.id <>');
+  expect(queries[1].values).toContain('successor');
+});
+
+test('A21 unfinished/crashed/no-log/no-source cannot be recovered or fabricated by Resend', async () => {
+  const metadata = { classification: 'UNKNOWN', reasonCode: 'NOT_STARTED', responseEvidence: 'UNAVAILABLE' };
+  for (const state of [cycle, { ...cycle, status: 'HELD', delivery_state: 'NOT_STARTED' },
+    { ...cycle, status: 'CLAIMED', delivery_state: 'POSSIBLY_STARTED', owner_token: 'owner' }]) {
+    expect(coordination.wmsResendEligible(state as any, metadata)).toBe(false);
+  }
+  const db = { $transaction: async (fn: any) => fn({ insw_tracking_log: { findFirst: async () => null } }) } as any;
+  await expect(coordination.resendWmsLog(db, 1370, BigInt(1), 'op', 'reviewed', true)).rejects.toThrow('queue attempt required');
+  // A HELD parent blocks another active identity even if an invocation has ended.
+  const migration = readFileSync('prisma/migrations/20261022000000_insw_queue_foundation/migration.sql', 'utf8');
+  expect(migration).toContain("WHERE status IN ('READY', 'CLAIMED', 'REMOTE_SUCCEEDED', 'HELD')");
+  expect(migration).toContain("status <> 'FAILED' OR delivery_state = 'KNOWN_FAILURE'");
+});
+
+test('direct API rejects when authoritative eligibility no longer passes; no successor is created', async () => {
+  const h = resendDb({ classification: 'PERMANENT_FAILURE', reasonCode: 'AUTHORIZATION_FAILURE', httpCode: 403, responseEvidence: 'COMPLETE' });
+  const query = h.tx.$queryRaw;
+  h.tx.$queryRaw = async (sql: any, ...values: any[]) => {
+    // SQL guards are asserted above; execution against PostgreSQL remains pending.
+    if (sql.sql?.includes('SELECT l.id')) return [];
+    return query(sql, ...values);
+  };
+  const db = { ...h.db, insw_tracking_log: { findFirst: async () => ({ transaction_type: 'incoming' }) } };
+  expect((await route(db)()).status).toBe(409);
+  expect(h.events).not.toContain('insert');
+});
+
+for (const [category, details] of [...manualCategories, ['A21/pre-invocation-drained', {
+  classification: 'UNKNOWN', reasonCode: 'NOT_STARTED', responseEvidence: 'UNAVAILABLE',
+  adapter: 'WMS_QUEUE_FINALIZER', phase: 'PREFLIGHT',
+}]] as const) test(`${category}: inactive HELD supersession preserves uncertainty, linked audit and worker preflight`, async () => {
+  const metadata: any = { responseEvidence: 'COMPLETE', ...details };
+  const h = resendDb(metadata);
+  Object.assign(h.parent, { status: 'HELD', retry_index: 0, hold_reason: 'DELIVERY_UNKNOWN',
+    delivery_state: category.startsWith('A21') ? 'NOT_STARTED' : 'POSSIBLY_STARTED' });
+  const original = structuredClone(h.parent);
+  expect(coordination.wmsResendEligible(h.parent, metadata)).toBe(true);
+  expect((await logResendEligibility(h.db, 1370, [{ id: '1', transaction_type: 'incoming' }])).has('1')).toBe(true);
+  let audit: any;
+  h.tx.insw_tracking_log.update = async ({ data }: any) => { audit = data.metadata; metadata.manual_resend = audit.manual_resend; };
+  const db = { ...h.db, insw_tracking_log: { findFirst: async () => ({ transaction_type: 'incoming' }) } };
+  expect((await route(db)()).status).toBe(202);
+  expect(h.events.filter(e => e === 'retire')).toHaveLength(1);
+  expect(h.events.filter(e => e === 'insert')).toHaveLength(1);
+  expect(h.events).toContain('supersession-audit');
+  expect(h.parent).toEqual({ ...original, status: 'SUPERSEDED' }); // Double does not manufacture an attempt completion.
+  expect(audit).toMatchObject({ ...details, manual_resend: { prior_status: 'HELD', supersession: true,
+    commitment: true, prior_queue_id: 'parent', queue_id: 'successor', operator: 'op', reason: 'reviewed' } });
+  expect(coordination.wmsResendEligible(h.parent, metadata)).toBe(false); // No readmission of a retired parent.
+  await coordination.verifyWmsManualCycle(h.db, { id: 'successor', operation: 'INCOMING', source_log_id: BigInt(1),
+    identity_key: identity, cycle: 2, payload_sha256: original.payload_sha256, company_code: 1370 } as any);
+  await expect(coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'again', true)).rejects.toThrow('Manual Resend unavailable');
+});
+
+test('A21 local evidence is narrow: missing finalizer attestation and unfinished/owned work stay blocked', async () => {
+  const held: any = { ...cycle, status: 'HELD', delivery_state: 'NOT_STARTED' };
+  const evidence = { classification: 'UNKNOWN', reasonCode: 'NOT_STARTED', responseEvidence: 'UNAVAILABLE',
+    adapter: 'WMS_QUEUE_FINALIZER', phase: 'PREFLIGHT' };
+  for (const patch of [{ adapter: undefined }, { phase: 'REQUEST' }, { reasonCode: 'LOCAL_DATABASE_PREPARATION_FAILURE' }]) {
+    expect(coordination.wmsResendEligible(held, { ...evidence, ...patch })).toBe(false);
+  }
+  for (const patch of [{ owner_token: 'old-owner' }, { lease_until: new Date(0) }, { delivery_state: 'KNOWN_SUCCESS' },
+    { status: 'READY' }, { status: 'CLAIMED' }]) {
+    expect(coordination.wmsResendEligible({ ...held, ...patch }, evidence)).toBe(false);
+  }
+  // No weakening of completed_at: SQL must exclude all unfinished history,
+  // including recovered A21 lacking a log. These are query-shape assertions.
+  let query: any;
+  await coordination.wmsLogResendEligibility({ $queryRaw: async (q: any) => { query = q; return []; } } as any, 1370, [BigInt(1)]);
+  expect(query.sql).toContain('a.completed_at IS NOT NULL');
+  expect(query.sql).toContain('unfinished.completed_at IS NULL');
+  expect(query.sql).toContain('l.insw_request_payload = p.frozen_payload');
+});
+
+test('projection rejects missing/corrupt frozen hashes before HELD can be advertised or admitted', async () => {
+  const metadata = { classification: 'UNKNOWN', reasonCode: 'MALFORMED_RESPONSE', responseEvidence: 'COMPLETE' };
+  for (const patch of [{ frozen_payload: null }, { frozen_payload: {} }, { payload_sha256: 'x'.repeat(64) },
+    { payload_sha256: 'a'.repeat(64) }]) {
+    const h = resendDb(metadata);
+    Object.assign(h.parent, { status: 'HELD', delivery_state: 'POSSIBLY_STARTED' }, patch);
+    expect((await coordination.wmsLogResendEligibility(h.db, 1370, [BigInt(1)])).size).toBe(0);
+    await expect(coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'reviewed', true)).rejects.toThrow('Manual Resend unavailable');
+    expect(h.events).not.toContain('retire'); expect(h.events).not.toContain('insert');
+  }
+});
+
+test('held transient rate-limit work never bypasses automatic retry; worker requires durable retirement linkage', async () => {
+  expect(coordination.wmsResendEligible({ ...cycle, status: 'HELD' } as any, evidence)).toBe(false);
+  const h = resendDb({ classification: 'UNKNOWN', reasonCode: 'MALFORMED_RESPONSE', responseEvidence: 'COMPLETE',
+    manual_resend: { queue_id: 'successor', commitment: true } });
+  Object.assign(h.parent, { status: 'HELD', delivery_state: 'POSSIBLY_STARTED' });
+  const successor: any = { id: 'successor', operation: 'INCOMING', source_log_id: BigInt(1), identity_key: identity,
+    cycle: 2, payload_sha256: cycle.payload_sha256, company_code: 1370 };
+  await expect(coordination.verifyWmsManualCycle(h.db, successor)).rejects.toThrow('INVALID_WMS_MANUAL_SUCCESSOR');
+  h.parent.status = 'SUPERSEDED';
+  h.db.$queryRaw = async (q: any) => {
+    expect(q.sql).toContain('retired.successor_queue_id =');
+    expect(q.sql).toContain('retired.source_log_id = l.id AND retired.commitment');
+    expect(q.sql).not.toContain("OR p.status = 'HELD'");
+    return []; // Missing durable audit or changed authoritative history.
+  };
+  await expect(coordination.verifyWmsManualCycle(h.db, successor)).rejects.toThrow('INVALID_WMS_MANUAL_SUCCESSOR');
+});
+
+test('held double admission serializes once in model; worker/recovery winning admission blocks without retirement', async () => {
+  const metadata = { classification: 'UNKNOWN', reasonCode: 'MALFORMED_RESPONSE', responseEvidence: 'COMPLETE' };
+  const h = resendDb(metadata);
+  Object.assign(h.parent, { status: 'HELD', delivery_state: 'POSSIBLY_STARTED' });
+  const run = h.db.$transaction;
+  let tail = Promise.resolve();
+  h.db.$transaction = (fn: any) => {
+    const next = tail.then(() => run(fn)); tail = next.catch(() => undefined); return next;
+  };
+  const results = await Promise.allSettled([1, 2].map(() => coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'reviewed', true)));
+  expect(results.map(r => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+  expect(h.events.filter(e => e === 'insert')).toHaveLength(1);
+  const blocked = resendDb(metadata);
+  Object.assign(blocked.parent, { status: 'HELD', delivery_state: 'POSSIBLY_STARTED' });
+  const query = blocked.tx.$queryRaw;
+  blocked.tx.$queryRaw = async (q: any, ...args: any[]) => q.sql?.includes('SELECT l.id') ? [] : query(q, ...args);
+  await expect(coordination.resendWmsLog(blocked.db, 1370, BigInt(1), 'op', 'reviewed', true)).rejects.toThrow('Manual Resend unavailable');
+  expect(blocked.events).not.toContain('retire');
+});
+
+for (const failureAt of ['successor', 'durable-audit', 'log-audit']) test(`simulated transaction rollback at ${failureAt} restores HELD admission`, async () => {
+  const h = resendDb({ classification: 'UNKNOWN', reasonCode: 'MALFORMED_RESPONSE', responseEvidence: 'COMPLETE' });
+  Object.assign(h.parent, { status: 'HELD', delivery_state: 'POSSIBLY_STARTED' });
+  const before = structuredClone(h.parent);
+  const query = h.tx.$queryRaw; const execute = h.tx.$executeRaw; const update = h.tx.insw_tracking_log.update;
+  h.tx.$queryRaw = async (q: any, ...args: any[]) => {
+    if (failureAt === 'successor' && Array.isArray(q) && q.join('').includes('INSERT INTO insw_queue_cycle')) throw new Error('SIMULATED_DB_ERROR');
+    return query(q, ...args);
+  };
+  h.tx.$executeRaw = async () => { if (failureAt === 'durable-audit') throw new Error('SIMULATED_DB_ERROR'); return execute(); };
+  h.tx.insw_tracking_log.update = async () => { if (failureAt === 'log-audit') throw new Error('SIMULATED_DB_ERROR'); return update({}); };
+  await expect(coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'reviewed', true)).rejects.toThrow('SIMULATED_DB_ERROR');
+  expect(h.parent).toEqual(before);
+  h.tx.$queryRaw = query; h.tx.$executeRaw = execute; h.tx.insw_tracking_log.update = update;
+  expect(await coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'reviewed', true)).toMatchObject({ status: 'accepted' });
 });

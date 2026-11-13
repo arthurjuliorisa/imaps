@@ -37,7 +37,11 @@ export async function POST(
 
     if (wmsLogTypes.some(type => type === log.transaction_type)) {
       const body = await request.json().catch(() => ({}));
-      const result = await resendWmsLog(prisma, companyCode, logId, String(session.user.id), body.reason || 'Operator confirmed INSW-log RESEND');
+      if (typeof body?.reason !== 'string' || !body.reason.trim() || body.reason.length > 500
+        || body.reason.trim() !== body.reason || /[\u0000-\u001f]/.test(body.reason) || body.commitment !== true) {
+        return NextResponse.json({ success: false, message: 'A reason (1–500 characters) and manual resend risk acknowledgement are required.' }, { status: 400 });
+      }
+      const result = await resendWmsLog(prisma, companyCode, logId, String(session.user.id), body.reason, body.commitment);
       return NextResponse.json(result, { status: 202 });
     }
 

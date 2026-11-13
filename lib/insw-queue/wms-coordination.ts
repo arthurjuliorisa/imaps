@@ -3,22 +3,43 @@ import { Prisma, type PrismaClient, type insw_queue_cycle } from '@prisma/client
 import { boundedText, canonicalIdentity } from './contracts';
 import { lockIncomingBusinessReference, assertNoConflictingBusinessReference } from './incoming-handoff';
 import { readPolicy } from './policy.repository';
+import { verifiedPayload } from '../insw-worker/safety';
 import { captureCompletedWmsSource } from '../insw-worker/completed-source-capture';
 
 export class WmsAdmissionError extends Error {}
 export const wmsLogTypes = ['incoming', 'outgoing', 'material_usage', 'production_output', 'adjustment', 'stock_opname'] as const;
-/** Positive catalog only. Historical normalized status:false is not evidence.
- * A06 needs non-dispatch attestation and A11 needs a reviewed rejection template;
- * neither is manufactured from existing generic network/HTTP reason codes. */
+/** Category policy only. SQL separately proves source/history/local inactivity.
+ * SUPERSEDED is accepted only for an explicitly linked worker preflight. */
 export function wmsResendEligible(cycle: Pick<insw_queue_cycle,
   'status' | 'delivery_state' | 'retry_index' | 'max_auto_retry_snapshot' | 'owner_token' | 'lease_until'> | null,
-  metadata?: unknown) {
+  metadata?: unknown, supersededParent = false) {
   const evidence = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
     ? metadata as Record<string, unknown> : null;
-  return !!cycle && cycle.status === 'FAILED' && cycle.delivery_state === 'KNOWN_FAILURE'
-    && Number.isInteger(cycle.max_auto_retry_snapshot) && cycle.max_auto_retry_snapshot >= 0 && cycle.max_auto_retry_snapshot <= 10
-    && cycle.retry_index === cycle.max_auto_retry_snapshot && cycle.owner_token === null && cycle.lease_until === null
-    && evidence?.classification === 'TRANSIENT_FAILURE' && evidence.reasonCode === 'RATE_LIMIT_REJECTION'
+  const held = !supersededParent && cycle?.status === 'HELD' || supersededParent && cycle?.status === 'SUPERSEDED';
+  if (!cycle || !(cycle.status === 'FAILED' && cycle.delivery_state === 'KNOWN_FAILURE'
+      || held && ['NOT_STARTED', 'POSSIBLY_STARTED', 'KNOWN_FAILURE'].includes(cycle.delivery_state))
+    || !Number.isInteger(cycle.max_auto_retry_snapshot) || cycle.max_auto_retry_snapshot < 0 || cycle.max_auto_retry_snapshot > 10
+    || !Number.isInteger(cycle.retry_index) || cycle.retry_index < 0 || cycle.retry_index > cycle.max_auto_retry_snapshot
+    || cycle.owner_token !== null || cycle.lease_until !== null || !evidence) return false;
+  // Permanent rejections have no remaining automatic retry under Option B,
+  // even when their numeric budget is nonzero. No classifier is changed here.
+  if (evidence.classification === 'PERMANENT_FAILURE') {
+    return evidence.responseEvidence === 'COMPLETE' && (
+      evidence.reasonCode === 'MISSING_ITEM_VALIDATION' && evidence.httpCode === 400 && evidence.providerStatus === false
+      || evidence.reasonCode === 'AUTHORIZATION_FAILURE' && [401, 403].includes(evidence.httpCode as number));
+  }
+  // A drained invocation may have no final provider response. This narrow A21
+  // case still requires the original finalizer log and completed attempt in SQL.
+  if (held && cycle.delivery_state === 'NOT_STARTED' && evidence.classification === 'UNKNOWN'
+    && evidence.reasonCode === 'NOT_STARTED' && evidence.responseEvidence === 'UNAVAILABLE'
+    && evidence.adapter === 'WMS_QUEUE_FINALIZER' && evidence.phase === 'PREFLIGHT') return true;
+  if (evidence.classification === 'UNKNOWN') {
+    return evidence.responseEvidence === 'COMPLETE' && [
+      'UNRECOGNIZED_CODE_02', 'CONTRADICTORY_RESPONSE', 'MALFORMED_RESPONSE', 'UNCLASSIFIED_RESPONSE',
+    ].includes(String(evidence.reasonCode));
+  }
+  return !held && cycle.retry_index === cycle.max_auto_retry_snapshot
+    && evidence.classification === 'TRANSIENT_FAILURE' && evidence.reasonCode === 'RATE_LIMIT_REJECTION'
     && evidence.responseEvidence === 'COMPLETE' && (evidence.providerStatus === false || evidence.providerStatus === null)
     && evidence.providerMessage === 'API rate limit exceeded' && evidence.httpCode === 429;
 }
@@ -36,7 +57,9 @@ function originalAssociation() {
       AND g.wms_id = p.wms_reference AND g.deleted_at IS NULL) = 1
     AND EXISTS (SELECT 1 FROM ${Prisma.raw(table)} g WHERE g.id = l.transaction_id AND g.company_code = p.company_code
       AND g.wms_id = p.wms_reference AND g.deleted_at IS NULL AND to_char(g.${Prisma.raw(date)}, 'YYYY-MM-DD') = p.business_date
-      ${operation === 'OUTGOING' ? Prisma.sql`AND g.scrap_transaction_id IS NULL` : Prisma.empty}))`);
+      ${operation === 'OUTGOING' ? Prisma.sql`AND g.scrap_transaction_id IS NULL` : Prisma.empty}
+      ${operation === 'MATERIAL_USAGE' || operation === 'PRODUCTION_OUTPUT' ? Prisma.sql`AND p.frozen_payload#>>'{data,0,kdKegiatan}' =
+        CASE WHEN g.reversal = 'Y' THEN ${operation === 'PRODUCTION_OUTPUT' ? '31' : '30'} ELSE ${operation === 'PRODUCTION_OUTPUT' ? '30' : '31'} END` : Prisma.empty}))`);
   return Prisma.sql`(${Prisma.join(goods, ' OR ')} OR (
     p.operation = 'ADJUSTMENT' AND p.source_revision = 'COMMITTED_SOURCE'
     AND EXISTS (SELECT 1 FROM adjustments g WHERE g.id = l.transaction_id AND g.company_code = p.company_code
@@ -54,17 +77,52 @@ function originalAssociation() {
 
 export async function wmsLogResendEligibility(db: PrismaClient | Prisma.TransactionClient, companyCode: number, ids: bigint[], successorId?: string) {
   if (!ids.length) return new Set<string>();
-  const rows = await db.$queryRaw<(Pick<insw_queue_cycle, 'status' | 'delivery_state' | 'retry_index' | 'max_auto_retry_snapshot' | 'owner_token' | 'lease_until'> & { id: bigint; metadata: unknown })[]>(Prisma.sql`SELECT l.id, jsonb_build_object(
+  const rows = await db.$queryRaw<(Pick<insw_queue_cycle, 'status' | 'delivery_state' | 'retry_index' | 'max_auto_retry_snapshot' | 'owner_token' | 'lease_until'> & { id: bigint; metadata: unknown; frozen_payload: unknown; payload_sha256: string })[]>(Prisma.sql`SELECT l.id, jsonb_build_object(
+      'adapter', l.metadata->'adapter', 'phase', l.metadata->'phase',
       'classification', l.metadata->'classification', 'reasonCode', l.metadata->'reasonCode',
       'responseEvidence', l.metadata->'responseEvidence', 'providerStatus', l.metadata->'providerStatus',
-      'httpCode', l.metadata->'httpCode', 'providerMessage', l.metadata->'providerMessage') AS metadata, p.status, p.delivery_state, p.retry_index, p.max_auto_retry_snapshot, p.owner_token, p.lease_until FROM insw_tracking_log l
+      'httpCode', l.metadata->'httpCode', 'providerMessage', l.metadata->'providerMessage') AS metadata, p.status, p.delivery_state, p.retry_index, p.max_auto_retry_snapshot, p.owner_token, p.lease_until, p.frozen_payload, p.payload_sha256 FROM insw_tracking_log l
     JOIN insw_queue_attempt a ON a.id = l.queue_attempt_id JOIN insw_queue_cycle p ON p.id = a.queue_id
     JOIN companies c ON c.code = p.company_code AND c.company_type = 'SEZ'
     WHERE l.id IN (${Prisma.join(ids)}) AND l.company_code = ${companyCode}
       AND l.transaction_type = lower(p.operation::text) AND p.operation::text IN (${Prisma.join([...wmsLogTypes].map(t => t.toUpperCase()))})
       AND l.insw_status = 'FAILED' AND p.company_code = l.company_code AND p.company_code IN (1370, 1380)
-      AND p.status = 'FAILED' AND p.delivery_state = 'KNOWN_FAILURE' AND p.retry_index >= p.max_auto_retry_snapshot
+      AND (p.status = 'FAILED' AND p.delivery_state = 'KNOWN_FAILURE'
+        ${successorId ? Prisma.empty : Prisma.sql`OR p.status = 'HELD' AND p.delivery_state <> 'KNOWN_SUCCESS'`}
+        ${successorId ? Prisma.sql`OR p.status = 'SUPERSEDED' AND EXISTS (
+          SELECT 1 FROM insw_manual_supersession retired WHERE retired.parent_queue_id = p.id
+            AND retired.successor_queue_id = ${successorId}::uuid AND retired.source_log_id = l.id AND retired.commitment)` : Prisma.empty})
       AND p.owner_token IS NULL AND p.lease_until IS NULL
+      AND a.completed_at IS NOT NULL AND l.wms_id = p.wms_reference
+      AND l.insw_request_payload = p.frozen_payload
+      AND jsonb_typeof(p.frozen_payload) = 'object' AND p.frozen_payload <> '{}'::jsonb
+      AND CASE WHEN jsonb_typeof(p.frozen_payload->'data') = 'array' THEN jsonb_array_length(p.frozen_payload->'data') = 1 ELSE false END
+      AND CASE WHEN jsonb_typeof(p.frozen_payload#>'{data,0,dokumenKegiatan}') = 'array'
+        THEN jsonb_array_length(p.frozen_payload#>'{data,0,dokumenKegiatan}') = 1 ELSE false END
+      AND CASE WHEN jsonb_typeof(p.frozen_payload#>'{data,0,dokumenKegiatan,0,barangTransaksi}') = 'array'
+        THEN jsonb_array_length(p.frozen_payload#>'{data,0,dokumenKegiatan,0,barangTransaksi}') > 0 ELSE false END
+      AND p.frozen_payload#>>'{data,0,dokumenKegiatan,0,nomorDokKegiatan}' = p.wms_reference
+      AND (p.operation NOT IN ('INCOMING', 'OUTGOING', 'ADJUSTMENT', 'STOCK_OPNAME') OR
+        p.frozen_payload#>>'{data,0,kdKegiatan}' = CASE p.operation WHEN 'INCOMING' THEN '30' WHEN 'OUTGOING' THEN '31'
+          WHEN 'ADJUSTMENT' THEN '33' WHEN 'STOCK_OPNAME' THEN '32' END)
+      AND (p.operation NOT IN ('ADJUSTMENT', 'STOCK_OPNAME') OR (
+        p.frozen_payload#>>'{data,0,dokumenKegiatan,0,tanggalKegiatan}' = concat(substring(p.business_date, 9, 2), '-', substring(p.business_date, 6, 2), '-', substring(p.business_date, 1, 4))
+        AND p.frozen_payload#>>'{data,0,dokumenKegiatan,0,namaEntitas}' = p.company_code::text))
+      AND NOT EXISTS (SELECT 1 FROM insw_queue_cycle active WHERE active.identity_key = p.identity_key
+        AND active.status IN ('READY', 'CLAIMED', 'REMOTE_SUCCEEDED', 'HELD') AND active.id <> p.id
+        ${successorId ? Prisma.sql`AND active.id <> ${successorId}::uuid` : Prisma.empty})
+      AND NOT EXISTS (SELECT 1 FROM insw_queue_cycle history WHERE history.identity_key = p.identity_key
+        AND (history.delivery_state = 'KNOWN_SUCCESS' OR history.status IN ('SUCCEEDED', 'REMOTE_SUCCEEDED')))
+      AND NOT EXISTS (SELECT 1 FROM insw_queue_attempt unfinished JOIN insw_queue_cycle history ON history.id = unfinished.queue_id
+        WHERE history.identity_key = p.identity_key
+          AND (unfinished.delivery_state = 'KNOWN_SUCCESS' OR (unfinished.completed_at IS NULL
+            ${successorId ? Prisma.sql`AND history.id <> ${successorId}::uuid` : Prisma.empty})))
+      AND NOT EXISTS (SELECT 1 FROM insw_dispatch_gate gate JOIN insw_queue_attempt busy ON busy.id = gate.busy_attempt_id
+        JOIN insw_queue_cycle history ON history.id = busy.queue_id WHERE history.identity_key = p.identity_key
+          ${successorId ? Prisma.sql`AND history.id <> ${successorId}::uuid` : Prisma.empty})
+      ${successorId ? Prisma.empty : Prisma.sql`AND EXISTS (SELECT 1 FROM insw_dispatch_gate gate
+        WHERE gate.id = 1 AND gate.owner_token IS NULL AND gate.lease_until IS NULL
+          AND gate.busy_attempt_id IS NULL AND gate.process_identity IS NULL)`}
       AND NOT EXISTS (SELECT 1 FROM insw_admin_resolution r WHERE r.queue_id = p.id)
       -- Retry index is persisted execution order, unique within a cycle. A
       -- historical failure must never inherit the terminal cycle's eligibility.
@@ -85,37 +143,55 @@ export async function wmsLogResendEligibility(db: PrismaClient | Prisma.Transact
         AND (conflict.insw_status = 'SUCCESS' OR conflict.queue_attempt_id IS NULL
           OR conflict.wms_id IS DISTINCT FROM p.wms_reference OR conflict.transaction_id IS DISTINCT FROM l.transaction_id))
       AND ${originalAssociation()}`);
-  return new Set(rows.filter(row => wmsResendEligible(row, row.metadata)).map(row => row.id.toString()));
+  return new Set(rows.filter(row => {
+    if (!wmsResendEligible(row, row.metadata, !!successorId)) return false;
+    try { verifiedPayload(row.frozen_payload, row.payload_sha256); return true; } catch { return false; }
+  }).map(row => row.id.toString()));
 }
 
-/** Copies the failed frozen request under C1's identity and latest-row locks. */
-export async function resendWmsLog(db: PrismaClient, companyCode: number, logId: bigint, operator: string, reason: string) {
+/** Copies the original frozen request under C1's identity and latest-row locks. */
+export async function resendWmsLog(db: PrismaClient, companyCode: number, logId: bigint, operator: string, reason: string, commitment = false) {
+  if (commitment !== true) throw new WmsAdmissionError('Manual resend risk acknowledgement required');
   boundedText(operator, 'operator', 100); boundedText(reason, 'resend reason', 500);
   return db.$transaction(async tx => {
     const log = await tx.insw_tracking_log.findFirst({ where: { id: logId, company_code: companyCode },
       select: { metadata: true, queue_attempt: { select: { queue: { select: { id: true, identity_key: true, operation: true, wms_reference: true } } } } } });
     const prior = log?.queue_attempt?.queue;
-    if (!prior) throw new WmsAdmissionError('Definitively failed queue attempt required');
+    if (!prior) throw new WmsAdmissionError('Original queue attempt required');
     if (!prior.wms_reference) throw new WmsAdmissionError('Stable WMS reference required');
     const scope = { companyCode, operation: prior.operation, wmsReference: prior.wms_reference };
+    // Match worker/admin lock order; ownership must remain clear through admission.
+    await tx.$queryRaw`SELECT id FROM insw_dispatch_gate WHERE id = 1 FOR UPDATE`;
     await lockIncomingBusinessReference(tx, scope);
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${prior.identity_key}, 0))::text`;
     const [latest] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM insw_queue_cycle
       WHERE identity_key = ${prior.identity_key} ORDER BY cycle DESC LIMIT 1 FOR UPDATE`;
     if (latest?.id !== prior.id || !(await wmsLogResendEligibility(tx, companyCode, [logId])).has(logId.toString())) {
-      throw new WmsAdmissionError('Original delivery is not definitively failed with exhausted retries');
+      throw new WmsAdmissionError('Manual Resend unavailable: terminal frozen source, approved outcome evidence, completed local attempts, inactive ownership and no eligible automatic retry required');
     }
     await assertNoConflictingBusinessReference(tx, scope, prior.identity_key);
     const policy = await readPolicy(tx);
+    // The status change, successor and durable audit commit together. Attempts,
+    // delivery state and hold reason are deliberately never rewritten here.
+    const successorId = randomUUID();
+    const retired = await tx.$queryRaw<{ id: string }[]>`UPDATE insw_queue_cycle
+      SET status = 'SUPERSEDED', completed_at = clock_timestamp()
+      WHERE id = ${prior.id}::uuid AND status = 'HELD'
+        AND owner_token IS NULL AND lease_until IS NULL RETURNING id`;
     const [cycle] = await tx.$queryRaw<{ id: string }[]>`INSERT INTO insw_queue_cycle
       (id, company_code, operation, identity_key, source_revision, business_date, wms_reference,
        cycle, intent, requested_by, source_log_id, frozen_payload, payload_sha256, max_auto_retry_snapshot)
-      SELECT ${randomUUID()}::uuid, company_code, operation, identity_key, source_revision, business_date, wms_reference,
+      SELECT ${successorId}::uuid, company_code, operation, identity_key, source_revision, business_date, wms_reference,
         cycle + 1, 'MANUAL_RESUBMIT', ${operator}, ${logId}, frozen_payload, payload_sha256, ${Math.min(10, policy.max_auto_retry)}
       FROM insw_queue_cycle WHERE id = ${prior.id}::uuid RETURNING id`;
-    const metadata = log!.metadata && typeof log!.metadata === 'object' && !Array.isArray(log!.metadata) ? log!.metadata : {};
+    if (retired.length) await tx.$executeRaw`INSERT INTO insw_manual_supersession
+      (parent_queue_id, successor_queue_id, source_log_id, operator, reason, commitment)
+      VALUES (${prior.id}::uuid, ${cycle.id}::uuid, ${logId}, ${operator}, ${reason}, true)`;
+    // Read metadata after the admission locks rather than overwriting a stale audit.
+    const currentLog = await tx.insw_tracking_log.findFirst({ where: { id: logId, company_code: companyCode }, select: { metadata: true } });
+    const metadata = currentLog!.metadata && typeof currentLog!.metadata === 'object' && !Array.isArray(currentLog!.metadata) ? currentLog!.metadata : {};
     await tx.insw_tracking_log.update({ where: { id: logId }, data: { metadata: {
-      ...metadata, manual_resend: { operator, reason, queue_id: cycle.id, prior_queue_id: prior.id, authorized_at: new Date().toISOString() },
+      ...metadata, manual_resend: { operator, reason, commitment: true, ...(retired.length ? { prior_status: 'HELD', supersession: true } : {}), queue_id: cycle.id, prior_queue_id: prior.id, authorized_at: new Date().toISOString() },
     } } });
     return { success: true, status: 'accepted', message: 'Frozen WMS delivery cycle accepted in queue; not yet delivered to INSW.', queue_id: cycle.id };
   });
@@ -129,7 +205,12 @@ export async function verifyWmsManualCycle(db: PrismaClient, cycle: Pick<insw_qu
     select: { metadata: true, queue_attempt: { select: { queue: { select: { status: true, delivery_state: true,
       retry_index: true, max_auto_retry_snapshot: true, owner_token: true, lease_until: true, identity_key: true, cycle: true, payload_sha256: true } } } } } });
   const parent = log?.queue_attempt?.queue;
-  if (!parent || !wmsResendEligible(parent, log?.metadata) || parent.identity_key !== cycle.identity_key || parent.cycle + 1 !== cycle.cycle
+  const audit = (log?.metadata as { manual_resend?: { commitment?: boolean; queue_id?: string } } | null)?.manual_resend;
+  // Previously admitted rate-limit cycles keep their historical audit contract.
+  // Newly eligible categories must carry the explicit operator risk decision.
+  const expandedCategory = (log?.metadata as { reasonCode?: string } | null)?.reasonCode !== 'RATE_LIMIT_REJECTION';
+  if (expandedCategory && audit?.commitment !== true) throw new Error('INVALID_WMS_MANUAL_SUCCESSOR');
+  if (!parent || !wmsResendEligible(parent, log?.metadata, true) || parent.identity_key !== cycle.identity_key || parent.cycle + 1 !== cycle.cycle
     || parent.payload_sha256 !== cycle.payload_sha256
     || (log?.metadata as { manual_resend?: { queue_id?: string } } | null)?.manual_resend?.queue_id !== cycle.id) {
     throw new Error('INVALID_WMS_MANUAL_SUCCESSOR');

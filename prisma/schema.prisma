@@ -1272,6 +1272,7 @@ enum InswQueueStatus {
   CLAIMED
   REMOTE_SUCCEEDED
   HELD
+  SUPERSEDED
   SUCCEEDED
   FAILED
 }
@@ -1369,6 +1370,18 @@ model insw_queue_cycle {
   @@index([status, lease_until])
   @@index([company_code, queued_at])
   @@index([company_code, operation, wms_reference], map: "insw_preparation_queue_correlation_idx")
+}
+
+// Administrative retirement only; delivery/hold/attempt evidence stays on parent.
+// Deferred SQL constraints require one linked successor in the same transaction.
+model insw_manual_supersession {
+  parent_queue_id    String   @id @db.Uuid
+  successor_queue_id String   @unique @db.Uuid
+  source_log_id      BigInt   @unique
+  operator           String   @db.VarChar(100)
+  reason             String   @db.VarChar(500)
+  commitment         Boolean
+  authorized_at      DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
 }
 
 // Lightweight execution metadata: payload lives on cycle, responses on logs.

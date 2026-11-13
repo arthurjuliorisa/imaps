@@ -21,6 +21,8 @@ import {
   DialogActions,
   Button,
   CircularProgress,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
 import { Refresh, Visibility, ContentCopy, Check, Replay as ReplayIcon, GetApp } from '@mui/icons-material';
 import {
@@ -334,6 +336,11 @@ export default function INSWLogsPage() {
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resendingDialog, setResendingDialog] = useState(false);
   const [confirmResendOpen, setConfirmResendOpen] = useState(false);
+  const [resendReason, setResendReason] = useState('');
+  const [resendCommitment, setResendCommitment] = useState(false);
+  useEffect(() => {
+    if (confirmResendOpen) { setResendReason(''); setResendCommitment(false); }
+  }, [confirmResendOpen]);
   const [pendingResendId, setPendingResendId] = useState<string | null>(null);
   const [checkingAdjustments, setCheckingAdjustments] = useState(false);
   const [adjustmentCheckResult, setAdjustmentCheckResult] = useState<{ hasAdjustments: boolean } | null>(null);
@@ -794,7 +801,10 @@ export default function INSWLogsPage() {
     resendLatch.current = true;
     setResendingId(logId);
     try {
-      const res = await fetch(`/api/insw/logs/${logId}/resend`, { method: 'POST' });
+      const res = await fetch(`/api/insw/logs/${logId}/resend`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: resendReason.trim(), commitment: resendCommitment }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if ([403, 404, 409].includes(res.status)) {
@@ -1278,6 +1288,11 @@ export default function INSWLogsPage() {
           <Typography>
             {confirmationMessage}
           </Typography>
+          <TextField fullWidth required label="Alasan kirim ulang" value={resendReason}
+            onChange={event => setResendReason(event.target.value)} inputProps={{ maxLength: 500 }} sx={{ mt: 2 }} />
+          <FormControlLabel control={<Checkbox checked={resendCommitment}
+            onChange={event => setResendCommitment(event.target.checked)} />}
+            label="Saya telah meninjau informasi yang tersedia dan bertanggung jawab atas pengiriman ulang manual ini, termasuk risiko bahwa INSW mungkin sudah memproses transaksi ini." />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => { setConfirmResendOpen(false); setPendingResendId(null); }}>
@@ -1285,8 +1300,8 @@ export default function INSWLogsPage() {
           </Button>
           <Button
             onClick={async () => {
+              if (!pendingResendId || !resendReason.trim() || !resendCommitment) return;
               setConfirmResendOpen(false);
-              if (!pendingResendId) return;
               const isFromDialog = selectedLog && String(selectedLog.id) === pendingResendId;
               if (isFromDialog) setResendingDialog(true);
               await handleResend(pendingResendId);
@@ -1296,6 +1311,7 @@ export default function INSWLogsPage() {
               }
               setPendingResendId(null);
             }}
+            disabled={!resendReason.trim() || !resendCommitment || resendingId !== null}
             color="warning"
             variant="contained"
           >

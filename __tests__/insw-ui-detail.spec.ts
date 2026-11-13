@@ -143,7 +143,7 @@ test('linked identity conflict shows On Hold in list and detail without changing
 test('detail loading, failure/retry and empty history have visible feedback', () => {
   expect(render({ 15: true, 18: true }).html).toContain('role="progressbar"');
   // Last useState slot is the newly appended detail error state.
-  const error = render({ 15: true, 32: 'Fixture detail unavailable' });
+  const error = render({ 15: true, 34: 'Fixture detail unavailable' });
   expect(error.text).toContain('Fixture detail unavailable');
   expect(error.text).toContain('Retry');
   expect(render({ 15: true, 16: '11', 17: { ...log, attempt_history: { entries: [], truncated: false } } }).text).toContain('No transmissions recorded yet');
@@ -207,4 +207,29 @@ test('WMS list/detail use shared Resolve control and resolution details without 
   expect(list.text).toContain('Resolved'); expect(list.text).toContain('SUCCESS'); expect(list.text).not.toContain('Externally reconciled');
   const detail = render({ 3: false, 13: true, 14: resolved }, 'wms');
   for (const text of ['Resolved By', 'Resolved At', 'Resolution Notes', 'Admin identity', 'Externally reconciled']) expect(detail.text).toContain(text);
+});
+
+for (const [reason, commitment, enabled] of [['', false, false], ['reviewed', false, false], ['', true, false], ['reviewed', true, true]] as const) {
+  test(`Resend confirmation requires reason and risk acknowledgement: ${reason}/${commitment}`, () => {
+    const view = render({ 1: false, 27: true, 28: reason, 29: commitment });
+    expect(view.text).toContain('Alasan kirim ulang');
+    expect(view.text).toContain('INSW mungkin sudah memproses transaksi ini');
+    const button = view.html.match(/<button[^>]*>Kirim Ulang<\/button>/)?.[0];
+    expect(button).toBeTruthy();
+    expect(button!.includes('disabled')).toBe(!enabled);
+  });
+}
+
+for (const can_resend of [false, true]) test(`HELD list/detail respect backend supersession eligibility: ${can_resend}`, () => {
+  const row = { ...log, can_resend, current_queue: { ...q, status: 'HELD', delivery_state: 'POSSIBLY_STARTED',
+    hold_reason: 'DELIVERY_UNKNOWN', error_message: 'MISSING_ITEM_VALIDATION' } };
+  for (const view of [render({ 0: [row], 1: false }), render({ 1: false, 15: true, 16: '11', 17: row })]) {
+    expect(view.text).toContain('On Hold');
+    expect(view.text).toContain('Failed');
+    if (can_resend) {
+      expect(view.text).toContain('duplicate-processing risk');
+      expect(view.text).not.toContain('ordinary Manual Resend is unavailable');
+      expect(view.html).toContain('Kirim Ulang');
+    } else expect(view.text).not.toContain('duplicate-processing risk');
+  }
 });
