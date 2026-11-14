@@ -26,6 +26,7 @@ function wait(ms: number, signal: AbortSignal) {
 // children/background HTTP. Dedicated CLIs supply the transport adapter.
 export async function runIsolatedWorker(input: { db: PrismaClient; request: RequestPrimitive; signal: AbortSignal;
   tracksInvocationStart?: boolean;
+  onReady?: (token: string) => void;
   allowedCompanies?: readonly number[];
   timeoutMs: number; minimumIntervalMs?: number; onEvent?: (event: string, data?: unknown) => void; maxJobs?: number;
   // Domain finalization shared by the disposable pilots and production CLI.
@@ -39,8 +40,10 @@ export async function runIsolatedWorker(input: { db: PrismaClient; request: Requ
   input.onEvent?.('owned', { token });
   let idleMs = 250;
   let count = 0;
+  let ready = false;
   while (!input.signal.aborted && count < (input.maxJobs ?? Infinity)) {
     const admission = await admitNext(input.db, token, input.minimumIntervalMs, allowedCompanies);
+    if (!ready) { input.onReady?.(token); ready = true; }
     if (!admission.job) {
       await wait(admission.waitMs || idleMs, input.signal);
       idleMs = Math.min(5000, idleMs * 2);

@@ -26,6 +26,8 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     process.stderr.write('INSW_WORKER_ALLOWED_COMPANIES requires an explicit valid supported-company subset.\n');
     return 78;
   }
+  const recordWorkerRecoveryReadiness = ['development', 'staging'].includes(env.NEXT_PUBLIC_ENVIRONMENT_PHASE ?? '')
+    ? (await import('../lib/insw-worker/recovery-readiness')).recordWorkerRecoveryReadiness : () => {};
   const stop = new AbortController();
   const shutdown = () => stop.abort();
   process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);
@@ -34,7 +36,10 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
   try {
     const { runProductionDispatcher } = await import('../lib/insw-worker/production-dispatcher');
     await runProductionDispatcher({ db, signal: stop.signal, allowedCompanies,
-      onEvent: (event, data) => process.stdout.write(`${JSON.stringify({ event, data })}\n`),
+      onReady: token => recordWorkerRecoveryReadiness('ready', { token }, env),
+      onEvent: (event, data) => {
+        process.stdout.write(`${JSON.stringify({ event, data: event === 'owned' ? undefined : data })}\n`);
+      },
     });
     return 0;
   } finally {

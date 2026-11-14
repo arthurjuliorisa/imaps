@@ -15,6 +15,7 @@ export async function runProductionDispatcher(input: {
   db: PrismaClient; signal: AbortSignal; timeoutMs?: number; maxJobs?: number;
   allowedCompanies?: readonly number[];
   onEvent?: (event: string, data?: unknown) => void;
+  onReady?: (token: string) => void;
   // Explicit test seam, never supplied by the CLI. Must keep the built request.
   transport?: (endpoint: string, init: RequestInit) => Promise<Response>;
   // Optional caller-owned sender telemetry. No environment activation or faults.

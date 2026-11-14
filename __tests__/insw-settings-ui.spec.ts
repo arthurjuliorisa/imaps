@@ -26,11 +26,11 @@ function editor(fetcher: (url: string, init?: RequestInit) => Promise<unknown>) 
     'react/jsx-runtime': {}, './QueueMonitoring': {},
   };
   const source = readFileSync('app/(authenticated)/insw/queue-settings/QueueSettings.tsx', 'utf8').replace('  return (\n    <Box',
-    '  return { load, save, setInterval, setMaxAutoRetry, setReason, policy, interval, reason, loading, saving, error, canSave } as any;\n  return (\n    <Box');
+    '  return { load, save, setInterval, setMaxAutoRetry, setReason, policy, interval, reason, loading, saving, error, canSave, recoverWorker, recoveryStatus, recoveryBusy, recoveryConfirmation, setShutdownEvidence } as any;\n  return (\n    <Box');
   const exports: any = {};
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText,
-    { exports, require: (name: string) => { if (!(name in imports)) throw new Error(`Unmocked ${name}`); return imports[name]; }, fetch: fetcher });
-  return { render: () => { cursor = 0; return exports.default(); }, messages };
+    { exports, require: (name: string) => { if (!(name in imports)) throw new Error(`Unmocked ${name}`); return imports[name]; }, fetch: fetcher, TextDecoder });
+  return { render: () => { cursor = 0; return exports.default({ showWorkerRecovery: true, workerRecoveryAvailable: true }); }, messages };
 }
 const policy = { intervalMs: 3600, maxAutoRetry: 3, version: 3, updatedAt: '2026-11-01T00:00:00.000Z', updatedBy: 'admin', reason: 'Initial' };
 const response = (status: number, data: unknown) => ({ status, ok: status < 400, json: async () => data });
@@ -96,7 +96,7 @@ function renderSettings(overrides: Record<number, unknown> = {}, showWorkerRecov
   let slot = 0;
   const defaults: Record<number, unknown> = { 0: policy, 1: '3600', 2: '3', 3: '', 4: false, 5: false, 6: false, 7: '' };
   const imports: Record<string, unknown> = {
-    react: { ...React, useState: () => { const index = slot++; return [index in overrides ? overrides[index] : defaults[index], () => {}]; }, useEffect: () => {}, useCallback: (fn: unknown) => fn },
+    react: { ...React, useState: (initial: unknown) => { const index = slot++; return [index in overrides ? overrides[index] : index in defaults ? defaults[index] : initial, () => {}]; }, useEffect: () => {}, useCallback: (fn: unknown) => fn },
     '@mui/material': mui, 'react/jsx-runtime': require('react/jsx-runtime'),
     '@/app/components/ConfirmDialog': { ConfirmDialog: () => null },
     '@/app/components/ToastProvider': { useToast: () => ({}) }, './QueueMonitoring': { default: () => null },
@@ -152,7 +152,7 @@ test('page permits only Admin settings access and redirects unauthenticated/forb
       'next-auth': { getServerSession: async () => ({ user: { role: access === 200 ? 'ADMIN' : 'USER' } }) },
       'next/navigation': { redirect: (url: string) => { redirects.push(url); throw new Error('REDIRECT'); } },
       '@/lib/auth': { authOptions: {} }, '@/lib/insw-queue/interval-settings-http': { intervalSettingsAccess: () => access },
-      '@/lib/insw-queue/worker-recovery': { workerRecoveryAllowed: () => false },
+      '@/lib/insw-queue/worker-recovery': { workerRecoveryAllowed: () => false, fixedWorkerRecoveryHost: { available: () => false } },
       './QueueSettings': { default: () => null }, 'react/jsx-runtime': require('react/jsx-runtime'),
     };
     const exports: any = {};
@@ -162,4 +162,47 @@ test('page permits only Admin settings access and redirects unauthenticated/forb
     if (access === 200) { expect(await exports.default()).toBeTruthy(); expect(redirects).toEqual([]); }
     else { await expect(exports.default()).rejects.toThrow('REDIRECT'); expect(redirects).toEqual([access === 401 ? '/login' : '/access-denied']); }
   }
+});
+
+
+test('recovery UI renders only server stages and verified running/already-running outcomes', async () => {
+  for (const result of ['running', 'already-running', 'refused']) {
+    let submitted: RequestInit | undefined;
+    const body = [{ stage: 'Checking' }, { stage: 'Recovering' }, { stage: 'Starting' }, { result }].map(x => JSON.stringify(x)).join('\n') + '\n';
+    const view = editor(async (_url, init) => { submitted = init; return new Response(body); });
+    const task = view.render().recoverWorker();
+    expect(view.render().recoveryBusy).toBe(true);
+    await task;
+    expect(submitted?.body).toBe('{}');
+    expect(view.render().recoveryStatus).toBe(result === 'running' ? 'Running' : result === 'already-running' ? 'Already running' : 'Unable to recover');
+    expect(view.render().recoveryBusy).toBe(false);
+  }
+});
+test('recovery UI treats truncated streams and HTTP errors as unable to recover', async () => {
+  for (const response of [new Response('{"stage":"Starting"}\n'), new Response('private OS output', { status: 503 })]) {
+    const view = editor(async () => response);
+    await view.render().recoverWorker();
+    expect(view.render().recoveryStatus).toBe('Unable to recover');
+    expect(view.messages).toEqual(['Unable to recover']);
+  }
+});
+
+
+test('recovery UI waits for genuine shutdown evidence and explicit confirmation before resubmitting', async () => {
+  const confirmation = '1999999999999.' + 'a'.repeat(64);
+  const bodies: string[] = [];
+  const view = editor(async (_url, init) => {
+    bodies.push(String(init?.body));
+    return new Response(JSON.stringify(bodies.length === 1 ? { result: 'confirmation-required', confirmation } : { result: 'running' }) + '\n');
+  });
+  await view.render().recoverWorker();
+  expect(view.render().recoveryStatus).toBe('Shutdown verification required');
+  expect(view.render().recoveryConfirmation).toBe(confirmation);
+  expect(view.messages).toEqual([]);
+  await view.render().recoverWorker(true); expect(bodies).toEqual(['{}']);
+  view.render().setShutdownEvidence('Verified supervisor stopped and all descendants reaped');
+  await view.render().recoverWorker(true);
+  expect(JSON.parse(bodies[1])).toEqual({ confirmation, shutdownAcknowledged: true, evidence: 'Verified supervisor stopped and all descendants reaped' });
+  expect(view.render().recoveryStatus).toBe('Running');
+  expect(view.render().recoveryConfirmation).toBe('');
 });
