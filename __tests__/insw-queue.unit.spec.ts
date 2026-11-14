@@ -78,7 +78,11 @@ const approvedQueueStatements: Record<string, string[]> = {
     "import { provenanceLabel, type OperationalState } from '@/lib/insw-queue/operational-state';",
     "import type { AttemptHistoryEntry } from '@/lib/insw-queue/attempt-history';",
   ],
-  'app/(authenticated)/insw/queue-settings/page.tsx': ["import { intervalSettingsAccess } from '@/lib/insw-queue/interval-settings-http';"],
+  'app/(authenticated)/insw/queue-settings/page.tsx': [
+    "import { intervalSettingsAccess } from '@/lib/insw-queue/interval-settings-http';",
+    "import { workerRecoveryAllowed } from '@/lib/insw-queue/worker-recovery';",
+  ],
+  'app/api/insw/queue-settings/worker-recovery/route.ts': ["import { workerRecoveryRequest } from '@/lib/insw-queue/worker-recovery-http';"],
   'app/(authenticated)/insw/queue-settings/QueueSettings.tsx': ["import type { intervalProjection } from '@/lib/insw-queue/interval-settings';"],
   'app/api/insw/queue-settings/route.ts': ["import { intervalSettingsRequest } from '@/lib/insw-queue/interval-settings-http';"],
   'app/api/insw/logs/route.ts': ["import { operationalLogPage } from '@/lib/insw-queue/operational-logs';"],

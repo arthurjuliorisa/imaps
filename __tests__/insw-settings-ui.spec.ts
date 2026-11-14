@@ -92,7 +92,7 @@ test('retry-only changes require integer bounds and audited review and submit ex
   expect(view.render().policy.maxAutoRetry).toBe(0);
 });
 
-function renderSettings(overrides: Record<number, unknown> = {}) {
+function renderSettings(overrides: Record<number, unknown> = {}, showWorkerRecovery = false) {
   let slot = 0;
   const defaults: Record<number, unknown> = { 0: policy, 1: '3600', 2: '3', 3: '', 4: false, 5: false, 6: false, 7: '' };
   const imports: Record<string, unknown> = {
@@ -105,9 +105,16 @@ function renderSettings(overrides: Record<number, unknown> = {}) {
   vm.runInNewContext(ts.transpileModule(readFileSync('app/(authenticated)/insw/queue-settings/QueueSettings.tsx', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, { exports, require: (name: string) => { if (!(name in imports)) throw new Error(`Unmocked ${name}`); return imports[name]; } });
-  const html = renderToStaticMarkup(exports.default());
+  const html = renderToStaticMarkup(exports.default({ showWorkerRecovery }));
   return { html, text: html.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, '') };
 }
+
+test('worker recovery is hidden by default and explicitly unavailable when permitted by the server', () => {
+  expect(renderSettings().text).not.toContain('Recover &amp; Restart Worker');
+  const view = renderSettings({}, true);
+  expect(view.html).toMatch(/<button[^>]*disabled=""[^>]*>Recover &amp; Restart Worker/);
+  expect(view.text).toContain('Worker recovery is unavailable. Contact your system administrator.');
+});
 
 test('rendered policy uses full available width and responsive grouped inputs while preserving review/audit copy', () => {
   const view = renderSettings();
@@ -145,6 +152,7 @@ test('page permits only Admin settings access and redirects unauthenticated/forb
       'next-auth': { getServerSession: async () => ({ user: { role: access === 200 ? 'ADMIN' : 'USER' } }) },
       'next/navigation': { redirect: (url: string) => { redirects.push(url); throw new Error('REDIRECT'); } },
       '@/lib/auth': { authOptions: {} }, '@/lib/insw-queue/interval-settings-http': { intervalSettingsAccess: () => access },
+      '@/lib/insw-queue/worker-recovery': { workerRecoveryAllowed: () => false },
       './QueueSettings': { default: () => null }, 'react/jsx-runtime': require('react/jsx-runtime'),
     };
     const exports: any = {};

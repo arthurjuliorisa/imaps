@@ -10,7 +10,7 @@ import type { intervalProjection } from '@/lib/insw-queue/interval-settings';
 type Settings = ReturnType<typeof intervalProjection>;
 const formatInterval = (ms: number) => `${ms / 1000} seconds (${ms.toLocaleString('en-US')} ms)`;
 
-export default function QueueSettings() {
+export default function QueueSettings({ showWorkerRecovery = false }: { showWorkerRecovery?: boolean } = {}) {
   const toast = useToast();
   const [policy, setPolicy] = useState<Settings | null>(null);
   const [interval, setInterval] = useState('');
@@ -101,6 +101,14 @@ export default function QueueSettings() {
           </Stack>
         </CardContent></Card>
       ) : <Button onClick={() => { setError(''); void load(); }}>Reload settings</Button>}
+      {showWorkerRecovery && <Card variant="outlined" component="section" aria-label="Worker recovery" sx={{ mt: 2 }}><CardContent>
+        <Stack spacing={1} alignItems="flex-start">
+          <Button variant="outlined" disabled aria-describedby="worker-recovery-unavailable">Recover &amp; Restart Worker</Button>
+          <Typography id="worker-recovery-unavailable" variant="body2" color="text.secondary">
+            Worker recovery is unavailable. Contact your system administrator.
+          </Typography>
+        </Stack>
+      </CardContent></Card>}
       <QueueMonitoring />
       <ConfirmDialog open={confirm} title="Update queue policy?" severity="info" confirmText="Save policy" loading={saving}
         message={`Change the global processing interval from ${policy ? formatInterval(policy.intervalMs) : ''} to ${formatInterval(intervalMs)} and maximum automatic retries from ${policy?.maxAutoRetry} to ${retries}? Reason: ${reason.trim()}`}
