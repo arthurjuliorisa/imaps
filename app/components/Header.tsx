@@ -94,7 +94,7 @@ export function Header({ onMenuClick, sidebarCollapsed, onToggleCollapse }: Head
             aria-label="open drawer"
             edge="start"
             onClick={onMenuClick}
-            sx={{ mr: 2, color: '#ffffff' }}
+            sx={{ mr: 2, color: '#ffffff', flexShrink: 0 }}
           >
             <MenuIcon />
           </IconButton>
@@ -102,7 +102,7 @@ export function Header({ onMenuClick, sidebarCollapsed, onToggleCollapse }: Head
 
         {/* Collapse button and vTradEx branding - only show on desktop */}
         {!isMobile && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mr: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mr: 3, flexShrink: 0 }}>
             <IconButton
               onClick={onToggleCollapse}
               sx={{
@@ -136,11 +136,12 @@ export function Header({ onMenuClick, sidebarCollapsed, onToggleCollapse }: Head
 
         {/* Branding - only show on mobile */}
         {isMobile && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2, minWidth: 0 }}>
             <Box
               sx={{
                 width: 32,
                 height: 32,
+                flexShrink: 0,
                 borderRadius: 0,
                 bgcolor: 'rgba(255, 255, 255, 0.15)',
                 display: 'flex',
@@ -156,6 +157,10 @@ export function Header({ onMenuClick, sidebarCollapsed, onToggleCollapse }: Head
             <Typography
               variant="h6"
               sx={{
+                display: { xs: 'none', sm: 'block' },
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
                 fontWeight: 600,
                 fontSize: '1rem',
                 color: '#ffffff',
@@ -167,10 +172,21 @@ export function Header({ onMenuClick, sidebarCollapsed, onToggleCollapse }: Head
           </Box>
         )}
 
-        <Box sx={{ flexGrow: 1 }}>
+        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           <Breadcrumbs
             separator={<NavigateNext fontSize="small" sx={{ color: 'rgba(255, 255, 255, 0.7)' }} />}
             aria-label="breadcrumb"
+            sx={{
+              display: { xs: 'none', md: 'block' },
+              '& .MuiBreadcrumbs-ol': { flexWrap: 'nowrap' },
+              '& .MuiBreadcrumbs-li': { minWidth: 0, overflow: 'hidden' },
+              '& .MuiTypography-root, & .MuiLink-root': {
+                display: 'block',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              },
+            }}
           >
             {breadcrumbs.map((crumb, index) => {
               const isLast = index === breadcrumbs.length - 1;
@@ -206,10 +222,17 @@ export function Header({ onMenuClick, sidebarCollapsed, onToggleCollapse }: Head
           </Breadcrumbs>
         </Box>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
           <ThemeToggle />
 
-          <IconButton onClick={handleMenu} sx={{ ml: 1 }}>
+          <IconButton
+            aria-label="Account menu"
+            aria-haspopup="menu"
+            aria-controls={anchorEl ? 'header-account-menu' : undefined}
+            aria-expanded={Boolean(anchorEl)}
+            onClick={handleMenu}
+            sx={{ ml: 1 }}
+          >
             <Avatar
               sx={{
                 width: 36,
@@ -225,6 +248,7 @@ export function Header({ onMenuClick, sidebarCollapsed, onToggleCollapse }: Head
           </IconButton>
 
           <Menu
+            id="header-account-menu"
             anchorEl={anchorEl}
             open={Boolean(anchorEl)}
             onClose={handleClose}
@@ -232,6 +256,8 @@ export function Header({ onMenuClick, sidebarCollapsed, onToggleCollapse }: Head
               sx: {
                 mt: 1.5,
                 minWidth: 200,
+                maxWidth: 'calc(100vw - 32px)',
+                overflowWrap: 'anywhere',
               },
             }}
           >
