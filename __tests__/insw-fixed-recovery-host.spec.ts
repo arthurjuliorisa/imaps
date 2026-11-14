@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { recoverFixedWorker, type GateSnapshot, type RecoveryFacts } from '../lib/insw-worker/fixed-recovery-engine';
 import type { ProcessIdentity } from '../lib/insw-worker/process-identity';
 import { readFileSync } from 'node:fs';
+import * as nodePath from 'node:path';
 const identity: ProcessIdentity = { host: 'fixture', machine: 'fixture', boot: 'boot', pid: 123, uid: 1000, start: '20', pidNamespace: 'pid:[1]' };
 function harness(overrides: Partial<RecoveryFacts> = {}, initial: Partial<GateSnapshot> = {}) {
   let gate: GateSnapshot = { owner_token: 'old', process_identity: identity, busy_attempt_id: null, coherent: true, ...initial };
@@ -203,7 +204,7 @@ test('competing web callers use one nonblocking OS lock; the loser cannot report
 
 test('deployment resolves existing same-account PM2 and creates a stable private lock without root installation', async () => {
   for (const failure of ['', 'pm2-775', 'uid', 'cwd', 'writable', 'symlink', 'lock-owner', 'pm2-account', 'pm2-foreign-group', 'pm2-world-write', 'malicious-cli', 'root']) {
-    const exports: any = {}, opened: string[] = [];
+    const exports: any = {}, opened: string[] = [], diagnostics: string[][] = [];
     const uid = failure === 'root' ? 0 : 1000;
     const fs = {
       readFileSync: () => JSON.stringify({ name: 'pm2' }),
@@ -227,6 +228,7 @@ test('deployment resolves existing same-account PM2 and creates a stable private
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
     }).outputText, { exports, process: { platform: 'linux', execPath: '/node', getuid: () => failure === 'uid' ? undefined : uid, getgid: () => 1000,
       cwd: () => '/fixture', env: { PM2_HOME: '/pm2', PATH: '/bin' } },
+      console: { error: (...args: string[]) => diagnostics.push(args) },
       require: (name: string) => { if (!(name in imports)) throw new Error(`UNMOCKED_IMPORT:${name}`); return imports[name]; } });
     if (failure && failure !== 'pm2-775') expect(() => exports.recoveryInstallation()).toThrow();
     else {
@@ -235,6 +237,15 @@ test('deployment resolves existing same-account PM2 and creates a stable private
         pm2: '/global/lib/node_modules/pm2/bin/pm2', node: '/node', runtime: '/pm2/imaps-worker-recovery' });
       exports.recoveryInstallation(); expect(opened).toEqual(['/pm2/imaps-worker-recovery/recovery.lock', '/pm2/imaps-worker-recovery/recovery.lock']);
     }
+    const validation: Record<string, [string, string]> = {
+      uid: ['CALLER', 'CALLER_UID_DENIED'], root: ['CALLER', 'CALLER_UID_DENIED'],
+      cwd: ['RECOVERY_SCRIPT', 'DEPLOYMENT_PATH_INVALID'], writable: ['APPLICATION_ROOT', 'DEPLOYMENT_PATH_UNTRUSTED'],
+      symlink: ['RUNTIME_VALIDATE', 'RUNTIME_UNTRUSTED'], 'lock-owner': ['RUNTIME_VALIDATE', 'RUNTIME_UNTRUSTED'],
+      'pm2-account': ['PM2_HOME', 'DEPLOYMENT_PATH_UNTRUSTED'], 'pm2-foreign-group': ['PM2_HOME', 'DEPLOYMENT_PATH_UNTRUSTED'],
+      'pm2-world-write': ['PM2_HOME', 'DEPLOYMENT_PATH_UNTRUSTED'], 'malicious-cli': ['PM2_CLI', 'DEPLOYMENT_PATH_UNTRUSTED'],
+    };
+    expect(diagnostics).toEqual(validation[failure] ? [['[INSW deployment]', ...validation[failure]],
+      ...(failure === 'malicious-cli' ? [['[INSW deployment]', 'PM2_DISCOVERY', 'PM2_CLI_UNAVAILABLE']] : [])] : []);
     const adapter: any = {};
     vm.runInNewContext(ts.transpileModule(readFileSync('lib/insw-queue/worker-recovery.ts', 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
@@ -267,6 +278,115 @@ test('deployment resolves existing same-account PM2 and creates a stable private
       expect(await status.workerSupervisorStatus()).toEqual({ status: 'stopped', reason: 'observed' });
       expect(reads).toHaveLength(1);
     }
+  }
+});
+
+test('VPS deploy-owned 775 PM2 code stays unavailable; removing code group-write preserves 775 PM2_HOME support', () => {
+  const home = '/home/deploy', root = `${home}/apps/imaps`;
+  const prefix = `${home}/.npm-global`, pm2Root = `${prefix}/lib/node_modules/pm2`;
+  const cli = `${pm2Root}/bin/pm2`, manifest = `${pm2Root}/package.json`;
+  const installationPaths = new Set([prefix, `${prefix}/bin`, `${prefix}/lib`, `${prefix}/lib/node_modules`,
+    pm2Root, `${pm2Root}/bin`, cli, manifest]);
+  for (const scenario of ['vps-775', 'cli-775', 'manifest-775', 'code-g-w', 'foreign-cli', 'world-writable-cli']) {
+    const exports: any = {}, inspected: string[] = [], read: string[] = [];
+    const fs = {
+      realpathSync: (path: string) => path === `${prefix}/bin/pm2` ? cli : nodePath.normalize(path),
+      statSync: (path: string) => {
+        inspected.push(path);
+        const groupWritable = scenario === 'vps-775' && installationPaths.has(path)
+          || scenario === 'cli-775' && path === cli || scenario === 'manifest-775' && path === manifest;
+        return { uid: scenario === 'foreign-cli' && path === cli ? 1001 : 1000, gid: 1000,
+          mode: scenario === 'world-writable-cli' && path === cli ? 0o777
+            : groupWritable || path === `${home}/.pm2` ? 0o775 : 0o755,
+          isDirectory: () => ![cli, manifest, '/usr/bin/node'].includes(path),
+        };
+      },
+      readFileSync: (path: string) => { read.push(path); expect(path).toBe(manifest); return '{"name":"pm2"}'; },
+      mkdirSync: () => { throw new Error('UNEXPECTED_RUNTIME_WRITE'); },
+      openSync: () => { throw new Error('UNEXPECTED_LOCK_WRITE'); },
+    };
+    vm.runInNewContext(ts.transpileModule(readFileSync('lib/insw-worker/recovery-installation.ts', 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText, { exports, process: { platform: 'linux', getuid: () => 1000, getgid: () => 1000,
+      cwd: () => root, execPath: '/usr/bin/node', env: { PM2_HOME: `${home}/.pm2`, PATH: `${prefix}/bin` } },
+      require: (name: string) => {
+        if (name === 'node:fs') return fs;
+        if (name === 'node:path') return nodePath;
+        if (name === 'node:os') return { homedir: () => home };
+        throw new Error(`UNMOCKED_IMPORT:${name}`);
+      } });
+    if (scenario === 'code-g-w') {
+      expect(exports.recoveryInstallation({ readOnly: true })).toEqual({ uid: 1000, root, home,
+        pm2Home: `${home}/.pm2`, pm2: cli, node: '/usr/bin/node', runtime: `${home}/.pm2/imaps-worker-recovery` });
+      expect(read).toEqual([manifest]);
+    } else {
+      expect(() => exports.recoveryInstallation({ readOnly: true })).toThrow('PM2_CLI_UNAVAILABLE');
+      expect(read).toEqual([]);
+      // The 775 CLI is rejected before even inspecting the package manifest.
+      expect(inspected.at(-1)).toBe(scenario === 'manifest-775' ? manifest : cli);
+    }
+  }
+});
+
+test('installation diagnostics identify refusal stages without logging raw host errors; Recovery keeps its generic refusal', () => {
+  const root = '/app', home = '/home/deploy', pm2Home = `${home}/.pm2`;
+  const cli = '/opt/pm2/bin/pm2', manifest = '/opt/pm2/package.json';
+  const cases = [
+    ['APPLICATION_ROOT', 'realpath', root],
+    ['RECOVERY_SCRIPT', 'stat', `${root}/scripts/host/insw-worker-recovery.ts`],
+    ['WORKER_SCRIPT', 'stat', `${root}/scripts/insw-worker.ts`],
+    ['ECOSYSTEM', 'stat', `${root}/ecosystem.insw-worker.config.js`],
+    ['HOME', 'realpath', home], ['PM2_HOME', 'stat', pm2Home],
+    ['PM2_CLI', 'realpath', '/bin/pm2'], ['PM2_MANIFEST', 'stat', manifest],
+    ['PM2_MANIFEST_READ', 'read', manifest], ['PM2_MANIFEST_READ', 'read', manifest, 'unknown-error'], ['NODE_INTERPRETER', 'stat', '/usr/bin/node'],
+    ['RUNTIME_CREATE', 'mkdir', `${pm2Home}/imaps-worker-recovery`],
+    ['RUNTIME_VALIDATE', 'lstat', `${pm2Home}/imaps-worker-recovery`],
+    ['LOCK_OPEN', 'open', `${pm2Home}/imaps-worker-recovery/recovery.lock`],
+    ['LOCK_CLOSE', 'close', 'fd'], ['LOCK_VALIDATE', 'lstat', `${pm2Home}/imaps-worker-recovery/recovery.lock`],
+  ];
+  for (const [stage, operation, path, unknownError] of cases) {
+    const logs: string[][] = [], exports: any = {};
+    const raw = Object.assign(new Error('private token JWT /home/deploy secret-host-error'), { code: unknownError ? 'SECRET_CODE_DO_NOT_LOG' : 'EACCES' });
+    const probe = (op: string, value: string) => { if (op === operation && value === path) throw raw; };
+    const fs = {
+      constants: { O_CREAT: 1, O_RDWR: 2, O_NOFOLLOW: 4 },
+      realpathSync: (value: string) => { probe('realpath', value); return value === '/bin/pm2' ? cli : nodePath.normalize(value); },
+      statSync: (value: string) => { probe('stat', value); return { uid: value === '/usr/bin/node' ? 0 : 1000,
+        gid: 1000, mode: value === pm2Home ? 0o775 : 0o755, isDirectory: () => true }; },
+      readFileSync: (value: string) => { probe('read', value); return '{"name":"pm2"}'; },
+      mkdirSync: (value: string) => probe('mkdir', value),
+      lstatSync: (value: string) => { probe('lstat', value); return { uid: 1000, mode: 0o600,
+        nlink: 1, isDirectory: () => true, isFile: () => true }; },
+      openSync: (value: string) => { probe('open', value); return 'fd'; },
+      closeSync: (value: string) => probe('close', value),
+    };
+    const imports: Record<string, unknown> = { 'node:fs': fs, 'node:path': nodePath, 'node:os': { homedir: () => home } };
+    vm.runInNewContext(ts.transpileModule(readFileSync('lib/insw-worker/recovery-installation.ts', 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText, { exports, process: { platform: 'linux', getuid: () => 1000, getgid: () => 1000,
+      cwd: () => root, execPath: '/usr/bin/node', env: { PM2_HOME: pm2Home, PATH: '/bin' } },
+      console: { error: (...args: string[]) => logs.push(args) }, require: (name: string) => {
+        if (!(name in imports)) throw new Error(`UNMOCKED_IMPORT:${name}`); return imports[name];
+      } });
+    const candidate = stage.startsWith('PM2_') && !['PM2_HOME'].includes(stage);
+    const expected = [['[INSW deployment]', stage, unknownError ? 'VALIDATION_FAILED' : 'EACCES'],
+      ...(candidate ? [['[INSW deployment]', 'PM2_DISCOVERY', 'PM2_CLI_UNAVAILABLE']] : [])];
+    expect(() => exports.recoveryInstallation()).toThrow(candidate ? 'PM2_CLI_UNAVAILABLE' : raw);
+    expect(logs).toEqual(expected);
+    logs.length = 0;
+    const adapter: any = {};
+    vm.runInNewContext(ts.transpileModule(readFileSync('lib/insw-queue/worker-recovery.ts', 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText, { exports: adapter, process: { env: { NEXT_PUBLIC_ENVIRONMENT_PHASE: 'staging' } },
+      console: { error: (...args: string[]) => logs.push(args) }, require: (name: string) => {
+        if (name === '../insw-worker/recovery-installation') return exports;
+        if (name === 'node:path') return nodePath;
+        if (name === 'node:child_process') return { spawn: () => { throw new Error('RECOVERY_FORBIDDEN'); } };
+        throw new Error(`UNMOCKED_IMPORT:${name}`);
+      } });
+    expect(adapter.fixedWorkerRecoveryHost.available()).toBe(false);
+    expect(logs).toEqual([...expected, ['[INSW recovery] DEPLOYMENT_CONTEXT_UNAVAILABLE']]);
+    expect(JSON.stringify(logs)).not.toMatch(/private|token|JWT|deploy\/|secret-host-error/);
   }
 });
 
