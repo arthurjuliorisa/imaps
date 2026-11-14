@@ -147,7 +147,8 @@ function harness(phase = 'development', env: Record<string, string | undefined> 
       deleteINSWTrackingLogsForCompany: async (code: number) => (await tx.insw_tracking_log.deleteMany({ where: { company_code: code } })).count,
     },
     '@/lib/insw-queue/cleanup': operations,
-  }).POST;
+    '@/lib/security/request-origin': load('lib/security/request-origin.ts', {}, env),
+  }, { NEXTAUTH_URL: 'https://imaps.invalid', ...env }).POST;
   return { operations, post, events, get rows() { return rows; }, get remoteCalls() { return remoteCalls; },
     setGate: (value: any) => { gate = value; }, get gate() { return gate; },
     setFail: (value: string) => { fail = value; }, setActive: (table: string) => {
@@ -472,4 +473,32 @@ test('NR-07 release preserves a future recovery barrier and a larger historical 
   expect((await h.post(request())).status).toBe(200);
   expect(h.gate.last_started_at).toEqual(start); expect(h.gate.prior_interval_ms).toBe(9000);
   expect(h.gate.recovery_barrier_at).toEqual(barrier);
+});
+
+// Stop immediately after validation: no provider calls or data mutations.
+test('configured public cleanup origins pass proxy boundaries while forged origins and invalid consent fail', async () => {
+  for (const [configured, origin] of [['NEXTAUTH_URL', 'http://202.155.14.3'], ['ALLOWED_ORIGINS', 'http://202.155.14.3'],
+    ['NEXTAUTH_URL', 'http://localhost:3000'], ['ALLOWED_ORIGINS', 'https://staging.example.invalid:8443']]) {
+    for (const scenario of ['valid', 'wrong-confirmation', 'missing-confirmation', 'forged', 'forged-url', 'wrong-content-type', 'wrong-port', 'wrong-scheme', 'origin-path', 'missing-attestation', 'cross-site', 'missing-origin']) {
+      const h = harness('staging', { DATABASE_PHASE: 'staging', [configured]: origin });
+      h.setGate({ ...h.gate, busy_attempt_id: 'fixture-active' }); // validation passes into safe preflight refusal
+      const headers: Record<string, string> = { 'content-type': 'application/json', origin,
+        host: '202.155.14.3', 'x-forwarded-host': '202.155.14.3', 'x-forwarded-proto': 'http',
+        referer: `${origin}/settings/database-cleanup` };
+      if (scenario === 'forged') { headers.origin = 'http://evil.invalid'; headers.host = 'evil.invalid'; headers['x-forwarded-host'] = 'evil.invalid'; }
+      if (scenario === 'forged-url') { headers.origin = 'http://internal.invalid'; headers.host = 'internal.invalid'; headers['x-forwarded-host'] = 'internal.invalid'; }
+      if (scenario === 'wrong-content-type') headers['content-type'] = 'text/plain';
+      if (scenario === 'wrong-scheme') headers.origin = origin.replace(/^http(s?):/, (_match, secure) => secure ? 'http:' : 'https:');
+      if (scenario === 'wrong-port') headers.origin = new URL(origin).origin.replace(/:\d+$/, '') + ':9999';
+      if (scenario === 'origin-path') headers.origin += '/cleanup';
+      if (scenario === 'cross-site') headers['sec-fetch-site'] = 'cross-site';
+      if (scenario === 'missing-origin') delete headers.origin;
+      const body = scenario === 'missing-confirmation' ? {} : { confirmation: scenario === 'wrong-confirmation' ? 'RESET 1380' : 'RESET 1370', producersStopped: scenario !== 'missing-attestation' };
+      const before = structuredClone(h.rows);
+      const response = await h.post(new Request(`${scenario === 'forged-url' ? 'http://internal.invalid' : 'http://localhost:3000'}/api/admin/insw-cleanup`, { method: 'POST', headers, body: JSON.stringify(body) }));
+      expect(response.status, `${configured}:${scenario}`).toBe(scenario === 'valid' ? 409 : scenario.includes('confirmation') || scenario === 'missing-attestation' ? 400 : 403);
+      expect((await response.json()).error.code).toBe(scenario === 'valid' ? 'INSW_CLEANUP_QUEUE_BUSY' : 'INSW_CLEANUP_CONFIRMATION_REQUIRED');
+      expect(h.remoteCalls).toBe(0); expect(h.rows).toEqual(before);
+    }
+  }
 });

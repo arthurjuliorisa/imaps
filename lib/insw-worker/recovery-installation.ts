@@ -9,10 +9,15 @@ export type RecoveryInstallation = { uid: number; root: string; home: string; pm
 export function recoveryInstallation({ readOnly = false } = {}): RecoveryInstallation {
   const uid = process.getuid?.();
   if (process.platform !== 'linux' || uid === undefined || uid === 0) throw new Error('CALLER_UID_DENIED');
-  const checked = (path: string) => {
+  const checked = (path: string, pm2Directory = false) => {
     if (!isAbsolute(path) || realpathSync(path) !== path) throw new Error('DEPLOYMENT_PATH_INVALID');
     const stat = statSync(path);
-    if (![0, uid].includes(stat.uid) || (stat.mode & 0o022)) throw new Error('DEPLOYMENT_PATH_UNTRUSTED');
+    // Allow an account-owned PM2 home with 775. Only that directory
+    // may be writable by the caller's effective group; code stays non-writable
+    // by any group, and world/foreign-group writes remain untrusted.
+    const trustedGroup = pm2Directory && stat.isDirectory() && stat.uid === uid
+      && stat.gid === process.getgid?.();
+    if (![0, uid].includes(stat.uid) || (stat.mode & (trustedGroup ? 0o002 : 0o022))) throw new Error('DEPLOYMENT_PATH_UNTRUSTED');
     return path;
   };
   const root = checked(realpathSync(process.cwd()));
@@ -20,7 +25,7 @@ export function recoveryInstallation({ readOnly = false } = {}): RecoveryInstall
   checked(join(root, 'scripts/insw-worker.ts'));
   checked(join(root, 'ecosystem.insw-worker.config.js'));
   const home = checked(realpathSync(homedir()));
-  const pm2Home = checked(process.env.PM2_HOME || join(home, '.pm2'));
+  const pm2Home = checked(process.env.PM2_HOME || join(home, '.pm2'), true);
   if (statSync(pm2Home).uid !== uid) throw new Error('PM2_ACCOUNT_MISMATCH');
   // Explicit absolute CLI path is useful when the deployment PATH omits PM2.
   const candidates = process.env.INSW_RECOVERY_PM2_CLI ? [process.env.INSW_RECOVERY_PM2_CLI]

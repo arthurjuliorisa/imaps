@@ -14,6 +14,19 @@ import {
 } from '@/lib/cleanup/cleanup-company-context';
 import { deleteINSWTrackingLogsForCompany } from '@/lib/repositories/insw-tracking-log.repository';
 import { assertINSWCleanupIdle, deleteINSWOperationalData, includesINSWQueueCleanup, hasKnownINSWCleanupPhase, INSWCleanupBusyError, INSWCleanupResidualError } from '@/lib/insw-queue/cleanup';
+import { getAllowedOrigins } from '@/lib/security/request-origin';
+
+function cleanupOriginAllowed(origin: string | null): boolean {
+  if (!origin) return false;
+  try {
+    const parsed = new URL(origin);
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.origin !== origin) return false;
+    if (getAllowedOrigins().has(origin)) return true;
+    // Match Recovery's trusted public URL convention across reverse proxies.
+    // Request URL, Host and forwarded headers do not establish trust.
+    return !!process.env.NEXTAUTH_URL && origin === new URL(process.env.NEXTAUTH_URL).origin;
+  } catch { return false; }
+}
 
 function inswCleanupErrorResponse(
   status: number,
@@ -59,7 +72,7 @@ export async function POST(request: NextRequest) {
     if (includeQueue) {
       // Browser same-origin JSON action protects the explicit confirmation from
       // cross-site form submission. Scope always comes from the DB/session.
-      if (request.headers.get('origin') !== new URL(request.url).origin
+      if (!cleanupOriginAllowed(request.headers.get('origin'))
         || !request.headers.get('content-type')?.startsWith('application/json')
         || request.headers.get('sec-fetch-site') === 'cross-site') {
         return inswCleanupErrorResponse(403, 'INSW_CLEANUP_CONFIRMATION_REQUIRED', 'Use the same-origin Admin cleanup confirmation.');
