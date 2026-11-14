@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import * as mui from '@mui/material';
 
 // Exercise the actual component closures using the same hook harness convention
 // as the existing access-menu tests. No fabricated browser session is required.
@@ -87,4 +90,68 @@ test('retry-only changes require integer bounds and audited review and submit ex
   page.setMaxAutoRetry('0'); page = view.render(); expect(page.canSave).toBe(true);
   await page.save(); expect(saved).toEqual({ intervalMs: 3600, maxAutoRetry: 0, expectedVersion: 3, reason: 'Disable automatic retries' });
   expect(view.render().policy.maxAutoRetry).toBe(0);
+});
+
+function renderSettings(overrides: Record<number, unknown> = {}) {
+  let slot = 0;
+  const defaults: Record<number, unknown> = { 0: policy, 1: '3600', 2: '3', 3: '', 4: false, 5: false, 6: false, 7: '' };
+  const imports: Record<string, unknown> = {
+    react: { ...React, useState: () => { const index = slot++; return [index in overrides ? overrides[index] : defaults[index], () => {}]; }, useEffect: () => {}, useCallback: (fn: unknown) => fn },
+    '@mui/material': mui, 'react/jsx-runtime': require('react/jsx-runtime'),
+    '@/app/components/ConfirmDialog': { ConfirmDialog: () => null },
+    '@/app/components/ToastProvider': { useToast: () => ({}) }, './QueueMonitoring': { default: () => null },
+  };
+  const exports: any = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync('app/(authenticated)/insw/queue-settings/QueueSettings.tsx', 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText, { exports, require: (name: string) => { if (!(name in imports)) throw new Error(`Unmocked ${name}`); return imports[name]; } });
+  const html = renderToStaticMarkup(exports.default());
+  return { html, text: html.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, '') };
+}
+
+test('rendered policy uses full available width and responsive grouped inputs while preserving review/audit copy', () => {
+  const view = renderSettings();
+  for (const text of ['Transmission Policy', 'Processing interval (milliseconds)', 'Maximum Automatic Retries', 'Reason for change', 'Policy version 3', 'existing cycles retain their retry snapshot', 'Review change', 'Reload settings']) expect(view.text).toContain(text);
+  expect(view.html).toContain('max-width:1280px');
+  expect(view.html).toContain('repeat(2, minmax(0, 1fr))');
+  expect(view.html).toContain('grid-template-columns:minmax(0, 1fr)');
+  expect(view.html).toMatch(/<button[^>]*disabled=""[^>]*>Review change/);
+  const draft = renderSettings({ 1: '5000', 3: 'Audited change' });
+  expect(draft.html).not.toMatch(/<button[^>]*disabled=""[^>]*>Review change/);
+  for (const state of [{ 5: true }, { 6: true }]) {
+    const locked = renderSettings(state);
+    expect(locked.html.match(/<input[^>]*disabled=""/g)).toHaveLength(3);
+    expect(locked.html).toMatch(/<button[^>]*disabled=""[^>]*>Reload settings/);
+  }
+});
+
+test('rendered policy loading, unavailable and conflict states keep controls honest', () => {
+  const loading = renderSettings({ 0: null, 4: true });
+  expect(loading.html).toContain('aria-label="Loading queue settings"');
+  expect(loading.html).not.toContain('<form');
+  const unavailable = renderSettings({ 0: null, 7: 'Unable to load queue settings' });
+  expect(unavailable.text).toContain('Unable to load queue settings');
+  expect(unavailable.text).toContain('Reload settings');
+  expect(unavailable.html).not.toContain('<form');
+  const conflict = renderSettings({ 7: 'Another administrator changed the policy. Current settings have been reloaded; review and enter your change again.' });
+  expect(conflict.html).toContain('role="alert"');
+  expect(conflict.text).toContain('Another administrator changed the policy');
+});
+
+test('page permits only Admin settings access and redirects unauthenticated/forbidden sessions before rendering', async () => {
+  for (const access of [401, 403, 200]) {
+    const redirects: string[] = [];
+    const imports: Record<string, unknown> = {
+      'next-auth': { getServerSession: async () => ({ user: { role: access === 200 ? 'ADMIN' : 'USER' } }) },
+      'next/navigation': { redirect: (url: string) => { redirects.push(url); throw new Error('REDIRECT'); } },
+      '@/lib/auth': { authOptions: {} }, '@/lib/insw-queue/interval-settings-http': { intervalSettingsAccess: () => access },
+      './QueueSettings': { default: () => null }, 'react/jsx-runtime': require('react/jsx-runtime'),
+    };
+    const exports: any = {};
+    vm.runInNewContext(ts.transpileModule(readFileSync('app/(authenticated)/insw/queue-settings/page.tsx', 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+    }).outputText, { exports, require: (name: string) => { if (!(name in imports)) throw new Error(`Unmocked ${name}`); return imports[name]; } });
+    if (access === 200) { expect(await exports.default()).toBeTruthy(); expect(redirects).toEqual([]); }
+    else { await expect(exports.default()).rejects.toThrow('REDIRECT'); expect(redirects).toEqual([access === 401 ? '/login' : '/access-denied']); }
+  }
 });

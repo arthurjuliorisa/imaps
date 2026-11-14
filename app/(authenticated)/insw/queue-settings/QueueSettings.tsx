@@ -68,26 +68,31 @@ export default function QueueSettings() {
   };
 
   return (
-    <Box sx={{ maxWidth: 960 }}>
+    <Box sx={{ width: '100%', maxWidth: 1280, mx: 'auto', minWidth: 0 }}>
       <Typography variant="h5" component="h1" color="primary" fontWeight="bold" sx={{ mb: 2 }}>INSW Queue Settings</Typography>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {loading ? <Box role="status" aria-label="Loading queue settings"><CircularProgress /></Box> : policy ? (
-        <Card><CardContent>
+        <Card variant="outlined" component="section" aria-labelledby="transmission-policy-heading"><CardContent sx={{ p: { xs: 2, sm: 3 } }}>
           <Stack spacing={2} component="form" onSubmit={event => { event.preventDefault(); if (canSave) setConfirm(true); }}>
-            <Typography>Persisted processing interval: <strong>{formatInterval(policy.intervalMs)}</strong></Typography>
-            <Typography>Effective minimum spacing: <strong>{formatInterval(Math.max(3600, policy.intervalMs))}</strong></Typography>
-            <Typography variant="body2">Hard minimum: 3.6 seconds (3,600 ms) between processing starts globally. This setting may increase that spacing. Queue conditions and provider response times can add delays; changes take effect when the worker next reads policy.</Typography>
+            <Typography id="transmission-policy-heading" variant="h6" component="h2">Transmission Policy</Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>
+              <Typography variant="body2">Persisted processing interval: <strong>{formatInterval(policy.intervalMs)}</strong></Typography>
+              <Typography variant="body2">Effective minimum spacing: <strong>{formatInterval(Math.max(3600, policy.intervalMs))}</strong></Typography>
+            </Box>
+            <Typography variant="body2" color="text.secondary">Hard minimum: 3.6 seconds (3,600 ms) between processing starts globally. This setting may increase that spacing. Queue conditions and provider response times can add delays; changes take effect when the worker next reads policy.</Typography>
             {policy.intervalMs < 3600 && <Alert severity="info">The persisted interval is below the hard minimum. Effective start spacing remains at least 3,600 ms.</Alert>}
-            <TextField label="Processing interval (milliseconds)" value={interval} onChange={event => setInterval(event.target.value)} disabled={saving || confirm}
-              error={!validInterval} helperText={validInterval ? formatInterval(intervalMs) : 'Enter a whole number from 3,600 to 2,147,483,647 ms.'}
-              slotProps={{ htmlInput: { inputMode: 'numeric', min: 3600, max: 2147483647, step: 1 } }} required />
-            <TextField label="Maximum Automatic Retries" value={maxAutoRetry} onChange={event => setMaxAutoRetry(event.target.value)} disabled={saving || confirm}
-              error={!validRetries} helperText="Enter a whole number from 0 to 10. 0 means no automatic retries."
-              slotProps={{ htmlInput: { inputMode: 'numeric', min: 0, max: 10, step: 1 } }} required />
-            <Typography variant="body2">Applies to newly created queue cycles; existing cycles retain their retry snapshot. Automatic retries follow worker eligibility rules. Manual Resend is a separate operator-controlled action.</Typography>
-            <TextField label="Reason for change" value={reason} onChange={event => setReason(event.target.value)} disabled={saving || confirm}
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>
+              <TextField fullWidth label="Processing interval (milliseconds)" value={interval} onChange={event => setInterval(event.target.value)} disabled={saving || confirm}
+                error={!validInterval} helperText={validInterval ? formatInterval(intervalMs) : 'Enter a whole number from 3,600 to 2,147,483,647 ms.'}
+                slotProps={{ htmlInput: { inputMode: 'numeric', min: 3600, max: 2147483647, step: 1 } }} required />
+              <TextField fullWidth label="Maximum Automatic Retries" value={maxAutoRetry} onChange={event => setMaxAutoRetry(event.target.value)} disabled={saving || confirm}
+                error={!validRetries} helperText="Enter a whole number from 0 to 10. 0 means no automatic retries."
+                slotProps={{ htmlInput: { inputMode: 'numeric', min: 0, max: 10, step: 1 } }} required />
+            </Box>
+            <Typography variant="body2" color="text.secondary">Applies to newly created queue cycles; existing cycles retain their retry snapshot. Automatic retries follow worker eligibility rules. Manual Resend is a separate operator-controlled action.</Typography>
+            <TextField fullWidth label="Reason for change" value={reason} onChange={event => setReason(event.target.value)} disabled={saving || confirm}
               helperText="Required for the policy audit trail (maximum 500 characters)." slotProps={{ htmlInput: { maxLength: 500 } }} required />
-            <Typography variant="body2" color="text.secondary">Policy version {policy.version}. Last updated {new Date(policy.updatedAt).toLocaleString()} by {policy.updatedBy}. Reason: {policy.reason}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>Policy version {policy.version}. Last updated {new Date(policy.updatedAt).toLocaleString()} by {policy.updatedBy}. Reason: {policy.reason}</Typography>
             <Alert severity="info">Company eligibility and the worker deployment allowlist are managed separately. This screen cannot enable a company or override the worker fence.</Alert>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
               <Button type="submit" variant="contained" disabled={!canSave}>Review change</Button>
