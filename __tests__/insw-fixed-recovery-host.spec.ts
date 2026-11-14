@@ -226,6 +226,7 @@ test('deployment resolves existing same-account PM2 and creates a stable private
       require: (name: string) => { if (!(name in imports)) throw new Error(`UNMOCKED_IMPORT:${name}`); return imports[name]; } });
     if (failure) expect(() => exports.recoveryInstallation()).toThrow();
     else {
+      exports.recoveryInstallation({ readOnly: true }); expect(opened).toEqual([]);
       expect(exports.recoveryInstallation()).toEqual({ uid: 1000, root: '/fixture', home: '/home', pm2Home: '/pm2',
         pm2: '/bin/pm2', node: '/node', runtime: '/pm2/imaps-worker-recovery' });
       exports.recoveryInstallation(); expect(opened).toEqual(['/pm2/imaps-worker-recovery/recovery.lock', '/pm2/imaps-worker-recovery/recovery.lock']);

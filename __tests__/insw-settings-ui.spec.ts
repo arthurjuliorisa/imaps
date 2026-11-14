@@ -8,16 +8,18 @@ import * as mui from '@mui/material';
 
 // Exercise the actual component closures using the same hook harness convention
 // as the existing access-menu tests. No fabricated browser session is required.
-function editor(fetcher: (url: string, init?: RequestInit) => Promise<unknown>) {
+function editor(fetcher: (url: string, init?: RequestInit) => Promise<unknown>, globals: Record<string, unknown> = {}) {
   let cursor = 0;
   const slots: any[] = [];
+  const effects: (() => void | (() => void))[] = [];
   const hooks = {
+    useRef: (initial: unknown) => { const i = cursor++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i]; },
     useState: (initial: unknown) => {
       const i = cursor++;
       if (!(i in slots)) slots[i] = initial;
       return [slots[i], (next: any) => { slots[i] = typeof next === 'function' ? next(slots[i]) : next; }];
     },
-    useEffect: () => {}, useCallback: (fn: unknown) => fn,
+    useEffect: (fn: () => void) => { effects.push(fn); }, useCallback: (fn: unknown) => fn,
   };
   const messages: string[] = [];
   const imports: Record<string, unknown> = {
@@ -26,11 +28,11 @@ function editor(fetcher: (url: string, init?: RequestInit) => Promise<unknown>) 
     'react/jsx-runtime': {}, './QueueMonitoring': {},
   };
   const source = readFileSync('app/(authenticated)/insw/queue-settings/QueueSettings.tsx', 'utf8').replace('  return (\n    <Box',
-    '  return { load, save, setInterval, setMaxAutoRetry, setReason, policy, interval, reason, loading, saving, error, canSave, recoverWorker, recoveryStatus, recoveryBusy, recoveryConfirmation, setShutdownEvidence } as any;\n  return (\n    <Box');
+    '  return { load, save, setInterval, setMaxAutoRetry, setReason, policy, interval, reason, loading, saving, error, canSave, recoverWorker, recoveryStatus, recoveryBusy, recoveryConfirmation, setShutdownEvidence, refreshStatus, supervisor, statusLoading } as any;\n  return (\n    <Box');
   const exports: any = {};
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText,
-    { exports, require: (name: string) => { if (!(name in imports)) throw new Error(`Unmocked ${name}`); return imports[name]; }, fetch: fetcher, TextDecoder });
-  return { render: () => { cursor = 0; return exports.default({ showWorkerRecovery: true, workerRecoveryAvailable: true }); }, messages };
+    { exports, require: (name: string) => { if (!(name in imports)) throw new Error(`Unmocked ${name}`); return imports[name]; }, fetch: fetcher, TextDecoder, AbortController, setTimeout, clearTimeout, ...globals });
+  return { render: () => { cursor = 0; return exports.default({ showWorkerRecovery: true, workerRecoveryAvailable: true }); }, messages, effects };
 }
 const policy = { intervalMs: 3600, maxAutoRetry: 3, version: 3, updatedAt: '2026-11-01T00:00:00.000Z', updatedBy: 'admin', reason: 'Initial' };
 const response = (status: number, data: unknown) => ({ status, ok: status < 400, json: async () => data });
@@ -96,7 +98,7 @@ function renderSettings(overrides: Record<number, unknown> = {}, showWorkerRecov
   let slot = 0;
   const defaults: Record<number, unknown> = { 0: policy, 1: '3600', 2: '3', 3: '', 4: false, 5: false, 6: false, 7: '' };
   const imports: Record<string, unknown> = {
-    react: { ...React, useState: (initial: unknown) => { const index = slot++; return [index in overrides ? overrides[index] : index in defaults ? defaults[index] : initial, () => {}]; }, useEffect: () => {}, useCallback: (fn: unknown) => fn },
+    react: { ...React, useRef: (initial: unknown) => ({ current: initial }), useState: (initial: unknown) => { const index = slot++; return [index in overrides ? overrides[index] : index in defaults ? defaults[index] : initial, () => {}]; }, useEffect: () => {}, useCallback: (fn: unknown) => fn },
     '@mui/material': mui, 'react/jsx-runtime': require('react/jsx-runtime'),
     '@/app/components/ConfirmDialog': { ConfirmDialog: () => null },
     '@/app/components/ToastProvider': { useToast: () => ({}) }, './QueueMonitoring': { default: () => null },
@@ -169,12 +171,12 @@ test('recovery UI renders only server stages and verified running/already-runnin
   for (const result of ['running', 'already-running', 'refused']) {
     let submitted: RequestInit | undefined;
     const body = [{ stage: 'Checking' }, { stage: 'Recovering' }, { stage: 'Starting' }, { result }].map(x => JSON.stringify(x)).join('\n') + '\n';
-    const view = editor(async (_url, init) => { submitted = init; return new Response(body); });
+    const view = editor(async (_url, init) => { if (!init?.method) return response(200, { data: { status: 'online', reason: 'observed' } }); submitted = init; return new Response(body); });
     const task = view.render().recoverWorker();
     expect(view.render().recoveryBusy).toBe(true);
     await task;
     expect(submitted?.body).toBe('{}');
-    expect(view.render().recoveryStatus).toBe(result === 'running' ? 'Running' : result === 'already-running' ? 'Already running' : 'Unable to recover');
+    expect(view.render().recoveryStatus).toBe(result === 'running' ? 'Recovery completed' : result === 'already-running' ? 'Worker already running; readiness verified' : 'Recovery refused; readiness not confirmed');
     expect(view.render().recoveryBusy).toBe(false);
   }
 });
@@ -182,8 +184,8 @@ test('recovery UI treats truncated streams and HTTP errors as unable to recover'
   for (const response of [new Response('{"stage":"Starting"}\n'), new Response('private OS output', { status: 503 })]) {
     const view = editor(async () => response);
     await view.render().recoverWorker();
-    expect(view.render().recoveryStatus).toBe('Unable to recover');
-    expect(view.messages).toEqual(['Unable to recover']);
+    expect(view.render().recoveryStatus).toBe('Unable to confirm recovery. Check worker status before trying again.');
+    expect(view.messages).toEqual(['Unable to confirm recovery. Check worker status before trying again.']);
   }
 });
 
@@ -192,6 +194,7 @@ test('recovery UI waits for genuine shutdown evidence and explicit confirmation 
   const confirmation = '1999999999999.' + 'a'.repeat(64);
   const bodies: string[] = [];
   const view = editor(async (_url, init) => {
+    if (!init?.method) return response(200, { data: { status: 'online', reason: 'observed' } });
     bodies.push(String(init?.body));
     return new Response(JSON.stringify(bodies.length === 1 ? { result: 'confirmation-required', confirmation } : { result: 'running' }) + '\n');
   });
@@ -203,6 +206,99 @@ test('recovery UI waits for genuine shutdown evidence and explicit confirmation 
   view.render().setShutdownEvidence('Verified supervisor stopped and all descendants reaped');
   await view.render().recoverWorker(true);
   expect(JSON.parse(bodies[1])).toEqual({ confirmation, shutdownAcknowledged: true, evidence: 'Verified supervisor stopped and all descendants reaped' });
-  expect(view.render().recoveryStatus).toBe('Running');
+  expect(view.render().recoveryStatus).toBe('Recovery completed');
   expect(view.render().recoveryConfirmation).toBe('');
+});
+
+for (const variant of ['success-open', 'already-running', 'refused', 'unavailable', 'failed', 'malformed', 'incomplete', 'aborted', 'timeout']) {
+  test(`recovery settles without stream closure/reload/retry: ${variant}`, async () => {
+    let writes = 0, reads = 0, cancelled = 0;
+    let release!: (value: unknown) => void;
+    const pending = new Promise(resolve => { release = resolve; });
+    const view = editor(async (_url, init) => {
+      if (!init?.method) { reads++; return response(200, { data: { status: 'stopped', reason: 'observed' } }); }
+      writes++;
+      await pending;
+      if (variant === 'timeout' || variant === 'aborted') throw new DOMException('private error', variant === 'timeout' ? 'TimeoutError' : 'AbortError');
+      const result = variant === 'success-open' ? 'running' : variant;
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(variant === 'malformed' ? '{broken\n' : variant === 'incomplete' ? '{"stage":"Starting"}\n' : JSON.stringify({ result }) + (variant === 'already-running' ? '' : '\n')));
+          if (variant !== 'success-open') controller.close();
+        }, cancel() { cancelled++; },
+      }));
+    });
+    const page = view.render();
+    const task = page.recoverWorker();
+    // Same render closure and a fresh render both refuse overlap.
+    await page.recoverWorker(); await view.render().recoverWorker();
+    expect(writes).toBe(1); expect(view.render().recoveryBusy).toBe(true);
+    release(null); await task;
+    expect(view.render().recoveryBusy).toBe(false);
+    expect(view.render().recoveryConfirmation).toBe('');
+    expect(reads).toBe(1); expect(writes).toBe(1);
+    expect(view.messages).toHaveLength(1);
+    if (variant === 'success-open') {
+      expect(view.render().recoveryStatus).toBe('Recovery completed'); expect(cancelled).toBe(1);
+    } else if (variant === 'already-running') expect(view.render().recoveryStatus).toContain('readiness verified');
+    else expect(view.render().recoveryStatus).toMatch(/refused|unavailable|Unable to confirm/);
+  });
+}
+
+test('status loads on section mount and stale responses cannot overwrite a newer refresh', async () => {
+  let reads = 0;
+  const waiting: ((value: unknown) => void)[] = [];
+  const view = editor(async () => { reads++; return new Promise(resolve => waiting.push(resolve)); });
+  view.render();
+  const cleanup = view.effects[0]() as unknown as () => void;
+  expect(reads).toBe(1); expect(view.render().statusLoading).toBe(true);
+  const fresh = view.render().refreshStatus();
+  waiting[1](response(200, { data: { status: 'online', reason: 'observed' } })); await fresh;
+  waiting[0](response(200, { data: { status: 'stopped', reason: 'observed' } }));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(view.render().supervisor.status).toBe('online'); expect(view.render().statusLoading).toBe(false);
+  const unmounted = view.render().refreshStatus(); cleanup();
+  waiting[2](response(200, { data: { status: 'errored', reason: 'observed' } })); await unmounted;
+  expect(view.render().supervisor).toBeNull();
+});
+
+for (const status of ['online', 'stopped', 'unknown', 'errored', 'starting']) {
+  test(`read-only status displays sanitized ${status}`, async () => {
+    const view = editor(async () => response(200, { data: { status, reason: status === 'unknown' ? 'unavailable' : 'observed' } }));
+    await view.render().refreshStatus(); expect(view.render().supervisor.status).toBe(status);
+    const rendered = renderSettings({ 12: { status, reason: 'observed' } }, true);
+    expect(rendered.text).toContain(`PM2 worker supervisor: ${status}`);
+    expect(rendered.text).toContain('Refresh status');
+    expect(rendered.text).toContain('Supervisor status alone does not verify');
+  });
+}
+
+test('client deadline aborts a stalled reader and refreshes status once without retry', async () => {
+  let deadline!: () => void, writes = 0, reads = 0;
+  const view = editor(async (_url, init) => {
+    if (!init?.method) { reads++; return response(200, { data: { status: 'unknown', reason: 'unavailable' } }); }
+    writes++;
+    return new Response(new ReadableStream({ start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"stage":"Starting"}\n'));
+      init.signal!.addEventListener('abort', () => controller.error(new DOMException('timeout', 'AbortError')));
+    } }));
+  }, { setTimeout: (fn: () => void, ms: number) => { if (ms === 90000) deadline = fn; return 1; }, clearTimeout: () => {} });
+  const task = view.render().recoverWorker();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(view.render().recoveryStatus).toBe('Starting');
+  deadline(); await task;
+  expect(view.render().recoveryBusy).toBe(false); expect(view.render().recoveryStatus).toContain('Unable to confirm');
+  expect(view.messages).toHaveLength(1); expect(writes).toBe(1); expect(reads).toBe(1);
+});
+
+test('unmount aborts recovery with no toast or post-unmount status refresh', async () => {
+  let reads = 0;
+  const view = editor(async (_url, init) => {
+    if (!init?.method) { reads++; return response(200, { data: { status: 'online', reason: 'observed' } }); }
+    return new Promise((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(new DOMException('unmounted', 'AbortError'))));
+  });
+  const page = view.render();
+  const cleanup = view.effects[0]() as unknown as () => void;
+  const task = page.recoverWorker(); cleanup(); await task;
+  expect(view.messages).toEqual([]); expect(reads).toBe(1);
 });

@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, Card, CardContent, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Stack, TextField, Typography } from '@mui/material';
 import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { useToast } from '@/app/components/ToastProvider';
 import QueueMonitoring from './QueueMonitoring';
+import type { WorkerSupervisorStatus } from '@/lib/insw-worker/supervisor-status';
 import type { intervalProjection } from '@/lib/insw-queue/interval-settings';
 
 type Settings = ReturnType<typeof intervalProjection>;
@@ -24,40 +25,99 @@ export default function QueueSettings({ showWorkerRecovery = false, workerRecove
   const [recoveryStatus, setRecoveryStatus] = useState('');
   const [recoveryConfirmation, setRecoveryConfirmation] = useState('');
   const [shutdownEvidence, setShutdownEvidence] = useState('');
+  const [supervisor, setSupervisor] = useState<WorkerSupervisorStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const mounted = useRef(true);
+  const recoveryRequest = useRef<AbortController | null>(null);
+  const statusRequest = useRef<AbortController | null>(null);
+  const refreshStatus = useCallback(async () => {
+    statusRequest.current?.abort();
+    const controller = new AbortController();
+    statusRequest.current = controller;
+    setStatusLoading(true); setSupervisor(null);
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch('/api/insw/queue-settings/worker-status', { cache: 'no-store', signal: controller.signal });
+      const result = await response.json();
+      if (!response.ok || !['online', 'stopped', 'starting', 'errored', 'unknown'].includes(result.data?.status)
+        || !['observed', 'unavailable', 'missing-target', 'query-failed', 'unrecognized'].includes(result.data?.reason)) throw new Error('Unavailable');
+      if (mounted.current && statusRequest.current === controller) setSupervisor(result.data);
+    } catch {
+      if (mounted.current && statusRequest.current === controller) setSupervisor({ status: 'unknown', reason: 'unavailable' });
+    } finally {
+      clearTimeout(timer);
+      if (mounted.current && statusRequest.current === controller) { setStatusLoading(false); statusRequest.current = null; }
+    }
+  }, []);
+  useEffect(() => {
+    mounted.current = true;
+    if (showWorkerRecovery) void refreshStatus();
+    return () => { mounted.current = false; recoveryRequest.current?.abort(); statusRequest.current?.abort(); };
+  }, [showWorkerRecovery, refreshStatus]);
   const recoverWorker = async (acknowledge = false) => {
-    if (recoveryBusy || !workerRecoveryAvailable) return;
+    if (recoveryRequest.current || !workerRecoveryAvailable || (!acknowledge && recoveryConfirmation)) return;
     if (acknowledge && (!recoveryConfirmation || !shutdownEvidence.trim() || shutdownEvidence.length > 500 || /[\u0000-\u001f]/.test(shutdownEvidence))) return;
+    const controller = new AbortController();
+    recoveryRequest.current = controller;
     setRecoveryBusy(true); setRecoveryStatus('Checking');
+    const timer = setTimeout(() => controller.abort(), 90000);
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
       const response = await fetch('/api/insw/queue-settings/worker-recovery', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: acknowledge ? JSON.stringify({ confirmation: recoveryConfirmation, shutdownAcknowledged: true, evidence: shutdownEvidence.trim() }) : '{}',
+        method: 'POST', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: acknowledge ? JSON.stringify({ confirmation: recoveryConfirmation, shutdownAcknowledged: true, evidence: shutdownEvidence.trim() }) : '{}',
       });
       if (!response.ok || !response.body) throw new Error('Unable to recover');
-      const reader = response.body.getReader();
+      reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '', finished = false;
-      for (;;) {
+      let buffer = '', terminal: { result: string; confirmation?: string } | undefined;
+      const consume = (line: string) => {
+        const event = JSON.parse(line);
+        if (!event || typeof event !== 'object' || Array.isArray(event)) throw new Error('Invalid response');
+        if (event.result) {
+          if (!['running', 'already-running', 'refused', 'unavailable', 'confirmation-required'].includes(event.result)
+            || (event.result === 'confirmation-required' && !/^\d{13}\.[a-f0-9]{64}$/.test(event.confirmation))) throw new Error('Invalid result');
+          terminal = event;
+        } else if (['Checking', 'Recovering', 'Starting'].includes(event.stage)) {
+          if (mounted.current) setRecoveryStatus(event.stage);
+        } else throw new Error('Invalid stage');
+      };
+      while (!terminal) {
         const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+        buffer += decoder.decode(value, { stream: !done });
+        if (buffer.length > 8192) throw new Error('Invalid response');
         let newline;
-        while ((newline = buffer.indexOf('\n')) >= 0) {
-          const event = JSON.parse(buffer.slice(0, newline)); buffer = buffer.slice(newline + 1);
-          if (['Checking', 'Recovering', 'Starting'].includes(event.stage)) setRecoveryStatus(event.stage);
-          if (event.result === 'confirmation-required' && /^\d{13}\.[a-f0-9]{64}$/.test(event.confirmation)) {
-            setRecoveryConfirmation(event.confirmation); setShutdownEvidence('');
-            setRecoveryStatus('Shutdown verification required'); finished = true;
-          } else if (event.result) {
-            setRecoveryConfirmation('');
-            if (!['running', 'already-running'].includes(event.result)) throw new Error('Unable to recover');
-            const message = event.result === 'already-running' ? 'Already running' : 'Running';
-            setRecoveryStatus(message); toast.success(message); finished = true;
-          }
+        while (!terminal && (newline = buffer.indexOf('\n')) >= 0) {
+          consume(buffer.slice(0, newline)); buffer = buffer.slice(newline + 1);
         }
+        if (done) { if (!terminal && buffer.trim()) consume(buffer); break; }
       }
-      if (!finished) throw new Error('Unable to recover');
-    } catch { setRecoveryConfirmation(''); setRecoveryStatus('Unable to recover'); toast.error('Unable to recover'); }
-    finally { setRecoveryBusy(false); }
+      if (!terminal || controller.signal.aborted) throw new Error('Unconfirmed result');
+      if (!mounted.current) return;
+      setRecoveryConfirmation('');
+      if (terminal.result === 'confirmation-required') {
+        setRecoveryConfirmation(terminal.confirmation!); setShutdownEvidence('');
+        setRecoveryStatus('Shutdown verification required');
+      } else if (terminal.result === 'running' || terminal.result === 'already-running') {
+        const message = terminal.result === 'running' ? 'Recovery completed' : 'Worker already running; readiness verified';
+        setRecoveryStatus(message); toast.success(message);
+      } else {
+        const message = terminal.result === 'refused' ? 'Recovery refused; readiness not confirmed' : 'Worker recovery is unavailable';
+        setRecoveryStatus(message); toast.error(message);
+      }
+    } catch {
+      if (mounted.current) {
+        setRecoveryConfirmation('');
+        const message = 'Unable to confirm recovery. Check worker status before trying again.';
+        setRecoveryStatus(message); toast.error(message);
+      }
+    } finally {
+      clearTimeout(timer);
+      // A terminal result is authoritative; do not wait for a proxy to close.
+      void reader?.cancel().catch(() => {});
+      recoveryRequest.current = null;
+      if (mounted.current) { setRecoveryBusy(false); void refreshStatus(); }
+    }
   };
   const apply = (data: Settings) => {
     setPolicy(data); setInterval(String(data.intervalMs)); setMaxAutoRetry(String(data.maxAutoRetry)); setReason('');
@@ -142,6 +202,16 @@ export default function QueueSettings({ showWorkerRecovery = false, workerRecove
       ) : <Button onClick={() => { setError(''); void load(); }}>Reload settings</Button>}
       {showWorkerRecovery && <Card variant="outlined" component="section" aria-label="Worker recovery" sx={{ mt: 2 }}><CardContent>
         <Stack spacing={1} alignItems="flex-start">
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+            <Typography variant="body2" role="status" aria-live="polite">
+              PM2 worker supervisor: <strong>{statusLoading ? 'Loading…' : supervisor?.status || 'unknown'}</strong>
+              {!statusLoading && supervisor?.reason === 'missing-target' && ' — target missing'}
+              {!statusLoading && supervisor?.reason === 'unavailable' && ' — status unavailable'}
+              {!statusLoading && supervisor?.reason === 'query-failed' && ' — query failed'}
+            </Typography>
+            <Button size="small" disabled={statusLoading || recoveryBusy} onClick={() => void refreshStatus()}>Refresh status</Button>
+          </Stack>
+          <Typography variant="caption" color="text.secondary">Supervisor status alone does not verify INSW readiness, database ownership, or delivery health.</Typography>
           <Button variant="outlined" disabled={!workerRecoveryAvailable || recoveryBusy || !!recoveryConfirmation} onClick={() => void recoverWorker()} aria-describedby="worker-recovery-unavailable">Recover &amp; Restart Worker</Button>
           <Typography id="worker-recovery-unavailable" role="status" aria-live="polite" variant="body2" color="text.secondary">
             {workerRecoveryAvailable ? (recoveryStatus || 'Ready to check worker') : 'Worker recovery is unavailable. Contact your system administrator.'}

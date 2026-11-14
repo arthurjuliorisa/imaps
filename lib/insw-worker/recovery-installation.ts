@@ -6,7 +6,7 @@ export type RecoveryInstallation = { uid: number; root: string; home: string; pm
   node: string; runtime: string };
 // Server deployment configuration only. Never accepts HTTP parameters. No root
 // installation, extra PM2 daemon or authority beyond the application's account.
-export function recoveryInstallation(): RecoveryInstallation {
+export function recoveryInstallation({ readOnly = false } = {}): RecoveryInstallation {
   const uid = process.getuid?.();
   if (process.platform !== 'linux' || uid === undefined || uid === 0) throw new Error('CALLER_UID_DENIED');
   const checked = (path: string) => {
@@ -37,6 +37,7 @@ export function recoveryInstallation(): RecoveryInstallation {
   if (!pm2) throw new Error('PM2_CLI_UNAVAILABLE');
   const node = checked(realpathSync(process.execPath));
   const runtime = join(pm2Home, 'imaps-worker-recovery');
+  if (readOnly) return { uid, root, home, pm2Home, pm2, node, runtime };
   mkdirSync(runtime, { mode: 0o700, recursive: true });
   const directory = lstatSync(runtime);
   if (!directory.isDirectory() || directory.uid !== uid || (directory.mode & 0o077)) throw new Error('RUNTIME_UNTRUSTED');
