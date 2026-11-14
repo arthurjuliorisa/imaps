@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, Box, Button, Card, CardContent, CircularProgress, Stack, TextField, Typography } from '@mui/material';
 import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { useToast } from '@/app/components/ToastProvider';
+import QueueMonitoring from './QueueMonitoring';
 import type { intervalProjection } from '@/lib/insw-queue/interval-settings';
 
 type Settings = ReturnType<typeof intervalProjection>;
@@ -13,13 +14,14 @@ export default function QueueSettings() {
   const toast = useToast();
   const [policy, setPolicy] = useState<Settings | null>(null);
   const [interval, setInterval] = useState('');
+  const [maxAutoRetry, setMaxAutoRetry] = useState('');
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState('');
   const apply = (data: Settings) => {
-    setPolicy(data); setInterval(String(data.intervalMs)); setReason('');
+    setPolicy(data); setInterval(String(data.intervalMs)); setMaxAutoRetry(String(data.maxAutoRetry)); setReason('');
   };
   const load = useCallback(async () => {
     setLoading(true); setPolicy(null);
@@ -38,15 +40,17 @@ export default function QueueSettings() {
 
   const intervalMs = Number(interval);
   const validInterval = /^\d+$/.test(interval) && Number.isSafeInteger(intervalMs) && intervalMs >= 3600 && intervalMs <= 2147483647;
+  const retries = Number(maxAutoRetry);
+  const validRetries = /^\d+$/.test(maxAutoRetry) && Number.isSafeInteger(retries) && retries >= 0 && retries <= 10;
   const validReason = reason.trim().length > 0 && reason.trim().length <= 500 && !/[\u0000-\u001f]/.test(reason.trim());
-  const canSave = !!policy && validInterval && validReason && intervalMs !== policy.intervalMs && !loading && !saving;
+  const canSave = !!policy && validInterval && validRetries && validReason && (intervalMs !== policy.intervalMs || retries !== policy.maxAutoRetry) && !loading && !saving;
   const save = async () => {
     if (!canSave || !policy) return;
     setSaving(true); setError('');
     try {
       const response = await fetch('/api/insw/queue-settings', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ intervalMs, expectedVersion: policy.version, reason: reason.trim() }),
+        body: JSON.stringify({ intervalMs, maxAutoRetry: retries, expectedVersion: policy.version, reason: reason.trim() }),
       });
       const result = await response.json();
       if (response.status === 409) {
@@ -56,7 +60,7 @@ export default function QueueSettings() {
         return;
       }
       if (!response.ok) throw new Error(result.error || 'Unable to save queue settings');
-      apply(result.data); toast.success('Queue processing interval updated');
+      apply(result.data); toast.success('Queue policy updated');
     } catch (err) {
       const message = (err as Error).message;
       setError(message); toast.error(message);
@@ -64,7 +68,7 @@ export default function QueueSettings() {
   };
 
   return (
-    <Box sx={{ maxWidth: 800 }}>
+    <Box sx={{ maxWidth: 960 }}>
       <Typography variant="h5" component="h1" color="primary" fontWeight="bold" sx={{ mb: 2 }}>INSW Queue Settings</Typography>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {loading ? <Box role="status" aria-label="Loading queue settings"><CircularProgress /></Box> : policy ? (
@@ -77,6 +81,10 @@ export default function QueueSettings() {
             <TextField label="Processing interval (milliseconds)" value={interval} onChange={event => setInterval(event.target.value)} disabled={saving || confirm}
               error={!validInterval} helperText={validInterval ? formatInterval(intervalMs) : 'Enter a whole number from 3,600 to 2,147,483,647 ms.'}
               slotProps={{ htmlInput: { inputMode: 'numeric', min: 3600, max: 2147483647, step: 1 } }} required />
+            <TextField label="Maximum Automatic Retries" value={maxAutoRetry} onChange={event => setMaxAutoRetry(event.target.value)} disabled={saving || confirm}
+              error={!validRetries} helperText="Enter a whole number from 0 to 10. 0 means no automatic retries."
+              slotProps={{ htmlInput: { inputMode: 'numeric', min: 0, max: 10, step: 1 } }} required />
+            <Typography variant="body2">Applies to newly created queue cycles; existing cycles retain their retry snapshot. Automatic retries follow worker eligibility rules. Manual Resend is a separate operator-controlled action.</Typography>
             <TextField label="Reason for change" value={reason} onChange={event => setReason(event.target.value)} disabled={saving || confirm}
               helperText="Required for the policy audit trail (maximum 500 characters)." slotProps={{ htmlInput: { maxLength: 500 } }} required />
             <Typography variant="body2" color="text.secondary">Policy version {policy.version}. Last updated {new Date(policy.updatedAt).toLocaleString()} by {policy.updatedBy}. Reason: {policy.reason}</Typography>
@@ -88,8 +96,9 @@ export default function QueueSettings() {
           </Stack>
         </CardContent></Card>
       ) : <Button onClick={() => { setError(''); void load(); }}>Reload settings</Button>}
-      <ConfirmDialog open={confirm} title="Update processing interval?" severity="info" confirmText="Save interval" loading={saving}
-        message={`Change the global processing interval from ${policy ? formatInterval(policy.intervalMs) : ''} to ${formatInterval(intervalMs)}? Reason: ${reason.trim()}`}
+      <QueueMonitoring />
+      <ConfirmDialog open={confirm} title="Update queue policy?" severity="info" confirmText="Save policy" loading={saving}
+        message={`Change the global processing interval from ${policy ? formatInterval(policy.intervalMs) : ''} to ${formatInterval(intervalMs)} and maximum automatic retries from ${policy?.maxAutoRetry} to ${retries}? Reason: ${reason.trim()}`}
         onCancel={() => setConfirm(false)} onConfirm={() => { void save(); }} />
     </Box>
   );

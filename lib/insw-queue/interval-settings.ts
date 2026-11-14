@@ -13,11 +13,12 @@ export function parseIntervalUpdate(input: unknown) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid settings');
     const value = input as Record<string, unknown>;
     const keys = Object.keys(value);
-    if (keys.length !== 3 || keys.some(key => !['intervalMs', 'expectedVersion', 'reason'].includes(key))) {
-      throw new Error('Only intervalMs, expectedVersion and reason are accepted');
+    if (![3, 4].includes(keys.length) || keys.some(key => !['intervalMs', 'maxAutoRetry', 'expectedVersion', 'reason'].includes(key))) {
+      throw new Error('Only intervalMs, maxAutoRetry, expectedVersion and reason are accepted');
     }
     return {
       intervalMs: integer(value.intervalMs, 'processing interval', MIN_INTERVAL_MS, MAX_INTERVAL_MS),
+      ...('maxAutoRetry' in value ? { maxAutoRetry: integer(value.maxAutoRetry, 'maximum automatic retries (whole number from 0 to 10)', 0, 10) } : {}),
       expectedVersion: integer(value.expectedVersion, 'expected version', 1, 2147483646),
       reason: boundedText(value.reason, 'change reason', 500),
     };
@@ -28,7 +29,7 @@ export function parseIntervalUpdate(input: unknown) {
 
 // Explicit projection: no unrelated policy or process configuration leaves the server.
 export function intervalProjection(row: Awaited<ReturnType<typeof readPolicy>>) {
-  return { intervalMs: row.min_processing_interval_ms, version: row.version,
+  return { intervalMs: row.min_processing_interval_ms, maxAutoRetry: row.max_auto_retry, version: row.version,
     updatedAt: row.updated_at.toISOString(), updatedBy: row.updated_by, reason: row.change_reason };
 }
 
@@ -40,7 +41,7 @@ export async function updateInterval(db: PrismaClient, input: unknown, actor: st
     // The version CAS protects the retained value too: a concurrent backend policy
     // change cannot be overwritten using this snapshot. Audit and update commit together.
     return intervalProjection(await updatePolicy(db, value.expectedVersion, {
-      min_processing_interval_ms: value.intervalMs, max_auto_retry: current.max_auto_retry,
+      min_processing_interval_ms: value.intervalMs, max_auto_retry: value.maxAutoRetry ?? current.max_auto_retry,
     }, actor, value.reason));
   } catch (error) {
     if ((error as Error).message === 'Missing policy or stale policy version') {

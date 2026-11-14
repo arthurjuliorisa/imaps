@@ -16,7 +16,7 @@ function component(source: string, fetcher: (url: string, init?: any) => Promise
     return [index in overrides ? overrides[index] : initial, (next: any) => { state[index] = next; }];
   }, useRef: (value: any) => ({ current: value }), useEffect: () => {} };
   const imports: Record<string, any> = {
-    react, '@mui/material': { useTheme: () => ({ palette: { mode: 'light' } }) },
+    react, '@/app/components/AdminResolve': {}, '@mui/material': { useTheme: () => ({ palette: { mode: 'light' } }) },
     '@mui/icons-material': {}, recharts: {}, '@/app/components/DataTable': {},
     '@/app/components/ToastProvider': { useToast: () => ({ success: (s: string) => successes.push(s), error: (s: string) => errors.push(s) }) },
     dayjs, 'react/jsx-runtime': {}, '@/lib/insw-queue/operational-state': {}, '@/lib/insw-log-presentation': {},
@@ -147,7 +147,7 @@ test('RESEND closure synchronous latch prevents duplicate admission request', as
   expect(posts).toBe(1);
   request.resolve({ ok: true, json: async () => ({ status: 'accepted', message: 'Accepted to queue; not delivered' }) });
   await pending;
-  expect(view.successes).toEqual(['Accepted to queue; not delivered']);
+  expect(view.successes).toEqual(['Manual resend accepted to queue; delivery to INSW is not yet confirmed.']);
 });
 
 for (const status of [403, 404, 409]) {
@@ -174,7 +174,7 @@ test('HTTP 202 is described as queued even without a status marker or server mes
   const view = component(source, async (_url, init) => init?.method === 'POST'
     ? { ok: true, status: 202, json: async () => ({}) } : reply());
   await view.handlers.handleResend('synthetic');
-  expect(view.successes).toEqual(['Accepted to queue; not delivered']);
+  expect(view.successes).toEqual(['Manual resend accepted to queue; delivery to INSW is not yet confirmed.']);
 });
 
 

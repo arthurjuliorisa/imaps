@@ -344,7 +344,7 @@ export default function INSWLogsPage() {
   const [pendingResendId, setPendingResendId] = useState<string | null>(null);
   const [checkingAdjustments, setCheckingAdjustments] = useState(false);
   const [adjustmentCheckResult, setAdjustmentCheckResult] = useState<{ hasAdjustments: boolean } | null>(null);
-  const [confirmationMessage, setConfirmationMessage] = useState<string>('Apakah Anda yakin ingin mengirim ulang data ini ke INSW?');
+  const [confirmationMessage, setConfirmationMessage] = useState<string>('Are you sure you want to resend this transaction to INSW?');
 
   const [detailError, setDetailError] = useState<string | null>(null);
 
@@ -411,10 +411,10 @@ export default function INSWLogsPage() {
             </IconButton>
           </Tooltip>
           {(row as INSWLog).can_resend === true && (
-            <Tooltip title="Kirim Ulang">
+            <Tooltip title="Manual Resend">
               <span>
                 <IconButton
-                  aria-label="Kirim Ulang"
+                  aria-label="Manual Resend"
                   size="small"
                   color="warning"
                   onClick={() => {
@@ -429,7 +429,7 @@ export default function INSWLogsPage() {
                       });
                     } else {
                       // For other transaction types, show confirmation dialog with standard message
-                      setConfirmationMessage('Apakah Anda yakin ingin mengirim ulang data ini ke INSW?');
+                      setConfirmationMessage('Are you sure you want to resend this transaction to INSW?');
                       setPendingResendId(String(log.id));
                       setConfirmResendOpen(true);
                     }
@@ -772,7 +772,7 @@ export default function INSWLogsPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.message || 'Gagal mengecek adjustment');
+        toast.error('Unable to check adjustments. Refresh your access and try again.');
         return false;
       }
 
@@ -781,15 +781,15 @@ export default function INSWLogsPage() {
 
       // Set confirmation message based on adjustment check result
       if (hasAdjustments) {
-        setConfirmationMessage('Please click OK only if you confirm that all adjustment postings are correct!');
+        setConfirmationMessage('Are you sure you want to resend this transaction to INSW? Confirm that all adjustment postings are correct before resending.');
       } else {
-        setConfirmationMessage('Please click if You confirm that there is NO adjustment at all for this stockcount order?');
+        setConfirmationMessage('Are you sure you want to resend this transaction to INSW? Confirm that there are no adjustments for this stockcount order before resending.');
       }
 
       return true;
     } catch (err: any) {
       console.error('Error checking adjustments:', err);
-      toast.error('Gagal mengecek adjustment');
+      toast.error('Unable to check adjustments');
       return false;
     } finally {
       setCheckingAdjustments(false);
@@ -814,15 +814,14 @@ export default function INSWLogsPage() {
         }
         const fallback = res.status === 403 ? 'Permission denied. Refresh your access before trying again.'
           : res.status === 404 ? 'Log no longer available in this company.'
-          : res.status === 409 ? 'Eligibility changed. Review the refreshed queue state.' : 'Gagal mengirim ulang data';
-        throw new Error(data.message || data.error || fallback);
+          : res.status === 409 ? 'Eligibility changed. Review the refreshed queue state.' : 'Unable to queue manual resend';
+        throw new Error([400, 401, 403, 404].includes(res.status) ? (res.status === 400 ? 'A reason (1–500 characters) and manual resend risk acknowledgement are required.' : res.status === 401 ? 'Your session has expired. Sign in again.' : fallback) : data.message || data.error || fallback);
       }
-      toast.success(res.status === 202 || data.status === 'accepted'
-        ? 'Accepted to queue; not delivered' : 'Data berhasil dikirim ulang ke INSW');
+      toast.success('Manual resend accepted to queue; delivery to INSW is not yet confirmed.');
       handleCloseDetailDialog();
       await fetchLogs();
     } catch (err: any) {
-      toast.error(err.message || 'Gagal mengirim ulang data');
+      toast.error(err.message || 'Unable to queue manual resend');
     } finally {
       resendLatch.current = false;
       setResendingId(null);
@@ -1262,7 +1261,7 @@ export default function INSWLogsPage() {
                     });
                   } else {
                     // For other transaction types, show confirmation dialog with standard message
-                    setConfirmationMessage('Apakah Anda yakin ingin mengirim ulang data ini ke INSW?');
+                    setConfirmationMessage('Are you sure you want to resend this transaction to INSW?');
                     setPendingResendId(String(selectedLog.id));
                     setConfirmResendOpen(true);
                   }
@@ -1272,7 +1271,7 @@ export default function INSWLogsPage() {
                 disabled={resendingDialog || checkingAdjustments}
                 startIcon={resendingDialog || checkingAdjustments ? <CircularProgress size={16} /> : <ReplayIcon />}
               >
-                Kirim Ulang
+                Manual Resend
               </Button>
             )}
           </Box>
@@ -1282,21 +1281,21 @@ export default function INSWLogsPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={confirmResendOpen} onClose={() => setConfirmResendOpen(false)}>
-        <DialogTitle>Konfirmasi Kirim Ulang</DialogTitle>
+      <Dialog aria-labelledby="manual-resend-title" open={confirmResendOpen} onClose={() => setConfirmResendOpen(false)}>
+        <DialogTitle id="manual-resend-title">Confirm Manual Resend</DialogTitle>
         <DialogContent>
           <Typography>
             {confirmationMessage}
           </Typography>
-          <TextField fullWidth required label="Alasan kirim ulang" value={resendReason}
+          <TextField fullWidth required label="Reason for Resending" placeholder="Enter the reason for this manual resend..." value={resendReason}
             onChange={event => setResendReason(event.target.value)} inputProps={{ maxLength: 500 }} sx={{ mt: 2 }} />
           <FormControlLabel control={<Checkbox checked={resendCommitment}
             onChange={event => setResendCommitment(event.target.checked)} />}
-            label="Saya telah meninjau informasi yang tersedia dan bertanggung jawab atas pengiriman ulang manual ini, termasuk risiko bahwa INSW mungkin sudah memproses transaksi ini." />
+            label="I have reviewed the available information and accept responsibility for this manual resend, including the risk that INSW may have already processed the transaction." />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => { setConfirmResendOpen(false); setPendingResendId(null); }}>
-            Batal
+            Cancel
           </Button>
           <Button
             onClick={async () => {
@@ -1315,7 +1314,7 @@ export default function INSWLogsPage() {
             color="warning"
             variant="contained"
           >
-            Kirim Ulang
+            Confirm Resend
           </Button>
         </DialogActions>
       </Dialog>

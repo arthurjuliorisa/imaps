@@ -82,14 +82,14 @@ for (const status of ['READY', 'CLAIMED', 'FAILED', 'SUCCEEDED', 'HELD']) {
     expect(view.text).toContain('Failed');
     expect(view.html).toContain('aria-label="View details for log 11"');
     expect(view.html).toContain('aria-label="Refresh INSW logs"');
-    expect(view.html).not.toContain('aria-label="Kirim Ulang"');
+    expect(view.html).not.toContain('aria-label="Manual Resend"');
     if (status === 'HELD') expect(view.text).toContain('confirm receipt before sending again');
   });
 }
 
 test('server-eligible row offers RESEND with concise failure guidance', () => {
   const view = render({ 0: [{ ...log, can_resend: true, current_queue: { ...q, retry_index: 0, max_auto_retry_snapshot: 0, attempts_started: 1 } }], 1: false });
-  expect(view.html).toContain('aria-label="Kirim Ulang"');
+  expect(view.html).toContain('aria-label="Manual Resend"');
   expect(view.text).toContain('Review the error before using Resend');
 });
 
@@ -212,9 +212,9 @@ test('WMS list/detail use shared Resolve control and resolution details without 
 for (const [reason, commitment, enabled] of [['', false, false], ['reviewed', false, false], ['', true, false], ['reviewed', true, true]] as const) {
   test(`Resend confirmation requires reason and risk acknowledgement: ${reason}/${commitment}`, () => {
     const view = render({ 1: false, 27: true, 28: reason, 29: commitment });
-    expect(view.text).toContain('Alasan kirim ulang');
-    expect(view.text).toContain('INSW mungkin sudah memproses transaksi ini');
-    const button = view.html.match(/<button[^>]*>Kirim Ulang<\/button>/)?.[0];
+    expect(view.text).toContain('Reason for Resending');
+    expect(view.text).toContain('INSW may have already processed the transaction');
+    const button = view.html.match(/<button[^>]*>Confirm Resend<\/button>/)?.[0];
     expect(button).toBeTruthy();
     expect(button!.includes('disabled')).toBe(!enabled);
   });
@@ -229,7 +229,7 @@ for (const can_resend of [false, true]) test(`HELD list/detail respect backend s
     if (can_resend) {
       expect(view.text).toContain('duplicate-processing risk');
       expect(view.text).not.toContain('ordinary Manual Resend is unavailable');
-      expect(view.html).toContain('Kirim Ulang');
+      expect(view.html).toContain('Manual Resend');
     } else expect(view.text).not.toContain('duplicate-processing risk');
   }
 });

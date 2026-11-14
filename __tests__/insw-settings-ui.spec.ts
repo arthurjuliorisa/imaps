@@ -20,16 +20,16 @@ function editor(fetcher: (url: string, init?: RequestInit) => Promise<unknown>) 
   const imports: Record<string, unknown> = {
     react: hooks, '@mui/material': {}, '@/app/components/ConfirmDialog': {},
     '@/app/components/ToastProvider': { useToast: () => ({ success: (s: string) => messages.push(s), error: (s: string) => messages.push(s) }) },
-    'react/jsx-runtime': {},
+    'react/jsx-runtime': {}, './QueueMonitoring': {},
   };
   const source = readFileSync('app/(authenticated)/insw/queue-settings/QueueSettings.tsx', 'utf8').replace('  return (\n    <Box',
-    '  return { load, save, setInterval, setReason, policy, interval, reason, loading, saving, error, canSave } as any;\n  return (\n    <Box');
+    '  return { load, save, setInterval, setMaxAutoRetry, setReason, policy, interval, reason, loading, saving, error, canSave } as any;\n  return (\n    <Box');
   const exports: any = {};
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText,
     { exports, require: (name: string) => { if (!(name in imports)) throw new Error(`Unmocked ${name}`); return imports[name]; }, fetch: fetcher });
   return { render: () => { cursor = 0; return exports.default(); }, messages };
 }
-const policy = { intervalMs: 3600, version: 3, updatedAt: '2026-11-01T00:00:00.000Z', updatedBy: 'admin', reason: 'Initial' };
+const policy = { intervalMs: 3600, maxAutoRetry: 3, version: 3, updatedAt: '2026-11-01T00:00:00.000Z', updatedBy: 'admin', reason: 'Initial' };
 const response = (status: number, data: unknown) => ({ status, ok: status < 400, json: async () => data });
 
 test('UI submits only reviewed interval/version/reason and uses authoritative success state', async () => {
@@ -42,7 +42,7 @@ test('UI submits only reviewed interval/version/reason and uses authoritative su
   await view.render().load();
   let page = view.render(); page.setInterval('5000'); page.setReason(' Planned cadence ');
   page = view.render(); expect(page.canSave).toBe(true); await page.save();
-  expect(saved).toEqual({ intervalMs: 5000, expectedVersion: 3, reason: 'Planned cadence' });
+  expect(saved).toEqual({ intervalMs: 5000, maxAutoRetry: 3, expectedVersion: 3, reason: 'Planned cadence' });
   page = view.render(); expect(page.policy.version).toBe(4); expect(page.interval).toBe('5000'); expect(page.reason).toBe(''); expect(page.canSave).toBe(false);
 });
 
@@ -69,4 +69,22 @@ test('validation failure keeps draft and version; failed reload disables further
   page.setInterval('5000'); await view.render().save(); page = view.render();
   expect(page.policy.version).toBe(3); expect(page.interval).toBe('5000'); expect(page.reason).toBe('Draft'); expect(page.error).toBe('Invalid processing interval');
   await page.load(); page = view.render(); expect(page.policy).toBeNull(); expect(page.canSave).toBe(false); expect(page.loading).toBe(false);
+});
+
+
+test('retry-only changes require integer bounds and audited review and submit exact numeric retry', async () => {
+  let saved: any;
+  const view = editor(async (_url, init) => {
+    if (!init?.method) return response(200, { data: policy });
+    saved = JSON.parse(String(init.body));
+    return response(200, { data: { ...policy, maxAutoRetry: 0, version: 4 } });
+  });
+  await view.render().load();
+  let page = view.render(); page.setReason('Disable automatic retries');
+  for (const value of ['', '-1', '1.5', '11', 'NaN']) {
+    page.setMaxAutoRetry(value); expect(view.render().canSave).toBe(false);
+  }
+  page.setMaxAutoRetry('0'); page = view.render(); expect(page.canSave).toBe(true);
+  await page.save(); expect(saved).toEqual({ intervalMs: 3600, maxAutoRetry: 0, expectedVersion: 3, reason: 'Disable automatic retries' });
+  expect(view.render().policy.maxAutoRetry).toBe(0);
 });

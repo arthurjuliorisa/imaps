@@ -30,7 +30,7 @@ export async function POST(
 
     if (!log) {
       return NextResponse.json(
-        { success: false, message: 'Log tidak ditemukan' },
+        { success: false, message: 'Log not found' },
         { status: 404 }
       );
     }
@@ -51,7 +51,7 @@ export async function POST(
     if (error instanceof WmsAdmissionError) return NextResponse.json({ success: false, status: 'not_eligible', message: error.message }, { status: 409 });
     console.error('Error resending INSW log:', error);
     return NextResponse.json(
-      { success: false, message: error.message || 'Gagal mengirim ulang data ke INSW' },
+      { success: false, message: 'Unable to queue manual resend. Refresh the log and try again.' },
       { status: 500 }
     );
   }

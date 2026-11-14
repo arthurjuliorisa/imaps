@@ -43,7 +43,7 @@ test('interval validates floor, supported maximum, whole finite numeric values a
 });
 
 test('crafted unrelated policy, retry, ownership, company and gate fields are rejected at HTTP boundary', async () => {
-  for (const field of ['max_auto_retry', 'maxAutoRetry', 'updated_by', 'company_code', 'owner_token', 'gate', 'allowedCompanies']) {
+  for (const field of ['max_auto_retry', 'updated_by', 'company_code', 'owner_token', 'gate', 'allowedCompanies']) {
     expect((await intervalSettingsRequest(request({ ...input, [field]: 9 }), admin, forbiddenDb)).status).toBe(400);
   }
   for (const body of [null, [], {}, { ...input, intervalMs: 3599 }]) {
@@ -56,17 +56,18 @@ test('GET projects only interval and latest audit metadata, is bounded and uncac
   const db = { insw_transmission_policy: { findUnique: async () => { reads++; return { id: 1, min_processing_interval_ms: 3600, max_auto_retry: 7, version: 3, updated_at: new Date('2026-11-01'), updated_by: 'admin', change_reason: 'test' }; } } } as unknown as PrismaClient;
   const response = await intervalSettingsRequest(new Request('http://localhost/api/insw/queue-settings'), admin, db);
   expect(response.status).toBe(200); expect(response.headers.get('cache-control')).toBe('no-store');
-  expect(await response.json()).toEqual({ data: { intervalMs: 3600, version: 3, updatedAt: '2026-11-01T00:00:00.000Z', updatedBy: 'admin', reason: 'test' } });
+  expect(await response.json()).toEqual({ data: { intervalMs: 3600, maxAutoRetry: 7, version: 3, updatedAt: '2026-11-01T00:00:00.000Z', updatedBy: 'admin', reason: 'test' } });
   expect(reads).toBe(1);
 });
 
-test('page and routes wire shared server access, navigation is admin only, UI contains no retry controls', () => {
+test('page and routes wire shared server access, navigation is admin only, UI exposes bounded retry controls', () => {
   const page = readFileSync('app/(authenticated)/insw/queue-settings/page.tsx', 'utf8');
   const route = readFileSync('app/api/insw/queue-settings/route.ts', 'utf8');
   expect(page).toContain('intervalSettingsAccess(await getServerSession(authOptions))');
   expect(route.match(/intervalSettingsRequest\(request, await getServerSession\(authOptions\), prisma\)/g)).toHaveLength(2);
   const ui = readFileSync('app/(authenticated)/insw/queue-settings/QueueSettings.tsx', 'utf8');
-  expect(ui).not.toMatch(/retry|max_auto_retry|maxAutoRetry/i);
+  expect(ui).toContain('Maximum Automatic Retries');
+  expect(ui).toContain('existing cycles retain their retry snapshot');
   const menus = readFileSync('app/api/settings/access-menu/current-user-menus/route.ts', 'utf8');
   expect(menus).toContain("menu.menu_path !== '/insw/queue-settings'");
 });
