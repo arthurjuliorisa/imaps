@@ -423,12 +423,15 @@ test('batched SQL preserves exact history, known success, completed attempt, own
   await coordination.wmsLogResendEligibility(db, 1370, [BigInt(1), BigInt(2)]);
   const sql = queries[0].sql;
   for (const guard of ['a.completed_at IS NOT NULL', 'unfinished.completed_at IS NULL', "history.delivery_state = 'KNOWN_SUCCESS'",
-    'gate.owner_token IS NULL', 'gate.busy_attempt_id IS NULL', 'gate.process_identity IS NULL', 'newer.cycle > p.cycle',
+    'insw_manual_enqueue_gate_safe(p.identity_key,', 'target_owned.owner_token IS NOT NULL',
+    'target_owned.lease_until IS NOT NULL', 'newer.cycle > p.cycle',
     'newer_attempt.retry_index > a.retry_index', "conflict.insw_status = 'SUCCESS'", 'p.company_code = l.company_code',
     'l.transaction_type = lower(p.operation::text)', 'g.id = l.transaction_id', 'jsonb_typeof(p.frozen_payload)',
     'conflict.identity_key <> p.identity_key']) expect(sql).toContain(guard);
   await coordination.wmsLogResendEligibility(db, 1370, [BigInt(1)], 'successor');
-  expect(queries[1].sql).not.toContain('gate.owner_token IS NULL'); // The admitted worker owns the gate itself.
+  expect(sql).not.toContain('gate.owner_token IS NULL'); // Global ownership alone is no longer a veto.
+  expect(queries[1].sql).toContain('insw_manual_enqueue_gate_safe(p.identity_key,');
+  expect(queries[1].sql).not.toContain('gate.owner_token IS NULL'); // Exclude only the admitted successor.
   expect(queries[1].sql).toContain('history.id <>');
   expect(queries[1].values).toContain('successor');
 });
@@ -572,4 +575,71 @@ for (const failureAt of ['successor', 'durable-audit', 'log-audit']) test(`simul
   expect(h.parent).toEqual(before);
   h.tx.$queryRaw = query; h.tx.$executeRaw = execute; h.tx.insw_tracking_log.update = update;
   expect(await coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'reviewed', true)).toMatchObject({ status: 'accepted' });
+});
+
+// SQL is inspected here, never executed against a configured database. Positive
+// transaction doubles prove application flow, not PostgreSQL predicate/lock behavior.
+for (const status of ['FAILED', 'HELD']) for (const worker of ['idle owner', 'unrelated busy']) {
+  test(`online enqueue application flow: ${status}, ${worker} (SQL result double)`, async () => {
+    const metadata = { classification: 'PERMANENT_FAILURE', reasonCode: 'AUTHORIZATION_FAILURE',
+      responseEvidence: 'COMPLETE', httpCode: 403 };
+    const h = resendDb(metadata);
+    const gate = Object.freeze({ id: 1, owner_token: 'sticky-worker', lease_until: new Date(0),
+      process_identity: { host: 'fixture' }, busy_attempt_id: worker === 'unrelated busy' ? 'other-attempt' : null });
+    const query = h.tx.$queryRaw;
+    h.tx.$queryRaw = async (q: any, ...values: any[]) => Array.isArray(q) && q.join('').includes('FROM insw_dispatch_gate')
+      ? [gate] : query(q, ...values);
+    Object.assign(h.parent, { status, delivery_state: status === 'HELD' ? 'POSSIBLY_STARTED' : 'KNOWN_FAILURE' });
+    expect((await logResendEligibility(h.db, 1370, [{ id: '1', transaction_type: 'incoming' }])).has('1')).toBe(true);
+    const result = await coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'duplicate risk reviewed', true);
+    expect(result).toMatchObject({ status: 'accepted', queue_id: 'successor' });
+    expect(result.message).toContain('not yet delivered');
+    expect(h.events.filter(e => e === 'insert')).toHaveLength(1);
+    expect(h.events.includes('retire')).toBe(status === 'HELD');
+    expect(h.events.includes('supersession-audit')).toBe(status === 'HELD');
+    for (const query of h.queries) {
+      const sql = Array.isArray(query) ? query.join('') : query.sql;
+      expect(sql).not.toMatch(/UPDATE insw_dispatch_gate/);
+    }
+  });
+}
+test('missing gate blocks before reference/identity locks or writes', async () => {
+  const h = resendDb();
+  const original = h.tx.$queryRaw;
+  h.tx.$queryRaw = async (q: any, ...values: any[]) => Array.isArray(q) && q.join('').includes('FROM insw_dispatch_gate')
+    ? [] : original(q, ...values);
+  await expect(coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'reviewed', true)).rejects.toThrow('dispatch gate missing');
+  expect(h.events).toEqual([]);
+});
+for (const state of ['same-target busy', 'unfinished target', 'target ownership', 'corrupt gate']) {
+  test(`stale candidate revalidated before mutation: ${state} (SQL rejection double)`, async () => {
+    const h = resendDb();
+    expect((await coordination.wmsLogResendEligibility(h.db, 1370, [BigInt(1)])).has('1')).toBe(true);
+    const original = h.tx.$queryRaw;
+    h.tx.$queryRaw = async (q: any, ...values: any[]) => !Array.isArray(q) && q.sql.includes('insw_manual_enqueue_gate_safe')
+      ? [] : original(q, ...values);
+    await expect(coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'reviewed', true)).rejects.toThrow('Manual Resend unavailable');
+    expect(h.events).not.toContain('insert');
+    expect(h.events).not.toContain('retire');
+  });
+}
+test('forward SQL fence preserves immutable/deferred protection and fails closed without waiting in row triggers', () => {
+  const sql = readFileSync('prisma/migrations/20261114000000_insw_online_manual_enqueue/migration.sql', 'utf8');
+  expect(sql).toContain('CREATE OR REPLACE FUNCTION insw_guard_supersession()');
+  expect(sql).toContain('BEFORE UPDATE OF status ON insw_queue_cycle');
+  expect(sql).toContain('FOR EACH STATEMENT');
+  expect(sql).toContain('FOR UPDATE NOWAIT');
+  expect(sql).toContain('pg_try_advisory_xact_lock(hashtextextended(reference_key, 0))');
+  expect(sql).toContain('pg_try_advisory_xact_lock(hashtextextended(OLD.identity_key, 0))');
+  expect(sql).toContain('a.completed_at IS NULL');
+  expect(sql).toContain('q.identity_key = OLD.identity_key');
+  expect(sql).toContain('q.identity_key <> target_identity OR q.id = self_successor');
+  expect(sql).toContain('a.owner_token = g.owner_token');
+  expect(sql).toContain('g.prior_interval_ms >= 3600');
+  expect(sql).toContain("current_setting('transaction_isolation') <> 'read committed'");
+  expect(sql).toContain('a.completed_at IS NULL AND a.retry_index = q.retry_index');
+  expect(sql).not.toMatch(/DROP |DISABLE TRIGGER|UPDATE insw_dispatch_gate|SECURITY DEFINER/);
+  const original = readFileSync('prisma/migrations/20261113000100_insw_manual_supersession/migration.sql', 'utf8');
+  expect(original).toContain('DEFERRABLE INITIALLY DEFERRED');
+  expect(original).toContain('INSW supersession audit is immutable');
 });

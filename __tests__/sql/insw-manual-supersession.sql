@@ -21,6 +21,8 @@ SELECT id FROM insw_dispatch_gate WHERE id = 1 FOR UPDATE;
 DO $$
 DECLARE
   p uuid := gen_random_uuid(); s uuid := gen_random_uuid(); a uuid := gen_random_uuid();
+  worker_token uuid := gen_random_uuid(); unrelated uuid := gen_random_uuid(); busy uuid := gen_random_uuid();
+  saved_gate jsonb;
   log_id bigint; identity text := 'supersession-ddl-fixture:' || p::text;
   frozen jsonb := '{"data":[{"kdKegiatan":"30","dokumenKegiatan":[{"nomorDokKegiatan":"DDL-ONLY","barangTransaksi":[{"kdBarang":"ITEM"}]}]}]}';
 BEGIN
@@ -39,6 +41,45 @@ BEGIN
     insw_request_payload,metadata,updated_at) VALUES(a,'incoming',1370,'DDL-ONLY','FAILED',frozen,
     '{"classification":"UNKNOWN","reasonCode":"MALFORMED_RESPONSE","responseEvidence":"COMPLETE"}',clock_timestamp())
     RETURNING id INTO log_id;
+  -- Forward-policy fixture: these predicates/locks require physical PostgreSQL.
+  -- This script remains authorization gated and always rolls back.
+  IF NOT insw_manual_enqueue_gate_safe(identity, NULL) THEN RAISE EXCEPTION 'Inactive gate rejected'; END IF;
+  UPDATE insw_dispatch_gate SET owner_token=worker_token, lease_until=clock_timestamp(), process_identity=NULL WHERE id=1;
+  IF insw_manual_enqueue_gate_safe(identity, NULL) THEN RAISE EXCEPTION 'Corrupt owner admitted'; END IF;
+  UPDATE insw_dispatch_gate SET process_identity=jsonb_build_object('host','fixture','machine','fixture',
+    'boot','fixture','start','1','pidNamespace','fixture','pid',1,'uid',1000) WHERE id=1;
+  IF NOT insw_manual_enqueue_gate_safe(identity, NULL) THEN RAISE EXCEPTION 'Idle sticky owner rejected'; END IF;
+  -- A completed attempt still marked busy for this identity must block.
+  UPDATE insw_queue_attempt SET owner_token=worker_token WHERE id=a;
+  UPDATE insw_dispatch_gate SET busy_attempt_id=a WHERE id=1;
+  IF insw_manual_enqueue_gate_safe(identity, NULL) THEN RAISE EXCEPTION 'Target busy admitted'; END IF;
+  BEGIN
+    UPDATE insw_queue_cycle SET status='SUPERSEDED', completed_at=clock_timestamp() WHERE id=p;
+    RAISE EXCEPTION 'Expected target-busy rejection';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'INSW supersession requires unchanged evidence and local inactivity' THEN RAISE; END IF;
+  END;
+  UPDATE insw_dispatch_gate SET busy_attempt_id=NULL WHERE id=1;
+  UPDATE insw_queue_attempt SET completed_at=NULL WHERE id=a;
+  BEGIN
+    UPDATE insw_queue_cycle SET status='SUPERSEDED', completed_at=clock_timestamp() WHERE id=p;
+    RAISE EXCEPTION 'Expected unfinished-target rejection';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'INSW supersession requires unchanged evidence and local inactivity' THEN RAISE; END IF;
+  END;
+  UPDATE insw_queue_attempt SET completed_at=clock_timestamp() WHERE id=a;
+  INSERT INTO insw_queue_cycle(id,company_code,operation,identity_key,source_revision,business_date,
+    wms_reference,cycle,intent,requested_by,frozen_payload,payload_sha256,max_auto_retry_snapshot,
+    status,owner_token,lease_until)
+    VALUES(unrelated,1370,'INCOMING',identity || ':unrelated','ACCEPTED_WMS_ID','2026-11-13','OTHER',1,
+      'SOURCE_COMMIT','ddl-test',frozen,repeat('a',64),0,'CLAIMED',worker_token,clock_timestamp());
+  INSERT INTO insw_queue_attempt(id,queue_id,retry_index,owner_token)
+    VALUES(busy,unrelated,0,worker_token);
+  UPDATE insw_dispatch_gate SET busy_attempt_id=busy WHERE id=1;
+  IF NOT insw_manual_enqueue_gate_safe(identity, NULL) THEN RAISE EXCEPTION 'Unrelated busy rejected'; END IF;
+  IF insw_manual_enqueue_gate_safe(identity || ':unrelated', NULL) THEN RAISE EXCEPTION 'Same busy identity admitted'; END IF;
+  IF NOT insw_manual_enqueue_gate_safe(identity || ':unrelated', unrelated) THEN RAISE EXCEPTION 'Self preflight rejected'; END IF;
+  SELECT to_jsonb(g) INTO saved_gate FROM insw_dispatch_gate g WHERE id=1;
   -- HELD continues to occupy the unique active identity, even after attempt end.
   BEGIN
     INSERT INTO insw_queue_cycle(id,company_code,operation,identity_key,source_revision,business_date,
@@ -79,6 +120,9 @@ BEGIN
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'INSW superseded cycle is immutable and cannot dispatch' THEN RAISE; END IF;
   END;
+  IF (SELECT to_jsonb(g) FROM insw_dispatch_gate g WHERE id=1) IS DISTINCT FROM saved_gate THEN
+    RAISE EXCEPTION 'Enqueue changed global ownership/busy/pacing evidence';
+  END IF;
   BEGIN
     UPDATE insw_manual_supersession SET reason='changed' WHERE parent_queue_id=p;
     RAISE EXCEPTION 'Expected immutable audit';

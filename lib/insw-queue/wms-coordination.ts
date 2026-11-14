@@ -111,6 +111,9 @@ export async function wmsLogResendEligibility(db: PrismaClient | Prisma.Transact
       AND NOT EXISTS (SELECT 1 FROM insw_queue_cycle active WHERE active.identity_key = p.identity_key
         AND active.status IN ('READY', 'CLAIMED', 'REMOTE_SUCCEEDED', 'HELD') AND active.id <> p.id
         ${successorId ? Prisma.sql`AND active.id <> ${successorId}::uuid` : Prisma.empty})
+      AND NOT EXISTS (SELECT 1 FROM insw_queue_cycle target_owned WHERE target_owned.identity_key = p.identity_key
+        AND (target_owned.owner_token IS NOT NULL OR target_owned.lease_until IS NOT NULL)
+        ${successorId ? Prisma.sql`AND target_owned.id <> ${successorId}::uuid` : Prisma.empty})
       AND NOT EXISTS (SELECT 1 FROM insw_queue_cycle history WHERE history.identity_key = p.identity_key
         AND (history.delivery_state = 'KNOWN_SUCCESS' OR history.status IN ('SUCCEEDED', 'REMOTE_SUCCEEDED')))
       AND NOT EXISTS (SELECT 1 FROM insw_queue_attempt unfinished JOIN insw_queue_cycle history ON history.id = unfinished.queue_id
@@ -120,9 +123,7 @@ export async function wmsLogResendEligibility(db: PrismaClient | Prisma.Transact
       AND NOT EXISTS (SELECT 1 FROM insw_dispatch_gate gate JOIN insw_queue_attempt busy ON busy.id = gate.busy_attempt_id
         JOIN insw_queue_cycle history ON history.id = busy.queue_id WHERE history.identity_key = p.identity_key
           ${successorId ? Prisma.sql`AND history.id <> ${successorId}::uuid` : Prisma.empty})
-      ${successorId ? Prisma.empty : Prisma.sql`AND EXISTS (SELECT 1 FROM insw_dispatch_gate gate
-        WHERE gate.id = 1 AND gate.owner_token IS NULL AND gate.lease_until IS NULL
-          AND gate.busy_attempt_id IS NULL AND gate.process_identity IS NULL)`}
+      AND insw_manual_enqueue_gate_safe(p.identity_key, ${successorId ?? null}::uuid)
       AND NOT EXISTS (SELECT 1 FROM insw_admin_resolution r WHERE r.queue_id = p.id)
       -- Retry index is persisted execution order, unique within a cycle. A
       -- historical failure must never inherit the terminal cycle's eligibility.
@@ -160,8 +161,9 @@ export async function resendWmsLog(db: PrismaClient, companyCode: number, logId:
     if (!prior) throw new WmsAdmissionError('Original queue attempt required');
     if (!prior.wms_reference) throw new WmsAdmissionError('Stable WMS reference required');
     const scope = { companyCode, operation: prior.operation, wmsReference: prior.wms_reference };
-    // Match worker/admin lock order; ownership must remain clear through admission.
-    await tx.$queryRaw`SELECT id FROM insw_dispatch_gate WHERE id = 1 FOR UPDATE`;
+    // Match worker/admin lock order; preserve global ownership through admission.
+    const gate = await tx.$queryRaw<{ id: number }[]>`SELECT id FROM insw_dispatch_gate WHERE id = 1 FOR UPDATE`;
+    if (gate.length !== 1) throw new WmsAdmissionError('Manual Resend unavailable: dispatch gate missing');
     await lockIncomingBusinessReference(tx, scope);
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${prior.identity_key}, 0))::text`;
     const [latest] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM insw_queue_cycle
