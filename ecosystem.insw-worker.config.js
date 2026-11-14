@@ -9,6 +9,7 @@ module.exports = { apps: [{
   kill_timeout: 75000,
   env: { NODE_ENV: process.env.INSW_WORKER_TEST_MODE === 'true' ? 'test' : 'production',
     // Explicit empty/false values overwrite stale PM2 settings on restoration.
+    DATABASE_PHASE: process.env.DATABASE_PHASE,
     INSW_WORKER_TEST_MODE: process.env.INSW_WORKER_TEST_MODE === 'true' ? 'true' : 'false',
     INSW_TEST_ENDPOINT_OVERRIDE: process.env.INSW_TEST_ENDPOINT_OVERRIDE ?? '',
     INSW_WORKER_ENABLED: process.env.INSW_WORKER_ENABLED === 'true' ? 'true' : 'false',
