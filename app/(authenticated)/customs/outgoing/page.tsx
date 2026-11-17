@@ -1,8 +1,5 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
-import { isCustomsUser } from '@/lib/utils/user-role.util';
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/app/components/ToastProvider';
@@ -79,8 +76,6 @@ const PDF_COLUMNS = [
 ];
 
 export default function OutgoingGoodsReportPage() {
-  const { data: session } = useSession();
-  const customsRole = isCustomsUser(session?.user?.role);
   const theme = useTheme();
   const toast = useToast();
   const router = useRouter();
@@ -321,7 +316,7 @@ export default function OutgoingGoodsReportPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Kategori Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
-                {!customsRole && <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>}
+                <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>UoM CEISA/INSW</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>valas</TableCell>
@@ -332,7 +327,7 @@ export default function OutgoingGoodsReportPage() {
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={16 + (customsRole ? 0 : 1)} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={17} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -385,11 +380,9 @@ export default function OutgoingGoodsReportPage() {
                       </Typography>
                     </TableCell>
                     <TableCell>{row.itemName}</TableCell>
-                    {!customsRole && (
-                      <TableCell>
-                        <Chip label={row.unit} size="small" />
-                      </TableCell>
-                    )}
+                    <TableCell>
+                      <Chip label={row.unit} size="small" />
+                    </TableCell>
                     <TableCell>{row.inswUom ?? null}</TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>

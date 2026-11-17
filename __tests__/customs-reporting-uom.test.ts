@@ -196,7 +196,7 @@ for (const report of paths) {
       assert.equal(h.mappingCalls.length, 3);
     }
   });
-  for (const role of ['CUSTOMS', 'ADMIN']) test(`${report} Excel endpoint: ${role} columns, real null, decimals, full filtered scope`, async () => {
+  for (const role of ['CUSTOMS', 'ADMIN', 'USER']) test(`${report} Excel endpoint: ${role} columns, real null, decimals, full filtered scope`, async () => {
     const rows = [fixture('kg'), fixture('box', 1), fixture('missing', 2)];
     const h = harness({ rows, role });
     const sheet = await workbook(await h.load(`app/api/customs/${report}/export/route.ts`).GET(request(report, 'page=2&limit=1&isCustomsUser=false')));
@@ -204,8 +204,10 @@ for (const report of paths) {
     const mapped = names.indexOf('UoM CEISA/INSW');
     assert.ok(mapped >= 0);
     const originalLabel = report === 'wip' || mutations.includes(report) ? 'Satuan Barang' : 'UOM';
-    assert.equal(names.includes(originalLabel), role !== 'CUSTOMS');
-    if (role !== 'CUSTOMS') assert.equal(names[mapped - 1], originalLabel);
+    assert.equal(names[mapped - 1], originalLabel);
+    for (const [index, unit] of ['kg', 'box', 'missing'].entries()) {
+      assert.equal(sheet.getRow(index + 2).getCell(mapped).value, unit);
+    }
     assert.equal(sheet.rowCount, 4);
     assert.equal(sheet.getRow(2).getCell(mapped + 1).value, 'KGM');
     assert.equal(sheet.getRow(3).getCell(mapped + 1).value, 'KGM');
@@ -276,7 +278,7 @@ function cells(html: string, tag: string): string[] {
   return [...html.matchAll(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, 'g'))]
     .map(match => match[1].replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ''));
 }
-for (const report of paths) for (const role of ['CUSTOMS', 'ADMIN']) test(`${report} rendered table: ${role} headers/body, null and empty colspan`, () => {
+for (const report of paths) for (const role of ['CUSTOMS', 'ADMIN', 'USER']) test(`${report} rendered table: ${role} headers/body, null and empty colspan`, () => {
   for (const companyType of ['BZ', 'SEZ']) for (const empty of [false, true]) for (const mapped of [null, 'MAPPED-ONLY']) {
     const uiRow = { ...fixture(), id: 'row', unit: 'RAW-ONLY', unitQuantity: 'RAW-ONLY', inswUom: mapped,
       companyType, qty: '1.250', companyName: 'Company', itemCode: 'Item', itemName: 'Name',
@@ -287,13 +289,13 @@ for (const report of paths) for (const role of ['CUSTOMS', 'ADMIN']) test(`${rep
     const html = renderToStaticMarkup(React.createElement(Page));
     const names = cells(html, 'th');
     assert.equal(names.filter(name => name === 'UoM CEISA/INSW').length, 1);
-    assert.equal(names.includes('Satuan Barang'), role !== 'CUSTOMS');
+    assert.equal(names[names.indexOf('UoM CEISA/INSW') - 1], 'Satuan Barang');
     if (!empty) {
       const body = cells(html, 'td');
       // Pagination contributes extra cells after the data row.
       assert.equal(body[names.indexOf('UoM CEISA/INSW')], mapped ?? '');
       assert.equal(body.slice(0, names.length).length, names.length);
-      assert.equal(body.includes('RAW-ONLY'), role !== 'CUSTOMS');
+      assert.equal(body[names.indexOf('Satuan Barang')], 'RAW-ONLY');
     } else {
       const span = html.match(/colSpan="(\d+)"/i);
       assert.equal(Number(span?.[1]), names.length);

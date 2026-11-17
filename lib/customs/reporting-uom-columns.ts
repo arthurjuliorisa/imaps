@@ -1,5 +1,3 @@
-import { isCustomsUser } from '@/lib/utils/user-role.util';
-
 type ReportColumn = {
   key: string;
   label: string;
@@ -9,12 +7,12 @@ type ReportColumn = {
 };
 
 /** Called by authenticated export orchestrators, never with a URL role. */
-export function reportingUomColumns(columns: ReportColumn[], role?: string): ReportColumn[] {
+export function reportingUomColumns(columns: ReportColumn[]): ReportColumn[] {
   return columns.flatMap(column => {
     if (!['uom', 'unit', 'unitQuantity'].includes(column.key)) return [column];
     const mapped: ReportColumn = {
       key: 'inswUom', label: 'UoM CEISA/INSW', type: 'text', width: 20, preserveBlank: true,
     };
-    return isCustomsUser(role) ? [mapped] : [column, mapped];
+    return [column, mapped];
   });
 }

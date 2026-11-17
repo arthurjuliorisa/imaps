@@ -1,8 +1,6 @@
 'use client';
 
 import React from 'react';
-import { useSession } from 'next-auth/react';
-import { isCustomsUser } from '@/lib/utils/user-role.util';
 import {
   Table,
   TableBody,
@@ -79,9 +77,7 @@ export function MutationReportTable({
   hideValueAmount = false,
   hideRowNumber = true,
 }: MutationReportTableProps) {
-  const { data: session } = useSession();
-  const hideOriginalUom = showInswUom && isCustomsUser(session?.user?.role);
-  const extraUomColumns = showInswUom && !hideOriginalUom ? 1 : 0;
+  const extraUomColumns = showInswUom ? 1 : 0;
   const theme = useTheme();
   const isServerPaginated = totalCount !== undefined;
   const paginatedData = isServerPaginated
@@ -128,7 +124,7 @@ export function MutationReportTable({
               <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
               {hasItemType && <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>}
-              {!hideOriginalUom && <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>}
+              <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
               {showInswUom && <TableCell sx={{ fontWeight: 600 }}>UoM CEISA/INSW</TableCell>}
               <TableCell sx={{ fontWeight: 600 }} align="right">Saldo Awal</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Pemasukan Barang</TableCell>
@@ -185,11 +181,9 @@ export function MutationReportTable({
                       <Chip label={row.itemType} size="small" color="info" />
                     </TableCell>
                   )}
-                  {!hideOriginalUom && (
-                    <TableCell>
-                      <Chip label={row.unit} size="small" />
-                    </TableCell>
-                  )}
+                  <TableCell>
+                    <Chip label={row.unit} size="small" />
+                  </TableCell>
                   {showInswUom && <TableCell>{row.inswUom ?? null}</TableCell>}
                   <TableCell align="right">{formatQty(Number(row.beginning ?? 0))}</TableCell>
                   <TableCell align="right">

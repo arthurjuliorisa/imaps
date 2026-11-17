@@ -111,7 +111,7 @@ export async function handleTransactionExportRequest(
     const reportConfig = REPORT_CONFIG[kind];
     const buffer = await generateTransactionExcelBuffer({
       rows,
-      columns: reportingUomColumns(reportConfig.columns, session?.user?.role),
+      columns: reportingUomColumns(reportConfig.columns),
       sheetName: reportConfig.sheetName,
     });
     const fileName = buildFileName(kind, dateRange.startDateString, dateRange.endDateString);

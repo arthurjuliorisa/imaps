@@ -104,7 +104,7 @@ export async function handleLpjExportRequest(request: NextRequest, kind: LpjExpo
 
     const buffer = await generateLpjExcelBuffer({
       rows,
-      columns: reportingUomColumns(kind === 'wip' ? LPJ_WIP_COLUMNS : LPJ_MUTATION_COLUMNS, session?.user?.role),
+      columns: reportingUomColumns(kind === 'wip' ? LPJ_WIP_COLUMNS : LPJ_MUTATION_COLUMNS),
       sheetName: config.sheetName,
     });
     const fileName = buildFileName(kind, dateRange.startDateString, dateRange.endDateString);
