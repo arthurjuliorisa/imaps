@@ -1,3 +1,4 @@
+import { loadReportingUomLookup } from '@/lib/customs/reporting-uom';
 import { prisma } from '@/lib/prisma';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 
@@ -154,6 +155,7 @@ export async function fetchIncomingRows(filters: TransactionExportFilters): Prom
   query = `${result.query} ORDER BY doc_date DESC, id DESC`;
 
   const rows = await prisma.$queryRawUnsafe<any[]>(query, ...result.params);
+  const lookupUom = await loadReportingUomLookup(rows);
   return serializeBigInt(rows).map((row: any, index: number) => ({
     no: index + 1,
     companyName: row.company_name,
@@ -170,6 +172,7 @@ export async function fetchIncomingRows(filters: TransactionExportFilters): Prom
     itemCode: row.item_code,
     itemName: row.item_name,
     uom: row.unit,
+    inswUom: lookupUom(row.unit),
     quantity: numericString(row.quantity),
     currency: row.currency,
     amount: numericString(row.value_amount),
@@ -222,6 +225,7 @@ export async function fetchOutgoingRows(filters: TransactionExportFilters): Prom
   query = `${result.query} ORDER BY doc_date DESC, id DESC`;
 
   const rows = await prisma.$queryRawUnsafe<any[]>(query, ...result.params);
+  const lookupUom = await loadReportingUomLookup(rows);
   return serializeBigInt(rows).map((row: any, index: number) => ({
     no: index + 1,
     companyName: row.company_name,
@@ -237,6 +241,7 @@ export async function fetchOutgoingRows(filters: TransactionExportFilters): Prom
     itemCode: row.item_code,
     itemName: row.item_name,
     uom: row.unit,
+    inswUom: lookupUom(row.unit),
     quantity: numericString(row.quantity),
     currency: row.currency,
     amount: numericString(row.value_amount),
@@ -309,6 +314,7 @@ export async function fetchInternalRows(
   query = `${result.query} ORDER BY transaction_date DESC, id`;
 
   const rows = await prisma.$queryRawUnsafe<any[]>(query, ...result.params);
+  const lookupUom = await loadReportingUomLookup(rows);
   return serializeBigInt(rows).map((row: any, index: number) => ({
     no: index + 1,
     companyName: row.company_name,
@@ -322,6 +328,7 @@ export async function fetchInternalRows(
     itemCode: row.item_code,
     itemName: row.item_name,
     uom: row.unit,
+    inswUom: lookupUom(row.unit),
     quantity: numericString(row.quantity),
     amount: numericString(row.value_amount),
   }));

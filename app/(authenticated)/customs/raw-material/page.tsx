@@ -246,6 +246,7 @@ export default function RawMaterialMutationPage() {
         />
       </Box>
       <MutationReportTable
+        showInswUom
         data={filteredData}
         page={page}
         rowsPerPage={rowsPerPage}

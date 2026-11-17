@@ -1,3 +1,4 @@
+import { reportingUomColumns } from '@/lib/customs/reporting-uom-columns';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
@@ -110,7 +111,7 @@ export async function handleTransactionExportRequest(
     const reportConfig = REPORT_CONFIG[kind];
     const buffer = await generateTransactionExcelBuffer({
       rows,
-      columns: reportConfig.columns,
+      columns: reportingUomColumns(reportConfig.columns, session?.user?.role),
       sheetName: reportConfig.sheetName,
     });
     const fileName = buildFileName(kind, dateRange.startDateString, dateRange.endDateString);

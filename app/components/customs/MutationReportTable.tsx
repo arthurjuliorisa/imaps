@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import { useSession } from 'next-auth/react';
+import { isCustomsUser } from '@/lib/utils/user-role.util';
 import {
   Table,
   TableBody,
@@ -26,6 +28,7 @@ export interface MutationData {
   itemCode: string;
   itemName: string;
   unit: string;
+  inswUom?: string | null;
   beginning: string | number;
   in: string | number;
   out: string | number;
@@ -53,6 +56,7 @@ interface MutationReportTableProps {
   onEdit?: (item: MutationData) => void;
   onView?: (item: MutationData) => void;
   loading?: boolean;
+  showInswUom?: boolean;
   hideRemarks?: boolean;
   hideActions?: boolean;
   hideValueAmount?: boolean;
@@ -69,11 +73,15 @@ export function MutationReportTable({
   onEdit,
   onView,
   loading = false,
+  showInswUom = false,
   hideRemarks = false,
   hideActions = false,
   hideValueAmount = false,
   hideRowNumber = true,
 }: MutationReportTableProps) {
+  const { data: session } = useSession();
+  const hideOriginalUom = showInswUom && isCustomsUser(session?.user?.role);
+  const extraUomColumns = showInswUom && !hideOriginalUom ? 1 : 0;
   const theme = useTheme();
   const isServerPaginated = totalCount !== undefined;
   const paginatedData = isServerPaginated
@@ -120,7 +128,8 @@ export function MutationReportTable({
               <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
               {hasItemType && <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>}
-              <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
+              {!hideOriginalUom && <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>}
+              {showInswUom && <TableCell sx={{ fontWeight: 600 }}>UoM CEISA/INSW</TableCell>}
               <TableCell sx={{ fontWeight: 600 }} align="right">Saldo Awal</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Pemasukan Barang</TableCell>
               <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Pengeluaran Barang</TableCell>
@@ -138,7 +147,7 @@ export function MutationReportTable({
             {paginatedData.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={13 + (hasRowNumber && !hideRowNumber ? 1 : 0) + (hasCompanyCode ? 1 : 0) + (hasCompanyName ? 1 : 0) + (hasItemType ? 1 : 0) + (!hideValueAmount && hasValueAmount ? 1 : 0) + (!hideValueAmount && hasCurrency ? 1 : 0) - (hideRemarks ? 1 : 0) - (hideActions ? 1 : 0)}
+                  colSpan={extraUomColumns + 13 + (hasRowNumber && !hideRowNumber ? 1 : 0) + (hasCompanyCode ? 1 : 0) + (hasCompanyName ? 1 : 0) + (hasItemType ? 1 : 0) + (!hideValueAmount && hasValueAmount ? 1 : 0) + (!hideValueAmount && hasCurrency ? 1 : 0) - (hideRemarks ? 1 : 0) - (hideActions ? 1 : 0)}
                   align="center"
                   sx={{ py: 8 }}
                 >
@@ -176,9 +185,12 @@ export function MutationReportTable({
                       <Chip label={row.itemType} size="small" color="info" />
                     </TableCell>
                   )}
-                  <TableCell>
-                    <Chip label={row.unit} size="small" />
-                  </TableCell>
+                  {!hideOriginalUom && (
+                    <TableCell>
+                      <Chip label={row.unit} size="small" />
+                    </TableCell>
+                  )}
+                  {showInswUom && <TableCell>{row.inswUom ?? null}</TableCell>}
                   <TableCell align="right">{formatQty(Number(row.beginning ?? 0))}</TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" color="success.main" fontWeight={600}>

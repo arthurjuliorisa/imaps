@@ -255,6 +255,7 @@ export default function ScrapMutationPage() {
         />
       </Box>
       <MutationReportTable
+        showInswUom
         data={filteredData}
         page={page}
         rowsPerPage={rowsPerPage}

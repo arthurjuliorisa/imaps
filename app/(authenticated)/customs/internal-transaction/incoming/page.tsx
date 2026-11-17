@@ -1,5 +1,8 @@
 'use client';
 
+import { useSession } from 'next-auth/react';
+import { isCustomsUser } from '@/lib/utils/user-role.util';
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/app/components/ToastProvider';
 import {
@@ -47,6 +50,7 @@ interface InternalTransactionIncomingData {
   itemCode: string;
   itemName: string;
   unit: string;
+  inswUom: string | null;
   qty: string;
   currency: string;
   amount: string;
@@ -66,6 +70,8 @@ const PDF_COLUMNS = [
 ];
 
 export default function InternalTransactionIncomingPage() {
+  const { data: session } = useSession();
+  const customsRole = isCustomsUser(session?.user?.role);
   const theme = useTheme();
   const toast = useToast();
 
@@ -300,7 +306,8 @@ export default function InternalTransactionIncomingPage() {
                 <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
+                {!customsRole && <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>}
+                <TableCell sx={{ fontWeight: 600 }}>UoM CEISA/INSW</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">Jumlah Barang</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">nilai barang</TableCell>
               </TableRow>
@@ -308,7 +315,7 @@ export default function InternalTransactionIncomingPage() {
             <TableBody>
               {paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={14} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={14 + (customsRole ? 0 : 1)} align="center" sx={{ py: 8 }}>
                     <Typography variant="body1" color="text.secondary">
                       No records found for the selected date range
                     </Typography>
@@ -354,9 +361,12 @@ export default function InternalTransactionIncomingPage() {
                       </Typography>
                     </TableCell>
                     <TableCell>{row.itemName}</TableCell>
-                    <TableCell>
-                      <Chip label={row.unit} size="small" />
-                    </TableCell>
+                    {!customsRole && (
+                      <TableCell>
+                        <Chip label={row.unit} size="small" />
+                      </TableCell>
+                    )}
+                    <TableCell>{row.inswUom ?? null}</TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight={600}>
                         {formatQty(row.qty)}

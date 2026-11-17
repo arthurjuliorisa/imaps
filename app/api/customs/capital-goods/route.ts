@@ -1,3 +1,4 @@
+import { loadReportingUomLookup } from '@/lib/customs/reporting-uom';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -152,6 +153,8 @@ export async function GET(request: Request) {
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
     // Transform to expected format with decimal precision preservation
+    const lookupUom = await loadReportingUomLookup(result);
+
     const transformedData = result.map((row: any, index: number) => ({
       id: `capgoods-${row.item_code}-${row.snapshot_date}-${index}`,
       rowNumber: Number(row.no ?? 0),
@@ -161,6 +164,7 @@ export async function GET(request: Request) {
       itemName: row.item_name,
       itemType: row.item_type,
       unit: row.unit || 'N/A',
+      inswUom: lookupUom(row.unit),
       date: row.snapshot_date,
       // Return as strings to preserve decimal precision
       beginning: row.beginning?.toString() ?? '0',

@@ -1,3 +1,4 @@
+import { loadReportingUomLookup } from '@/lib/customs/reporting-uom';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -134,6 +135,8 @@ export async function GET(request: Request) {
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
     // Transform to expected format
+    const lookupUom = await loadReportingUomLookup(result);
+
     const transformedData = result.map((row: any) => {
       // Generate deterministic ID based on data, not array index
       // Use wms_id + item_code to ensure consistency across requests
@@ -156,6 +159,7 @@ export async function GET(request: Request) {
         itemCode: row.item_code,
         itemName: row.item_name,
         unit: row.unit,
+        inswUom: lookupUom(row.unit),
         // Return as string to preserve decimal precision
         qty: row.quantity?.toString() ?? '0',
         currency: row.currency,

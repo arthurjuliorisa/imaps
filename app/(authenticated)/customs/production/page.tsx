@@ -245,6 +245,7 @@ export default function ProductionMutationPage() {
         />
       </Box>
       <MutationReportTable
+        showInswUom
         data={filteredData}
         page={page}
         rowsPerPage={rowsPerPage}

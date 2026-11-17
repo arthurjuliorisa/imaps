@@ -1,3 +1,4 @@
+import { loadReportingUomLookup } from '@/lib/customs/reporting-uom';
 import { prisma } from '@/lib/prisma';
 import { serializeBigInt } from '@/lib/bigint-serializer';
 
@@ -92,6 +93,7 @@ export async function fetchWipRows(filters: LpjExportFilters): Promise<Record<st
   query += ` ORDER BY item_code`;
 
   const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+  const lookupUom = await loadReportingUomLookup(rows);
   return serializeBigInt(rows).map((row: any) => ({
     no: Number(row.no ?? 0),
     companyName: row.company_name,
@@ -99,6 +101,7 @@ export async function fetchWipRows(filters: LpjExportFilters): Promise<Record<st
     itemName: row.item_name,
     itemType: row.item_type,
     unitQuantity: row.unit_quantity,
+    inswUom: lookupUom(row.unit_quantity),
     quantity: Number(row.quantity ?? 0),
     stockDate: row.stock_date,
     remarks: row.remarks ?? '-',
@@ -302,6 +305,7 @@ export async function fetchMutationRows(
   query += ` ORDER BY ${prefix}item_code`;
 
   const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+  const lookupUom = await loadReportingUomLookup(rows);
   return serializeBigInt(rows).map((row: any, index: number) => ({
     no: index + 1,
     companyName: row.company_name,
@@ -309,6 +313,7 @@ export async function fetchMutationRows(
     itemName: row.item_name,
     itemType: row.item_type,
     unit: row.unit || 'N/A',
+    inswUom: lookupUom(row.unit),
     beginning: numericString(row.beginning),
     in: numericString(row.in),
     out: numericString(row.out),

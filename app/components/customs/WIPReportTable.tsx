@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import { useSession } from 'next-auth/react';
+import { isCustomsUser } from '@/lib/utils/user-role.util';
 import {
   Table,
   TableBody,
@@ -27,6 +29,7 @@ export interface WIPData {
   itemName: string;
   itemType: string;
   unitQuantity: string;
+  inswUom?: string | null;
   quantity: number;
   stockDate: Date | string;
   remarks: string | null;
@@ -41,6 +44,7 @@ interface WIPReportTableProps {
   onRowsPerPageChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   totalCount?: number;
   loading?: boolean;
+  showInswUom?: boolean;
 }
 
 export function WIPReportTable({
@@ -51,7 +55,11 @@ export function WIPReportTable({
   onRowsPerPageChange,
   totalCount,
   loading = false,
+  showInswUom = false,
 }: WIPReportTableProps) {
+  const { data: session } = useSession();
+  const hideOriginalUom = showInswUom && isCustomsUser(session?.user?.role);
+  const extraUomColumns = showInswUom && !hideOriginalUom ? 1 : 0;
   const theme = useTheme();
   const isServerPaginated = totalCount !== undefined;
   const paginatedData = isServerPaginated
@@ -102,7 +110,8 @@ export function WIPReportTable({
               <TableCell sx={{ fontWeight: 600 }}>Kode Barang</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Nama Barang</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Item Type</TableCell>
-              <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>
+              {!hideOriginalUom && <TableCell sx={{ fontWeight: 600 }}>Satuan Barang</TableCell>}
+              {showInswUom && <TableCell sx={{ fontWeight: 600 }}>UoM CEISA/INSW</TableCell>}
               <TableCell sx={{ fontWeight: 600 }} align="right">jumlah</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Stock Date</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>catatan</TableCell>
@@ -113,7 +122,7 @@ export function WIPReportTable({
             {paginatedData.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={10}
+                  colSpan={extraUomColumns + 10}
                   align="center"
                   sx={{ py: 8 }}
                 >
@@ -143,9 +152,12 @@ export function WIPReportTable({
                   <TableCell>
                     <Chip label={row.itemType} size="small" color="info" />
                   </TableCell>
-                  <TableCell>
-                    <Chip label={row.unitQuantity} size="small" />
-                  </TableCell>
+                  {!hideOriginalUom && (
+                    <TableCell>
+                      <Chip label={row.unitQuantity} size="small" />
+                    </TableCell>
+                  )}
+                  {showInswUom && <TableCell>{row.inswUom ?? null}</TableCell>}
                   <TableCell align="right">
                     <Typography variant="body2" fontWeight={700}>
                       {formatQty(row.quantity)}

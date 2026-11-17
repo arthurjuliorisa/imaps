@@ -275,6 +275,7 @@ export default function WIPMutationPage() {
         />
       </Box>
       <WIPReportTable
+        showInswUom
         data={filteredData}
         page={page}
         rowsPerPage={rowsPerPage}

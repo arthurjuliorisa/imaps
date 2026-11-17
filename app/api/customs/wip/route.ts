@@ -1,3 +1,4 @@
+import { loadReportingUomLookup } from '@/lib/customs/reporting-uom';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -123,6 +124,8 @@ export async function GET(request: Request) {
     const result = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
     // Transform to match vw_lpj_wip structure
+    const lookupUom = await loadReportingUomLookup(result);
+
     const transformedData = result.map((row: any, index: number) => ({
       id: `wip-${row.item_code}-${row.stock_date}-${index}`,
       no: Number(row.no),
@@ -131,6 +134,7 @@ export async function GET(request: Request) {
       itemName: row.item_name,
       itemType: row.item_type,
       unitQuantity: row.unit_quantity,
+      inswUom: lookupUom(row.unit_quantity),
       quantity: Number(row.quantity || 0),
       stockDate: row.stock_date,
       remarks: row.remarks,

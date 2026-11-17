@@ -1,3 +1,4 @@
+import { reportingUomColumns } from '@/lib/customs/reporting-uom-columns';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
@@ -103,7 +104,7 @@ export async function handleLpjExportRequest(request: NextRequest, kind: LpjExpo
 
     const buffer = await generateLpjExcelBuffer({
       rows,
-      columns: kind === 'wip' ? LPJ_WIP_COLUMNS : LPJ_MUTATION_COLUMNS,
+      columns: reportingUomColumns(kind === 'wip' ? LPJ_WIP_COLUMNS : LPJ_MUTATION_COLUMNS, session?.user?.role),
       sheetName: config.sheetName,
     });
     const fileName = buildFileName(kind, dateRange.startDateString, dateRange.endDateString);

@@ -1,3 +1,4 @@
+import { loadReportingUomLookup } from '@/lib/customs/reporting-uom';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -162,6 +163,8 @@ export async function GET(request: Request) {
     // Transform to expected format with SEZ-specific logic and unique ID
     // ID format: ${source_type}-${id}-${item_code}-${item_seq}
     // Using primary key 'id' + item_seq ensures uniqueness even for multiple items in same transaction
+    const lookupUom = await loadReportingUomLookup(result);
+
     const transformedData = result.map((row: any) => {
       const uniqueId = `${(row as any).source_type}-${row.id}-${row.item_code}-${(row as any).item_seq}`;
       const baseData = {
@@ -181,6 +184,7 @@ export async function GET(request: Request) {
         itemCode: row.item_code,
         itemName: row.item_name,
         unit: row.unit,
+        inswUom: lookupUom(row.unit),
         // Return as string to preserve decimal precision
         qty: row.quantity?.toString() ?? '0',
         currency: 'USD',

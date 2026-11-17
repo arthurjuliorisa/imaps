@@ -7,6 +7,7 @@ export interface TransactionExcelColumn {
   label: string;
   type?: TransactionExcelColumnType;
   width?: number;
+  preserveBlank?: boolean;
 }
 
 export const INCOMING_TRANSACTION_COLUMNS: TransactionExcelColumn[] = [
@@ -117,7 +118,8 @@ export async function generateTransactionExcelBuffer(params: {
     const rowData: Record<string, string | number | Date | null> = {};
 
     params.columns.forEach((column) => {
-      rowData[column.key] = normalizeCellValue(row[column.key], column.type);
+      rowData[column.key] = column.preserveBlank && (row[column.key] === null || row[column.key] === undefined || row[column.key] === '')
+        ? null : normalizeCellValue(row[column.key], column.type);
     });
 
     const dataRow = worksheet.addRow(rowData);

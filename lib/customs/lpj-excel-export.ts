@@ -7,6 +7,7 @@ export interface LpjExcelColumn {
   label: string;
   type?: LpjExcelColumnType;
   width?: number;
+  preserveBlank?: boolean;
 }
 
 export const LPJ_MUTATION_COLUMNS: LpjExcelColumn[] = [
@@ -87,7 +88,8 @@ export async function generateLpjExcelBuffer(params: {
     const rowData: Record<string, string | number | Date | null> = {};
 
     params.columns.forEach((column) => {
-      rowData[column.key] = normalizeCellValue(row[column.key], column.type);
+      rowData[column.key] = column.preserveBlank && (row[column.key] === null || row[column.key] === undefined || row[column.key] === '')
+        ? null : normalizeCellValue(row[column.key], column.type);
     });
 
     const dataRow = worksheet.addRow(rowData);
