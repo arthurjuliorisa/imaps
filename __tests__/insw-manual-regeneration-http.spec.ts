@@ -1,3 +1,5 @@
+import { MissingInswUomMappingError } from '../lib/insw-uom-mapping-error';
+import { INSWIntegrationService } from '../lib/services/insw-integration.service';
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -9,6 +11,7 @@ import { RegenerationError, validateRegenerationRequest } from '../lib/insw-queu
 function route(auth: unknown, recover: (...args: unknown[]) => unknown) {
   const exports: { POST?: (request: Request, params: unknown) => Promise<Response> } = {};
   const imports: Record<string, unknown> = {
+    '@/lib/insw-uom-mapping-error': { MissingInswUomMappingError },
     '@/lib/insw-regeneration-messages': { regenerationMessage },
     'next/server': { NextResponse }, '@/lib/menu-auth': { checkMenuAuth: async () => auth }, '@/lib/prisma': { prisma: {} },
     '@/lib/insw-queue/manual-regeneration': { regenerateWmsInsw: recover, RegenerationError, validateRegenerationRequest },
@@ -81,4 +84,52 @@ test('duplicate codes map to English and hide internal safety detail', async () 
     expect(body.message).toBe('This transaction already has local INSW transmission history. Regeneration was cancelled.');
     expect(body.message).not.toContain('internal');
   }
+});
+
+for (const units of [['KG2'], ['KG2', 'BOX2']]) {
+  for (const operation of ['incoming', 'outgoing', 'usage', 'output', 'adjustment', 'opname']) {
+    test(`UAT3-02: ${operation}, ${units.length} missing units retain typed signal and exact public message`, async () => {
+      let mappingReads = 0;
+      const items = units.map(unit => ({ unit, uom: unit, doc_date: new Date('2026-11-19'),
+        transaction_date: new Date('2026-11-19'), transaction_id: 1, doc_number: 'DOC',
+        internal_evidence_number: 'DOC', qty: 1 }));
+      const db: any = {
+        insw_uom_mapping: { findMany: async () => { mappingReads++; return []; } },
+        adjustments: { findFirst: async () => ({ items }) },
+        wms_stock_opnames: { findFirst: async () => ({ items }) },
+        material_usages: { findMany: async () => [] }, production_outputs: { findMany: async () => [] },
+      };
+      const service: any = new INSWIntegrationService('', '', true, db);
+      service.repository = Object.fromEntries(['getLaporanPemasukanByIds', 'getLaporanPengeluaranByIds',
+        'getMaterialUsageByIds', 'getProductionOutputByIds'].map(name => [name, async () => items]));
+      const convert = () => operation === 'incoming' ? service.convertPemasukanToINSW(1370, [1])
+        : operation === 'outgoing' ? service.convertPengeluaranToINSWByIds(1370, [1])
+        : operation === 'usage' ? service.convertMaterialUsageToINSW(1370, [1])
+        : operation === 'output' ? service.convertProductionOutputToINSW(1370, [1])
+        : operation === 'adjustment' ? service.convertAdjustmentToINSW(1370, 1)
+        : service.convertStockOpnameToINSW(1370, 1);
+      const response = await route(auth, convert)(request(), params);
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ success: false, code: 'MISSING_UOM_MAPPING',
+        message: 'Please check INSW UoM Mapping and try again.' });
+      expect(mappingReads).toBe(1);
+    });
+  }
+}
+test('UAT3-02: unrelated mapping, DB and malformed errors stay generic; explicit refusals preserved', async () => {
+  for (const error of [new Error('mapping database failed'), new Error('UOM mapping tidak ditemukan untuk: KG2'),
+    new Error('database query failed'), { code: 'MISSING_UOM_MAPPING' }, null]) {
+    const response = await route(auth, () => { throw error; })(request(), params);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ success: false, code: 'REGENERATION_FAILED',
+      message: 'Unable to regenerate INSW transmission. Please contact the system administrator.' });
+  }
+  for (const code of ['INVALID_ORIGIN', 'FORBIDDEN', 'NOT_FOUND', 'SOURCE_CHANGED', 'LOCAL_HISTORY_OR_SOURCE_BLOCK',
+    'ADMISSION_DENIED', 'TRANSMISSION_HISTORY_EXISTS', 'ORPHAN_DELIVERY_HISTORY', 'BUSINESS_COMPLETION_REQUIRES_REVIEW']) {
+    const response = await route(auth, () => { throw new RegenerationError(code, 'private', 403); })(request(), params);
+    expect(response.status).toBe(403);
+    expect((await response.json()).message).toBe(regenerationMessage(code));
+    expect(regenerationMessage(code)).not.toContain('UoM');
+  }
+  expect(regenerationMessage('INVALID_ORIGIN')).toBe('Please regenerate this transmission from the application.');
 });

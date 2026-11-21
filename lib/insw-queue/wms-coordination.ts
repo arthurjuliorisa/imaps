@@ -28,6 +28,14 @@ export function wmsResendEligible(cycle: Pick<insw_queue_cycle,
       evidence.reasonCode === 'MISSING_ITEM_VALIDATION' && evidence.httpCode === 400 && evidence.providerStatus === false
       || evidence.reasonCode === 'AUTHORIZATION_FAILURE' && [401, 403].includes(evidence.httpCode as number));
   }
+  // Manual risk decision only: SQL proves the linked attempt has ended, the
+  // target is inactive and this is its latest outcome. A HELD cycle need not
+  // itself be completed, and remaining numeric budget is not an auto retry.
+  // The same branch recognizes only the durably linked SUPERSEDED parent.
+  if (held && cycle.delivery_state === 'POSSIBLY_STARTED'
+    && evidence.classification === 'TRANSIENT_FAILURE' && evidence.reasonCode === 'REQUEST_TIMEOUT'
+    && evidence.responseEvidence === 'UNAVAILABLE' && evidence.adapter === 'WMS_QUEUE_FINALIZER'
+    && ['REQUEST', 'BODY'].includes(String(evidence.phase)) && evidence.providerStatus === null) return true;
   // A drained invocation may have no final provider response. This narrow A21
   // case still requires the original finalizer log and completed attempt in SQL.
   if (held && cycle.delivery_state === 'NOT_STARTED' && evidence.classification === 'UNKNOWN'

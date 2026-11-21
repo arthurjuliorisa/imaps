@@ -1,3 +1,4 @@
+import { MissingInswUomMappingError } from '@/lib/insw-uom-mapping-error';
 import { regenerationMessage } from '@/lib/insw-regeneration-messages';
 import { NextResponse } from 'next/server';
 import { checkMenuAuth } from '@/lib/menu-auth';
@@ -30,7 +31,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const result = await regenerateWmsInsw(prisma, auth.session.user, BigInt(id), { reason });
     return NextResponse.json(result, { status: 202 });
   } catch (error) {
-    const code = error instanceof RegenerationError ? error.code : 'VERIFICATION_INCONCLUSIVE';
+    const code = error instanceof RegenerationError ? error.code
+      : error instanceof MissingInswUomMappingError ? 'MISSING_UOM_MAPPING' : 'REGENERATION_FAILED';
     console.warn('INSW regeneration refused', { logId: id, code,
       detail: error instanceof RegenerationError ? error.message : 'Unexpected coordinator or concurrent transaction failure' });
     return NextResponse.json({ success: false, code, message: regenerationMessage(code) },

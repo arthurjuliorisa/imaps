@@ -4,6 +4,8 @@ const duplicate = 'This transaction already has local INSW transmission history.
 
 export function regenerationMessage(code: unknown): string {
   switch (code) {
+    case 'MISSING_UOM_MAPPING': return 'Please check INSW UoM Mapping and try again.';
+    case 'REGENERATION_FAILED': return 'Unable to regenerate INSW transmission. Please contact the system administrator.';
     case 'INVALID_REQUEST': return 'Only a Reason is accepted for regeneration.';
     case 'INVALID_REASON': return 'Reason is required and must be 500 characters or fewer, without control characters.';
     case 'UNAUTHORIZED': return 'Please sign in before regenerating this transmission.';

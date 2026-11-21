@@ -343,6 +343,9 @@ test('unknown 02 with HTTP 200/status:true cannot override classification into t
   expect(outcome).toMatchObject({ delivery: 'POSSIBLY_STARTED', errorClass: 'INVALID_RESPONSE', classification: { kind: 'UNKNOWN' } });
 });
 
+const timeoutEvidence = { classification: 'TRANSIENT_FAILURE', reasonCode: 'REQUEST_TIMEOUT',
+  responseEvidence: 'UNAVAILABLE', adapter: 'WMS_QUEUE_FINALIZER', phase: 'REQUEST', providerStatus: null };
+
 const manualCategories = [
   ['A14', { classification: 'PERMANENT_FAILURE', reasonCode: 'MISSING_ITEM_VALIDATION', httpCode: 400, providerStatus: false }],
   // A15 has no reviewed literal classifier: use its existing unknown-02 bucket.
@@ -463,7 +466,7 @@ test('direct API rejects when authoritative eligibility no longer passes; no suc
   expect(h.events).not.toContain('insert');
 });
 
-for (const [category, details] of [...manualCategories, ['A21/pre-invocation-drained', {
+for (const [category, details] of [...manualCategories, ['UAT3-03/timeout', timeoutEvidence], ['A21/pre-invocation-drained', {
   classification: 'UNKNOWN', reasonCode: 'NOT_STARTED', responseEvidence: 'UNAVAILABLE',
   adapter: 'WMS_QUEUE_FINALIZER', phase: 'PREFLIGHT',
 }]] as const) test(`${category}: inactive HELD supersession preserves uncertainty, linked audit and worker preflight`, async () => {
@@ -642,4 +645,89 @@ test('forward SQL fence preserves immutable/deferred protection and fails closed
   const original = readFileSync('prisma/migrations/20261113000100_insw_manual_supersession/migration.sql', 'utf8');
   expect(original).toContain('DEFERRABLE INITIALLY DEFERRED');
   expect(original).toContain('INSW supersession audit is immutable');
+});
+
+test('UAT3-03: timeout exception is limited to finalized uncertain HELD/SUPERSEDED network evidence', async () => {
+  const held = { ...cycle, status: 'HELD', delivery_state: 'POSSIBLY_STARTED', retry_index: 0 } as any;
+  expect(coordination.wmsResendEligible(held, timeoutEvidence)).toBe(true);
+  expect(coordination.wmsResendEligible(held, { ...timeoutEvidence, phase: 'BODY' })).toBe(true);
+  for (const patch of [{ reasonCode: 'TEMPORARY_NETWORK_FAILURE' }, { reasonCode: 'REQUEST_CANCELLED' },
+    { classification: 'UNKNOWN' }, { adapter: undefined }, { phase: 'PREFLIGHT' },
+    { responseEvidence: 'COMPLETE' }, { providerStatus: true }]) {
+    expect(coordination.wmsResendEligible(held, { ...timeoutEvidence, ...patch })).toBe(false);
+  }
+  for (const patch of [{ status: 'FAILED', delivery_state: 'KNOWN_FAILURE' }, { status: 'READY' }, { status: 'CLAIMED' },
+    { delivery_state: 'KNOWN_SUCCESS' }, { delivery_state: 'NOT_STARTED' }, { owner_token: 'owner' }, { lease_until: new Date() }]) {
+    expect(coordination.wmsResendEligible({ ...held, ...patch }, timeoutEvidence)).toBe(false);
+  }
+  const h = resendDb({ ...timeoutEvidence, manual_resend: { queue_id: 'successor', commitment: true } });
+  Object.assign(h.parent, held, { status: 'SUPERSEDED' });
+  const successor = { id: 'successor', operation: 'INCOMING', source_log_id: BigInt(1), identity_key: identity,
+    cycle: 2, payload_sha256: cycle.payload_sha256, company_code: 1370 } as any;
+  for (const patch of [{ identity_key: 'other' }, { payload_sha256: 'bad' }, { cycle: 3 }, { id: 'unaudited' }]) {
+    await expect(coordination.verifyWmsManualCycle(h.db, { ...successor, ...patch })).rejects.toThrow('INVALID_WMS_MANUAL_SUCCESSOR');
+  }
+  // Authoritative SQL refusing unfinished/active/stale/resolved/source history
+  // must override the category and any crafted HTTP request.
+  const query = h.tx.$queryRaw;
+  h.parent.status = 'HELD';
+  h.tx.$queryRaw = async (q: any, ...values: any[]) => q.sql?.includes('SELECT l.id') ? [] : query(q, ...values);
+  const apiDb = { ...h.db, insw_tracking_log: { findFirst: async () => ({ transaction_type: 'incoming' }) } };
+  expect((await route(apiDb)()).status).toBe(409);
+  expect(h.events).not.toContain('insert');
+});
+
+test('UAT3-04: latest completed timeout successor can create cycle 3; stale original stays denied', async () => {
+  // Stateful local model of two completed attempts; no PostgreSQL or transport.
+  const h = resendDb({ ...timeoutEvidence });
+  const tx: any = h.tx;
+  Object.assign(h.parent, { status: 'HELD', delivery_state: 'POSSIBLY_STARTED', retry_index: 0, completed_at: null });
+  const logs = new Map<string, any>([['1', { metadata: { ...timeoutEvidence }, queue_attempt: { queue: h.parent } }]]);
+  const successors: any[] = [];
+  const audits: any[] = [];
+  let latest = h.parent;
+  tx.insw_tracking_log.findFirst = async ({ where }: any) => logs.get(String(where.id));
+  tx.insw_tracking_log.update = async ({ where, data }: any) => { logs.get(String(where.id)).metadata = data.metadata; };
+  tx.$executeRaw = async (_q: any, ...values: any[]) => { audits.push(values); return 1; };
+  tx.$queryRaw = async (q: any, ...values: any[]) => {
+    const sql = Array.isArray(q) ? q.join('?') : q.sql;
+    if (sql.includes('pg_advisory')) return [];
+    if (sql.includes('FOR UPDATE')) return [{ id: sql.includes('insw_dispatch_gate') ? 1 : latest.id }];
+    if (sql.includes('SELECT l.id')) {
+      const logId = q.values.find((v: any) => typeof v === 'bigint');
+      const log = logs.get(String(logId));
+      if (!log || log.queue_attempt.queue.id !== latest.id) return [];
+      return [{ ...latest, id: logId, metadata: log.metadata }];
+    }
+    if (sql.includes('UPDATE insw_queue_cycle')) {
+      if (latest.status !== 'HELD') return [];
+      latest.status = 'SUPERSEDED'; return [{ id: latest.id }];
+    }
+    if (sql.includes('INSERT INTO')) {
+      const parent = latest;
+      latest = { ...parent, id: values[0], cycle: parent.cycle + 1, status: 'READY', intent: 'MANUAL_RESUBMIT', source_log_id: values[2] };
+      successors.push(latest); return [{ id: latest.id }];
+    }
+    throw new Error('Unexpected model SQL');
+  };
+  h.db.$queryRaw = (...args: any[]) => tx.$queryRaw(...args);
+  for (const id of [1, 2]) {
+    expect((await coordination.wmsLogResendEligibility(h.db, 1370, [BigInt(id)])).has(String(id))).toBe(true);
+    await coordination.resendWmsLog(h.db, 1370, BigInt(id), 'op', 'reviewed timeout duplicate risk', true);
+    expect(latest.cycle).toBe(id + 1);
+    expect(latest.source_log_id).toBe(BigInt(id));
+    expect(latest.frozen_payload).toEqual(payload);
+    expect(latest.payload_sha256).toBe(cycle.payload_sha256);
+    expect(logs.get(String(id)).metadata.manual_resend).toMatchObject({ queue_id: latest.id, commitment: true });
+    if (id === 1) {
+      // Only a newly completed successor's own log becomes eligible.
+      Object.assign(latest, { status: 'HELD', delivery_state: 'POSSIBLY_STARTED', completed_at: null });
+      logs.set('2', { metadata: { ...timeoutEvidence }, queue_attempt: { queue: latest } });
+      await expect(coordination.resendWmsLog(h.db, 1370, BigInt(1), 'op', 'stale original', true)).rejects.toThrow('Manual Resend unavailable');
+    }
+  }
+  expect(successors).toHaveLength(2);
+  expect(audits).toHaveLength(2);
+  expect(h.parent.status).toBe('SUPERSEDED');
+  expect(successors[0].status).toBe('SUPERSEDED');
 });

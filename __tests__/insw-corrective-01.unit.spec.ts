@@ -1,3 +1,4 @@
+import { MissingInswUomMappingError } from '../lib/insw-uom-mapping-error';
 import { test, expect } from '@playwright/test';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import net from 'node:net';
@@ -221,4 +222,18 @@ test('source association changes during conversion fail closed before insertion'
     await expect(captureCompletedWmsSource(mock.db, scope)).rejects.toThrow('SOURCE_CHANGED_DURING_CAPTURE');
     expect(mock.inserts()).toBe(0);
   } finally { INSWIntegrationService.prototype.convertAdjustmentToINSW = convert; }
+});
+
+for (const manual of [false, true]) test(`UAT3-02: capture propagates missing-UoM type without changing ordinary Error text (manual=${manual})`, async () => {
+  const h = captureDb();
+  const db: any = h.db;
+  db.insw_uom_mapping = { findMany: async () => [] };
+  db.adjustments.findFirst = async () => ({ ...h.source, items: [{ uom: 'KG2', qty: 1 }] });
+  const error = await captureCompletedWmsSource(db, { ...scope,
+    completion: manual ? 'MANUAL_REGENERATION_SERVER_CHECKS' : 'EXISTING_BUSINESS_COMPLETION_RESOLVED' },
+    manual ? { recheck: async () => {}, audit: async () => {} } : undefined).catch(e => e);
+  expect(error).toBeInstanceOf(MissingInswUomMappingError);
+  expect(error).toBeInstanceOf(Error);
+  expect(error.message).toBe('UOM mapping tidak ditemukan untuk: KG2. Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.');
+  expect(h.inserts()).toBe(0);
 });

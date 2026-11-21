@@ -1,3 +1,4 @@
+import { MissingInswUomMappingError } from '../insw-uom-mapping-error';
 import { format } from 'date-fns';
 import { normalizeINSWRetrievalParams } from '@/lib/utils/insw-retrieval-params';
 import type { PrismaClient } from '@prisma/client';
@@ -428,7 +429,7 @@ export class INSWIntegrationService {
     );
 
     if (missingUoms.size > 0) {
-      throw new Error(
+      throw new MissingInswUomMappingError(
         `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
         `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
       );
@@ -492,7 +493,7 @@ export class INSWIntegrationService {
     );
 
     if (missingUoms.size > 0) {
-      throw new Error(
+      throw new MissingInswUomMappingError(
         `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
         `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
       );
@@ -868,7 +869,7 @@ export class INSWIntegrationService {
     }));
 
     if (missingUoms.size > 0) {
-      throw new Error(
+      throw new MissingInswUomMappingError(
         `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
         `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
       );
@@ -941,7 +942,7 @@ export class INSWIntegrationService {
     }));
 
     if (missingUoms.size > 0) {
-      throw new Error(
+      throw new MissingInswUomMappingError(
         `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
         `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
       );
@@ -998,7 +999,7 @@ export class INSWIntegrationService {
     });
 
     if (missingUoms.size > 0) {
-      throw new Error(
+      throw new MissingInswUomMappingError(
         `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
         `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
       );
@@ -1060,7 +1061,7 @@ export class INSWIntegrationService {
     });
 
     if (missingUoms.size > 0) {
-      throw new Error(
+      throw new MissingInswUomMappingError(
         `UOM mapping tidak ditemukan untuk: ${Array.from(missingUoms).join(', ')}. ` +
         `Silakan tambahkan mapping di menu INSW > UOM Mapping terlebih dahulu.`
       );
