@@ -1,5 +1,6 @@
 import { MissingInswUomMappingError } from '@/lib/insw-uom-mapping-error';
 import { regenerationMessage } from '@/lib/insw-regeneration-messages';
+import { hasValidRegenerationOrigin } from '@/lib/security/regeneration-origin';
 import { NextResponse } from 'next/server';
 import { checkMenuAuth } from '@/lib/menu-auth';
 import { prisma } from '@/lib/prisma';
@@ -12,7 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ success: false, code, message: regenerationMessage(code) }, { status: auth.response.status });
   }
   if (!auth.grants.canView || !auth.grants.canEdit) return NextResponse.json({ success: false, code: 'FORBIDDEN', message: regenerationMessage('FORBIDDEN') }, { status: 403 });
-  if (request.headers.get('origin') !== new URL(request.url).origin || request.headers.get('sec-fetch-site') === 'cross-site') {
+  if (!hasValidRegenerationOrigin(request)) {
     return NextResponse.json({ success: false, code: 'INVALID_ORIGIN', message: regenerationMessage('INVALID_ORIGIN') }, { status: 403 });
   }
   const { id } = await params;

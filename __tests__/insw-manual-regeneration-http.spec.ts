@@ -1,3 +1,4 @@
+import { hasValidRegenerationOrigin } from '../lib/security/regeneration-origin';
 import { MissingInswUomMappingError } from '../lib/insw-uom-mapping-error';
 import { INSWIntegrationService } from '../lib/services/insw-integration.service';
 import { test, expect } from '@playwright/test';
@@ -11,6 +12,7 @@ import { RegenerationError, validateRegenerationRequest } from '../lib/insw-queu
 function route(auth: unknown, recover: (...args: unknown[]) => unknown) {
   const exports: { POST?: (request: Request, params: unknown) => Promise<Response> } = {};
   const imports: Record<string, unknown> = {
+    '@/lib/security/regeneration-origin': { hasValidRegenerationOrigin },
     '@/lib/insw-uom-mapping-error': { MissingInswUomMappingError },
     '@/lib/insw-regeneration-messages': { regenerationMessage },
     'next/server': { NextResponse }, '@/lib/menu-auth': { checkMenuAuth: async () => auth }, '@/lib/prisma': { prisma: {} },
@@ -26,9 +28,103 @@ const auth = { authenticated: true, session, grants: { canView: true, canEdit: t
 const params = { params: Promise.resolve({ id: '123' }) };
 function request(body: unknown = { reason: 'Recover missing queue' }, origin = 'https://imaps.invalid') {
   return new Request('https://imaps.invalid/api/settings/wms-transmission-logs/123/regenerate-insw', {
-    method: 'POST', headers: { origin, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers: { origin, host: 'imaps.invalid', 'x-forwarded-proto': 'https', 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
 }
+// Simulate the trusted ingress explicitly; Request does not synthesize Host or
+// forwarding headers. The old harness always used the public URL as request.url.
+function proxyRequest(url: string, headers: Record<string, string>) {
+  return new Request(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify({ reason: 'Recover missing queue' }) });
+}
+const publicHeaders = { origin: 'http://202.155.14.3', host: '202.155.14.3',
+  'x-forwarded-proto': 'http', 'x-forwarded-host': '202.155.14.3' };
+const internalUrl = 'http://localhost:3000/api/settings/wms-transmission-logs/123/regenerate-insw';
+for (const [name, url, headers] of [
+  ['public HTTP over internal URL, Fetch Metadata absent', internalUrl, publicHeaders],
+  ['consistent public URL', internalUrl.replace('localhost:3000', '202.155.14.3'), publicHeaders],
+  ['HTTPS nondefault port', internalUrl, { origin: 'https://imaps.invalid:8443', host: 'imaps.invalid:8443', 'x-forwarded-proto': 'https', 'x-forwarded-host': 'imaps.invalid:8443', 'sec-fetch-site': 'same-origin' }],
+  ['normalized HTTPS default port and case', internalUrl, { origin: 'https://imaps.invalid', host: 'IMAPS.INVALID:443', 'x-forwarded-proto': 'https', 'x-forwarded-host': 'imaps.invalid' }],
+  ['HTTPS IPv6 authority', internalUrl, { origin: 'https://[::1]:8443', host: '[::1]:8443', 'x-forwarded-proto': 'https' }],
+] as const) {
+  test(`trusted ingress origin passes: ${name}`, async () => {
+    const req = proxyRequest(url, headers);
+    if (url === internalUrl) expect(new URL(req.url).origin).toBe('http://localhost:3000');
+    let calls = 0;
+    const response = await route(auth, () => { calls++; return { queue_id: 'mock-only' }; })(req, params);
+    expect(response.status).toBe(202);
+    expect(calls).toBe(1);
+  });
+}
+const invalidMetadata: [string, Record<string, string | null>][] = [
+  ['cross origin even when URL claims public origin', { origin: 'http://evil.invalid' }],
+  ['missing origin', { origin: null }], ['opaque origin', { origin: 'null' }],
+  ['malformed origin', { origin: 'not-an-origin' }], ['origin path', { origin: 'http://202.155.14.3/' }],
+  ['origin userinfo', { origin: 'http://evil@202.155.14.3' }],
+  ['origin list', { origin: 'http://202.155.14.3, http://evil.invalid' }],
+  ['origin protocol mismatch', { origin: 'https://202.155.14.3' }],
+  ['origin port mismatch', { origin: 'http://202.155.14.3:8080' }],
+  ['cross-site Fetch Metadata', { 'sec-fetch-site': 'cross-site' }],
+  ['missing protocol', { 'x-forwarded-proto': null }],
+  ...['ftp', 'HTTP', 'http:', 'http, https', 'http, http', 'https http'].map(value =>
+    [`invalid protocol ${value}`, { 'x-forwarded-proto': value }] as [string, Record<string, string>]),
+  ['missing host', { host: null }],
+  ...['', '202.155.14.3, evil.invalid', '202.155.14.3, 202.155.14.3', 'user@202.155.14.3',
+    '202.155.14.3/path', '202.155.14.3?query', '202.155.14.3#hash', '202.155.14.3\\evil',
+    '202.155.14.3:65536', '202.155.14.3:0', '202.155.14.3:', '202.155.14.3:080',
+    '202.155.14.3 bad', '[invalid]', 'bad..host', '0xcA9b0e03', '202.155.14.3%00'].map(value =>
+    [`invalid host ${value}`, { host: value }] as [string, Record<string, string>]),
+  ['forwarded host cannot override host', { host: 'internal.invalid', 'x-forwarded-host': '202.155.14.3' }],
+  ...['evil.invalid', '202.155.14.3:8080', '', '202.155.14.3, evil.invalid', '202.155.14.3, 202.155.14.3',
+    'user@202.155.14.3', '202.155.14.3/path'].map(value =>
+    [`conflicting or invalid forwarded host ${value}`, { 'x-forwarded-host': value }] as [string, Record<string, string>]),
+];
+for (const [name, overrides] of invalidMetadata) {
+  test(`origin guard refuses: ${name}`, async () => {
+    const headers: Record<string, string> = { ...publicHeaders };
+    for (const [key, value] of Object.entries(overrides)) {
+      if (value === null) delete headers[key]; else headers[key] = value;
+    }
+    let calls = 0;
+    // Public request.url must never rescue missing, contradictory or spoofed metadata.
+    const response = await route(auth, () => { calls++; return {}; })(
+      proxyRequest(internalUrl.replace('localhost:3000', '202.155.14.3'), headers), params);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ success: false, code: 'INVALID_ORIGIN',
+      message: 'Please regenerate this transmission from the application.' });
+    expect(calls).toBe(0);
+  });
+}
+test('raw control and CRLF metadata fail closed (Fetch Headers would reject CRLF first)', async () => {
+  for (const field of ['origin', 'host', 'x-forwarded-host', 'x-forwarded-proto']) {
+    for (const control of ['\r\n', '\t', '\u0000', '\u007f']) {
+      const headers: Record<string, string> = { ...publicHeaders };
+      headers[field] += control + 'evil';
+      let calls = 0;
+      const req = { headers: { get: (name: string) => headers[name] ?? null } } as Request;
+      const response = await route(auth, () => { calls++; })(req, params);
+      expect(response.status).toBe(403);
+      expect((await response.json()).code).toBe('INVALID_ORIGIN');
+      expect(calls).toBe(0);
+    }
+  }
+});
+test('duplicate actual headers are rejected rather than selecting a trusted first value', async () => {
+  for (const field of ['host', 'x-forwarded-host', 'x-forwarded-proto', 'origin']) {
+    const req = proxyRequest(internalUrl, publicHeaders);
+    req.headers.append(field, publicHeaders[field as keyof typeof publicHeaders]);
+    const response = await route(auth, () => { throw new Error('MUST_NOT_REACH_COORDINATOR'); })(req, params);
+    expect(response.status).toBe(403);
+    expect((await response.json()).code).toBe('INVALID_ORIGIN');
+  }
+});
+test('other forwarding fields cannot authorize a mismatched browser origin', async () => {
+  const req = proxyRequest(internalUrl, { ...publicHeaders, origin: 'https://evil.invalid',
+    forwarded: 'host=evil.invalid;proto=https', 'x-original-host': 'evil.invalid', 'x-forwarded-port': '443' });
+  const response = await route(auth, () => { throw new Error('MUST_NOT_REACH_COORDINATOR'); })(req, params);
+  expect(response.status).toBe(403);
+  expect((await response.json()).code).toBe('INVALID_ORIGIN');
+});
 test('VIEW/authentication, EDIT, origin and crafted authority fields stop before coordinator', async () => {
   let calls = 0;
   const recover = () => { calls++; return {}; };
@@ -66,10 +162,10 @@ test('strict reason validation rejects missing, whitespace, bounds, controls and
     expect(response.status).toBe(400);
     expect(['INVALID_REQUEST', 'INVALID_REASON']).toContain((await response.json()).code);
   }
-  const malformed = new Request('https://imaps.invalid/api/test', { method: 'POST', headers: { origin: 'https://imaps.invalid' }, body: '{' });
+  const malformed = new Request('https://imaps.invalid/api/test', { method: 'POST', headers: { host: 'imaps.invalid', 'x-forwarded-proto': 'https', origin: 'https://imaps.invalid' }, body: '{' });
   expect((await post(malformed, params)).status).toBe(400);
   expect((await route({ ...auth, grants: { canView: false, canEdit: true } }, () => { calls++; })(request(), params)).status).toBe(403);
-  const nonJson = new Request('https://imaps.invalid/api/test', { method: 'POST', headers: { origin: 'https://imaps.invalid', 'content-type': 'text/plain' }, body: JSON.stringify({ reason: 'valid' }) });
+  const nonJson = new Request('https://imaps.invalid/api/test', { method: 'POST', headers: { host: 'imaps.invalid', 'x-forwarded-proto': 'https', origin: 'https://imaps.invalid', 'content-type': 'text/plain' }, body: JSON.stringify({ reason: 'valid' }) });
   expect((await post(nonJson, params)).status).toBe(400);
   expect(calls).toBe(0);
   expect(validateRegenerationRequest({ reason: ' x ' })).toBe('x');
