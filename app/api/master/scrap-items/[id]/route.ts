@@ -4,6 +4,7 @@ import { checkAuth } from '@/lib/api-auth';
 import { validateCompanyCode } from '@/lib/company-validation';
 import { logActivity } from '@/lib/log-activity';
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 
 // Validation schema
 const ScrapItemComponentSchema = z.object({
@@ -24,6 +25,59 @@ const ScrapItemUpdateSchema = z.object({
   isActive: z.boolean(),
   components: z.array(ScrapItemComponentSchema),
 });
+
+// Persisted evidence only: no UOM, quantity, status or deletion filters on usage.
+// Child company columns are part of their composite source identity; orphaned
+// retained lines also count conservatively without requiring a surviving header.
+async function hasPersistedScrapUsage(tx: Prisma.TransactionClient, companyCode: number, code: string) {
+  const identity = { item_type: 'SCRAP', item_code: code };
+  const select = { id: true } as const;
+  if (await tx.scrap_transaction_items.findFirst({ where: { ...identity, scrap_transaction_company: companyCode }, select })) return true;
+  if (await tx.incoming_good_items.findFirst({ where: { ...identity, incoming_good_company: companyCode }, select })) return true;
+  if (await tx.outgoing_good_items.findFirst({ where: { ...identity, outgoing_good_company: companyCode }, select })) return true;
+  if (await tx.adjustment_items.findFirst({ where: { ...identity, adjustment_company: companyCode }, select })) return true;
+  if (await tx.material_usage_items.findFirst({ where: { ...identity, material_usage_company: companyCode }, select })) return true;
+  if (await tx.production_output_items.findFirst({ where: { ...identity, production_output_company: companyCode }, select })) return true;
+  const where = { ...identity, company_code: companyCode };
+  if (await tx.beginning_balances.findFirst({ where, select })) return true;
+  if (await tx.stock_daily_snapshot.findFirst({ where, select })) return true;
+  if (await tx.wip_balances.findFirst({ where, select })) return true;
+  if (await tx.wms_stock_opname_items.findFirst({ where, select })) return true;
+  return Boolean(await tx.stock_opname_items.findFirst({ where, select }));
+}
+
+async function needsScrapNameForAdmission(tx: Prisma.TransactionClient, companyCode: number, code: string) {
+  const company = await tx.companies.findUnique({ where: { code: companyCode }, select: { company_type: true } });
+  if (company?.company_type && company.company_type !== 'SEZ') return false;
+  // Unknown company type still needs a relevant unresolved document to block.
+
+  // Batched existence form of getEffectiveScrapInswStatus's absorbing SUCCESS
+  // rule (lib/scrap-insw-finalization.ts). Every other effective status is
+  // NOT_SENT, FAILED or PENDING and may still require current-master admission.
+  // Do not inspect frozen WMS delivery queues: those use stored identities.
+  const [result] = await tx.$queryRaw<Array<{ needs_admission: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1 FROM scrap_transactions h
+      WHERE h.company_code = ${companyCode} AND h.deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM scrap_transaction_items i
+          WHERE i.scrap_transaction_company = h.company_code
+            AND i.scrap_transaction_id = h.id
+            AND i.scrap_transaction_date = h.transaction_date
+            AND i.item_type = 'SCRAP' AND i.item_code = ${code}
+            AND i.deleted_at IS NULL
+        )
+        AND (h.transaction_type NOT IN ('IN', 'OUT') OR NOT EXISTS (
+          SELECT 1 FROM insw_tracking_log l
+          WHERE l.company_code = h.company_code AND l.transaction_id = h.id
+            AND l.transaction_type = CASE h.transaction_type WHEN 'IN' THEN 'scrap_in' ELSE 'scrap_out' END
+            AND l.insw_status = 'SUCCESS'
+        ))
+    ) AS needs_admission
+  `;
+  if (typeof result?.needs_admission !== 'boolean') throw new Error('Scrap admission lookup failed');
+  return result.needs_admission;
+}
 
 /**
  * GET /api/master/scrap-items/[id]
@@ -157,33 +211,35 @@ export async function PUT(
       );
     }
 
-    // Check if scrap item exists
-    const existing = await prisma.scrap_items.findFirst({
-      where: {
-        id,
-        company_code: companyCode,
-        deleted_at: null,
-      },
-    });
-
-    if (!existing) {
-      return NextResponse.json(
-        { message: 'Scrap item not found' },
-        { status: 404 }
-      );
-    }
-
     const { scrapName, scrapDescription, uom, isActive, components } = validationResult.data;
 
-    // Update scrap item with components in a transaction
     const updatedItem = await prisma.$transaction(async (tx) => {
+      // Same parameterized advisory-lock pattern as Scrap finalization. This
+      // serializes master mutations only; transaction writers do not participate.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'scrap-master:' + companyCode + ':' + id}, 0))`;
+      const existing = await tx.scrap_items.findFirst({
+        where: { id, company_code: companyCode, deleted_at: null },
+      });
+      if (!existing) return NextResponse.json({ message: 'Scrap item not found' }, { status: 404 });
+
+      const uomChanged = uom !== existing.uom.trim();
+      const deactivating = existing.is_active && !isActive;
+      if ((uomChanged || deactivating) && await hasPersistedScrapUsage(tx, companyCode, existing.scrap_code)) {
+        return NextResponse.json({ message: uomChanged
+          ? 'This scrap item UOM cannot be changed because it has already been used in transactions or related records.'
+          : 'This scrap item cannot be deactivated because it has already been used in transactions or related records.' }, { status: 409 });
+      }
+      if (scrapName !== existing.scrap_name.trim() && await needsScrapNameForAdmission(tx, companyCode, existing.scrap_code)) {
+        return NextResponse.json({ message: 'This scrap item cannot be renamed because related documents have pending or unclear INSW admission. Review their transmission status first.' }, { status: 409 });
+      }
+
       // Update main scrap item
       const item = await tx.scrap_items.update({
         where: { id },
         data: {
           scrap_name: scrapName,
           scrap_description: scrapDescription,
-          uom,
+          uom: uomChanged ? uom : existing.uom,
           is_active: isActive,
         },
       });
@@ -207,6 +263,8 @@ export async function PUT(
 
       return item;
     });
+
+    if (updatedItem instanceof NextResponse) return updatedItem;
 
     // Log activity
     await logActivity({
@@ -269,29 +327,19 @@ export async function DELETE(
       );
     }
 
-    // Check if scrap item exists
-    const existing = await prisma.scrap_items.findFirst({
-      where: {
-        id,
-        company_code: companyCode,
-        deleted_at: null,
-      },
+    const existing = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'scrap-master:' + companyCode + ':' + id}, 0))`;
+      const item = await tx.scrap_items.findFirst({
+        where: { id, company_code: companyCode, deleted_at: null },
+      });
+      if (!item) return NextResponse.json({ message: 'Scrap item not found' }, { status: 404 });
+      if (await hasPersistedScrapUsage(tx, companyCode, item.scrap_code)) {
+        return NextResponse.json({ message: 'This scrap item cannot be deleted because it has already been used in transactions or related records.' }, { status: 409 });
+      }
+      await tx.scrap_items.update({ where: { id }, data: { deleted_at: new Date() } });
+      return item;
     });
-
-    if (!existing) {
-      return NextResponse.json(
-        { message: 'Scrap item not found' },
-        { status: 404 }
-      );
-    }
-
-    // Soft delete
-    await prisma.scrap_items.update({
-      where: { id },
-      data: {
-        deleted_at: new Date(),
-      },
-    });
+    if (existing instanceof NextResponse) return existing;
 
     // Log activity
     await logActivity({
