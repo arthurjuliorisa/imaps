@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useToast } from '@/app/components/ToastProvider';
@@ -39,6 +41,7 @@ interface StockOpnameData {
   itemCode: string;
   itemName: string;
   unit: string;
+  inswUom: string | null;
   qty: number; // Quantity taken/counted
   valueAmount?: number; // Value amount
   reason?: string;
@@ -67,6 +70,7 @@ const getPdfColumns = (canShowSystemQty: boolean) => [
   { header: 'STO WMS ID', dataKey: 'stoWmsId' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
+  { header: 'Satuan Barang', dataKey: 'unit' },
   { header: 'Jumlah Barang', dataKey: 'qty' },
   { header: 'Nilai', dataKey: 'valueAmount' },
   { header: 'Keterangan', dataKey: 'reason' },
@@ -192,6 +196,8 @@ export default function StockOpnameReportPage() {
         stoWmsId: row.stoWmsId,
         itemCode: row.itemCode,
         itemName: row.itemName,
+        unit: row.unit,
+        inswUom: row.inswUom,
         qty: row.qty !== undefined ? formatQty(row.qty) : '-',
         valueAmount: row.valueAmount !== undefined ? formatQty(row.valueAmount) : '-',
         reason: row.reason || '-',
@@ -200,7 +206,7 @@ export default function StockOpnameReportPage() {
 
     exportToPDF(
       exportData,
-      getPdfColumns(canShowSystemQty),
+      reportingUomPdfColumns(getPdfColumns(canShowSystemQty)),
       'Laporan_Stock_Opname',
       'Laporan Stock Opname'
     );

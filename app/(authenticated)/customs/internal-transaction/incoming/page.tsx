@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/app/components/ToastProvider';
 import {
@@ -62,6 +64,7 @@ const PDF_COLUMNS = [
   { header: 'Pengirim Barang', dataKey: 'shipperName' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
+  { header: 'Satuan Barang', dataKey: 'unit' },
   { header: 'Jumlah Barang', dataKey: 'qty' },
   { header: 'nilai barang', dataKey: 'amount' },
 ];
@@ -208,13 +211,15 @@ export default function InternalTransactionIncomingPage() {
       shipperName: row.shipperName || '-',
       itemCode: row.itemCode,
       itemName: row.itemName,
+      unit: row.unit,
+      inswUom: row.inswUom,
       qty: formatQty(row.qty),
       amount: formatAmount(row.amount),
     }));
 
     exportToPDF(
       exportData,
-      PDF_COLUMNS,
+      reportingUomPdfColumns(PDF_COLUMNS),
       `Internal_Transaction_Incoming_${startDate}_${endDate}`,
       'Laporan Internal Transaction - Incoming',
       `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`

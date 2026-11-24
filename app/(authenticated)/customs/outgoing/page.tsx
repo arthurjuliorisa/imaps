@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/app/components/ToastProvider';
@@ -70,6 +72,7 @@ const PDF_COLUMNS = [
   { header: 'Nama Penerima Barang', dataKey: 'recipientName' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
+  { header: 'Satuan Barang', dataKey: 'unit' },
   { header: 'Jumlah Barang', dataKey: 'qty' },
   { header: 'valas', dataKey: 'currency' },
   { header: 'nilai barang', dataKey: 'amount' },
@@ -222,6 +225,8 @@ export default function OutgoingGoodsReportPage() {
       recipientName: row.recipientName,
       itemCode: row.itemCode,
       itemName: row.itemName,
+      unit: row.unit,
+      inswUom: row.inswUom,
       qty: formatQty(row.qty),
       currency: row.currency,
       amount: formatAmount(row.amount),
@@ -229,7 +234,7 @@ export default function OutgoingGoodsReportPage() {
 
     exportToPDF(
       exportData,
-      PDF_COLUMNS,
+      reportingUomPdfColumns(PDF_COLUMNS),
       `Laporan_Pengeluaran_Barang_${startDate}_${endDate}`,
       'Laporan Pengeluaran Barang',
       `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`

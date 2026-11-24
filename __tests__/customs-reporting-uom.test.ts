@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { jsPDF } from 'jspdf';
 import { createRequire } from 'node:module';
 import net from 'node:net';
 import ts from 'typescript';
@@ -29,7 +30,7 @@ const mappingFixtures = [
 function fixture(unit: unknown = 'kg', index = 0, company = 1370) {
   return { id: index + 1, no: index + 1, company_code: company, company_name: `Company ${company}`,
     company_type: 'SEZ', wms_id: index + 10, item_code: `ITEM-${index}`, item_name: 'Item',
-    type_code: 'ROH', item_type: 'ROH', unit, unit_quantity: unit, quantity: '1.250', qty: '1.250',
+    type_code: 'ROH', item_type: 'ROH', unit, unit_quantity: unit, quantity_in: '1.250', quantity_out: '0.125', quantity: '1.250', qty: '1.250',
     value_amount: '12.375', currency: 'USD', beginning: '2.500', in: '1.250', out: '0.125',
     adjustment: '-0.500', ending: '3.125', stockOpname: '0', variant: '-0.125',
     doc_date: date, reg_date: date, transaction_date: date, stock_date: date, snapshot_date: date,
@@ -37,20 +38,23 @@ function fixture(unit: unknown = 'kg', index = 0, company = 1370) {
     shipper_name: null, recipient_name: null, section: null, source_type: 'MU' };
 }
 function harness(options: { rows?: any[]; role?: string; company?: number; authenticated?: boolean;
-  mappings?: any[]; mappingError?: boolean; total?: number; uiRows?: any[] } = {}) {
+  mappings?: any[]; mappingError?: boolean; total?: number; uiRows?: any[]; capturePdf?: boolean; baseline?: boolean } = {}) {
   let mappings = options.mappings ?? mappingFixtures;
   const rows = options.rows ?? [fixture()];
   const calls: { query: string; params: any[] }[] = [];
   const mappingCalls: any[] = [];
+  const pdfCalls: any[][] = [];
+  const actions: any = {};
   const company = options.company ?? 1370;
   const session = { user: { companyCode: company, role: options.role ?? 'CUSTOMS' } };
   const db = {
+    companies: { findUnique: async () => ({ company_type: 'SEZ' }) },
     $queryRawUnsafe: async (query: string, ...params: any[]) => {
       calls.push({ query, params });
       assert.match(query, /SELECT/i);
       assert.doesNotMatch(query, /\b(?:INSERT|UPDATE|DELETE|ALTER|DROP)\b/i);
       assert.equal(params[0], company, 'all report SQL uses trusted session company');
-      return /COUNT\(/i.test(query) ? [{ count: options.total ?? rows.length }]
+      return /^\s*SELECT\s+COUNT\(/i.test(query) ? [{ count: options.total ?? rows.length, total: options.total ?? rows.length }]
         : rows.filter(row => row.company_code === company);
     },
     insw_uom_mapping: { findMany: async (args: any) => {
@@ -68,16 +72,23 @@ function harness(options: { rows?: any[]; role?: string; company?: number; authe
     if (modules.has(absolute)) return modules.get(absolute);
     const result: any = {};
     modules.set(absolute, result);
-    let code = compiled.get(absolute);
+    const cacheKey = absolute + (options.baseline ? ":HEAD" : "");
+    let code = compiled.get(cacheKey);
     if (!code) {
-      code = ts.transpileModule(readFileSync(absolute, 'utf8'), { compilerOptions: {
+      const baselineFile = process.env.CUSTOMS_UOM_BASELINE_DIR
+        ? path.join(process.env.CUSTOMS_UOM_BASELINE_DIR, path.relative(process.cwd(), absolute)) : undefined;
+      if (options.baseline) assert.ok(process.env.CUSTOMS_UOM_BASELINE_DIR, 'Set CUSTOMS_UOM_BASELINE_DIR to a read-only HEAD source snapshot for differential checks');
+      const source = readFileSync(options.baseline && baselineFile && existsSync(baselineFile) ? baselineFile : absolute, 'utf8');
+      code = ts.transpileModule(source, { compilerOptions: {
         module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020,
         jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
       } }).outputText;
-      compiled.set(absolute, code);
+      compiled.set(cacheKey, code);
     }
-    vm.runInNewContext(code, { exports: result, Buffer, URL, Date, Response, Uint8Array, console: { ...console, error() {} }, process,
+    vm.runInNewContext(code, { exports: result, Buffer, URL, Date, Response, Uint8Array, console: { ...console, error() {}, log() {} }, process,
       require: (name: string) => {
+        if (options.capturePdf && name === '@/lib/exportUtils') return { ...load('lib/exportUtils.ts'), exportToPDF: (...args: any[]) => pdfCalls.push(args) };
+        if (options.capturePdf && name === '@/app/components/customs/ExportButtons') return { ExportButtons: (props: any) => { Object.assign(actions, props); return null; } };
         if (name === '@/lib/prisma') return { prisma: db };
         if (name === '@/lib/api-auth') return { checkAuth: async () => options.authenticated === false
           ? { authenticated: false, response: NextResponse.json({}, { status: 401 }) }
@@ -90,7 +101,17 @@ function harness(options: { rows?: any[]; role?: string; company?: number; authe
         }
         if (options.uiRows && name === '@/app/components/ToastProvider') return { useToast: () => ({}) };
         if (options.uiRows && name === '@/app/components/customs/ReportLayout') {
-          return { ReportLayout: ({ children }: any) => React.createElement('div', null, children) };
+          return { ReportLayout: ({ children, actions: pageActions }: any) => React.createElement('div', null, options.capturePdf ? pageActions : null, children) };
+        }
+        // PDF callback tests need the real page hooks/actions, not a full MUI table tree.
+        if (options.capturePdf && name === '@mui/material') {
+          const mui = require(name);
+          return Object.fromEntries(Object.keys(mui).map(key => [key,
+            /^[A-Z]/.test(key) ? ({ children }: any) => React.createElement('div', null, children) : mui[key]]));
+        }
+        if (options.capturePdf && (name === '@mui/x-data-grid' || name === '@mui/icons-material'
+          || name.startsWith('@/app/components/'))) {
+          return new Proxy({ __esModule: true }, { get: (_target, key) => key === '__esModule' ? true : () => null });
         }
         if (name.startsWith('@/') || name.startsWith('.')) {
           const base = name.startsWith('@/') ? name.slice(2) : path.resolve(path.dirname(absolute), name);
@@ -102,7 +123,7 @@ function harness(options: { rows?: any[]; role?: string; company?: number; authe
     }, { filename: absolute });
     return result;
   }
-  return { load, calls, mappingCalls, setMappings(value: any[]) { mappings = value; } };
+  return { load, calls, mappingCalls, pdfCalls, actions, setMappings(value: any[]) { mappings = value; } };
 }
 function request(report: string, extra = '') {
   return new Request(`http://localhost/api/customs/${report}?startDate=${date}&endDate=${date}&stockDate=${date}&companyCode=9999&role=ADMIN&${extra}`);
@@ -312,4 +333,159 @@ for (const component of ['MutationReportTable', 'WIPReportTable']) test(`${compo
   const names = cells(html, 'th');
   assert.ok(names.includes('Satuan Barang'));
   assert.ok(!names.includes('UoM CEISA/INSW'));
+});
+
+const extraPdfReports = ['stock-count/opname', 'stock-count/adjustment', 'stock-count/sto-control',
+  'capital-goods-transactions', 'scrap-transactions'];
+const pdfReports = [...paths, ...extraPdfReports, 'dashboard/wip'];
+function pdfUiRow(unit: string, mapped: string | null, index: number) {
+  return { ...fixture(unit, index), id: `pdf-${index}`, companyName: 'Fixture company',
+    companyType: 'SEZ', unit, unitQuantity: unit, uom: unit, inswUom: mapped,
+    itemCode: `ITEM-${index}`, itemName: 'Long item name for wrapping across multiple lines',
+    itemType: 'ROH', typeCode: 'ROH', qty: '1.250', quantity: 1.25,
+    amount: '12.375', valueAmount: 12.375, beginning: '2.500', in: '1.250', out: '0.125',
+    adjustment: '-0.500', ending: '3.125', stockDate: date, date, docDate: date, regDate: date,
+    activationDate: date, createdAt: date, transactionDate: date, status: 'Confirmed',
+    originalBeginningQty: 2.5, adjustedBeginningQty: 2.5, inQty: 1.25, outQty: 0.125,
+    originalEndingQty: 3.625, adjustedEndingQty: 3.625, wmsEndingQty: 3.625,
+    varianceAdjustedEnding: 0, varianceOriginalEnding: 0, stoCountQty: 3.625,
+    adjustmentQty: 0, finalQty: 3.625, systemQty: 3.625, actualQty: 3.625,
+    beginningQty: 2.5, incomingQty: 1.25, outgoingQty: 0.125, varianceQty: 0,
+    documentType: 'BC40', docType: 'BC40', documentNumber: 'DOC-1', docNumber: 'DOC-1',
+    stoWmsId: 'STO-1', internalDocument: 'INTERNAL-1', shipperName: 'Shipper',
+    recipientName: 'Recipient', transactionType: 'IN', currency: 'USD' };
+}
+function capturePdf(report: string, rows: any[], role = 'CUSTOMS', baseline = false) {
+  const h = harness({ role, uiRows: rows, capturePdf: true, baseline });
+  const pagePath = report === 'dashboard/wip' ? 'app/(authenticated)/dashboard/customs/wip/page.tsx'
+    : `app/(authenticated)/customs/${report}/page.tsx`;
+  const Page = h.load(pagePath).default;
+  renderToStaticMarkup(React.createElement(Page));
+  assert.equal(typeof h.actions.onExportPDF, 'function', report);
+  h.actions.onExportPDF();
+  assert.equal(h.pdfCalls.length, 1);
+  assert.equal(h.mappingCalls.length, 0, 'PDF reuses enriched rows without I/O');
+  return h.pdfCalls[0];
+}
+for (const report of pdfReports) for (const role of ['CUSTOMS', 'ADMIN', 'USER']) {
+  test(`${report} PDF callback ${role}: adjacent units, blank, unchanged existing cells and scope`, () => {
+    const rows = [pdfUiRow('kg', 'KGM', 0), pdfUiRow('box', 'KGM', 1), pdfUiRow('missing', null, 2)];
+    const [data, columns, ...meta] = capturePdf(report, rows, role);
+    const [oldData, oldColumns, ...oldMeta] = capturePdf(report, rows, role, Boolean(process.env.CUSTOMS_UOM_BASELINE_DIR));
+    const mappedIndex = columns.findIndex((column: any) => column.dataKey === 'inswUom');
+    assert.ok(mappedIndex > 0);
+    assert.equal(columns[mappedIndex].header, 'UoM CEISA/INSW');
+    const rawKey = columns[mappedIndex - 1].dataKey;
+    assert.ok(['unit', 'uom'].includes(rawKey));
+    assert.equal(data.length, oldData.length);
+    assert.equal(data.length, 3);
+    assert.deepEqual(JSON.parse(JSON.stringify(meta)), JSON.parse(JSON.stringify(oldMeta)));
+    data.forEach((row: any, i: number) => {
+      assert.equal(row[rawKey], rows[i].unit);
+      assert.equal(row.inswUom, rows[i].inswUom);
+      // Every preexisting PDF cell, including all amounts and document fields.
+      oldColumns.forEach((column: any) => assert.equal(row[column.dataKey], oldData[i][column.dataKey]));
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(columns.filter((col: any) => oldColumns.some((old: any) => old.dataKey === col.dataKey)))), JSON.parse(JSON.stringify(oldColumns)));
+  });
+}
+for (const report of extraPdfReports) {
+  test(`${report} PDF source: global mapping refresh, exact baseline rows/SQL, role/company scope and bounded reads`, async () => {
+    for (const role of ['CUSTOMS', 'ADMIN', 'USER']) for (const company of [1370, 2000]) {
+      const rows = ['kg', 'box', 'PC', 'blank', 'missing', 'inactive', '', ' kg ']
+        .map((unit, i) => ({ ...fixture(unit, i, company), uom: unit, activation_date: date }));
+      const h = harness({ rows, role, company });
+      const old = harness({ rows, role, company, baseline: Boolean(process.env.CUSTOMS_UOM_BASELINE_DIR) });
+      const file = `app/api/customs/${report}/route.ts`;
+      const get = h.load(file).GET;
+      const response = await get(request(report));
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      const oldBody = await (await old.load(file).GET(request(report))).json();
+      const data = Array.isArray(body) ? body : body.data;
+      const oldData = Array.isArray(oldBody) ? oldBody : oldBody.data;
+      assert.equal(data.length, rows.length);
+      assert.deepEqual(data.map((row: any) => row.inswUom), ['KGM', 'KGM', null, null, null, null, null, null]);
+      const unmapped = data.map(({ inswUom, ...row }: any) => row);
+      const oldUnmapped = oldData.map(({ inswUom, ...row }: any) => row);
+      assert.deepEqual(unmapped, oldUnmapped);
+      assert.deepEqual(h.calls, old.calls, 'source SQL, filters, sort and pagination unchanged');
+      assert.equal(h.mappingCalls.length, 1);
+      h.setMappings([{ wms_uom: 'kg', insw_uom: 'CURRENT' }]);
+      const refreshedBody = await (await get(request(report))).json();
+      const refreshed = Array.isArray(refreshedBody) ? refreshedBody : refreshedBody.data;
+      assert.equal(refreshed[0].inswUom, 'CURRENT');
+      assert.deepEqual(refreshed.map(({ inswUom, ...row }: any) => row), oldUnmapped);
+      assert.equal(h.mappingCalls.length, 2);
+    }
+    for (const size of [0, 500]) {
+      const rows = Array.from({ length: size }, (_, i) => ({ ...fixture('kg', i), uom: 'kg', activation_date: date }));
+      const h = harness({ rows });
+      assert.equal((await h.load(`app/api/customs/${report}/route.ts`).GET(request(report))).status, 200);
+      assert.equal(h.mappingCalls.length, size ? 1 : 0);
+    }
+    for (const options of [{ authenticated: false }, { company: -1 }]) {
+      const h = harness(options);
+      assert.ok((await h.load(`app/api/customs/${report}/route.ts`).GET(request(report))).status >= 400);
+      assert.equal(h.calls.length + h.mappingCalls.length, 0);
+    }
+    const failure = harness({ mappingError: true, rows: [{ ...fixture(), activation_date: date }] });
+    assert.equal((await failure.load(`app/api/customs/${report}/route.ts`).GET(request(report))).status, 500);
+  });
+}
+test('STO dates-only request never reads mappings', async () => {
+  const h = harness({ rows: [{ ...fixture(), activation_date: date }] });
+  assert.equal((await h.load('app/api/customs/stock-count/sto-control/route.ts').GET(request('stock-count/sto-control', 'type=dates'))).status, 200);
+  assert.equal(h.mappingCalls.length, 0);
+});
+
+for (const report of pdfReports) test(`${report} real jsPDF: multi-page repeated headers, mapped blanks, bounded cells`, () => {
+  const rows = Array.from({ length: 150 }, (_, i) => pdfUiRow(i % 2 ? 'missing' : 'kg', i % 2 ? null : 'KGM', i));
+  const [data, columns, fileName, title, subtitle] = capturePdf(report, rows);
+  const rawIndex = columns.findIndex((col: any) => col.dataKey === 'inswUom') - 1;
+  data[2][columns[rawIndex].dataKey] = 'Original-WMS-unit-with-a-long-value';
+  data[2].inswUom = 'CEISA-target-with-a-long-value';
+  // Invoke the real shared renderer and real AutoTable, replacing only the download sink.
+  let saved: any;
+  let table: any;
+  const h = harness();
+  const originalSave = (jsPDF.API as any).save;
+  (jsPDF.API as any).save = function(this: any) { saved = this; return this; };
+  try {
+    h.load('lib/exportUtils.ts').exportToPDF(data, columns, fileName, title, subtitle);
+    assert.ok(saved);
+    table = saved.lastAutoTable;
+    assert.ok(saved.getNumberOfPages() > 1);
+    assert.equal(saved.internal.pageSize.getWidth() > saved.internal.pageSize.getHeight(),
+      columns.filter((col: any) => col.dataKey !== 'inswUom').length > 6, 'existing orientation retained');
+    assert.equal(table.body.length, rows.length);
+    const unitIndex = columns.findIndex((col: any) => col.dataKey === 'inswUom');
+    assert.equal(table.head[0].cells[unitIndex].raw, 'UoM CEISA/INSW');
+    assert.equal(table.body[0].cells[unitIndex - 1].raw, 'kg');
+    assert.equal(table.body[0].cells[unitIndex].raw, 'KGM');
+    assert.equal(table.body[1].cells[unitIndex].raw, '');
+    assert.equal(table.body[2].cells[unitIndex - 1].raw, data[2][columns[rawIndex].dataKey]);
+    assert.equal(table.body[2].cells[unitIndex].raw, data[2].inswUom);
+    for (const index of [unitIndex - 1, unitIndex]) {
+      const cell = table.body[2].cells[index];
+      saved.setFont(cell.styles.font, cell.styles.fontStyle);
+      saved.setFontSize(cell.styles.fontSize);
+      const availableWidth = cell.width - cell.padding('left') - cell.padding('right');
+      for (const line of cell.text) assert.ok(saved.getTextWidth(line) <= availableWidth + 0.5,
+        'long unit text fits or wraps within its own cell');
+    }
+    for (const row of table.body) for (const cell of Object.values(row.cells) as any[]) {
+      assert.ok(cell.x >= 0 && cell.x + cell.width <= saved.internal.pageSize.getWidth() + 0.1, `${report} cell x=${cell.x} width=${cell.width}`);
+      assert.ok(cell.y >= 0 && cell.y + cell.height <= saved.internal.pageSize.getHeight() + 0.1);
+    }
+    const bytes = saved.output('arraybuffer');
+    assert.ok(bytes.byteLength > 10000);
+    // Uncompressed jsPDF content retains ASCII text; headers repeat on each page.
+    const text = Buffer.from(bytes).toString('latin1');
+    assert.ok(text.includes(title));
+    assert.ok(text.includes('Generated:'));
+    assert.ok((text.match(/CEISA\/INSW/g) ?? []).length >= saved.getNumberOfPages());
+  } finally {
+    (jsPDF.API as any).save = originalSave;
+  }
 });

@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/app/components/ToastProvider';
 import { Box, Stack, TextField, InputAdornment, MenuItem } from '@mui/material';
@@ -163,6 +165,7 @@ export default function CapitalGoodsMutationPage() {
       itemName: row.itemName,
       itemType: row.itemType || '-',
       unit: row.unit,
+      inswUom: row.inswUom,
       beginning: row.beginning.toString(),
       in: row.in.toString(),
       out: row.out.toString(),
@@ -173,7 +176,7 @@ export default function CapitalGoodsMutationPage() {
 
     exportToPDF(
       exportData,
-      PDF_COLUMNS,
+      reportingUomPdfColumns(PDF_COLUMNS),
       `Laporan_Barang_Modal_${startDate}_${endDate}`,
       'Laporan Barang Modal',
       `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`

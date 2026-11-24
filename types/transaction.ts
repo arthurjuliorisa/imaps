@@ -13,6 +13,7 @@ export interface ScrapTransaction {
   itemCode: string;
   itemName: string;
   unit: string;
+  inswUom?: string | null;
   inQty: number;
   outQty: number;
   currency: string;
@@ -45,6 +46,7 @@ export interface CapitalGoodsTransaction {
   itemCode: string;
   itemName: string;
   unit: string;
+  inswUom?: string | null;
   inQty: number;
   outQty: number;
   currency: string;

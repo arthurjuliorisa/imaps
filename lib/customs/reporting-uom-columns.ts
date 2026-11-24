@@ -16,3 +16,9 @@ export function reportingUomColumns(columns: ReportColumn[]): ReportColumn[] {
     return [column, mapped];
   });
 }
+
+/** PDF templates use header/dataKey names; retain the shared adjacent-column policy. */
+export function reportingUomPdfColumns(columns: { header: string; dataKey: string }[]) {
+  return reportingUomColumns(columns.map(column => ({ key: column.dataKey, label: column.header })))
+    .map(column => ({ header: column.label, dataKey: column.key }));
+}

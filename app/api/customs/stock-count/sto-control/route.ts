@@ -1,3 +1,4 @@
+import { loadReportingUomLookup } from '@/lib/customs/reporting-uom';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -83,6 +84,8 @@ export async function GET(request: Request) {
       companyCode
     );
 
+    const lookupUom = await loadReportingUomLookup(result);
+
     const transformedData = result.map((row: any) => {
       const dateStr = new Date(row.activation_date).toISOString().split('T')[0];
       return {
@@ -97,6 +100,7 @@ export async function GET(request: Request) {
       itemCode: row.item_code || '',
       itemName: row.item_name || '',
       uom: row.uom || '',
+      inswUom: lookupUom(row.uom),
       originalBeginningQty: Number(row.original_beginning_qty || 0),
       adjustedBeginningQty: Number(row.adjusted_beginning_qty || 0),
       inQty: Number(row.in_qty || 0),

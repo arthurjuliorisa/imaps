@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Box, Stack, TextField, InputAdornment, MenuItem } from '@mui/material';
 import { Search as SearchIcon } from '@mui/icons-material';
@@ -127,6 +129,7 @@ export default function ScrapMutationPage() {
       itemName: row.itemName,
       itemType: row.itemType || '-',
       unit: row.unit,
+      inswUom: row.inswUom,
       beginning: row.beginning.toString(),
       in: row.in.toString(),
       out: row.out.toString(),
@@ -137,7 +140,7 @@ export default function ScrapMutationPage() {
 
     exportToPDF(
       exportData,
-      PDF_COLUMNS,
+      reportingUomPdfColumns(PDF_COLUMNS),
       `Laporan_Barang_Scrap_${startDate}_${endDate}`,
       'Laporan Barang Scrap',
       `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`

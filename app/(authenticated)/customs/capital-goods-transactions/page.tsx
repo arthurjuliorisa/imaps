@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { Box, Stack, Button, CircularProgress, Typography, TextField, InputAdornment, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
@@ -340,6 +342,7 @@ export default function CapitalGoodsTransactionsPage() {
       itemCode: row.itemCode,
       itemName: row.itemName,
       unit: row.unit,
+      inswUom: row.inswUom,
       inQty: (row.inQty || 0).toString(),
       outQty: (row.outQty || 0).toString(),
       currency: row.currency || '',
@@ -369,7 +372,7 @@ export default function CapitalGoodsTransactionsPage() {
 
     exportToPDF(
       exportData,
-      pdfColumns,
+      reportingUomPdfColumns(pdfColumns),
       `Transaksi_Barang_Modal_${startDate}_${endDate}`,
       'Transaksi Barang Modal',
       `Period: ${formatDate(startDate)} - ${formatDate(endDate)}`

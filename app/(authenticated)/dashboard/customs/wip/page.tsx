@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/app/components/ToastProvider';
 import { Box, Stack } from '@mui/material';
@@ -16,6 +18,7 @@ interface WIPBalanceData {
   itemName: string;
   itemType: string;
   unitQuantity: string;
+  inswUom: string | null;
   quantity: number;
   stockDate: string;
   remarks: string | null;
@@ -55,6 +58,7 @@ export default function WIPReportPage() {
         itemCode: row.itemCode,
         itemName: row.itemName,
         unit: row.unitQuantity,
+        inswUom: row.inswUom,
         beginning: row.quantity, // WIP balance is the current position
         in: 0,
         out: 0,
@@ -111,6 +115,7 @@ export default function WIPReportPage() {
       itemCode: row.itemCode,
       itemName: row.itemName,
       unit: row.unit,
+      inswUom: row.inswUom,
       quantity: row.ending.toString(),
       remarks: row.remarks || '-',
     }));
@@ -126,7 +131,7 @@ export default function WIPReportPage() {
 
     exportToPDF(
       exportData,
-      columns,
+      reportingUomPdfColumns(columns),
       `Laporan_Posisi_Barang_Dalam_Proses_${startDate}_${endDate}`,
       'Laporan Posisi Barang Dalam Proses'
     );

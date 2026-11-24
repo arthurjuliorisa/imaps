@@ -49,8 +49,10 @@ export function exportToPDF(
   title: string,
   subtitle?: string
 ) {
+  // An adjacent mapped unit must not change the report's existing orientation.
+  const originalColumnCount = columns.filter(col => col.dataKey !== 'inswUom').length;
   const doc = new jsPDF({
-    orientation: columns.length > 6 ? 'landscape' : 'portrait',
+    orientation: originalColumnCount > 6 ? 'landscape' : 'portrait',
   });
 
   // Add title
@@ -77,14 +79,17 @@ export function exportToPDF(
   doc.setFont('helvetica', 'italic');
   doc.text(`Generated: ${dateStr}`, 14, subtitle ? 28 : 22);
 
+  // Keep dense Customs tables within the existing landscape page after adding UoM.
+  const denseCustomsTable = columns.length > 18 && columns.some(col => col.dataKey === 'inswUom');
+
   // Generate table
   autoTable(doc, {
     startY: subtitle ? 32 : 26,
     head: [columns.map(col => col.header)],
     body: data.map(row => columns.map(col => row[col.dataKey] || '')),
     styles: {
-      fontSize: 8,
-      cellPadding: 2,
+      fontSize: denseCustomsTable ? 7 : 8,
+      cellPadding: denseCustomsTable ? 1 : 2,
     },
     headStyles: {
       fillColor: [30, 58, 138], // Blue color matching the theme

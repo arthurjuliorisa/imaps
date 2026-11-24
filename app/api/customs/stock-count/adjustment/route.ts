@@ -1,3 +1,4 @@
+import { loadReportingUomLookup } from '@/lib/customs/reporting-uom';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -78,6 +79,8 @@ export async function GET(request: Request) {
 
     console.log('[Adjustment API] Result count:', result.length); // Debug log
 
+    const lookupUom = await loadReportingUomLookup(result);
+
     const transformedData = result.map((row: any, index: number) => ({
       id: `${row.id}-${row.item_code}-${index}`,
       companyCode: row.company_code,
@@ -91,6 +94,7 @@ export async function GET(request: Request) {
       itemCode: row.item_code,
       itemName: row.item_name,
       unit: row.unit,
+      inswUom: lookupUom(row.unit),
       beginningQty: Number(row.beginning_qty || 0),
       incomingQty: Number(row.incoming_qty_on_date || 0),
       outgoingQty: Number(row.outgoing_qty_on_date || 0),

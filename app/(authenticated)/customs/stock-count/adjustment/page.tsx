@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/app/components/ToastProvider';
 import {
@@ -38,6 +40,7 @@ interface AdjustmentData {
   itemCode: string;
   itemName: string;
   unit: string;
+  inswUom: string | null;
   beginningQty: number;
   incomingQty: number;
   outgoingQty: number;
@@ -214,6 +217,7 @@ export default function AdjustmentReportPage() {
       itemCode: row.itemCode,
       itemName: row.itemName,
       unit: row.unit,
+      inswUom: row.inswUom,
       jumlahBarang: formatQty(row.incomingQty),
       systemQty: formatQty(row.systemQty),
       actualQty: formatQty(row.actualQty),
@@ -224,7 +228,7 @@ export default function AdjustmentReportPage() {
 
     exportToPDF(
       exportData,
-      PDF_COLUMNS,
+      reportingUomPdfColumns(PDF_COLUMNS),
       'Laporan_Adjustment',
       'Laporan Adjustment'
     );

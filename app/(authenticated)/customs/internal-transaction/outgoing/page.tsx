@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/app/components/ToastProvider';
 import {
@@ -67,6 +69,7 @@ const getPdfColumns = (isSEZ: boolean) => [
   { header: 'Penerima barang', dataKey: 'recipientName' },
   { header: 'Kode Barang', dataKey: 'itemCode' },
   { header: 'Nama Barang', dataKey: 'itemName' },
+  { header: 'Satuan Barang', dataKey: 'unit' },
   { header: 'Jumlah Barang', dataKey: 'qty' },
   { header: 'nilai barang', dataKey: 'amount' },
 ];
@@ -234,13 +237,15 @@ export default function InternalTransactionOutgoingPage() {
       recipientName: row.recipientName || '-',
       itemCode: row.itemCode,
       itemName: row.itemName,
+      unit: row.unit,
+      inswUom: row.inswUom,
       qty: formatQty(row.qty),
       amount: formatAmount(row.amount),
     }));
 
     exportToPDF(
       exportData,
-      getPdfColumns(isSEZ),
+      reportingUomPdfColumns(getPdfColumns(isSEZ)),
       `Internal_Transaction_Outgoing_${startDate}_${endDate}`,
       'Laporan Internal Transaction - Outgoing',
       `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`

@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/app/components/ToastProvider';
 import {
@@ -38,6 +40,7 @@ interface StoControlData {
   itemCode: string;
   itemName: string;
   uom: string;
+  inswUom: string | null;
   originalBeginningQty: number;
   adjustedBeginningQty: number;
   inQty: number;
@@ -275,6 +278,7 @@ export default function StoControlPage() {
       itemCode: row.itemCode,
       itemName: row.itemName,
       uom: row.uom,
+      inswUom: row.inswUom,
       originalBeginningQty: formatQty(row.originalBeginningQty),
       adjustedBeginningQty: formatQty(row.adjustedBeginningQty),
       inQty: formatQty(row.inQty),
@@ -291,7 +295,7 @@ export default function StoControlPage() {
 
     exportToPDF(
       exportData,
-      PDF_COLUMNS,
+      reportingUomPdfColumns(PDF_COLUMNS),
       'STO_Adjustment_Control',
       'STO & Adjustment Control'
     );

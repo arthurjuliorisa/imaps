@@ -1,3 +1,4 @@
+import { loadReportingUomLookup } from '@/lib/customs/reporting-uom';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -70,6 +71,8 @@ export async function GET(request: Request) {
 
     console.log('[Stock Opname API] Result count:', result.length); // Debug log
 
+    const lookupUom = await loadReportingUomLookup(result);
+
     const transformedData = result.map((row: any, index: number) => {
       return {
         id: `${row.id}-${row.item_code}-${index}`,
@@ -83,6 +86,7 @@ export async function GET(request: Request) {
         itemCode: row.item_code,
         itemName: row.item_name,
         unit: row.unit,
+        inswUom: lookupUom(row.unit),
         qty: Number(row.qty || 0),
         valueAmount: Number(row.value_amount || 0),
         reason: '',

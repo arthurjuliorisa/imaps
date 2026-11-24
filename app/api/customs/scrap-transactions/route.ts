@@ -1,3 +1,4 @@
+import { loadReportingUomLookup } from '@/lib/customs/reporting-uom';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkAuth } from '@/lib/api-auth';
@@ -330,6 +331,8 @@ export async function GET(request: Request) {
     const result = await prisma.$queryRawUnsafe<any[]>(dataQuery, ...params);
 
     // Transform to expected format
+    const lookupUom = await loadReportingUomLookup(result);
+
     const transformedData = result.map((row: any, index: number) => ({
       no: offset + index + 1,
       id: row.record_id,
@@ -349,6 +352,7 @@ export async function GET(request: Request) {
       itemCode: row.item_code,
       itemName: row.item_name,
       unit: row.unit,
+      inswUom: lookupUom(row.unit),
       inQty: Number(row.quantity_in || 0),
       outQty: Number(row.quantity_out || 0),
       currency: row.currency,

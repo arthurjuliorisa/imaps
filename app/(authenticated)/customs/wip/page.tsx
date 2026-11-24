@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/app/components/ToastProvider';
 import { Box, Stack, TextField, InputAdornment, MenuItem } from '@mui/material';
@@ -189,6 +191,7 @@ export default function WIPMutationPage() {
       itemName: row.itemName,
       itemType: row.itemType || '-',
       unit: row.unitQuantity,
+      inswUom: row.inswUom,
       quantity: row.quantity.toString(),
       stockDate: formatDateShort(row.stockDate),
       remarks: row.remarks || '-',
@@ -196,7 +199,7 @@ export default function WIPMutationPage() {
 
     exportToPDF(
       exportData,
-      PDF_COLUMNS,
+      reportingUomPdfColumns(PDF_COLUMNS),
       `Laporan_Posisi_Barang_Dalam_Proses_${selectedDate}`,
       'Laporan Posisi Barang Dalam Proses',
       `Date: ${formatDateShort(selectedDate)}`

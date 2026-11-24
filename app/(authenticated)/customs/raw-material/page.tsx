@@ -1,5 +1,7 @@
 'use client';
 
+import { reportingUomPdfColumns } from '@/lib/customs/reporting-uom-columns';
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/app/components/ToastProvider';
 import { Box, Stack, TextField, InputAdornment, MenuItem } from '@mui/material';
@@ -164,6 +166,7 @@ export default function RawMaterialMutationPage() {
       itemName: row.itemName,
       itemType: row.itemType || '-',
       unit: row.unit,
+      inswUom: row.inswUom,
       beginning: typeof row.beginning === 'string' ? row.beginning : row.beginning.toString(),
       in: typeof row.in === 'string' ? row.in : row.in.toString(),
       out: typeof row.out === 'string' ? row.out : row.out.toString(),
@@ -174,7 +177,7 @@ export default function RawMaterialMutationPage() {
 
     exportToPDF(
       exportData,
-      PDF_COLUMNS,
+      reportingUomPdfColumns(PDF_COLUMNS),
       `Laporan_Bahan_Baku_${startDate}_${endDate}`,
       'Laporan Bahan Baku',
       `Period: ${formatDateShort(startDate)} - ${formatDateShort(endDate)}`
