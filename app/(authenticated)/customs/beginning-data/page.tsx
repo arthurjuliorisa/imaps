@@ -333,10 +333,6 @@ export default function BeginningDataPage() {
 
   // Handle Excel import submission
   const handleImportSubmit = async (records: any[]) => {
-    console.log('[Page Debug] handleImportSubmit called with records:', {
-      count: records.length,
-      records: records.slice(0, 3),
-    });
     try {
       const response = await fetch('/api/customs/beginning-data/import', {
         method: 'POST',
@@ -356,11 +352,6 @@ export default function BeginningDataPage() {
             ceisaInswUom: r.ceisaInswUom,
           })),
         }),
-      });
-
-      console.log('[Page Debug] Fetch response received:', {
-        status: response.status,
-        ok: response.ok,
       });
 
       if (!response.ok) {

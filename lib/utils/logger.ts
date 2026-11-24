@@ -181,20 +181,9 @@ export async function logRequest(
   const method = request.method;
   const path = new URL(request.url).pathname;
   
-  // Get body size if available
-  let bodySize = 0;
-  try {
-    const clonedRequest = request.clone();
-    const body = await clonedRequest.text();
-    bodySize = body.length;
-  } catch (error) {
-    // Ignore if body can't be read
-  }
-
   requestLogger.info({
     method,
     path,
-    bodySize,
     msg: 'Incoming API request',
   });
 }

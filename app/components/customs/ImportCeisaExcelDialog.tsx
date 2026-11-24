@@ -137,14 +137,6 @@ export function ImportCeisaExcelDialog({
         formData.append('itemType', itemType);
       }
 
-      console.log('[Import] Starting import with:', {
-        fileName: selectedFile.name,
-        fileSize: selectedFile.size,
-        transactionType,
-        direction,
-        itemType: transactionType === 'CAPITAL_GOODS' ? itemType : undefined,
-      });
-
       const response = await fetch('/api/customs/import-ceisa-excel', {
         method: 'POST',
         body: formData,
@@ -179,8 +171,6 @@ export function ImportCeisaExcelDialog({
         return;
       }
 
-      console.log('[Import] Success:', result);
-      
       toast.success(
         `Successfully imported ${result.data.itemCount} item(s) with WMS ID: ${result.data.wmsId}`
       );

@@ -49,8 +49,6 @@ export async function GET(request: Request) {
       },
     });
 
-    console.log('[Capital Goods API] Found items from snapshot:', capitalGoodsItems.length, capitalGoodsItems);
-
     // Transform to match frontend interface
     const transformedData = capitalGoodsItems.map((item, index) => ({
       id: index + 1, // Simple incremental ID for autocomplete
