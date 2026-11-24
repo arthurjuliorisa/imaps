@@ -35,6 +35,7 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Autocomplete,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -132,6 +133,38 @@ export default function ScrapMasterPage() {
   const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
   const [loadingItemTypes, setLoadingItemTypes] = useState(false);
 
+  const [uomOptions, setUomOptions] = useState<string[]>([]);
+  const [uomStatus, setUomStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  const fetchUoms = useCallback(async () => {
+    setUomStatus('loading');
+    try {
+      const response = await fetch('/api/master/scrap-items/uoms');
+      if (!response.ok) throw new Error('Failed to load WMS UOM options');
+      const result = await response.json();
+      if (!Array.isArray(result.data) || !result.data.every((code: unknown) => typeof code === 'string')) {
+        throw new Error('Invalid WMS UOM options');
+      }
+      // Exact identities: do not trim, uppercase or merge similar WMS codes.
+      setUomOptions([...new Set<string>(result.data)].sort());
+      setUomStatus('ready');
+    } catch {
+      setUomStatus('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchUoms();
+  }, [fetchUoms]);
+
+  const currentUom = editMode ? selectedItem?.uom : undefined;
+  const selectableUoms = currentUom && !uomOptions.includes(currentUom)
+    ? [currentUom, ...uomOptions]
+    : uomOptions;
+  const validUomSelection = !!formData.uom.trim() && (
+    formData.uom === currentUom || (uomStatus === 'ready' && uomOptions.includes(formData.uom))
+  );
+
   const fetchScrapItems = useCallback(async () => {
     setLoading(true);
     try {
@@ -228,7 +261,10 @@ export default function ScrapMasterPage() {
     } else {
       setEditMode(false);
       setSelectedItem(null);
-      setFormData(initialFormData);
+      setFormData({
+        ...initialFormData,
+        uom: uomStatus === 'ready' && uomOptions.includes(initialFormData.uom) ? initialFormData.uom : '',
+      });
     }
     setOpenDialog(true);
   };
@@ -279,6 +315,11 @@ export default function ScrapMasterPage() {
     // Validation
     if (!formData.scrapCode.trim() || !formData.scrapName.trim() || !formData.uom.trim()) {
       toast.error('Please fill in all required fields');
+      return;
+    }
+
+    if (!validUomSelection) {
+      toast.error('Please select an available WMS UOM');
       return;
     }
 
@@ -631,13 +672,45 @@ export default function ScrapMasterPage() {
               fullWidth
             />
 
-            <TextField
-              label="UOM"
-              value={formData.uom}
-              onChange={(e) => setFormData({ ...formData, uom: e.target.value })}
-              required
-              sx={{ width: 200 }}
+            <Autocomplete
+              options={selectableUoms}
+              value={formData.uom || null}
+              onChange={(_, value) => setFormData({ ...formData, uom: value ?? '' })}
+              loading={uomStatus === 'loading'}
+              loadingText="Loading WMS UOM options..."
+              noOptionsText={uomStatus === 'error' ? 'WMS UOM options unavailable' : 'No mapped WMS UOM options'}
+              renderOption={(props, option) => (
+                <li {...props} key={option}>
+                  {option}{option === currentUom && !uomOptions.includes(option)
+                    ? uomStatus === 'ready' ? ' (current / legacy)' : ' (current value)'
+                    : ''}
+                </li>
+              )}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="UOM"
+                  required
+                  error={!formData.uom || uomStatus === 'error'}
+                  helperText={uomStatus === 'loading'
+                    ? 'Loading WMS UOM options. Current value is retained.'
+                    : uomStatus === 'error'
+                      ? 'Failed to load WMS UOM options. Current value is retained; retry to select another.'
+                      : currentUom && formData.uom === currentUom && !uomOptions.includes(currentUom)
+                        ? 'Current / legacy WMS UOM; retained for this record.'
+                        : uomOptions.length === 0 ? 'No active WMS UOM mappings available.' : 'Search and select a WMS UOM.'}
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: <>
+                      {uomStatus === 'loading' && <CircularProgress size={18} />}
+                      {params.InputProps.endAdornment}
+                    </>,
+                  }}
+                />
+              )}
+              sx={{ width: 360, maxWidth: '100%' }}
             />
+            {uomStatus === 'error' && <Button onClick={fetchUoms}>Retry WMS UOMs</Button>}
 
             <FormControlLabel
               control={
@@ -768,7 +841,7 @@ export default function ScrapMasterPage() {
           <Button
             variant="contained"
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={loading || !validUomSelection}
           >
             {loading ? <CircularProgress size={24} /> : editMode ? 'Update' : 'Create'}
           </Button>
