@@ -22,7 +22,7 @@ const ScrapItemUpdateSchema = z.object({
   scrapDescription: z.string().trim().max(500).optional(),
   uom: z.string().trim().min(1, 'UOM is required').max(20),
   isActive: z.boolean(),
-  components: z.array(ScrapItemComponentSchema).min(1, 'At least one component is required'),
+  components: z.array(ScrapItemComponentSchema),
 });
 
 /**
@@ -188,20 +188,22 @@ export async function PUT(
         },
       });
 
-      // If components are provided, update them
+      // Explicit components array replaces the composition, including clearing with [].
       await tx.scrap_item_details.deleteMany({ where: { scrap_item_id: id } });
-      await tx.scrap_item_details.createMany({
-        data: components.map((comp) => ({
-          scrap_item_id: id,
-          component_code: comp.componentCode,
-          component_name: comp.componentName,
-          component_type: comp.componentType,
-          uom: comp.uom,
-          quantity: comp.quantity,
-          percentage: comp.percentage,
-          remarks: comp.remarks,
-        })),
-      });
+      if (components.length > 0) {
+        await tx.scrap_item_details.createMany({
+          data: components.map((comp) => ({
+            scrap_item_id: id,
+            component_code: comp.componentCode,
+            component_name: comp.componentName,
+            component_type: comp.componentType,
+            uom: comp.uom,
+            quantity: comp.quantity,
+            percentage: comp.percentage,
+            remarks: comp.remarks,
+          })),
+        });
+      }
 
       return item;
     });

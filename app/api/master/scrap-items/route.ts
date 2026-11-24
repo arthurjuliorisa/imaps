@@ -23,7 +23,7 @@ const ScrapItemSchema = z.object({
   scrapDescription: z.string().trim().max(500).optional(),
   uom: z.string().trim().min(1, 'UOM is required').max(20),
   isActive: z.boolean(),
-  components: z.array(ScrapItemComponentSchema).min(1, 'At least one component is required'),
+  components: z.array(ScrapItemComponentSchema),
 });
 
 /**
@@ -169,7 +169,7 @@ export async function POST(request: Request) {
           scrap_description: scrapDescription,
           uom,
           is_active: isActive,
-          scrap_item_details: {
+          scrap_item_details: components.length > 0 ? {
             create: components.map((comp) => ({
               component_code: comp.componentCode,
               component_name: comp.componentName,
@@ -179,7 +179,7 @@ export async function POST(request: Request) {
               percentage: comp.percentage,
               remarks: comp.remarks,
             })),
-          },
+          } : undefined,
         },
         include: {
           scrap_item_details: true,

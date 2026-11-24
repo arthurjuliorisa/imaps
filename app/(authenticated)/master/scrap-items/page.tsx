@@ -127,6 +127,7 @@ export default function ScrapMasterPage() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<ScrapItem | null>(null);
+  const [removeComponentIndex, setRemoveComponentIndex] = useState<number | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
   const [loadingItemTypes, setLoadingItemTypes] = useState(false);
@@ -234,6 +235,7 @@ export default function ScrapMasterPage() {
 
   const handleCloseDialog = () => {
     setOpenDialog(false);
+    setRemoveComponentIndex(null);
     setEditMode(false);
     setSelectedItem(null);
     setFormData(initialFormData);
@@ -261,6 +263,14 @@ export default function ScrapMasterPage() {
   };
 
   const handleRemoveComponent = (index: number) => {
+    if (editMode && selectedItem && selectedItem.components.length > 0 && formData.components.length === 1) {
+      setRemoveComponentIndex(index);
+      return;
+    }
+    removeComponent(index);
+  };
+
+  const removeComponent = (index: number) => {
     const updatedComponents = formData.components.filter((_, i) => i !== index);
     setFormData({ ...formData, components: updatedComponents });
   };
@@ -269,11 +279,6 @@ export default function ScrapMasterPage() {
     // Validation
     if (!formData.scrapCode.trim() || !formData.scrapName.trim() || !formData.uom.trim()) {
       toast.error('Please fill in all required fields');
-      return;
-    }
-
-    if (formData.components.length === 0) {
-      toast.error('Please add at least one component');
       return;
     }
 
@@ -350,8 +355,21 @@ export default function ScrapMasterPage() {
   };
 
   const handleExportExcel = () => {
-    const exportData = filteredData.flatMap((item) =>
-      item.components.map((comp, index) => ({
+    const exportData = filteredData.flatMap<Record<string, string | number>>((item) =>
+      item.components.length === 0 ? [{
+        'Scrap Code': item.scrapCode,
+        'Scrap Name': item.scrapName,
+        'Scrap Description': item.scrapDescription || '-',
+        'Scrap UOM': item.uom,
+        'Component Code': '',
+        'Component Name': '',
+        'Component Type': '',
+        'Component UOM': '',
+        'Quantity': '',
+        'Percentage (%)': '',
+        'Remarks': '',
+        'Status': item.isActive ? 'Active' : 'Inactive',
+      }] : item.components.map((comp, index) => ({
         'Scrap Code': index === 0 ? item.scrapCode : '',
         'Scrap Name': index === 0 ? item.scrapName : '',
         'Scrap Description': index === 0 ? item.scrapDescription || '-' : '',
@@ -372,7 +390,16 @@ export default function ScrapMasterPage() {
 
   const handleExportPDF = () => {
     const exportData = filteredData.flatMap((item, itemIndex) =>
-      item.components.map((comp, compIndex) => ({
+      item.components.length === 0 ? [{
+        no: itemIndex + 1,
+        scrapCode: item.scrapCode,
+        scrapName: item.scrapName,
+        componentCode: '',
+        componentName: '',
+        componentType: '',
+        quantity: '',
+        percentage: '',
+      }] : item.components.map((comp, compIndex) => ({
         no: itemIndex + 1,
         scrapCode: compIndex === 0 ? item.scrapCode : '',
         scrapName: compIndex === 0 ? item.scrapName : '',
@@ -408,7 +435,7 @@ export default function ScrapMasterPage() {
                 Scrap Master Management
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Manage composite scrap items and their components
+                Manage scrap items and their optional components
               </Typography>
             </Box>
             <Stack direction="row" spacing={2}>
@@ -570,7 +597,7 @@ export default function ScrapMasterPage() {
         <DialogContent dividers>
           <Stack spacing={3}>
             <Alert severity="info">
-              A scrap item is a composite item made up of multiple components. Define the scrap code and its component breakdown below.
+              Define the scrap item below. Components are optional; any added component must have valid details.
             </Alert>
 
             <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }}>
@@ -730,8 +757,8 @@ export default function ScrapMasterPage() {
             ))}
 
             {formData.components.length === 0 && (
-              <Alert severity="warning">
-                No components added. Please add at least one component.
+              <Alert severity="info">
+                No components added. You can save this scrap item without components.
               </Alert>
             )}
           </Stack>
@@ -741,7 +768,7 @@ export default function ScrapMasterPage() {
           <Button
             variant="contained"
             onClick={handleSubmit}
-            disabled={loading || formData.components.length === 0}
+            disabled={loading}
           >
             {loading ? <CircularProgress size={24} /> : editMode ? 'Update' : 'Create'}
           </Button>
@@ -795,6 +822,11 @@ export default function ScrapMasterPage() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
+                      {selectedItem.components.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={5} align="center">No components defined.</TableCell>
+                        </TableRow>
+                      )}
                       {selectedItem.components.map((comp, index) => (
                         <TableRow key={index}>
                           <TableCell>{comp.componentCode}</TableCell>
@@ -817,6 +849,20 @@ export default function ScrapMasterPage() {
           <Button onClick={() => setOpenViewDialog(false)}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={removeComponentIndex !== null}
+        title="Remove All Components"
+        message="Remove the final component? Click Update to save this scrap item without components."
+        confirmText="Remove"
+        cancelText="Cancel"
+        onConfirm={() => {
+          if (removeComponentIndex !== null) removeComponent(removeComponentIndex);
+          setRemoveComponentIndex(null);
+        }}
+        onCancel={() => setRemoveComponentIndex(null)}
+        severity="warning"
+      />
 
       {/* Confirm Delete Dialog */}
       <ConfirmDialog
