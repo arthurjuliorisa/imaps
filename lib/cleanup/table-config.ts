@@ -11,6 +11,7 @@ export interface CleanupTable {
   phaseName: string; // Phase description
   rowCount?: number; // Row count (populated at runtime)
   dependencies?: string[]; // Table IDs this table depends on
+  deleteBefore?: string[]; // Additional FK ordering without expanding selection
   dependentTables?: string[]; // Table IDs that depend on this
   size?: string; // Approx data size
   isPartitioned?: boolean; // Is partitioned table
@@ -74,7 +75,7 @@ const PHASE_1_TABLES: CleanupTable[] = [
     isPartitioned: true,
     cascadeDelete: false,
     dependencies: [],
-    dependentTables: ['scrap_transaction_items'],
+    dependentTables: ['scrap_transaction_items', 'outgoing_goods'],
     canDelete: true,
     selected: true,
     companyScope: { type: 'direct', companyColumn: 'company_code' }
@@ -206,6 +207,7 @@ const PHASE_4_TABLES: CleanupTable[] = [
     phaseName: 'Phase 4: Detail / Item Tables',
     cascadeDelete: true,
     dependencies: ['outgoing_goods'],
+    deleteBefore: ['scrap_transaction_items'],
     dependentTables: [
       'outgoing_work_order_allocations',
       'outgoing_fg_production_traceability'
@@ -294,6 +296,7 @@ const PHASE_5_TABLES: CleanupTable[] = [
     isPartitioned: true,
     cascadeDelete: false,
     dependencies: [],
+    deleteBefore: ['scrap_transactions'],
     dependentTables: ['outgoing_good_items'],
     canDelete: true,
     selected: true,

@@ -192,12 +192,13 @@ test('changed review refuses and transaction failure rolls back audit and owners
     expect(failing.state()).toEqual({ owner: token, audits: [] });
   }
 });
-test('cleanup compatibility uses same lock scope and refuses residual claims; no cleanup bypass', () => {
+test('cleanup compatibility retains live gate and writer fences without treating historical status as activity', () => {
   const cleanup = readFileSync('lib/insw-queue/cleanup.ts', 'utf8');
   expect(cleanup).toContain('gate.owner_token !== null');
   expect(cleanup).toContain('gate.busy_attempt_id !== null');
-  expect(cleanup).toContain("status: { in: ['CLAIMED', 'REMOTE_SUCCEEDED'] }");
-  expect(cleanup).toContain('completed_at: null');
+  expect(cleanup).not.toContain("status: { in: ['CLAIMED', 'REMOTE_SUCCEEDED'] }");
+  expect(cleanup).toContain('lease_until: { gt: new Date() }');
+  expect(cleanup).toContain('IN SHARE ROW EXCLUSIVE MODE NOWAIT');
   const repository = readFileSync('lib/insw-worker/operational.repository.ts', 'utf8');
   expect(repository).toContain('} else verifyReaped(row.process_identity);');
   expect(repository).toContain("'DELIVERY_UNKNOWN'");

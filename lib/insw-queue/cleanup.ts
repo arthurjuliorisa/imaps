@@ -48,7 +48,7 @@ async function guard(tx: Prisma.TransactionClient, companyCode: number, confirma
   // Idle web connections do not conflict. Active writers, legacy claims,
   // preparation and ownership acquisition do; never wait behind them.
   await tx.$executeRaw`LOCK TABLE insw_dispatch_gate, insw_queue_cycle,
-    insw_queue_attempt, insw_admin_resolution, insw_preparation_rollout,
+    insw_queue_attempt, insw_admin_resolution, insw_manual_supersession, insw_preparation_rollout,
     insw_preparation_member, insw_preparation_ledger, insw_tracking_log
     IN SHARE ROW EXCLUSIVE MODE NOWAIT`;
   // Recheck current DB authorization under row locks, including after Sandbox.
@@ -84,26 +84,30 @@ async function guard(tx: Prisma.TransactionClient, companyCode: number, confirma
   } else if (gate.lease_until !== null || gate.process_identity !== null) {
     throw new INSWCleanupBusyError('Global ownership evidence is inconsistent. Review the unknown owner before retrying.');
   }
-  // Global gate coordinates every tenant. Any active claim anywhere forbids a
-  // reset/release; historical delivery ambiguity alone is deliberately deletable.
-  const [queue, preparation, unfinishedAttempts] = await Promise.all([
-    tx.insw_queue_cycle.count({ where: { OR: [
-      { status: { in: ['CLAIMED', 'REMOTE_SUCCEEDED'] } }, { owner_token: { not: null } }, { lease_until: { not: null } },
-    ] } }),
-    tx.insw_preparation_ledger.count({ where: { OR: [
-      { state: 'CLAIMED' }, { owner_token: { not: null } }, { lease_until: { not: null } },
-    ] } }),
-    tx.insw_queue_attempt.count({ where: { completed_at: null } }),
-  ]);
-  if (queue || preparation || unfinishedAttempts) throw new INSWCleanupBusyError(
-    `Active global INSW evidence: ${queue} queue claims, ${preparation} preparation claims, ${unfinishedAttempts} unfinished attempts. Stop producers and drain/resolve these before retrying.`);
+  // Status and unfinished history do not prove a live sender. The gate busy
+  // pointer/active ownership and writer locks above fence dispatch. Preparation
+  // can work outside that gate, so retain only its unexpired lease fence.
+  const preparation = await tx.insw_preparation_ledger.count({
+    where: { lease_until: { gt: new Date() } },
+  });
+  if (preparation) throw new INSWCleanupBusyError('An INSW preparation lease is active. Wait for active preparation to finish before cleanup.');
   // Detect contradictory tenant references before external destruction, too.
   const [references] = await tx.$queryRaw<{ conflict: boolean }[]>`SELECT
     EXISTS (SELECT 1 FROM insw_tracking_log l JOIN insw_queue_attempt a ON a.id = l.queue_attempt_id
       JOIN insw_queue_cycle q ON q.id = a.queue_id
       WHERE l.company_code IS DISTINCT FROM q.company_code AND (l.company_code = ${companyCode} OR q.company_code = ${companyCode}))
     OR EXISTS (SELECT 1 FROM insw_preparation_ledger l JOIN insw_queue_cycle q ON q.id = l.queue_id
-      WHERE l.company_code <> q.company_code AND (l.company_code = ${companyCode} OR q.company_code = ${companyCode})) AS conflict`;
+      WHERE l.company_code <> q.company_code AND (l.company_code = ${companyCode} OR q.company_code = ${companyCode}))
+    OR EXISTS (SELECT 1 FROM insw_manual_supersession r
+      JOIN insw_queue_cycle p ON p.id = r.parent_queue_id
+      JOIN insw_queue_cycle s ON s.id = r.successor_queue_id
+      JOIN insw_tracking_log l ON l.id = r.source_log_id
+      WHERE (p.company_code = ${companyCode} OR s.company_code = ${companyCode} OR l.company_code = ${companyCode})
+        AND (p.company_code <> s.company_code OR p.company_code IS DISTINCT FROM l.company_code
+          OR p.operation <> s.operation OR p.identity_key <> s.identity_key))
+    OR EXISTS (SELECT 1 FROM insw_queue_cycle q JOIN insw_tracking_log l ON l.id = q.source_log_id
+      WHERE q.company_code IS DISTINCT FROM l.company_code
+        AND (q.company_code = ${companyCode} OR l.company_code = ${companyCode})) AS conflict`;
   if (!references || references.conflict) throw new INSWCleanupBusyError('Cross-company INSW child references conflict. Repair tenant associations before cleanup; no deletion was performed.');
   return gate;
 }
@@ -132,7 +136,7 @@ export async function deleteINSWOperationalData(companyCode: number, confirmatio
       // process death. Audit and release roll back with every deletion below.
       await tx.insw_worker_recovery.create({ data: {
         old_owner_token: gate.owner_token, operator: confirmation.operator,
-        evidence: `Nonproduction test-data discard company=${companyCode}; Admin attests all producers stopped and no in-flight transmissions; expired lease, no global claims or unfinished attempts`,
+        evidence: `Nonproduction test-data discard company=${companyCode}; Admin attests all producers stopped and no in-flight transmissions; expired gate lease, no busy sender or active preparation lease`,
         process_identity: gate.process_identity as Prisma.InputJsonValue,
       } });
       await tx.$executeRaw`UPDATE insw_dispatch_gate SET owner_token = NULL, lease_until = NULL,
@@ -143,6 +147,19 @@ export async function deleteINSWOperationalData(companyCode: number, confirmatio
     }
     const scope = { company_code: companyCode };
     const queueScope = { queue: scope };
+    // Transaction-local context is consumed only by the narrow DELETE trigger;
+    // normal supersession updates and queue immutability remain unchanged.
+    await tx.$queryRaw`SELECT set_config('imaps.cleanup_company', ${String(companyCode)}, true),
+      set_config('imaps.cleanup_operator', ${confirmation.operator}, true)`;
+    const supersessions = await tx.$executeRaw`DELETE FROM insw_manual_supersession r
+      USING insw_queue_cycle p, insw_queue_cycle s, insw_tracking_log l
+      WHERE p.id = r.parent_queue_id AND s.id = r.successor_queue_id AND l.id = r.source_log_id
+        AND p.company_code = ${companyCode} AND s.company_code = ${companyCode} AND l.company_code = ${companyCode}
+        AND p.operation = s.operation AND p.identity_key = s.identity_key`;
+    const [remainingLinks] = await tx.$queryRaw<{ count: bigint }[]>`SELECT count(*)::bigint AS count
+      FROM insw_manual_supersession r
+      JOIN insw_queue_cycle q ON q.id = r.parent_queue_id WHERE q.company_code = ${companyCode}`;
+    if (!remainingLinks || Number(remainingLinks.count) !== 0) throw new INSWCleanupResidualError();
     const logs = await tx.insw_tracking_log.deleteMany({ where: scope });
     const resolutions = await tx.insw_admin_resolution.deleteMany({ where: queueScope });
     const ledger = await tx.insw_preparation_ledger.deleteMany({ where: scope });
@@ -160,7 +177,7 @@ export async function deleteINSWOperationalData(companyCode: number, confirmatio
     if (remainingChildren.some(count => count !== 0)) throw new INSWCleanupResidualError();
     const queues = await tx.insw_queue_cycle.deleteMany({ where: scope });
     if (await tx.insw_queue_cycle.count({ where: scope })) throw new INSWCleanupResidualError();
-    return { trackingLogs: logs.count, resolutions: resolutions.count, preparationLedgers: ledger.count,
+    return { supersessions: Number(supersessions), trackingLogs: logs.count, resolutions: resolutions.count, preparationLedgers: ledger.count,
       preparationMembers: members.count, attempts: attempts.count, queues: queues.count };
   });
 }

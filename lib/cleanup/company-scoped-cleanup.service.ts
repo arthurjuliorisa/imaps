@@ -111,6 +111,36 @@ export async function deleteRowsForCompany(
   const table = getConfiguredTable(tableId);
   const whereSql = scopedWhereSql(table, companyCode);
 
+  if (tableId === 'scrap_transaction_items') {
+    const [conflict] = await client.$queryRaw<Array<{ id: number; scrap_transaction_item_id: number; outgoing_good_date: Date }>>`
+      SELECT g.id, g.scrap_transaction_item_id, g.outgoing_good_date
+      FROM outgoing_good_items g JOIN scrap_transaction_items s
+        ON s.scrap_transaction_company = g.outgoing_good_company AND s.id = g.scrap_transaction_item_id
+        AND s.scrap_transaction_date = g.outgoing_good_date
+      WHERE s.scrap_transaction_company = ${companyCode}
+      LIMIT 1
+    `;
+    if (conflict) throw new CleanupScopeError(
+      `Scrap item cleanup scope conflict: retained outgoing_good_items company=${companyCode}, id=${conflict.id}, outgoing_good_date=${conflict.outgoing_good_date.toISOString().slice(0, 10)} references scrap_transaction_items id=${conflict.scrap_transaction_item_id}. Select the referencing outgoing item scope as well.`,
+      tableId, 409);
+  }
+
+  if (tableId === 'scrap_transactions') {
+    // Never expand a selective request to retained outgoing records. Composite
+    // identity includes company and business date, exactly like the RESTRICT FK.
+    const [conflict] = await client.$queryRaw<Array<{ id: number; scrap_transaction_id: number; outgoing_date: Date }>>`
+      SELECT g.id, g.scrap_transaction_id, g.outgoing_date
+      FROM outgoing_goods g JOIN scrap_transactions s
+        ON s.company_code = g.company_code AND s.id = g.scrap_transaction_id
+        AND s.transaction_date = g.outgoing_date
+      WHERE s.company_code = ${companyCode}
+      LIMIT 1
+    `;
+    if (conflict) throw new CleanupScopeError(
+      `Scrap cleanup scope conflict: retained outgoing_goods company=${companyCode}, id=${conflict.id}, outgoing_date=${conflict.outgoing_date.toISOString().slice(0, 10)} references scrap_transactions id=${conflict.scrap_transaction_id}. Select the referencing outgoing scope as well.`,
+      tableId, 409);
+  }
+
   const result = await client.$executeRaw`
     DELETE FROM ${identifier(table.name)} target
     WHERE ${whereSql}

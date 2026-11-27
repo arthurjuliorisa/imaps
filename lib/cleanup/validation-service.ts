@@ -177,20 +177,21 @@ export class CleanupValidationService {
       const batch: string[] = [];
 
       for (const tableId of remaining) {
-        const table = getTableById(tableId);
-        const dependencies = table?.dependencies || [];
+        // Delete selected children before their referenced parents. Unselected
+        // children are retained; the database/scope guard rejects conflicts.
+        const childrenProcessed = selectedTableIds.every(childId => {
+          const child = getTableById(childId);
+          return processed.has(childId)
+            || ![...(child?.dependencies ?? []), ...(child?.deleteBefore ?? [])].includes(tableId);
+        });
 
-        // Check if all dependencies are already processed
-        const depsProcessed = dependencies.every(depId => processed.has(depId));
-
-        if (depsProcessed) {
+        if (childrenProcessed) {
           batch.push(tableId);
         }
       }
 
       if (batch.length === 0) {
-        // Circular dependency or error - add remaining as is
-        batch.push(...remaining);
+        throw new Error('Cleanup dependency cycle: ' + [...remaining].join(', '));
       }
 
       order.push(batch);

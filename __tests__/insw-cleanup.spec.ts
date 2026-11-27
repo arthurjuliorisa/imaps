@@ -9,11 +9,11 @@ import * as jsxRuntime from 'react/jsx-runtime';
 
 // Every application import is injected: no Prisma connection, service constructor,
 // auth initialization or provider transport can escape this harness.
-function load(path: string, imports: Record<string, unknown>, env: Record<string, string | undefined> = {}, globals: Record<string, unknown> = {}) {
+function load(path: string, imports: Record<string, unknown>, env: Record<string, string | undefined> = {}, globals: Record<string, unknown> = {}, sourceSuffix = '') {
   const exports: any = {};
-  vm.runInNewContext(ts.transpileModule(readFileSync(path, 'utf8'), {
+  vm.runInNewContext(ts.transpileModule(readFileSync(path, 'utf8') + sourceSuffix, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText, { exports, URL, ...globals, process: { env }, require(name: string) {
+  }).outputText, { exports, URL, Error, ...globals, process: { env }, require(name: string) {
     if (!(name in imports)) throw new Error(`Unmocked import: ${name}`);
     return imports[name];
   } });
@@ -30,6 +30,7 @@ function harness(phase = 'development', env: Record<string, string | undefined> 
   let rows: Record<string, any[]> = {
     insw_queue_cycle: [1370, 1380].map(company_code => ({ id: `q${company_code}`, company_code, status: 'FAILED' })),
     insw_queue_attempt: [1370, 1380].map(c => ({ id: `a${c}`, queue_id: `q${c}`, completed_at: new Date(0) })),
+    insw_manual_supersession: [],
     insw_admin_resolution: [1370, 1380].map(c => ({ queue_id: `q${c}` })),
     insw_tracking_log: [1370, 1380].map(company_code => ({ company_code, queue_attempt_id: `a${company_code}` })),
     insw_preparation_ledger: [1370, 1380].map(company_code => ({ company_code, member_id: `m${company_code}`, queue_id: `q${company_code}` })),
@@ -42,10 +43,15 @@ function harness(phase = 'development', env: Record<string, string | undefined> 
     insw_policy_change: [{ version: 1 }],
   };
   const events: string[] = [];
+  let queryCount = 0;
   let locked = false, fail = '', residual = '', external = 'success', remoteCalls = 0;
   let gate: any = { owner_token: null, lease_until: null, busy_attempt_id: null, process_identity: null, last_started_at: new Date(0), prior_interval_ms: 3600, recovery_barrier_at: new Date(10) };
   const tx: any = {
     $executeRaw: async (parts: TemplateStringsArray) => {
+      queryCount++;
+      if (parts.join('').includes('DELETE FROM insw_manual_supersession')) {
+        return (await tx.insw_manual_supersession.deleteMany({ where: { company_code: 1370 } })).count;
+      }
       if (parts.join('').includes('UPDATE insw_dispatch_gate')) {
         if (fail === 'release') throw new Error('Injected release failure');
         Object.assign(gate, { owner_token: null, lease_until: null, process_identity: null,
@@ -58,13 +64,23 @@ function harness(phase = 'development', env: Record<string, string | undefined> 
       locked = true; events.push('lock');
     },
     $queryRaw: async (parts: TemplateStringsArray) => {
+      queryCount++;
       expect(locked).toBe(true);
       const sql = parts.join('');
+      if (sql.includes('set_config')) return [];
+      if (sql.includes('AS count')) return [{ count: BigInt(rows.insw_manual_supersession.filter(r =>
+        rows.insw_queue_cycle.some(q => q.id === r.parent_queue_id && q.company_code === 1370)).length) }];
       if (sql.includes('SELECT u.id')) return user?.role === 'ADMIN' && user.company_code === 1370 && company ? [{ id: user.id }] : [];
       if (sql.includes('AS conflict')) return [{ conflict:
         rows.insw_tracking_log.some(l => l.queue_attempt_id && rows.insw_queue_attempt.some(a => a.id === l.queue_attempt_id
           && rows.insw_queue_cycle.some(q => q.id === a.queue_id && q.company_code !== l.company_code)))
-        || rows.insw_preparation_ledger.some(l => l.queue_id && rows.insw_queue_cycle.some(q => q.id === l.queue_id && q.company_code !== l.company_code)) }];
+        || rows.insw_preparation_ledger.some(l => l.queue_id && rows.insw_queue_cycle.some(q => q.id === l.queue_id && q.company_code !== l.company_code))
+        || rows.insw_manual_supersession.some(r => {
+          const p = rows.insw_queue_cycle.find(q => q.id === r.parent_queue_id);
+          const s = rows.insw_queue_cycle.find(q => q.id === r.successor_queue_id);
+          const l = rows.insw_tracking_log.find(l => l.id === r.source_log_id);
+          return p?.company_code !== s?.company_code || p?.company_code !== l?.company_code || p?.operation !== s?.operation || p?.identity_key !== s?.identity_key;
+        }) || rows.insw_queue_cycle.some(q => q.source_log_id && rows.insw_tracking_log.some(l => l.id === q.source_log_id && l.company_code !== q.company_code)) }];
       return gate ? [{ ...gate, expired: gate.lease_until != null && gate.lease_until <= new Date() }] : [];
     },
   };
@@ -73,23 +89,17 @@ function harness(phase = 'development', env: Record<string, string | undefined> 
     : where.company_code === undefined || row.company_code === where.company_code;
   for (const table of Object.keys(rows)) tx[table] = {
     count: async ({ where }: any) => {
+      queryCount++;
       expect(locked).toBe(true);
-      if (!where.OR && where.completed_at === undefined) expect(where.company_code ?? where.queue?.company_code).toBe(1370);
-      if (where.completed_at === undefined && !where.OR) {
-        return rows[table].filter(row => matches(row, where)).length;
+      if (where.lease_until?.gt) {
+        expect(table).toBe('insw_preparation_ledger');
+        return rows[table].filter(row => row.lease_until > where.lease_until.gt).length;
       }
-      if (table === 'insw_queue_attempt') expect(where.completed_at).toBe(null);
-      else expect(where.OR).toEqual([
-        table === 'insw_queue_cycle' ? { status: { in: ['CLAIMED', 'REMOTE_SUCCEEDED'] } } : { state: 'CLAIMED' },
-        { owner_token: { not: null } }, { lease_until: { not: null } },
-      ]);
-      return rows[table].filter(row => matches(row, where) && (where.completed_at === null
-        ? row.completed_at === null
-        : where.OR.some((predicate: any) => Object.entries(predicate).some(([key, value]: [string, any]) =>
-          value.in ? value.in.includes(row[key]) : value.not === null
-            ? row[key] != null : row[key] === value)))).length;
+      expect(where.company_code ?? where.queue?.company_code).toBe(1370);
+      return rows[table].filter(row => matches(row, where)).length;
     },
     deleteMany: async ({ where }: any) => {
+      queryCount++;
       if (phase !== 'production') expect(locked).toBe(true);
       if (fail === table) throw new Error('Injected local failure');
       if (residual === table) return { count: 0 }; // Simulate a delete that leaves eligible rows.
@@ -97,10 +107,12 @@ function harness(phase = 'development', env: Record<string, string | undefined> 
       // Model actual RESTRICT FKs (including those defined only in migrations).
       for (const row of selected) {
         if (table === 'insw_queue_cycle') {
+          expect(rows.insw_manual_supersession.some(r => r.parent_queue_id === row.id || r.successor_queue_id === row.id)).toBe(false);
           expect(rows.insw_queue_attempt.some(a => a.queue_id === row.id)).toBe(false);
           expect(rows.insw_admin_resolution.some(a => a.queue_id === row.id)).toBe(false);
           expect(rows.insw_preparation_ledger.some(a => a.queue_id === row.id)).toBe(false);
         }
+        if (table === 'insw_tracking_log') expect(rows.insw_manual_supersession.some(r => r.source_log_id === row.id)).toBe(false);
         if (table === 'insw_queue_attempt') expect(rows.insw_tracking_log.some(l => l.queue_attempt_id === row.id)).toBe(false);
         if (table === 'insw_preparation_member') expect(rows.insw_preparation_ledger.some(l => l.member_id === row.id)).toBe(false);
       }
@@ -149,11 +161,12 @@ function harness(phase = 'development', env: Record<string, string | undefined> 
     '@/lib/insw-queue/cleanup': operations,
     '@/lib/security/request-origin': load('lib/security/request-origin.ts', {}, env),
   }, { NEXTAUTH_URL: 'https://imaps.invalid', ...env }).POST;
-  return { operations, post, events, get rows() { return rows; }, get remoteCalls() { return remoteCalls; },
+  return { operations, post, events, get queryCount() { return queryCount; }, get rows() { return rows; }, get remoteCalls() { return remoteCalls; },
     setGate: (value: any) => { gate = value; }, get gate() { return gate; },
     setFail: (value: string) => { fail = value; }, setActive: (table: string) => {
-      Object.assign(rows[table][0], table === 'insw_queue_attempt' ? { completed_at: null }
-        : table === 'insw_queue_cycle' ? { status: 'CLAIMED' } : { state: 'CLAIMED' });
+      if (table === 'insw_queue_attempt') { rows[table][0].completed_at = null; gate.busy_attempt_id = rows[table][0].id; }
+      else if (table === 'insw_queue_cycle') { rows[table][0].status = 'CLAIMED'; gate.owner_token = 'active'; gate.lease_until = new Date('9999-01-01'); }
+      else Object.assign(rows[table][0], { state: 'CLAIMED', lease_until: new Date('9999-01-01') });
     },
     setResidual: (value: string) => { residual = value; },
     setExternal: (value: string) => { external = value; }, afterRemote: (fn: () => void) => { afterRemote = fn; },
@@ -175,13 +188,13 @@ for (const phase of ['development', 'staging']) test(`${phase}: scoped bulk dele
   const response = await h.post(request()), body = await response.json();
   expect(response.status, JSON.stringify(body)).toBe(200); expect(body.success).toBe(true);
   expect(body.localTrackingLogCleanup.deletedRows).toBe(1);
-  expect(body.localQueueCleanup).toEqual({ success: true, trackingLogs: 1, resolutions: 1, preparationLedgers: 1,
+  expect(body.localQueueCleanup).toEqual({ success: true, supersessions: 0, trackingLogs: 1, resolutions: 1, preparationLedgers: 1,
     preparationMembers: 1, attempts: 1, queues: 1 });
   expect(h.rows.insw_queue_cycle.filter(q => q.company_code === 1370)).toHaveLength(0);
   expect(h.rows.insw_queue_attempt.filter(a => a.queue_id === 'q1370')).toHaveLength(0);
   expect(h.rows.insw_queue_cycle.map(q => q.id)).toEqual(['q1380']);
   expect(h.rows.insw_queue_attempt.map(a => a.id)).toEqual(['a1380']);
-  expect(h.events.filter(e => e !== 'lock')).toEqual(['insw_tracking_log', 'insw_admin_resolution',
+  expect(h.events.filter(e => e !== 'lock')).toEqual(['insw_manual_supersession', 'insw_tracking_log', 'insw_admin_resolution',
     'insw_preparation_ledger', 'insw_preparation_member', 'insw_queue_attempt', 'insw_queue_cycle']);
   for (const [table, original] of Object.entries(preserved)) {
     if (h.events.includes(table)) expect(h.rows[table]).toEqual(original.filter((r: any) =>
@@ -345,9 +358,9 @@ test('NR-02 global active evidence including another tenant, inconsistent timing
     if (variant === 'emptyIdentity') h.setGate({ ...h.gate, process_identity: {} });
     if (variant === 'interval') h.setGate({ ...h.gate, prior_interval_ms: 3599 });
     if (variant === 'timing') h.setGate({ ...h.gate, last_started_at: null });
-    if (variant === 'otherQueue') Object.assign(h.rows.insw_queue_cycle[1], { status: 'CLAIMED' });
-    if (variant === 'otherAttempt') Object.assign(h.rows.insw_queue_attempt[1], { completed_at: null });
-    if (variant === 'otherPreparation') Object.assign(h.rows.insw_preparation_ledger[1], { state: 'CLAIMED' });
+    if (variant === 'otherQueue') h.setGate({ ...h.gate, lease_until: new Date('9999-01-01') });
+    if (variant === 'otherAttempt') h.setGate({ ...h.gate, busy_attempt_id: 'a1380' });
+    if (variant === 'otherPreparation') Object.assign(h.rows.insw_preparation_ledger[1], { state: 'CLAIMED', lease_until: new Date('9999-01-01') });
     const before = structuredClone(h.rows), gate = structuredClone(h.gate);
     const response = await h.post(request()), body = await response.json();
     expect(response.status, variant).toBe(409); expect(body.error.message.length).toBeGreaterThan(40);
@@ -501,4 +514,157 @@ test('configured public cleanup origins pass proxy boundaries while forged origi
       expect(h.remoteCalls).toBe(0); expect(h.rows).toEqual(before);
     }
   }
+});
+
+test('C03/C04/C05: every queue state, legacy log states and supersession chains delete without conversion or dispatch', async () => {
+  const h = harness();
+  const states = ['READY', 'CLAIMED', 'HELD', 'FAILED', 'REMOTE_SUCCEEDED', 'SUCCEEDED', 'SUPERSEDED'];
+  for (const [index, status] of states.entries()) {
+    const id = `state-${status}`;
+    h.rows.insw_queue_cycle.push({ id, company_code: 1370, operation: 'INCOMING', identity_key: 'chain',
+      wms_reference: 'SAME-WMS', status, owner_token: status === 'CLAIMED' ? 'historical' : null, lease_until: new Date(0) });
+    h.rows.insw_queue_attempt.push({ id: `a-${id}`, queue_id: id, completed_at: index === 1 ? null : new Date(0) });
+    h.rows.insw_tracking_log.push({ id: index, company_code: 1370, queue_attempt_id: `a-${id}`,
+      insw_status: ['PENDING', 'SENT', 'SKIPPED', 'FAILED', 'SUCCESS', 'UNKNOWN', 'FAILED'][index] });
+  }
+  h.rows.insw_manual_supersession.push({ company_code: 1370, parent_queue_id: 'state-SUPERSEDED', successor_queue_id: 'state-READY', source_log_id: 6 });
+  h.rows.insw_queue_cycle[1].wms_reference = 'SAME-WMS';
+  h.rows.insw_queue_cycle.push({ id: 'other-domain', company_code: 1380, operation: 'OUTGOING', wms_reference: 'SAME-WMS' });
+  const retained = structuredClone(h.rows.insw_queue_cycle.filter(q => q.company_code === 1380));
+  const result = await h.operations.deleteINSWOperationalData(1370, { operator: 'admin', companyCode: 1370, discardTestData: true, producersStopped: true });
+  expect(result.queues).toBe(8); expect(result.supersessions).toBe(1);
+  expect(h.rows.insw_queue_cycle).toEqual(retained);
+  expect(h.events.indexOf('insw_manual_supersession')).toBeLessThan(h.events.indexOf('insw_tracking_log'));
+  expect(h.remoteCalls).toBe(0);
+});
+
+test('C05: retained supersession endpoints and source-log references reject before external cleanup', async () => {
+  for (const variant of ['successor', 'source', 'queueSource', 'domain']) {
+    const h = harness();
+    h.rows.insw_tracking_log[0].id = 1;
+    if (variant === 'queueSource') h.rows.insw_queue_cycle[1].source_log_id = 1;
+    else {
+      h.rows.insw_queue_cycle.push({ ...h.rows.insw_queue_cycle[0], id: 'next', operation: variant === 'domain' ? 'OUTGOING' : undefined });
+      h.rows.insw_manual_supersession.push({ company_code: 1370, parent_queue_id: 'q1370',
+        successor_queue_id: variant === 'successor' ? 'q1380' : 'next', source_log_id: 1 });
+      if (variant === 'source') h.rows.insw_tracking_log[0].company_code = 1380;
+    }
+    const before = structuredClone(h.rows);
+    expect((await h.post(request())).status, variant).toBe(409);
+    expect(h.rows).toEqual(before); expect(h.remoteCalls).toBe(0);
+  }
+});
+
+test('C06: supersession deletion failure or residue rolls back the complete local reset', async () => {
+  for (const residue of [false, true]) {
+    const h = harness();
+    h.rows.insw_tracking_log[0].id = 1;
+    h.rows.insw_queue_cycle.push({ ...h.rows.insw_queue_cycle[0], id: 'next' });
+    h.rows.insw_manual_supersession.push({ company_code: 1370, parent_queue_id: 'q1370', successor_queue_id: 'next', source_log_id: 1 });
+    const before = structuredClone(h.rows);
+    if (residue) h.setResidual('insw_manual_supersession'); else h.setFail('insw_manual_supersession');
+    const response = await h.post(request());
+    expect(response.status).toBe(500); expect(h.rows).toEqual(before);
+  }
+});
+
+test('bounded batches use the same number of application queries for 1 and 700 selected queues', async () => {
+  const counts = [];
+  for (const size of [1, 700]) {
+    const h = harness();
+    h.rows.insw_queue_cycle.splice(0, 1, ...Array.from({ length: size }, (_, i) => ({ id: i === 0 ? 'q1370' : `batch-${i}`, company_code: 1370, status: 'HELD' })));
+    const response = await h.post(request());
+    expect(response.status).toBe(200);
+    expect((await response.json()).localQueueCleanup.queues).toBe(size);
+    counts.push(h.queryCount);
+  }
+  expect(counts[0]).toBe(counts[1]);
+  expect(counts[0]).toBe(26); // Includes the mock delete dispatcher; application SQL count is 25.
+});
+
+function businessHarness(failTable = '') {
+  const config = load('lib/cleanup/table-config.ts', {});
+  const validation = load('lib/cleanup/validation-service.ts', { './table-config': config });
+  let rows: Record<string, any[]> = Object.fromEntries(config.CLEANUP_TABLES.map((t: any) => [t.id, []]));
+  const events: string[] = [], progress: any[] = [];
+  const tx: any = {
+    $queryRaw: async (parts: TemplateStringsArray) => parts.join('').includes('FROM outgoing_good_items')
+      ? rows.outgoing_good_items.filter(g => g.outgoing_good_company === 1370 && g.scrap_transaction_item_id != null)
+        .map(g => ({ ...g, outgoing_good_date: new Date('2026-11-01') }))
+      : rows.outgoing_goods.filter(g => g.company_code === 1370 && g.scrap_transaction_id != null)
+      .map(g => ({ id: g.id, scrap_transaction_id: g.scrap_transaction_id, outgoing_date: new Date('2026-11-01') })),
+    $executeRaw: async (parts: TemplateStringsArray, ...values: any[]) => {
+      const sql = Prisma.sql(parts, ...values), tableId = sql.text.match(/DELETE FROM (\w+)/)![1];
+      expect(sql.values).toEqual([1370]); // Real parameterized SQL from the service.
+      if (tableId === failTable) throw new Error('controlled database failure');
+      const table = config.getTableById(tableId), scope = table.companyScope;
+      const selected = rows[tableId].filter(row => scope.type === 'direct' ? row[scope.companyColumn] === 1370
+        : rows[scope.parentTable].some(p => p[scope.parentPrimaryKey] === row[scope.childForeignKey] && p[scope.parentCompanyColumn] === 1370));
+      rows[tableId] = rows[tableId].filter(row => !selected.includes(row));
+      events.push(tableId); return selected.length;
+    },
+  };
+  const db = { $transaction: async (fn: any) => { const before = structuredClone(rows);
+    try { await fn(tx); } catch (error) { rows = before; throw error; } } };
+  const service = load('lib/cleanup/company-scoped-cleanup.service.ts', {
+    '@prisma/client': { Prisma }, '@/lib/prisma': { prisma: db }, '@/lib/cleanup/table-config': config,
+  });
+  const route = load('app/api/admin/cleanup/route.ts', {
+    'next/server': { NextResponse }, bcryptjs: {}, '@/lib/prisma': { prisma: db },
+    '@/lib/utils/logger': { logger: { error() {} } }, '@/lib/cleanup/validation-service': validation,
+    '@/lib/cleanup/backup-service': { logBackupActivity: async () => {} }, '@/lib/cleanup/table-config': config,
+    '@/lib/log-activity': { logActivity: async () => {} }, '@/lib/cleanup/company-scoped-cleanup.service': service,
+    '@/lib/cleanup/cleanup-company-context': {},
+  }, {}, {}, '\nexport { executeCleanup };');
+  return { config, validation, events, progress, get rows() { return rows; },
+    run: (ids: string[]) => route.executeCleanup(ids, 'no-backup-fixture', 'admin', 1370, (p: any) => progress.push(p)) };
+}
+
+test('C01/C02/C07: actual application cleanup executor follows composite FK order and removes company WIP at every stock date', async () => {
+  const h = businessHarness();
+  h.rows.scrap_transactions.push({ company_code: 1370, id: 1 }, { company_code: 1380, id: 1 });
+  h.rows.outgoing_goods.push({ company_code: 1370, id: 2, scrap_transaction_id: 1 }, { company_code: 1380, id: 2, scrap_transaction_id: 1 });
+  h.rows.outgoing_good_items.push({ outgoing_good_company: 1370, id: 3, scrap_transaction_item_id: 5 }, { outgoing_good_company: 1380, id: 4 });
+  h.rows.scrap_transaction_items.push({ scrap_transaction_company: 1370, id: 5 }, { scrap_transaction_company: 1380, id: 6 });
+  h.rows.outgoing_work_order_allocations.push({ outgoing_good_item_id: 3 }, { outgoing_good_item_id: 4 });
+  h.rows.outgoing_fg_production_traceability.push({ company_code: 1370 }, { company_code: 1380 });
+  h.rows.wip_balances.push(...[1370, 1380].flatMap(company_code => ['2020-01-01', '2026-11-27'].map(stock_date => ({ company_code, stock_date, wms_id: 'SAME' }))));
+  const ids = ['scrap_transactions', 'outgoing_goods', 'outgoing_good_items', 'outgoing_work_order_allocations', 'outgoing_fg_production_traceability', 'wip_balances', 'scrap_transaction_items'];
+  await h.run(ids);
+  expect(h.progress.at(-1).progress.status).toBe('completed');
+  expect(h.progress.at(-1).summary.total_rows_deleted).toBe(8);
+  expect(h.events.indexOf('outgoing_work_order_allocations')).toBeLessThan(h.events.indexOf('outgoing_good_items'));
+  expect(h.events.indexOf('outgoing_good_items')).toBeLessThan(h.events.indexOf('outgoing_goods'));
+  expect(h.events.indexOf('outgoing_good_items')).toBeLessThan(h.events.indexOf('scrap_transaction_items'));
+  expect(h.events.indexOf('outgoing_goods')).toBeLessThan(h.events.indexOf('scrap_transactions'));
+  expect(h.rows.wip_balances).toHaveLength(2); expect(h.rows.wip_balances.every(w => w.company_code === 1380)).toBe(true);
+  expect(h.rows.scrap_transactions).toEqual([{ company_code: 1380, id: 1 }]);
+  await h.run(ids); expect(h.progress.at(-1).summary.total_rows_deleted).toBe(0);
+  expect(h.config.getFullResetTables().some((t: any) => t.id === 'wip_balances')).toBe(true);
+  expect(h.validation.CleanupValidationService.validateSelection(['outgoing_goods'])).toEqual([]); // Selection contract unchanged.
+});
+
+test('C01/C06: retained outgoing conflicts are explicit; controlled later failure rolls back WIP and outgoing deletions', async () => {
+  for (const failTable of ['', 'scrap_transactions']) {
+    const h = businessHarness(failTable);
+    h.rows.scrap_transactions.push({ company_code: 1370, id: 1 });
+    h.rows.outgoing_goods.push({ company_code: 1370, id: 2, scrap_transaction_id: 1 });
+    h.rows.wip_balances.push({ company_code: 1370, stock_date: '2026-11-01' });
+    const before = structuredClone(h.rows);
+    await h.run(failTable ? ['wip_balances', 'outgoing_goods', 'scrap_transactions'] : ['scrap_transactions']);
+    expect(h.progress.at(-1).error).toBe(true); expect(h.rows).toEqual(before);
+    expect(h.progress.at(-1).progress.message).toContain(failTable ? 'controlled database failure' : 'retained outgoing_goods company=1370, id=2');
+    expect(h.progress.some(p => p.progress.status === 'completed')).toBe(false);
+  }
+});
+
+test('C01: retained outgoing item identifies the exact composite scrap-item scope conflict', async () => {
+  const h = businessHarness();
+  h.rows.scrap_transaction_items.push({ scrap_transaction_company: 1370, id: 5 });
+  h.rows.outgoing_good_items.push({ outgoing_good_company: 1370, id: 3, scrap_transaction_item_id: 5 });
+  const before = structuredClone(h.rows);
+  await h.run(['scrap_transaction_items']);
+  expect(h.rows).toEqual(before);
+  expect(h.progress.at(-1).error).toBe(true);
+  expect(h.progress.at(-1).progress.message).toContain('retained outgoing_good_items company=1370, id=3');
 });

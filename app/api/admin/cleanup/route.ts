@@ -146,86 +146,30 @@ async function executeCleanup(
 
   try {
     await prisma.$transaction(async (tx) => {
-      // Execute deletion in batches inside one transaction so any failure rolls back.
-      for (let phaseNum = 1; phaseNum <= 7; phaseNum++) {
-        const tablesInPhase = batches
-          .flat()
-          .filter(
-            (tableId: string) =>
-              CLEANUP_TABLES.find((t) => t.id === tableId)?.phase === phaseNum
-          );
-
-        const phaseTableIds = tablesInPhase || [];
-
-        if (phaseTableIds.length === 0) continue;
-
-        onProgress({
-          progress: {
-            phase: phaseNum,
-            phase_name: `Phase ${phaseNum}`,
-            tables_total: phaseTableIds.length,
-            tables_completed: 0,
-            current_table: '',
-            rows_deleted: totalDeleted,
-            status: 'in_progress',
-            message: `Starting Phase ${phaseNum} for company ${companyCode}...`
-          }
-        });
-
-        for (let i = 0; i < phaseTableIds.length; i++) {
-          const tableId = phaseTableIds[i];
-          const table = CLEANUP_TABLES.find((t) => t.id === tableId);
-
-          if (!table) continue;
-
-          onProgress({
-            progress: {
-              phase: phaseNum,
-              phase_name: `Phase ${phaseNum}`,
-              tables_total: phaseTableIds.length,
-              tables_completed: i,
-              current_table: table.name,
-              rows_deleted: totalDeleted,
-              status: 'in_progress',
-              message: `Deleting company-scoped rows from ${table.displayName}...`
-            }
+      // Dependency order is authoritative; UI phases are progress labels only.
+      // Regrouping by phase would move scrap ahead of its outgoing references.
+      const orderedIds = batches.flat();
+      for (const [index, tableId] of orderedIds.entries()) {
+        const table = getTableById(tableId)!;
+        const progress = {
+          phase: table.phase, phase_name: table.phaseName,
+          tables_total: orderedIds.length, tables_completed: index,
+          current_table: table.name, rows_deleted: totalDeleted,
+        };
+        onProgress({ progress: { ...progress, status: 'in_progress',
+          message: `Deleting company-scoped rows from ${table.displayName}...` } });
+        try {
+          totalDeleted += await deleteRowsForCompany(table.id, companyCode, tx);
+          onProgress({ progress: { ...progress, tables_completed: index + 1,
+            rows_deleted: totalDeleted, status: 'in_progress',
+            message: `Deleted company-scoped rows from ${table.displayName}` } });
+        } catch (error) {
+          logger.error(`Company-scoped delete failed for ${table.name}`, {
+            companyCode, errorMessage: error instanceof Error ? error.message : String(error),
           });
-
-          try {
-            const deleted: number = await deleteRowsForCompany(table.id, companyCode, tx);
-            totalDeleted += deleted;
-
-            onProgress({
-              progress: {
-                phase: phaseNum,
-                phase_name: `Phase ${phaseNum}`,
-                tables_total: phaseTableIds.length,
-                tables_completed: i + 1,
-                current_table: table.name,
-                rows_deleted: totalDeleted,
-                status: 'in_progress',
-                message: `Deleted ${deleted} company-scoped rows from ${table.displayName}`
-              }
-            });
-          } catch (error) {
-            logger.error(`Company-scoped delete failed for ${table.name}`, {
-              companyCode,
-              errorMessage: error instanceof Error ? error.message : String(error)
-            });
-            onProgress({
-              progress: {
-                phase: phaseNum,
-                phase_name: `Phase ${phaseNum}`,
-                tables_total: phaseTableIds.length,
-                tables_completed: i + 1,
-                current_table: table.name,
-                rows_deleted: totalDeleted,
-                status: 'error',
-                message: `Error deleting from ${table.displayName}: ${error instanceof Error ? error.message : 'Unknown error'}`
-              }
-            });
-            throw error;
-          }
+          onProgress({ progress: { ...progress, status: 'error',
+            message: `Error deleting from ${table.displayName}: ${error instanceof Error ? error.message : 'Unknown error'}` } });
+          throw error;
         }
       }
     }, { timeout: 120000, maxWait: 10000 });
